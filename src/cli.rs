@@ -1,4 +1,5 @@
 use clap::{Arg, ArgAction, Command};
+use crate::tui;
 
 pub fn init() {
     let matches = Command::new("mcl")
@@ -127,6 +128,6 @@ pub fn init() {
     }
 
     fn open_tui() {
-        println!("TUI opened")
+       tui::show().unwrap(); 
     }
 }
