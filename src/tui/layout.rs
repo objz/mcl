@@ -1,21 +1,16 @@
 use color_eyre::eyre::Context;
 use crossterm::event::{self, Event};
 use ratatui::{
-    buffer::Buffer,
     crossterm::event::{KeyCode, KeyEvent, KeyEventKind},
-    layout::Rect,
-    style::Stylize,
-    symbols::border,
-    text::{Line, Text},
-    widgets::{Block, Borders, Paragraph, Widget},
+    layout::{Constraint, Direction, Layout},
     Frame,
 };
-
+use crate::tui::widgets;
 use super::Tui;
+
 
 #[derive(Debug, Default)]
 pub struct App {
-    counter: u8,
     exit: bool,
 }
 
@@ -28,9 +23,47 @@ impl App {
         }
         Ok(())
     }
-
     fn render_frame(&self, frame: &mut Frame) {
-        frame.render_widget(self, frame.area());
+        // Divide the screen into horizontal chunks
+        let chunks = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([
+                Constraint::Percentage(20), // Instances
+                Constraint::Percentage(80), // Main content
+            ])
+            .split(frame.area());
+
+        // Render Instances
+        widgets::render_instances(frame, chunks[0]);
+
+        // Divide the main content into vertical chunks
+        let main_chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(3),         // Instances
+                Constraint::Min(10),          // Main content
+                Constraint::Length(5),        // Bottom panel
+            ])
+            .split(chunks[1]);
+
+        // Render widgets in the main content
+        widgets::render_title(frame, main_chunks[0]);
+        widgets::render_content(frame, main_chunks[1]);
+
+        // Bottom panel split 
+        let bottom_chunks = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([
+                Constraint::Percentage(30), // Account
+                Constraint::Percentage(40), // Info
+                Constraint::Percentage(30), // Status
+            ])
+            .split(main_chunks[2]);
+
+        // Render bottom widgets
+        widgets::render_account(frame, bottom_chunks[0]);
+        widgets::render_info(frame, bottom_chunks[1]);
+        widgets::render_status(frame, bottom_chunks[2]);
     }
 
     /// updates the application's state based on user input
@@ -46,8 +79,6 @@ impl App {
     fn handle_key_event(&mut self, key_event: KeyEvent) -> color_eyre::Result<()> {
         match key_event.code {
             KeyCode::Char('q') => self.exit(),
-            KeyCode::Left => self.decrement_counter()?,
-            KeyCode::Right => self.increment_counter()?,
             _ => {}
         }
         Ok(())
@@ -55,47 +86,5 @@ impl App {
 
     fn exit(&mut self) {
         self.exit = true;
-    }
-
-    fn decrement_counter(&mut self) -> color_eyre::Result<()> {
-        if self.counter > 0 {
-            self.counter -= 1;
-        }
-
-        Ok(())
-    }
-
-    fn increment_counter(&mut self) -> color_eyre::Result<()> {
-        self.counter += 1;
-        Ok(())
-    }
-}
-
-impl Widget for &App {
-    fn render(self, area: Rect, buf: &mut Buffer) {
-        let title = Line::from(" Test ".bold());
-        let instructions = Line::from(vec![
-            " Decrement ".into(),
-            "<Left>".blue().bold(),
-            " Increment ".into(),
-            "<Right>".blue().bold(),
-            " Quit ".into(),
-            "<Q> ".blue().bold(),
-        ]);
-        let block = Block::default()
-            .title(title.centered())
-            .title_bottom(instructions.centered())
-            .borders(Borders::ALL)
-            .border_set(border::THICK);
-
-        let counter_text = Text::from(vec![Line::from(vec![
-            "Value: ".into(),
-            self.counter.to_string().yellow(),
-        ])]);
-
-        Paragraph::new(counter_text)
-            .centered()
-            .block(block)
-            .render(area, buf);
     }
 }
