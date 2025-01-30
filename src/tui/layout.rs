@@ -5,7 +5,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout},
     Frame,
 };
-use crate::tui::widgets;
+use super::widgets;
 use super::Tui;
 
 
@@ -66,7 +66,7 @@ impl App {
         widgets::render_status(frame, bottom_chunks[2]);
     }
 
-    /// updates the application's state based on user input
+    /// updates the applications state based on user input
     fn handle_events(&mut self) -> color_eyre::Result<()> {
         match event::read()? {
             Event::Key(key_event) if key_event.kind == KeyEventKind::Press => self

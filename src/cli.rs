@@ -1,5 +1,5 @@
 use clap::{Arg, ArgAction, Command};
-use crate::tui;
+use crate::{debug, tui};
 
 pub fn init() {
     let matches = Command::new("mcl")
@@ -104,24 +104,24 @@ pub fn init() {
                 .unwrap_or_else(|| "None".to_string());
 
             if launch_matches.get_flag("offline") {
-                println!("Launching profile '{}' in offline mode...", profile);
+                debug!("Launching profile '{}' in offline mode...", profile);
             } else {
-                println!("Launching profile '{}' in online mode...", profile);
+                debug!("Launching profile '{}' in online mode...", profile);
             }
 
-            println!("Memory: {}", memory);
-            println!("Resolution: {}", resolution);
-            println!("JVM Args: {}", jvm_args);
+            debug!("Memory: {}", memory);
+            debug!("Resolution: {}", resolution);
+            debug!("JVM Args: {}", jvm_args);
 
             if launch_matches.get_flag("no-window") {
-                println!("Running in headless mode...");
+                debug!("Running in headless mode...");
             }
         }
         Some(("profiles", profiles_matches)) => {
             if profiles_matches.get_flag("list") {
-                println!("Listing all profiles...");
+                debug!("Listing all profiles...");
             } else if let Some(profile) = profiles_matches.get_one::<String>("delete") {
-                println!("Deleting profile '{}'...", profile);
+                debug!("Deleting profile '{}'...", profile);
             }
         }
         _ => {},

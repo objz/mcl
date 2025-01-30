@@ -1,0 +1,13 @@
+[variables]
+debug = false
+
+[paths]
+log_dir = "./logs"
+config_dir = "./config"
+save_dir = "./saves"
+
+[colors]
+background = "#000000"  # Default background color (black)
+foreground = "#FFFFFF"  # Default foreground color (white)
+highlight = "#FF5733"   # Default highlight color (orange)
+focused = "#3498DB"     # Default focused color (blue)
