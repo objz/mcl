@@ -3,7 +3,6 @@ debug = false
 
 [paths]
 log_dir = "./logs"
-config_dir = "./config"
 save_dir = "./saves"
 
 [colors]

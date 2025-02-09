@@ -8,7 +8,6 @@ pub struct Variables {
 #[derive(Debug, Deserialize)]
 pub struct Paths {
     pub log_dir: String,
-    pub config_dir: String,
     pub save_dir: String,
 }
 
