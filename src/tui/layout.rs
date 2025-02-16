@@ -1,3 +1,5 @@
+use super::widgets;
+use super::Tui;
 use color_eyre::eyre::Context;
 use crossterm::event::{self, Event};
 use ratatui::{
@@ -5,13 +7,26 @@ use ratatui::{
     layout::{Constraint, Direction, Layout},
     Frame,
 };
-use super::widgets;
-use super::Tui;
-
 
 #[derive(Debug, Default)]
 pub struct App {
     exit: bool,
+    focused: FocusedArea,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum FocusedArea {
+    Instances,
+    Content,
+    Account,
+    Details,
+    Status,
+}
+
+impl Default for FocusedArea {
+    fn default() -> Self {
+        FocusedArea::Instances
+    }
 }
 
 impl App {
@@ -34,23 +49,23 @@ impl App {
             .split(frame.area());
 
         // Render Instances
-        widgets::render_instances(frame, chunks[0]);
+        widgets::render_instances(frame, chunks[0], self.focused);
 
         // Divide the main content into vertical chunks
         let main_chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(3),         // Instances
-                Constraint::Min(10),          // Main content
-                Constraint::Length(5),        // Bottom panel
+                Constraint::Length(3), // Instances
+                Constraint::Min(10),   // Main content
+                Constraint::Length(5), // Bottom panel
             ])
             .split(chunks[1]);
 
         // Render widgets in the main content
-        widgets::render_title(frame, main_chunks[0]);
-        widgets::render_content(frame, main_chunks[1]);
+        widgets::render_title(frame, main_chunks[0], self.focused);
+        widgets::render_content(frame, main_chunks[1], self.focused);
 
-        // Bottom panel split 
+        // Bottom panel split
         let bottom_chunks = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([
@@ -61,9 +76,9 @@ impl App {
             .split(main_chunks[2]);
 
         // Render bottom widgets
-        widgets::render_account(frame, bottom_chunks[0]);
-        widgets::render_info(frame, bottom_chunks[1]);
-        widgets::render_status(frame, bottom_chunks[2]);
+        widgets::render_account(frame, bottom_chunks[0], self.focused);
+        widgets::render_details(frame, bottom_chunks[1], self.focused);
+        widgets::render_status(frame, bottom_chunks[2], self.focused);
     }
 
     /// updates the applications state based on user input
@@ -79,6 +94,11 @@ impl App {
     fn handle_key_event(&mut self, key_event: KeyEvent) -> color_eyre::Result<()> {
         match key_event.code {
             KeyCode::Char('q') => self.exit(),
+            KeyCode::Char('I') => self.focused = FocusedArea::Instances,
+            KeyCode::Char('C') => self.focused = FocusedArea::Content,
+            KeyCode::Char('A') => self.focused = FocusedArea::Account,
+            KeyCode::Char('D') => self.focused = FocusedArea::Details,
+            KeyCode::Char('S') => self.focused = FocusedArea::Status,
             _ => {}
         }
         Ok(())

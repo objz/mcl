@@ -1,42 +1,120 @@
 use ratatui::{
     layout::Rect,
-    widgets::{Block, Borders, Paragraph},
+    style::{Color, Style},
+    text::{Line, Span}, 
+    widgets::{Block, BorderType, Borders, Paragraph},
     Frame,
 };
-use ratatui::widgets::BorderType;
 
-pub fn render_instances(frame: &mut Frame, area: Rect) {
-    let sidebar = Block::default()
-        .title(" Instances ")
-        .borders(Borders::ALL).borders(Borders::ALL).border_type(BorderType::Rounded);
-    frame.render_widget(sidebar, area);
+use super::layout::FocusedArea;
+
+fn styled_title(title: &str, highlight: bool) -> Line {
+    if !highlight || title.is_empty() {
+        Line::from(Span::raw(title))
+    } else {
+        let mut chars = title.chars();
+        let first = chars.next().unwrap_or_default().to_string();
+        let rest: String = chars.collect();
+        Line::from(vec![
+            Span::styled(first, Style::default().fg(Color::Yellow)),
+            Span::raw(rest),
+        ])
+    }
 }
 
-pub fn render_title(frame: &mut Frame, area: Rect) {
-    let top_bar = Paragraph::new(" TEST INSTANCE NAME").block(Block::default().borders(Borders::ALL).border_type(BorderType::Rounded)).centered();
-    frame.render_widget(top_bar, area);
+fn render_section(
+    frame: &mut Frame,
+    area: Rect,
+    focused: FocusedArea,
+    title: &str,
+    content: &str,
+    focus_area: FocusedArea,
+    highlight: bool,
+) {
+    let color = if focused == focus_area {
+        Color::White
+    } else {
+        Color::DarkGray
+    };
+
+    let block = Block::default()
+        .title(styled_title(title, highlight))
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(color));
+
+    let widget = Paragraph::new(content).block(block);
+    frame.render_widget(widget, area);
 }
 
-pub fn render_content(frame: &mut Frame, area: Rect) {
-    let file_list = Paragraph::new(" TEST CONTENT LIBRARY PAGE").block(Block::default().borders(Borders::ALL).border_type(BorderType::Rounded));
-    frame.render_widget(file_list, area);
+pub fn render_instances(frame: &mut Frame, area: Rect, focused: FocusedArea) {
+    render_section(
+        frame,
+        area,
+        focused,
+        "Instances",
+        "",
+        FocusedArea::Instances,
+        true,
+    );
 }
 
-pub fn render_account(frame: &mut Frame, area: Rect) {
-    let metadata = Paragraph::new(" ")
-        .block(Block::default().borders(Borders::ALL).borders(Borders::ALL).border_type(BorderType::Rounded).title(" Account "));
-    frame.render_widget(metadata, area);
+pub fn render_title(frame: &mut Frame, area: Rect, focused: FocusedArea) {
+    render_section(
+        frame,
+        area,
+        focused,
+        "Title",
+        " TEST INSTANCE NAME",
+        FocusedArea::Content,
+        false,
+    );
 }
 
-pub fn render_info(frame: &mut Frame, area: Rect) {
-    let clipboard = Paragraph::new(" ")
-        .block(Block::default().borders(Borders::ALL).borders(Borders::ALL).border_type(BorderType::Rounded).title(" Info "));
-    frame.render_widget(clipboard, area);
+pub fn render_content(frame: &mut Frame, area: Rect, focused: FocusedArea) {
+    render_section(
+        frame,
+        area,
+        focused,
+        "Content",
+        " TEST CONTENT LIBRARY PAGE",
+        FocusedArea::Content,
+        true,
+    );
 }
 
-pub fn render_status(frame: &mut Frame, area: Rect) {
-    let processes = Paragraph::new(" ")
-        .block(Block::default().borders(Borders::ALL).borders(Borders::ALL).border_type(BorderType::Rounded).title(" Status "));
-    frame.render_widget(processes, area);
+pub fn render_account(frame: &mut Frame, area: Rect, focused: FocusedArea) {
+    render_section(
+        frame,
+        area,
+        focused,
+        "Account",
+        "",
+        FocusedArea::Account,
+        true,
+    );
 }
 
+pub fn render_details(frame: &mut Frame, area: Rect, focused: FocusedArea) {
+    render_section(
+        frame,
+        area,
+        focused,
+        "Details",
+        "",
+        FocusedArea::Details,
+        true,
+    );
+}
+
+pub fn render_status(frame: &mut Frame, area: Rect, focused: FocusedArea) {
+    render_section(
+        frame,
+        area,
+        focused,
+        "Status",
+        "",
+        FocusedArea::Status,
+        true,
+    );
+}
