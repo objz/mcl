@@ -1,5 +1,4 @@
 pub mod layout;
-pub mod widget;
 pub mod widgets;
 
 use std::io::{stdout, Result, Stdout};

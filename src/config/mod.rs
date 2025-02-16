@@ -4,6 +4,8 @@ use std::fs;
 use std::path::PathBuf;
 use obj::Config;
 
+use crate::debug;
+
 pub mod obj;
 
 fn get_config_path() -> PathBuf {
@@ -20,7 +22,7 @@ pub fn ensure_config_exists(default_path: &str) -> PathBuf {
         }
 
         fs::copy(default_path, &config_path).expect("Failed to copy default configuration file");
-        println!("Default configuration copied to '{}'", config_path.display());
+        debug!("Default configuration copied to '{}'", config_path.display());
     }
 
     config_path

@@ -79,7 +79,7 @@ pub fn init() {
         .get_matches();
     
     if matches.subcommand().is_none() {
-        open_tui();
+        tui::show().unwrap()
     }
 
     match matches.subcommand() {
@@ -127,7 +127,4 @@ pub fn init() {
         _ => {},
     }
 
-    fn open_tui() {
-       tui::show().unwrap(); 
-    }
 }
