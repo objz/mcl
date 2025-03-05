@@ -2,12 +2,14 @@ use crossterm::event::KeyCode;
 use ratatui::{
     layout::{Constraint, Rect},
     style::{Color, Modifier, Style},
+    text::Text,
     widgets::{
         Block, BorderType, Borders, Cell, Row, Scrollbar, ScrollbarOrientation, ScrollbarState,
         Table, TableState,
     },
     Frame,
 };
+use ratatui_image::StatefulImage;
 
 use crate::tui::layout::FocusedArea;
 
@@ -15,9 +17,28 @@ use super::{styled_title, WidgetKey};
 
 #[derive(Debug, Default)]
 pub struct State {
-    pub instances: Vec<String>,
+    pub instances: Vec<Data>,
     pub table_state: TableState,
     pub scrollbar_state: ScrollbarState,
+}
+
+#[derive(Default)]
+pub struct Data {
+    pub title: String,
+    pub id: String,
+    pub running: bool,
+    pub img: Option<StatefulImage>,
+}
+
+impl std::fmt::Debug for Data {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Data")
+            .field("title", &self.title)
+            .field("id", &self.id)
+            .field("running", &self.running)
+            .field("img", &"<StatefulImage>")
+            .finish()
+    }
 }
 
 impl State {
@@ -71,7 +92,12 @@ impl WidgetKey for State {
     fn handle_key(&mut self, key_event: &crossterm::event::KeyEvent) {
         match key_event.code {
             KeyCode::Char('a') => {
-                self.instances.push("Test".to_string());
+                self.instances.push(Data {
+                    title: "Test".to_string(),
+                    id: "123".to_string(),
+                    running: false,
+                    img: Some(StatefulImage::default()),
+                });
                 self.update_scrollbar();
             }
             KeyCode::Char('d') => {
@@ -109,18 +135,37 @@ pub fn render(frame: &mut Frame, area: Rect, focused: FocusedArea, state: &mut S
 
     let table_area = block.inner(area);
 
-    let rows = state
-        .instances
-        .iter()
-        .map(|instance| Row::new(vec![Cell::from(instance.as_str())]));
+    let rows = state.instances.iter().enumerate().map(|(i, data)| {
+        let status = if data.running { "Running" } else { "Stopped" };
 
-    let widths = [Constraint::Percentage(100)];
+        let background_color = if i % 2 == 0 {
+            Color::Reset
+        } else {
+            Color::Rgb(40, 40, 40) 
+        };
 
-    let table = Table::new(rows, widths).row_highlight_style(
-        Style::default()
-            .add_modifier(Modifier::REVERSED)
-            .fg(Color::Yellow),
-    );
+        Row::new(vec![
+            Cell::from(Text::from(format!("\n{}\n", data.title))),
+            Cell::from(Text::from(format!("\n{}\n", data.id))),
+            Cell::from(Text::from(format!("\n{}\n", status))),
+        ])
+        .height(4) 
+        .style(Style::default().bg(background_color)) 
+    });
+
+    let widths = [
+        Constraint::Percentage(40),
+        Constraint::Percentage(30),
+        Constraint::Percentage(30),
+    ];
+
+    let table = Table::new(rows, widths)
+        .row_highlight_style(
+            Style::default()
+                .add_modifier(Modifier::REVERSED)
+                .fg(Color::Yellow),
+        )
+        .highlight_spacing(ratatui::widgets::HighlightSpacing::Always);
 
     frame.render_stateful_widget(table, table_area, &mut state.table_state);
 

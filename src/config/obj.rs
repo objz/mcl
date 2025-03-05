@@ -1,7 +1,7 @@
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
-pub struct Variables {
+pub struct General {
     pub debug: bool,
 }
 
@@ -21,7 +21,7 @@ pub struct Colors {
 
 #[derive(Debug, Deserialize)]
 pub struct Config {
-    pub variables: Variables,
+    pub general: General,
     pub paths: Paths,
     pub colors: Colors,
 }

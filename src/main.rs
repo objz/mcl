@@ -15,7 +15,7 @@ fn main() {
 
    match load_config(&path) {
       Ok(config) => {
-         Logger::init(config.variables.debug);
+         Logger::init(config.general.debug);
          cli::init()
       }
       Err(e) => {
