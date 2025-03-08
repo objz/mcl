@@ -2,10 +2,10 @@
 debug = false
 
 [colors]
-background = "#1e1e1e"        # Dark gray background
-foreground = "white"          # White text
-border_focused = "white"      # White for focused widget borders
-border_unfocused = "darkgray" # Dark gray for unfocused widget borders
-row_highlight = "yellow"      # Yellow highlight for selected row
-row_alternate_bg = "#282828"  # Slightly lighter gray for alternate rows
-scrollbar = "white"           # White scrollbar
+background = "#1e1e1e"     
+foreground = "white"        
+border_focused = "white"     
+border_unfocused = "darkgray" 
+row_highlight = "yellow"     
+row_background = "darkgray"  
+row_alternate_bg = "#282828"  

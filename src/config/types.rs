@@ -25,10 +25,10 @@ pub struct Colors {
     pub row_highlight: Color,     // Highlighted row color
 
     #[serde(deserialize_with = "deserialize_color")]
-    pub row_alternate_bg: Color,  // Alternate row background color
-
+    pub row_background: Color,  // Row background color
+                                  
     #[serde(deserialize_with = "deserialize_color")]
-    pub scrollbar: Color,         // Scrollbar color
+    pub row_alternate_bg: Color,  // Alternate row background color
 }
 
 #[derive(Debug, Deserialize)]

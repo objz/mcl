@@ -1,11 +1,10 @@
 use crossterm::event::KeyCode;
 use ratatui::{
     layout::{Constraint, Rect},
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::Text,
     widgets::{
-        Block, BorderType, Borders, Cell, Row, Scrollbar, ScrollbarOrientation, ScrollbarState,
-        Table, TableState,
+        Block, BorderType, Borders, Cell, Paragraph, Row, Scrollbar, ScrollbarOrientation, ScrollbarState, Table, TableState
     },
     Frame,
 };
@@ -139,9 +138,9 @@ pub fn render(frame: &mut Frame, area: Rect, focused: FocusedArea, state: &mut S
         let status = if data.running { "Running" } else { "Stopped" };
 
         let background_color = if i % 2 == 0 {
-            Color::Reset
+            SETTINGS.colors.row_background
         } else {
-            Color::Rgb(40, 40, 40) 
+            SETTINGS.colors.row_alternate_bg
         };
 
         Row::new(vec![
@@ -163,7 +162,7 @@ pub fn render(frame: &mut Frame, area: Rect, focused: FocusedArea, state: &mut S
         .row_highlight_style(
             Style::default()
                 .add_modifier(Modifier::REVERSED)
-                .fg(Color::Yellow),
+                .fg(SETTINGS.colors.row_highlight),
         )
         .highlight_spacing(ratatui::widgets::HighlightSpacing::Always);
 
@@ -175,7 +174,7 @@ pub fn render(frame: &mut Frame, area: Rect, focused: FocusedArea, state: &mut S
             .begin_symbol(Some("▲"))
             .style(
                 Style::default()
-                    .fg(Color::White)
+                    .fg(SETTINGS.colors.border_focused)
                     .add_modifier(Modifier::BOLD),
             )
             .thumb_symbol("┃")
