@@ -1095,6 +1095,7 @@ dependencies = [
  "fmt",
  "image",
  "lazy_static",
+ "once_cell",
  "ratatui",
  "ratatui-image",
  "serde",

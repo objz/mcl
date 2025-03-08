@@ -1,12 +1,11 @@
-[variables]
+[general]
 debug = false
 
-[paths]
-log_dir = "./logs"
-save_dir = "./saves"
-
 [colors]
-background = "#000000"  # Default background color (black)
-foreground = "#FFFFFF"  # Default foreground color (white)
-highlight = "#FF5733"   # Default highlight color (orange)
-focused = "#3498DB"     # Default focused color (blue)
+background = "#1e1e1e"        # Dark gray background
+foreground = "white"          # White text
+border_focused = "white"      # White for focused widget borders
+border_unfocused = "darkgray" # Dark gray for unfocused widget borders
+row_highlight = "yellow"      # Yellow highlight for selected row
+row_alternate_bg = "#282828"  # Slightly lighter gray for alternate rows
+scrollbar = "white"           # White scrollbar

@@ -11,7 +11,7 @@ use ratatui::{
 };
 use ratatui_image::StatefulImage;
 
-use crate::tui::layout::FocusedArea;
+use crate::{config::SETTINGS, tui::layout::FocusedArea};
 
 use super::{styled_title, WidgetKey};
 
@@ -113,9 +113,9 @@ impl WidgetKey for State {
 
 pub fn render(frame: &mut Frame, area: Rect, focused: FocusedArea, state: &mut State) {
     let color = if focused == FocusedArea::Instances {
-        Color::White
+        SETTINGS.colors.border_focused
     } else {
-        Color::DarkGray
+        SETTINGS.colors.border_unfocused
     };
 
     let block = Block::default()

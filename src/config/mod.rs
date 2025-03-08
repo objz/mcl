@@ -1,19 +1,20 @@
 use config::{Config as ConfigLoader, ConfigError, File};
 use dirs_next::config_dir;
+use once_cell::sync::Lazy;
 use std::fs;
 use std::path::PathBuf;
-use obj::Config;
+use types::Config;
 
 use crate::debug;
 
-pub mod obj;
+pub mod types;
 
 fn get_config_path() -> PathBuf {
     let base_dir = config_dir().unwrap();
     base_dir.join("mcl/config.toml")
 }
 
-pub fn ensure_config_exists(default_path: &str) -> PathBuf {
+fn ensure_config_exists(default_path: &str) -> PathBuf {
     let config_path = get_config_path();
 
     if !config_path.exists() {
@@ -34,3 +35,8 @@ pub fn load_config(config_path: &PathBuf) -> Result<Config, ConfigError> {
         .build()?
         .try_deserialize()
 }
+
+pub static SETTINGS: Lazy<Config> = Lazy::new(|| {
+    let path: PathBuf = ensure_config_exists("assets/default.toml");
+    load_config(&path).expect("Failed to load configuration")
+});
