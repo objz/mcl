@@ -9,13 +9,13 @@ use crate::debug;
 
 pub mod types;
 
-fn get_config_path() -> PathBuf {
+pub fn get_config_path() -> PathBuf {
     let base_dir = config_dir().unwrap();
-    base_dir.join("mcl/config.toml")
+    base_dir.join("mcl/")
 }
 
 fn ensure_config_exists(default_path: &str) -> PathBuf {
-    let config_path = get_config_path();
+    let config_path = get_config_path().join("config.toml");
 
     if !config_path.exists() {
         if let Some(parent_dir) = config_path.parent() {

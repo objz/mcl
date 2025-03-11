@@ -7,7 +7,7 @@ use ratatui::{
 pub mod account;
 pub mod content;
 pub mod details;
-pub mod instances;
+pub mod profiles;
 pub mod status;
 
 pub fn styled_title(title: &str, highlight: bool) -> Line {

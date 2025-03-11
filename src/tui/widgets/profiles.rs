@@ -4,11 +4,10 @@ use ratatui::{
     style::{Modifier, Style},
     text::Text,
     widgets::{
-        Block, BorderType, Borders, Cell, Paragraph, Row, Scrollbar, ScrollbarOrientation, ScrollbarState, Table, TableState
+        Block, BorderType, Borders, Cell, Row, Scrollbar, ScrollbarOrientation, ScrollbarState, Table, TableState
     },
     Frame,
 };
-use ratatui_image::StatefulImage;
 
 use crate::{config::SETTINGS, tui::layout::FocusedArea};
 
@@ -16,35 +15,34 @@ use super::{styled_title, WidgetKey};
 
 #[derive(Debug, Default)]
 pub struct State {
-    pub instances: Vec<Data>,
+    pub profiles: Vec<Data>,
     pub table_state: TableState,
     pub scrollbar_state: ScrollbarState,
 }
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct Data {
     pub title: String,
     pub id: String,
     pub running: bool,
-    pub img: Option<StatefulImage>,
 }
 
-impl std::fmt::Debug for Data {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Data")
-            .field("title", &self.title)
-            .field("id", &self.id)
-            .field("running", &self.running)
-            .field("img", &"<StatefulImage>")
-            .finish()
-    }
-}
+// impl std::fmt::Debug for Data {
+//     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+//         f.debug_struct("Data")
+//             .field("title", &self.title)
+//             .field("id", &self.id)
+//             .field("running", &self.running)
+//             .field("img", &"<StatefulImage>")
+//             .finish()
+//     }
+// }
 
 impl State {
     fn next(&mut self) {
         let i = match self.table_state.selected() {
             Some(i) => {
-                if i >= self.instances.len().saturating_sub(1) {
+                if i >= self.profiles.len().saturating_sub(1) {
                     0
                 } else {
                     i + 1
@@ -60,7 +58,7 @@ impl State {
         let i = match self.table_state.selected() {
             Some(i) => {
                 if i == 0 {
-                    self.instances.len().saturating_sub(1)
+                    self.profiles.len().saturating_sub(1)
                 } else {
                     i - 1
                 }
@@ -72,10 +70,10 @@ impl State {
     }
 
     fn update_scrollbar(&mut self) {
-        let items = self.instances.len().saturating_sub(1);
+        let items = self.profiles.len().saturating_sub(1);
         let index = self.table_state.selected().unwrap_or(0);
 
-        if self.instances.is_empty() {
+        if self.profiles.is_empty() {
             self.table_state.select(None);
         } else if self.table_state.selected().is_none() {
             self.table_state.select(Some(0));
@@ -91,16 +89,15 @@ impl WidgetKey for State {
     fn handle_key(&mut self, key_event: &crossterm::event::KeyEvent) {
         match key_event.code {
             KeyCode::Char('a') => {
-                self.instances.push(Data {
+                self.profiles.push(Data {
                     title: "Test".to_string(),
                     id: "123".to_string(),
                     running: false,
-                    img: Some(StatefulImage::default()),
                 });
                 self.update_scrollbar();
             }
             KeyCode::Char('d') => {
-                self.instances.clear();
+                self.profiles.clear();
                 self.update_scrollbar();
             }
             KeyCode::Char('j') | KeyCode::Down => self.next(),
@@ -111,14 +108,14 @@ impl WidgetKey for State {
 }
 
 pub fn render(frame: &mut Frame, area: Rect, focused: FocusedArea, state: &mut State) {
-    let color = if focused == FocusedArea::Instances {
+    let color = if focused == FocusedArea::Profiles {
         SETTINGS.colors.border_focused
     } else {
         SETTINGS.colors.border_unfocused
     };
 
     let block = Block::default()
-        .title(styled_title("Instances", true))
+        .title(styled_title("Profiles", true))
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .border_style(Style::default().fg(color));
@@ -134,7 +131,7 @@ pub fn render(frame: &mut Frame, area: Rect, focused: FocusedArea, state: &mut S
 
     let table_area = block.inner(area);
 
-    let rows = state.instances.iter().enumerate().map(|(i, data)| {
+    let rows = state.profiles.iter().enumerate().map(|(i, data)| {
         let status = if data.running { "Running" } else { "Stopped" };
 
         let background_color = if i % 2 == 0 {
@@ -142,6 +139,7 @@ pub fn render(frame: &mut Frame, area: Rect, focused: FocusedArea, state: &mut S
         } else {
             SETTINGS.colors.row_alternate_bg
         };
+
 
         Row::new(vec![
             Cell::from(Text::from(format!("\n{}\n", data.title))),

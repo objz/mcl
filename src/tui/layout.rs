@@ -1,4 +1,4 @@
-use super::{widgets::{self, instances, WidgetKey}, Tui};
+use super::{widgets::{self, profiles, WidgetKey}, Tui};
 use color_eyre::eyre::Context;
 use crossterm::event::{self, Event};
 use ratatui::{
@@ -11,12 +11,12 @@ use ratatui::{
 pub struct App {
     exit: bool,
     focused: FocusedArea,
-    instances_state: instances::State,
+    profiles_state: profiles::State,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum FocusedArea {
-    Instances,
+    Profiles,
     Content,
     Account,
     Details,
@@ -25,7 +25,7 @@ pub enum FocusedArea {
 
 impl Default for FocusedArea {
     fn default() -> Self {
-        FocusedArea::Instances
+        FocusedArea::Profiles
     }
 }
 
@@ -51,7 +51,7 @@ impl App {
 
 
         // Render Instances
-        widgets::instances::render(frame, chunks[0], self.focused, &mut self.instances_state);
+        widgets::profiles::render(frame, chunks[0], self.focused, &mut self.profiles_state);
 
 
         // Divide the main content into vertical chunks
@@ -97,7 +97,7 @@ impl App {
     fn handle_key_event(&mut self, key_event: KeyEvent) -> color_eyre::Result<()> {
         match key_event.code {
             KeyCode::Char('q') => self.exit = true,
-            KeyCode::Char('I') => self.focused = FocusedArea::Instances,
+            KeyCode::Char('P') => self.focused = FocusedArea::Profiles,
             KeyCode::Char('C') => self.focused = FocusedArea::Content,
             KeyCode::Char('A') => self.focused = FocusedArea::Account,
             KeyCode::Char('D') => self.focused = FocusedArea::Details,
@@ -106,7 +106,7 @@ impl App {
         }
 
         match self.focused {
-            FocusedArea::Instances => self.instances_state.handle_key(&key_event),
+            FocusedArea::Profiles => self.profiles_state.handle_key(&key_event),
             _ => {}
         }
         Ok(())
