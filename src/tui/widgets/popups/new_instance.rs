@@ -4,6 +4,7 @@ use crate::tui::widgets::profiles;
 use crossterm::event::KeyCode;
 use ratatui::{
     Frame,
+    style::{Color, Style},
     layout::{Rect, Layout, Direction, Constraint},
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph, Wrap, Widget},
@@ -45,12 +46,12 @@ pub fn render(frame: &mut Frame, area: Rect, _focused: FocusedArea) {
                         .split(area);
 
                     let create_button = Paragraph::new(Line::from(vec![
-                        Span::styled("[C]", ratatui::style::Style::default().add_modifier(ratatui::style::Modifier::BOLD)),
+                        Span::styled("C", Style::default().fg(Color::Yellow)),
                         Span::raw("reate New Instance"),
                     ])).alignment(ratatui::layout::Alignment::Center);
 
                     let import_button = Paragraph::new(Line::from(vec![
-                        Span::styled("[I]", ratatui::style::Style::default().add_modifier(ratatui::style::Modifier::BOLD)),
+                        Span::styled("I", Style::default().fg(Color::Yellow)),
                         Span::raw("mport Morinth Modpack"),
                     ])).alignment(ratatui::layout::Alignment::Center);
 
@@ -83,11 +84,11 @@ pub fn handle_key(key_event: &crossterm::event::KeyEvent, state: &mut profiles::
                 KeyCode::Char('q') => {
                     state.show_popup = false;
                 }
-                KeyCode::Char('c') => {
+                KeyCode::Char('c') | KeyCode::Char('C') => {
                     // Create new instance
                     state.show_popup = false;
                 }
-                KeyCode::Char('i') => {
+                KeyCode::Char('i') | KeyCode::Char('I') => {
                     // Switch to input mode
                     popup_state.mode = NewInstanceMode::Input;
                 }

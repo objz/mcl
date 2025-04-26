@@ -1,0 +1,1196 @@
+This file is a merged representation of the entire codebase, combined into a single document by Repomix.
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of the entire repository's contents.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files (if enabled)
+4. Repository files, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+<additional_info>
+
+</additional_info>
+
+</file_summary>
+
+<directory_structure>
+assets/
+  default.toml
+src/
+  config/
+    mod.rs
+    types.rs
+  tui/
+    widgets/
+      popups/
+        base.rs
+        mod.rs
+        new_instance.rs
+      account.rs
+      content.rs
+      details.rs
+      mod.rs
+      profiles.rs
+      status.rs
+    layout.rs
+    mod.rs
+  cli.rs
+  logger.rs
+  macros.rs
+  main.rs
+.gitignore
+Cargo.toml
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path="src/tui/widgets/popups/base.rs">
+use ratatui::{
+    buffer::Buffer,
+    layout::Rect,
+    style::Style,
+    text::Line,
+    widgets::{Block, Borders, Clear, Widget},
+};
+
+pub struct Popup<'a> {
+    pub title: Line<'a>,
+    pub border_style: Style,
+    pub title_style: Style,
+    pub style: Style,
+    pub content: Box<dyn Fn(Rect, &mut Buffer) + 'a>,
+}
+
+impl<'a> Widget for Popup<'a> {
+    fn render(self, area: Rect, buf: &mut Buffer) {
+        Clear.render(area, buf);
+
+        let block = Block::new()
+            .title(self.title)
+            .title_style(self.title_style)
+            .borders(Borders::ALL)
+            .border_style(self.border_style);
+
+        let inner_area = block.inner(area);
+        block.render(area, buf);
+
+        (self.content)(inner_area, buf);
+    }
+}
+</file>
+
+<file path="src/tui/widgets/popups/mod.rs">
+pub mod base;
+pub mod new_instance;
+</file>
+
+<file path="src/tui/widgets/popups/new_instance.rs">
+use super::base::Popup;
+use crate::tui::layout::FocusedArea;
+use crate::tui::widgets::profiles;
+use crossterm::event::KeyCode;
+use ratatui::{
+    Frame,
+    layout::{Rect, Layout, Direction, Constraint},
+    text::{Line, Span},
+    widgets::{Block, Borders, Paragraph, Wrap, Widget},
+};
+use once_cell::sync::Lazy;
+use std::sync::Mutex;
+
+static INSTANCE_POPUP_STATE: Lazy<Mutex<NewInstanceState>> = Lazy::new(|| Mutex::new(NewInstanceState::default()));
+
+#[derive(Debug, Default)]
+enum NewInstanceMode {
+    #[default]
+    Buttons,
+    Input,
+}
+
+#[derive(Debug, Default)]
+struct NewInstanceState {
+    mode: NewInstanceMode,
+    input_text: String,
+}
+
+pub fn render(frame: &mut Frame, area: Rect, _focused: FocusedArea) {
+    let state = INSTANCE_POPUP_STATE.lock().unwrap();
+
+    let popup = Popup {
+        title: Line::from("New Instance"),
+        content: Box::new(move |area, buf| {
+            match state.mode {
+                NewInstanceMode::Buttons => {
+                    let chunks = Layout::default()
+                        .direction(Direction::Vertical)
+                        .constraints([
+                            Constraint::Percentage(40),
+                            Constraint::Length(3),
+                            Constraint::Length(3),
+                            Constraint::Percentage(40),
+                        ])
+                        .split(area);
+
+                    let create_button = Paragraph::new(Line::from(vec![
+                        Span::styled("[C]", ratatui::style::Style::default().add_modifier(ratatui::style::Modifier::BOLD)),
+                        Span::raw("reate New Instance"),
+                    ])).alignment(ratatui::layout::Alignment::Center);
+
+                    let import_button = Paragraph::new(Line::from(vec![
+                        Span::styled("[I]", ratatui::style::Style::default().add_modifier(ratatui::style::Modifier::BOLD)),
+                        Span::raw("mport Morinth Modpack"),
+                    ])).alignment(ratatui::layout::Alignment::Center);
+
+                    create_button.render(chunks[1], buf);
+                    import_button.render(chunks[2], buf);
+                }
+                NewInstanceMode::Input => {
+                    let paragraph = Paragraph::new(state.input_text.clone())
+                        .block(Block::default().title("Enter URL or Path").borders(Borders::ALL))
+                        .wrap(Wrap { trim: true });
+
+                    paragraph.render(area, buf);
+                }
+            }
+        }),
+        border_style: Default::default(),
+        title_style: Default::default(),
+        style: Default::default(),
+    };
+
+    frame.render_widget(popup, area);
+}
+
+pub fn handle_key(key_event: &crossterm::event::KeyEvent, state: &mut profiles::State) {
+    let mut popup_state = INSTANCE_POPUP_STATE.lock().unwrap();
+
+    match popup_state.mode {
+        NewInstanceMode::Buttons => {
+            match key_event.code {
+                KeyCode::Char('q') => {
+                    state.show_popup = false;
+                }
+                KeyCode::Char('c') => {
+                    // Create new instance
+                    state.show_popup = false;
+                }
+                KeyCode::Char('i') => {
+                    // Switch to input mode
+                    popup_state.mode = NewInstanceMode::Input;
+                }
+                _ => {}
+            }
+        }
+        NewInstanceMode::Input => match key_event.code {
+            KeyCode::Esc => {
+                popup_state.mode = NewInstanceMode::Buttons;
+            }
+            KeyCode::Enter => {
+                // Confirm input
+                state.show_popup = false;
+            }
+            KeyCode::Char(c) => {
+                popup_state.input_text.push(c);
+            }
+            KeyCode::Backspace => {
+                popup_state.input_text.pop();
+            }
+            _ => {}
+        },
+    }
+}
+</file>
+
+<file path="src/tui/widgets/account.rs">
+use ratatui::{
+    layout::Rect,
+    style::{Color, Style},
+    widgets::{Block, BorderType, Borders, Paragraph},
+    Frame,
+};
+
+use crate::tui::layout::FocusedArea;
+
+use super::styled_title;
+
+pub fn render(frame: &mut Frame, area: Rect, focused: FocusedArea) {
+    let color = if focused == FocusedArea::Account {
+        Color::White
+    } else {
+        Color::DarkGray
+    };
+
+    let block = Block::default()
+        .title(styled_title("Account", true))
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(color));
+
+    let widget = Paragraph::new("TEST CONTENT").block(block);
+    frame.render_widget(widget, area);
+}
+</file>
+
+<file path="src/tui/widgets/content.rs">
+use ratatui::{
+    layout::Rect,
+    style::{Color, Style},
+    widgets::{Block, BorderType, Borders, Paragraph},
+    Frame,
+};
+
+use crate::tui::layout::FocusedArea;
+
+use super::styled_title;
+
+pub fn render(frame: &mut Frame, area: Rect, focused: FocusedArea) {
+    let color = if focused == FocusedArea::Content {
+        Color::White
+    } else {
+        Color::DarkGray
+    };
+
+    let block = Block::default()
+        .title(styled_title("Content", true))
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(color));
+
+    let widget = Paragraph::new("TEST CONTENT").block(block);
+    frame.render_widget(widget, area);
+}
+
+pub fn title(frame: &mut Frame, area: Rect, focused: FocusedArea) {
+    let color = if focused == FocusedArea::Content {
+        Color::White
+    } else {
+        Color::DarkGray
+    };
+
+    let block = Block::default()
+        .title(styled_title("Title", false))
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(color));
+
+    let widget = Paragraph::new("TEST CONTENT").block(block);
+    frame.render_widget(widget, area);
+}
+</file>
+
+<file path="src/tui/widgets/details.rs">
+use ratatui::{
+    layout::Rect,
+    style::{Color, Style},
+    widgets::{Block, BorderType, Borders, Paragraph},
+    Frame,
+};
+
+use crate::tui::layout::FocusedArea;
+
+use super::styled_title;
+
+pub fn render(frame: &mut Frame, area: Rect, focused: FocusedArea) {
+    let color = if focused == FocusedArea::Details {
+        Color::White
+    } else {
+        Color::DarkGray
+    };
+
+    let block = Block::default()
+        .title(styled_title("Details", true))
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(color));
+
+    let widget = Paragraph::new("TEST CONTENT").block(block);
+    frame.render_widget(widget, area);
+}
+</file>
+
+<file path="src/tui/widgets/status.rs">
+use ratatui::{
+    layout::Rect,
+    style::{Color, Style},
+    widgets::{Block, BorderType, Borders, Paragraph},
+    Frame,
+};
+
+use crate::tui::layout::FocusedArea;
+
+use super::styled_title;
+
+pub fn render(frame: &mut Frame, area: Rect, focused: FocusedArea) {
+    let color = if focused == FocusedArea::Status {
+        Color::White
+    } else {
+        Color::DarkGray
+    };
+
+    let block = Block::default()
+        .title(styled_title("Status", true))
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(color));
+
+    let widget = Paragraph::new("TEST CONTENT").block(block);
+    frame.render_widget(widget, area);
+}
+</file>
+
+<file path="src/macros.rs">
+#[macro_export]
+macro_rules! debug {
+    ($msg:expr) => {
+        $crate::logger::get_logger().debug($msg);
+    };
+    ($fmt:expr, $($arg:tt)*) => {
+        $crate::logger::get_logger().debug(&format!($fmt, $($arg)*));
+    };
+}
+
+#[macro_export]
+macro_rules! info {
+    ($msg:expr) => {
+        $crate::logger::get_logger().info($msg);
+    };
+    ($fmt:expr, $($arg:tt)*) => {
+        $crate::logger::get_logger().info(&format!($fmt, $($arg)*));
+    };
+}
+
+#[macro_export]
+macro_rules! error {
+    ($msg:expr) => {
+        $crate::logger::get_logger().error($msg);
+    };
+    ($fmt:expr, $($arg:tt)*) => {
+        $crate::logger::get_logger().error(&format!($fmt, $($arg)*));
+    };
+}
+</file>
+
+<file path=".gitignore">
+/target
+</file>
+
+<file path="src/config/types.rs">
+use serde::{Deserialize, Deserializer};
+use ratatui::style::Color;
+use crate::error;
+
+#[derive(Debug, Deserialize)]
+pub struct General {
+    pub debug: bool,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct Colors {
+    #[serde(deserialize_with = "deserialize_color")]
+    pub background: Color,        // General background color
+
+    #[serde(deserialize_with = "deserialize_color")]
+    pub foreground: Color,        // General text color
+
+    #[serde(deserialize_with = "deserialize_color")]
+    pub border_focused: Color,    // Border color for focused areas
+
+    #[serde(deserialize_with = "deserialize_color")]
+    pub border_unfocused: Color,  // Border color for unfocused areas
+
+    #[serde(deserialize_with = "deserialize_color")]
+    pub row_highlight: Color,     // Highlighted row color
+
+    #[serde(deserialize_with = "deserialize_color")]
+    pub row_background: Color,  // Row background color
+                                  
+    #[serde(deserialize_with = "deserialize_color")]
+    pub row_alternate_bg: Color,  // Alternate row background color
+}
+
+#[derive(Debug, Deserialize)]
+pub struct Config {
+    pub general: General,
+    pub colors: Colors,
+}
+
+
+pub fn parse_color(color: &str) -> Color {
+    match color.to_lowercase().as_str() {
+        "black" => Color::Black,
+        "red" => Color::Red,
+        "green" => Color::Green,
+        "yellow" => Color::Yellow,
+        "blue" => Color::Blue,
+        "magenta" => Color::Magenta,
+        "cyan" => Color::Cyan,
+        "white" => Color::White,
+        "gray" | "grey" => Color::Gray,
+        "darkgray" | "darkgrey" => Color::DarkGray,
+        "lightred" => Color::LightRed,
+        "lightgreen" => Color::LightGreen,
+        "lightyellow" => Color::LightYellow,
+        "lightblue" => Color::LightBlue,
+        "lightmagenta" => Color::LightMagenta,
+        "lightcyan" => Color::LightCyan,
+        "reset" => Color::Reset,
+        hex if hex.starts_with('#') && hex.len() == 7 => {
+            let r = u8::from_str_radix(&hex[1..3], 16).unwrap_or_else(|_| {
+                error!("Invalid hex color format: {}", color);
+                255
+            });
+            let g = u8::from_str_radix(&hex[3..5], 16).unwrap_or_else(|_| {
+                error!("Invalid hex color format: {}", color);
+                255
+            });
+            let b = u8::from_str_radix(&hex[5..7], 16).unwrap_or_else(|_| {
+                error!("Invalid hex color format: {}", color);
+                255
+            });
+            Color::Rgb(r, g, b)
+        }
+        _ => {
+            error!("Invalid color name or hex value: {}", color);
+            panic!("Invalid config");
+        }
+    }
+}
+
+
+
+fn deserialize_color<'de, D>(deserializer: D) -> Result<Color, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let color_str: String = Deserialize::deserialize(deserializer)?;
+    Ok(parse_color(&color_str))
+}
+</file>
+
+<file path="src/tui/widgets/profiles.rs">
+use crossterm::event::KeyCode;
+use ratatui::{
+    layout::{Constraint, Rect},
+    style::{Modifier, Style},
+    text::Text,
+    widgets::{
+        Block, BorderType, Borders, Cell, Row, Scrollbar, ScrollbarOrientation, ScrollbarState,
+        Table, TableState,
+    },
+    Frame,
+};
+
+use crate::{config::SETTINGS, tui::layout::FocusedArea};
+
+use super::{popups, styled_title, WidgetKey};
+
+#[derive(Debug, Default)]
+pub struct State {
+    pub profiles: Vec<Data>,
+    pub table_state: TableState,
+    pub scrollbar_state: ScrollbarState,
+    pub show_popup: bool,
+}
+
+#[derive(Debug, Default)]
+pub struct Data {
+    pub title: String,
+    pub id: String,
+    pub running: bool,
+}
+
+impl State {
+    fn next(&mut self) {
+        let i = match self.table_state.selected() {
+            Some(i) => {
+                if i >= self.profiles.len().saturating_sub(1) {
+                    0
+                } else {
+                    i + 1
+                }
+            }
+            _none => 0,
+        };
+        self.table_state.select(Some(i));
+        self.update_scrollbar();
+    }
+
+    fn previous(&mut self) {
+        let i = match self.table_state.selected() {
+            Some(i) => {
+                if i == 0 {
+                    self.profiles.len().saturating_sub(1)
+                } else {
+                    i - 1
+                }
+            }
+            _none => 0,
+        };
+        self.table_state.select(Some(i));
+        self.update_scrollbar();
+    }
+
+    fn update_scrollbar(&mut self) {
+        let items = self.profiles.len().saturating_sub(1);
+        let index = self.table_state.selected().unwrap_or(0);
+
+        if self.profiles.is_empty() {
+            self.table_state.select(None);
+        } else if self.table_state.selected().is_none() {
+            self.table_state.select(Some(0));
+        } else if index > items {
+            self.table_state.select(Some(items));
+        }
+
+        self.scrollbar_state = ScrollbarState::new(items).position(index);
+    }
+
+    pub fn wants_popup(&self) -> bool {
+        self.show_popup
+    }
+}
+
+impl WidgetKey for State {
+    fn handle_key(&mut self, key_event: &crossterm::event::KeyEvent) {
+        match key_event.code {
+            KeyCode::Char('a') => {
+                self.show_popup = true;
+                self.update_scrollbar();
+            }
+            KeyCode::Char('d') => {
+                self.profiles.clear();
+                self.update_scrollbar();
+            }
+            KeyCode::Char('j') | KeyCode::Down => self.next(),
+            KeyCode::Char('k') | KeyCode::Up => self.previous(),
+            _ => {}
+        }
+    }
+}
+
+pub fn render(frame: &mut Frame, area: Rect, focused: FocusedArea, state: &mut State) {
+    let color = if focused == FocusedArea::Profiles {
+        SETTINGS.colors.border_focused
+    } else {
+        SETTINGS.colors.border_unfocused
+    };
+
+    let block = Block::default()
+        .title(styled_title("Profiles", true))
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(color));
+
+    frame.render_widget(&block, area);
+
+    let scrollbar_area = Rect {
+        x: area.x + area.width.saturating_sub(1),
+        y: area.y + 1,
+        width: 1,
+        height: area.height.saturating_sub(2),
+    };
+
+    let table_area = block.inner(area);
+
+    let rows = state.profiles.iter().enumerate().map(|(i, data)| {
+        let status = if data.running { "Running" } else { "Stopped" };
+
+        let background_color = if i % 2 == 0 {
+            SETTINGS.colors.row_background
+        } else {
+            SETTINGS.colors.row_alternate_bg
+        };
+
+        Row::new(vec![
+            Cell::from(Text::from(format!("\n{}\n", data.title))),
+            Cell::from(Text::from(format!("\n{}\n", data.id))),
+            Cell::from(Text::from(format!("\n{}\n", status))),
+        ])
+        .height(4)
+        .style(Style::default().bg(background_color))
+    });
+
+    let widths = [
+        Constraint::Percentage(40),
+        Constraint::Percentage(30),
+        Constraint::Percentage(30),
+    ];
+
+    let table = Table::new(rows, widths)
+        .row_highlight_style(
+            Style::default()
+                .add_modifier(Modifier::REVERSED)
+                .fg(SETTINGS.colors.row_highlight),
+        )
+        .highlight_spacing(ratatui::widgets::HighlightSpacing::Always);
+
+    frame.render_stateful_widget(table, table_area, &mut state.table_state);
+
+    frame.render_stateful_widget(
+        Scrollbar::default()
+            .orientation(ScrollbarOrientation::VerticalRight)
+            .begin_symbol(Some("▲"))
+            .style(
+                Style::default()
+                    .fg(SETTINGS.colors.border_focused)
+                    .add_modifier(Modifier::BOLD),
+            )
+            .thumb_symbol("┃")
+            .track_symbol(Some(""))
+            .end_symbol(Some("▼")),
+        scrollbar_area,
+        &mut state.scrollbar_state,
+    );
+
+    if state.show_popup {
+        let popup_area = Rect {
+            x: area.width / 4,
+            y: area.height / 3,
+            width: area.width / 2,
+            height: area.height / 3,
+        };
+        popups::new_instance::render(frame, popup_area, focused);
+    }
+}
+</file>
+
+<file path="src/logger.rs">
+use std::sync::Mutex;
+use chrono::Local;
+use color_eyre::owo_colors::OwoColorize;
+use lazy_static::lazy_static;
+
+pub struct Logger {
+    debug: bool,
+}
+
+impl Logger {
+    pub fn init(debug: bool) {
+        let mut logger = LOGGER.lock().unwrap();
+        logger.debug = debug;
+    }
+
+    fn timestamp() -> String {
+        Local::now().format("%Y-%m-%d %H:%M:%S").to_string()
+    }
+
+    pub fn debug(&self, message: &str) {
+        if self.debug {
+            println!(
+                "{} {} {}",
+                Self::timestamp().dimmed(),
+                "[DEBUG]".cyan(),
+                message
+            );
+        }
+    }
+
+    pub fn info(&self, message: &str) {
+        println!(
+            "{} {} {}",
+            Self::timestamp().dimmed(),
+            "[INFO]".green(),
+            message
+        );
+    }
+
+    pub fn error(&self, message: &str) {
+        eprintln!(
+            "{} {} {}",
+            Self::timestamp().dimmed(),
+            "[ERROR]".red().bold(),
+            message
+        );
+    }
+}
+
+lazy_static! {
+    pub static ref LOGGER: Mutex<Logger> = Mutex::new(Logger { debug: false });
+}
+
+pub fn get_logger() -> std::sync::MutexGuard<'static, Logger> {
+    LOGGER.lock().unwrap()
+}
+</file>
+
+<file path="src/tui/widgets/mod.rs">
+use crossterm::event::KeyEvent;
+use ratatui::{
+    style::{Color, Style},
+    text::{Line, Span},
+};
+
+pub mod account;
+pub mod content;
+pub mod details;
+pub mod profiles;
+pub mod status;
+pub mod popups;
+
+pub fn styled_title(title: &str, highlight: bool) -> Line {
+    if !highlight || title.is_empty() {
+        Line::from(Span::raw(title))
+    } else {
+        let mut chars = title.chars();
+        let first = chars.next().unwrap_or_default().to_string();
+        let rest: String = chars.collect();
+        Line::from(vec![
+            Span::styled(first, Style::default().fg(Color::Yellow)),
+            Span::raw(rest),
+        ])
+    }
+}
+
+pub trait WidgetKey {
+    fn handle_key(&mut self, key_event: &KeyEvent); 
+}
+</file>
+
+<file path="assets/default.toml">
+[general]
+debug = false
+
+[colors]
+background = "#1e1e1e"     
+foreground = "white"        
+border_focused = "white"     
+border_unfocused = "darkgray" 
+row_highlight = "yellow"     
+row_background = "darkgray"  
+row_alternate_bg = "#282828"
+</file>
+
+<file path="src/config/mod.rs">
+use config::{Config as ConfigLoader, ConfigError, File};
+use dirs_next::config_dir;
+use once_cell::sync::Lazy;
+use std::fs;
+use std::path::PathBuf;
+use types::Config;
+
+use crate::debug;
+
+pub mod types;
+
+pub fn get_config_path() -> PathBuf {
+    let base_dir = config_dir().unwrap();
+    base_dir.join("mcl/")
+}
+
+fn ensure_config_exists(default_path: &str) -> PathBuf {
+    let config_path = get_config_path().join("config.toml");
+
+    if !config_path.exists() {
+        if let Some(parent_dir) = config_path.parent() {
+            fs::create_dir_all(parent_dir).expect("Failed to create configuration directory");
+        }
+
+        fs::copy(default_path, &config_path).expect("Failed to copy default configuration file");
+        debug!("Default configuration copied to '{}'", config_path.display());
+    }
+
+    config_path
+}
+
+pub fn load_config(config_path: &PathBuf) -> Result<Config, ConfigError> {
+    ConfigLoader::builder()
+        .add_source(File::from(config_path.clone()))
+        .build()?
+        .try_deserialize()
+}
+
+pub static SETTINGS: Lazy<Config> = Lazy::new(|| {
+    let path: PathBuf = ensure_config_exists("assets/default.toml");
+    load_config(&path).expect("Failed to load configuration")
+});
+</file>
+
+<file path="src/cli.rs">
+use clap::{Arg, ArgAction, Command};
+use crate::{debug, tui};
+
+pub fn init() {
+    let matches = Command::new("mcl")
+        .about("Minecraft CLI Launcher")
+        .version("1.0.0")
+        .subcommand_required(false)
+        .arg_required_else_help(false)
+        .subcommand(
+            Command::new("launch")
+                .about("Launch Minecraft with a specific profile")
+                .arg_required_else_help(true)
+                .arg(
+                    Arg::new("profile")
+                        .short('p')
+                        .long("profile")
+                        .help("Profile to launch (e.g., main)")
+                        .required(true)
+                        .action(ArgAction::Set),
+                )
+                .arg(
+                    Arg::new("offline")
+                        .short('o')
+                        .long("offline")
+                        .help("Launch Minecraft in offline mode")
+                        .action(ArgAction::SetTrue),
+                )
+                .arg(
+                    Arg::new("memory")
+                        .short('m')
+                        .long("memory")
+                        .help("Set memory allocation for Minecraft (e.g., 4G, 512M)")
+                        .action(ArgAction::Set),
+                )
+                .arg(
+                    Arg::new("resolution")
+                        .short('r')
+                        .long("resolution")
+                        .help("Set screen resolution (e.g., 1920x1080)")
+                        .action(ArgAction::Set),
+                )
+                .arg(
+                    Arg::new("jvm-args")
+                        .short('j')
+                        .long("jvm-args")
+                        .help("Custom JVM arguments for Minecraft (e.g., -Xmx4G)")
+                        .action(ArgAction::Set)
+                        .num_args(1..),
+                )
+                .arg(
+                    Arg::new("no-window")
+                        .short('n')
+                        .long("no-window")
+                        .help("Run Minecraft in headless mode (no graphical window)")
+                        .action(ArgAction::SetTrue),
+                ),
+        )
+        .subcommand(
+            Command::new("profiles")
+                .about("Manage Minecraft profiles")
+                .arg_required_else_help(true)
+                .arg(
+                    Arg::new("list")
+                        .short('l')
+                        .long("list")
+                        .help("List all available profiles")
+                        .conflicts_with("delete") // Ensures list and delete are mutually exclusive
+                        .action(ArgAction::SetTrue),
+                )
+                .arg(
+                    Arg::new("delete")
+                        .short('d')
+                        .long("delete")
+                        .help("Delete a specific profile")
+                        .action(ArgAction::Set),
+                ),
+        )
+        .get_matches();
+    
+    if matches.subcommand().is_none() {
+        tui::show().unwrap()
+    }
+
+    match matches.subcommand() {
+        Some(("launch", launch_matches)) => {
+            let profile = launch_matches
+                .get_one::<String>("profile")
+                .expect("Profile is required");
+
+            let mem_default = String::from("Default");
+            let memory = launch_matches
+                .get_one::<String>("memory")
+                .unwrap_or(&mem_default);
+
+            let res_default = String::from("Default");
+            let resolution = launch_matches
+                .get_one::<String>("resolution")
+                .unwrap_or(&res_default);
+
+            let jvm_args = launch_matches
+                .get_many::<String>("jvm-args")
+                .map(|args| args.map(|s| s.as_str()).collect::<Vec<_>>().join(" "))
+                .unwrap_or_else(|| "None".to_string());
+
+            if launch_matches.get_flag("offline") {
+                debug!("Launching profile '{}' in offline mode...", profile);
+            } else {
+                debug!("Launching profile '{}' in online mode...", profile);
+            }
+
+            debug!("Memory: {}", memory);
+            debug!("Resolution: {}", resolution);
+            debug!("JVM Args: {}", jvm_args);
+
+            if launch_matches.get_flag("no-window") {
+                debug!("Running in headless mode...");
+            }
+        }
+        Some(("profiles", profiles_matches)) => {
+            if profiles_matches.get_flag("list") {
+                debug!("Listing all profiles...");
+            } else if let Some(profile) = profiles_matches.get_one::<String>("delete") {
+                debug!("Deleting profile '{}'...", profile);
+            }
+        }
+        _ => {},
+    }
+
+}
+</file>
+
+<file path="src/main.rs">
+use config::SETTINGS;
+use logger::Logger;
+
+mod cli;
+pub mod config;
+pub mod logger;
+pub mod macros;
+pub mod tui;
+
+fn main() {
+    Logger::init(SETTINGS.general.debug);
+    cli::init()
+}
+</file>
+
+<file path="Cargo.toml">
+[package]
+name = "mcl"
+version = "0.1.0"
+authors = ["72-S"]
+edition = "2021"
+
+[dependencies]
+clap = "4.5.27"
+color-eyre = "0.6.3"
+config = "0.15.6"
+crossterm = "0.28.1"
+dirs-next = "2.0.0"
+ratatui = "0.29.0"
+serde = { version = "1.0.217", features = ["derive"]}
+serde_derive = "1.0.217"
+lazy_static = "1.5.0"
+colored = "3.0.0"
+chrono = "0.4.39"
+image = "0.25.5"
+fmt = "0.1.0"
+once_cell = "1.20.3"
+rascii_art = "0.4.5"
+</file>
+
+<file path="src/tui/layout.rs">
+use super::{
+    widgets::{self, profiles, WidgetKey},
+    Tui,
+};
+use super::widgets::popups::new_instance;
+use color_eyre::eyre::Context;
+use crossterm::event::{self, Event};
+use ratatui::{
+    crossterm::event::{KeyCode, KeyEvent, KeyEventKind},
+    layout::{Constraint, Direction, Layout},
+    Frame,
+};
+
+#[derive(Debug, Default)]
+pub struct App {
+    exit: bool,
+    focused: FocusedArea,
+    profiles_state: profiles::State,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum FocusedArea {
+    Profiles,
+    Content,
+    Account,
+    Details,
+    Status,
+    Popup,
+}
+
+impl Default for FocusedArea {
+    fn default() -> Self {
+        FocusedArea::Profiles
+    }
+}
+
+impl App {
+    /// runs the main loop until the user quits
+    pub fn run(&mut self, terminal: &mut Tui) -> color_eyre::Result<()> {
+        while !self.exit {
+            terminal.draw(|frame| self.render_frame(frame))?;
+            self.handle_events().wrap_err("handle events failed")?;
+        }
+        Ok(())
+    }
+
+    fn render_frame(&mut self, frame: &mut Frame) {
+        // Divide the screen into horizontal chunks
+        let chunks = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([
+                Constraint::Percentage(20), // Instances
+                Constraint::Percentage(80), // Main content
+            ])
+            .split(frame.area());
+
+        // Render Instances
+        widgets::profiles::render(frame, chunks[0], self.focused, &mut self.profiles_state);
+
+        // Divide the main content into vertical chunks
+        let main_chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(3), // Title
+                Constraint::Min(10),   // Main Content
+                Constraint::Length(5), // Bottom panel
+            ])
+            .split(chunks[1]);
+
+        widgets::content::title(frame, main_chunks[0], self.focused);
+        widgets::content::render(frame, main_chunks[1], self.focused);
+
+        let bottom_chunks = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([
+                Constraint::Percentage(30),
+                Constraint::Percentage(40),
+                Constraint::Percentage(30),
+            ])
+            .split(main_chunks[2]);
+
+        widgets::account::render(frame, bottom_chunks[0], self.focused);
+        widgets::details::render(frame, bottom_chunks[1], self.focused);
+        widgets::status::render(frame, bottom_chunks[2], self.focused);
+    }
+
+    /// updates the application's state based on user input
+    fn handle_events(&mut self) -> color_eyre::Result<()> {
+        match event::read()? {
+            Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
+                self.handle_key_event(key_event)
+                    .wrap_err_with(|| format!("handling key event failed:\n{key_event:#?}"))
+            }
+            _ => Ok(()),
+        }
+    }
+
+    fn handle_key_event(&mut self, key_event: KeyEvent) -> color_eyre::Result<()> {
+        match self.focused {
+            FocusedArea::Popup => {
+                new_instance::handle_key(&key_event, &mut self.profiles_state);
+            }
+            _ => {
+                match key_event.code {
+                    KeyCode::Char('q') => self.exit = true,
+                    KeyCode::Char('P') => self.focused = FocusedArea::Profiles,
+                    KeyCode::Char('C') => self.focused = FocusedArea::Content,
+                    KeyCode::Char('A') => self.focused = FocusedArea::Account,
+                    KeyCode::Char('D') => self.focused = FocusedArea::Details,
+                    KeyCode::Char('S') => self.focused = FocusedArea::Status,
+                    _ => {}
+                }
+
+                match self.focused {
+                    FocusedArea::Profiles => self.profiles_state.handle_key(&key_event),
+                    _ => {}
+                }
+            }
+        }
+
+        if self.profiles_state.wants_popup() {
+            self.focused = FocusedArea::Popup;
+        } else if self.focused == FocusedArea::Popup {
+            self.focused = FocusedArea::Profiles;
+        }
+
+        Ok(())
+    }
+}
+</file>
+
+<file path="src/tui/mod.rs">
+pub mod layout;
+pub mod widgets;
+
+use std::io::{stdout, Result, Stdout};
+
+use crossterm::{
+    execute,
+    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+};
+use ratatui::{prelude::CrosstermBackend, Terminal};
+
+pub fn show() -> color_eyre::Result<()> {
+    color_eyre::install()?;
+    let mut terminal = init_ratatui()?;
+    let result = layout::App::default().run(&mut terminal);
+    if let Err(err) = restore_ratatui() {
+        eprintln!(
+            "failed to restore terminal. Run 'reset' or restart your terminal to recover: {}",
+            err
+        );
+    }
+    result
+}
+
+/// TUI Impl
+
+pub type Tui = Terminal<CrosstermBackend<Stdout>>;
+
+fn init_ratatui() -> Result<Tui> {
+    execute!(stdout(), EnterAlternateScreen)?;
+    enable_raw_mode()?;
+    set_panic_hook();
+    Terminal::new(CrosstermBackend::new(stdout()))
+}
+
+fn set_panic_hook() {
+    let hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |panic_info| {
+        let _ = restore_ratatui();
+        hook(panic_info);
+    }));
+}
+
+fn restore_ratatui() -> Result<()> {
+    execute!(stdout(), LeaveAlternateScreen)?;
+    disable_raw_mode()?;
+    Ok(())
+}
+</file>
+
+</files>

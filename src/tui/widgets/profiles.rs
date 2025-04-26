@@ -174,10 +174,10 @@ pub fn render(frame: &mut Frame, area: Rect, focused: FocusedArea, state: &mut S
 
     if state.show_popup {
         let popup_area = Rect {
-            x: area.width / 4,
-            y: area.height / 3,
-            width: area.width / 2,
-            height: area.height / 3,
+            x: frame.area().width / 4,
+            y: frame.area().height / 3,
+            width: frame.area().width / 2,
+            height: frame.area().height / 3,
         };
         popups::new_instance::render(frame, popup_area, focused);
     }
