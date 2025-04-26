@@ -9,6 +9,7 @@ pub mod content;
 pub mod details;
 pub mod profiles;
 pub mod status;
+pub mod popups;
 
 pub fn styled_title(title: &str, highlight: bool) -> Line {
     if !highlight || title.is_empty() {

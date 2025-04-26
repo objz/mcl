@@ -4,20 +4,22 @@ use ratatui::{
     style::{Modifier, Style},
     text::Text,
     widgets::{
-        Block, BorderType, Borders, Cell, Row, Scrollbar, ScrollbarOrientation, ScrollbarState, Table, TableState
+        Block, BorderType, Borders, Cell, Row, Scrollbar, ScrollbarOrientation, ScrollbarState,
+        Table, TableState,
     },
     Frame,
 };
 
 use crate::{config::SETTINGS, tui::layout::FocusedArea};
 
-use super::{styled_title, WidgetKey};
+use super::{popups, styled_title, WidgetKey};
 
 #[derive(Debug, Default)]
 pub struct State {
     pub profiles: Vec<Data>,
     pub table_state: TableState,
     pub scrollbar_state: ScrollbarState,
+    pub show_popup: bool,
 }
 
 #[derive(Debug, Default)]
@@ -26,17 +28,6 @@ pub struct Data {
     pub id: String,
     pub running: bool,
 }
-
-// impl std::fmt::Debug for Data {
-//     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-//         f.debug_struct("Data")
-//             .field("title", &self.title)
-//             .field("id", &self.id)
-//             .field("running", &self.running)
-//             .field("img", &"<StatefulImage>")
-//             .finish()
-//     }
-// }
 
 impl State {
     fn next(&mut self) {
@@ -48,7 +39,7 @@ impl State {
                     i + 1
                 }
             }
-            None => 0,
+            _none => 0,
         };
         self.table_state.select(Some(i));
         self.update_scrollbar();
@@ -63,7 +54,7 @@ impl State {
                     i - 1
                 }
             }
-            None => 0,
+            _none => 0,
         };
         self.table_state.select(Some(i));
         self.update_scrollbar();
@@ -83,17 +74,17 @@ impl State {
 
         self.scrollbar_state = ScrollbarState::new(items).position(index);
     }
+
+    pub fn wants_popup(&self) -> bool {
+        self.show_popup
+    }
 }
 
 impl WidgetKey for State {
     fn handle_key(&mut self, key_event: &crossterm::event::KeyEvent) {
         match key_event.code {
             KeyCode::Char('a') => {
-                self.profiles.push(Data {
-                    title: "Test".to_string(),
-                    id: "123".to_string(),
-                    running: false,
-                });
+                self.show_popup = true;
                 self.update_scrollbar();
             }
             KeyCode::Char('d') => {
@@ -140,14 +131,13 @@ pub fn render(frame: &mut Frame, area: Rect, focused: FocusedArea, state: &mut S
             SETTINGS.colors.row_alternate_bg
         };
 
-
         Row::new(vec![
             Cell::from(Text::from(format!("\n{}\n", data.title))),
             Cell::from(Text::from(format!("\n{}\n", data.id))),
             Cell::from(Text::from(format!("\n{}\n", status))),
         ])
-        .height(4) 
-        .style(Style::default().bg(background_color)) 
+        .height(4)
+        .style(Style::default().bg(background_color))
     });
 
     let widths = [
@@ -181,4 +171,14 @@ pub fn render(frame: &mut Frame, area: Rect, focused: FocusedArea, state: &mut S
         scrollbar_area,
         &mut state.scrollbar_state,
     );
+
+    if state.show_popup {
+        let popup_area = Rect {
+            x: area.width / 4,
+            y: area.height / 3,
+            width: area.width / 2,
+            height: area.height / 3,
+        };
+        popups::new_instance::render(frame, popup_area, focused);
+    }
 }
