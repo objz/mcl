@@ -61,7 +61,6 @@ impl<S: Subscriber> Layer<S> for StatusLayer {
     fn on_event(&self, event: &tracing::Event<'_>, _ctx: Context<'_, S>) {
         let level = *event.metadata().level();
 
-        // Only capture errors and warnings for the status bar
         if level > Level::WARN {
             return;
         }
@@ -96,7 +95,6 @@ impl Visit for MessageVisitor {
     fn record_debug(&mut self, field: &Field, value: &dyn fmt::Debug) {
         if field.name() == "message" {
             let formatted = format!("{:?}", value);
-            // fmt::Arguments Debug wraps in quotes — strip them
             self.message = formatted
                 .strip_prefix('"')
                 .and_then(|s| s.strip_suffix('"'))
