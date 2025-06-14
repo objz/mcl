@@ -2,17 +2,18 @@ use super::base::Popup;
 use crate::tui::layout::FocusedArea;
 use crate::tui::widgets::profiles;
 use crossterm::event::KeyCode;
-use ratatui::{
-    Frame,
-    style::{Color, Style},
-    layout::{Rect, Layout, Direction, Constraint},
-    text::{Line, Span},
-    widgets::{Block, Borders, Paragraph, Wrap, Widget},
-};
 use once_cell::sync::Lazy;
+use ratatui::{
+    layout::{Constraint, Direction, Layout, Rect},
+    style::{Color, Style},
+    text::{Line, Span},
+    widgets::{Block, Borders, Paragraph, Widget, Wrap},
+    Frame,
+};
 use std::sync::Mutex;
 
-static INSTANCE_POPUP_STATE: Lazy<Mutex<NewInstanceState>> = Lazy::new(|| Mutex::new(NewInstanceState::default()));
+static INSTANCE_POPUP_STATE: Lazy<Mutex<NewInstanceState>> =
+    Lazy::new(|| Mutex::new(NewInstanceState::default()));
 
 #[derive(Debug, Default)]
 enum NewInstanceMode {
@@ -32,39 +33,43 @@ pub fn render(frame: &mut Frame, area: Rect, _focused: FocusedArea) {
 
     let popup = Popup {
         title: Line::from("New Instance"),
-        content: Box::new(move |area, buf| {
-            match state.mode {
-                NewInstanceMode::Buttons => {
-                    let chunks = Layout::default()
-                        .direction(Direction::Vertical)
-                        .constraints([
-                            Constraint::Percentage(40),
-                            Constraint::Length(3),
-                            Constraint::Length(3),
-                            Constraint::Percentage(40),
-                        ])
-                        .split(area);
+        content: Box::new(move |area, buf| match state.mode {
+            NewInstanceMode::Buttons => {
+                let chunks = Layout::default()
+                    .direction(Direction::Vertical)
+                    .constraints([
+                        Constraint::Percentage(40),
+                        Constraint::Length(3),
+                        Constraint::Length(3),
+                        Constraint::Percentage(40),
+                    ])
+                    .split(area);
 
-                    let create_button = Paragraph::new(Line::from(vec![
-                        Span::styled("C", Style::default().fg(Color::Yellow)),
-                        Span::raw("reate New Instance"),
-                    ])).alignment(ratatui::layout::Alignment::Center);
+                let create_button = Paragraph::new(Line::from(vec![
+                    Span::styled("C", Style::default().fg(Color::Yellow)),
+                    Span::raw("reate New Instance"),
+                ]))
+                .alignment(ratatui::layout::Alignment::Center);
 
-                    let import_button = Paragraph::new(Line::from(vec![
-                        Span::styled("I", Style::default().fg(Color::Yellow)),
-                        Span::raw("mport Morinth Modpack"),
-                    ])).alignment(ratatui::layout::Alignment::Center);
+                let import_button = Paragraph::new(Line::from(vec![
+                    Span::styled("I", Style::default().fg(Color::Yellow)),
+                    Span::raw("mport Morinth Modpack"),
+                ]))
+                .alignment(ratatui::layout::Alignment::Center);
 
-                    create_button.render(chunks[1], buf);
-                    import_button.render(chunks[2], buf);
-                }
-                NewInstanceMode::Input => {
-                    let paragraph = Paragraph::new(state.input_text.clone())
-                        .block(Block::default().title("Enter URL or Path").borders(Borders::ALL))
-                        .wrap(Wrap { trim: true });
+                create_button.render(chunks[1], buf);
+                import_button.render(chunks[2], buf);
+            }
+            NewInstanceMode::Input => {
+                let paragraph = Paragraph::new(state.input_text.clone())
+                    .block(
+                        Block::default()
+                            .title("Enter URL or Path")
+                            .borders(Borders::ALL),
+                    )
+                    .wrap(Wrap { trim: true });
 
-                    paragraph.render(area, buf);
-                }
+                paragraph.render(area, buf);
             }
         }),
         border_style: Default::default(),

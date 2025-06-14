@@ -10,7 +10,7 @@ use ratatui::{
     Frame,
 };
 
-use crate::{config::SETTINGS, tui::layout::FocusedArea};
+use crate::tui::{layout::FocusedArea, theme::THEME};
 
 use super::{popups, styled_title, WidgetKey};
 
@@ -100,9 +100,9 @@ impl WidgetKey for State {
 
 pub fn render(frame: &mut Frame, area: Rect, focused: FocusedArea, state: &mut State) {
     let color = if focused == FocusedArea::Profiles {
-        SETTINGS.colors.border_focused
+        THEME.colors.border_focused
     } else {
-        SETTINGS.colors.border_unfocused
+        THEME.colors.border_unfocused
     };
 
     let block = Block::default()
@@ -126,9 +126,9 @@ pub fn render(frame: &mut Frame, area: Rect, focused: FocusedArea, state: &mut S
         let status = if data.running { "Running" } else { "Stopped" };
 
         let background_color = if i % 2 == 0 {
-            SETTINGS.colors.row_background
+            THEME.colors.row_background
         } else {
-            SETTINGS.colors.row_alternate_bg
+            THEME.colors.row_alternate_bg
         };
 
         Row::new(vec![
@@ -150,7 +150,7 @@ pub fn render(frame: &mut Frame, area: Rect, focused: FocusedArea, state: &mut S
         .row_highlight_style(
             Style::default()
                 .add_modifier(Modifier::REVERSED)
-                .fg(SETTINGS.colors.row_highlight),
+                .fg(THEME.colors.row_highlight),
         )
         .highlight_spacing(ratatui::widgets::HighlightSpacing::Always);
 
@@ -162,7 +162,7 @@ pub fn render(frame: &mut Frame, area: Rect, focused: FocusedArea, state: &mut S
             .begin_symbol(Some("▲"))
             .style(
                 Style::default()
-                    .fg(SETTINGS.colors.border_focused)
+                    .fg(THEME.colors.border_focused)
                     .add_modifier(Modifier::BOLD),
             )
             .thumb_symbol("┃")

@@ -1,8 +1,8 @@
+use super::widgets::popups::new_instance;
 use super::{
     widgets::{self, profiles, WidgetKey},
     Tui,
 };
-use super::widgets::popups::new_instance;
 use color_eyre::eyre::Context;
 use crossterm::event::{self, Event};
 use ratatui::{
@@ -18,8 +18,9 @@ pub struct App {
     profiles_state: profiles::State,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Default, Debug, Clone, Copy, PartialEq)]
 pub enum FocusedArea {
+    #[default]
     Profiles,
     Content,
     Account,
@@ -28,14 +29,7 @@ pub enum FocusedArea {
     Popup,
 }
 
-impl Default for FocusedArea {
-    fn default() -> Self {
-        FocusedArea::Profiles
-    }
-}
-
 impl App {
-    /// runs the main loop until the user quits
     pub fn run(&mut self, terminal: &mut Tui) -> color_eyre::Result<()> {
         while !self.exit {
             terminal.draw(|frame| self.render_frame(frame))?;
@@ -45,7 +39,6 @@ impl App {
     }
 
     fn render_frame(&mut self, frame: &mut Frame) {
-        // Divide the screen into horizontal chunks
         let chunks = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([
@@ -54,10 +47,8 @@ impl App {
             ])
             .split(frame.area());
 
-        // Render Instances
         widgets::profiles::render(frame, chunks[0], self.focused, &mut self.profiles_state);
 
-        // Divide the main content into vertical chunks
         let main_chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
@@ -84,13 +75,11 @@ impl App {
         widgets::status::render(frame, bottom_chunks[2], self.focused);
     }
 
-    /// updates the application's state based on user input
     fn handle_events(&mut self) -> color_eyre::Result<()> {
         match event::read()? {
-            Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
-                self.handle_key_event(key_event)
-                    .wrap_err_with(|| format!("handling key event failed:\n{key_event:#?}"))
-            }
+            Event::Key(key_event) if key_event.kind == KeyEventKind::Press => self
+                .handle_key_event(key_event)
+                .wrap_err_with(|| format!("handling key event failed:\n{key_event:#?}")),
             _ => Ok(()),
         }
     }
@@ -111,9 +100,8 @@ impl App {
                     _ => {}
                 }
 
-                match self.focused {
-                    FocusedArea::Profiles => self.profiles_state.handle_key(&key_event),
-                    _ => {}
+                if self.focused == FocusedArea::Profiles {
+                    self.profiles_state.handle_key(&key_event)
                 }
             }
         }

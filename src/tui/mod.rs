@@ -1,4 +1,6 @@
 pub mod layout;
+pub mod logging;
+pub mod theme;
 pub mod widgets;
 
 use std::io::{stdout, Result, Stdout};
@@ -10,7 +12,6 @@ use crossterm::{
 use ratatui::{prelude::CrosstermBackend, Terminal};
 
 pub fn show() -> color_eyre::Result<()> {
-    color_eyre::install()?;
     let mut terminal = init_ratatui()?;
     let result = layout::App::default().run(&mut terminal);
     if let Err(err) = restore_ratatui() {
@@ -21,8 +22,6 @@ pub fn show() -> color_eyre::Result<()> {
     }
     result
 }
-
-/// TUI Impl
 
 pub type Tui = Terminal<CrosstermBackend<Stdout>>;
 

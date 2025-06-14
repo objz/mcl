@@ -7,11 +7,11 @@ use ratatui::{
 pub mod account;
 pub mod content;
 pub mod details;
+pub mod popups;
 pub mod profiles;
 pub mod status;
-pub mod popups;
 
-pub fn styled_title(title: &str, highlight: bool) -> Line {
+pub fn styled_title(title: &str, highlight: bool) -> Line<'_> {
     if !highlight || title.is_empty() {
         Line::from(Span::raw(title))
     } else {
@@ -26,5 +26,5 @@ pub fn styled_title(title: &str, highlight: bool) -> Line {
 }
 
 pub trait WidgetKey {
-    fn handle_key(&mut self, key_event: &KeyEvent); 
+    fn handle_key(&mut self, key_event: &KeyEvent);
 }

@@ -1,5 +1,5 @@
+use crate::tui;
 use clap::{Arg, ArgAction, Command};
-use crate::{debug, tui};
 
 pub fn init() {
     let matches = Command::new("mcl")
@@ -65,7 +65,7 @@ pub fn init() {
                         .short('l')
                         .long("list")
                         .help("List all available profiles")
-                        .conflicts_with("delete") // Ensures list and delete are mutually exclusive
+                        .conflicts_with("delete")
                         .action(ArgAction::SetTrue),
                 )
                 .arg(
@@ -77,7 +77,7 @@ pub fn init() {
                 ),
         )
         .get_matches();
-    
+
     if matches.subcommand().is_none() {
         tui::show().unwrap()
     }
@@ -104,27 +104,26 @@ pub fn init() {
                 .unwrap_or_else(|| "None".to_string());
 
             if launch_matches.get_flag("offline") {
-                debug!("Launching profile '{}' in offline mode...", profile);
+                tracing::debug!("Launching profile '{}' in offline mode...", profile);
             } else {
-                debug!("Launching profile '{}' in online mode...", profile);
+                tracing::debug!("Launching profile '{}' in online mode...", profile);
             }
 
-            debug!("Memory: {}", memory);
-            debug!("Resolution: {}", resolution);
-            debug!("JVM Args: {}", jvm_args);
+            tracing::debug!("Memory: {}", memory);
+            tracing::debug!("Resolution: {}", resolution);
+            tracing::debug!("JVM Args: {}", jvm_args);
 
             if launch_matches.get_flag("no-window") {
-                debug!("Running in headless mode...");
+                tracing::debug!("Running in headless mode...");
             }
         }
         Some(("profiles", profiles_matches)) => {
             if profiles_matches.get_flag("list") {
-                debug!("Listing all profiles...");
+                tracing::debug!("Listing all profiles...");
             } else if let Some(profile) = profiles_matches.get_one::<String>("delete") {
-                debug!("Deleting profile '{}'...", profile);
+                tracing::debug!("Deleting profile '{}'...", profile);
             }
         }
-        _ => {},
+        _ => {}
     }
-
 }
