@@ -1,6 +1,14 @@
 [general]
 debug = false
 
+[paths]
+instances_dir = "~/.local/share/mcl/instances"
+# java_path is optional, leave commented out by default
+
+[defaults]
+memory_min = "512M"
+memory_max = "2G"
+
 [colors]
 background = "#1e1e1e"     
 foreground = "white"        
