@@ -1,8 +1,6 @@
-use std::collections::VecDeque;
 use std::fmt;
 use std::sync::{Arc, Mutex};
 
-use once_cell::sync::Lazy;
 use tracing::field::{Field, Visit};
 use tracing::{Level, Subscriber};
 use tracing_appender::non_blocking::WorkerGuard;
@@ -11,21 +9,20 @@ use tracing_subscriber::prelude::*;
 use tracing_subscriber::{EnvFilter, Layer};
 
 use crate::config::get_config_path;
-
-const MAX_STATUS_EVENTS: usize = 50;
-
-#[derive(Debug, Clone)]
-pub struct StatusEvent {
-    pub level: Level,
-    pub message: String,
-}
-
-pub static STATUS_EVENTS: Lazy<Arc<Mutex<VecDeque<StatusEvent>>>> =
-    Lazy::new(|| Arc::new(Mutex::new(VecDeque::new())));
+use crate::tui::error_buffer::{self, ErrorEvent};
 
 pub fn init() -> WorkerGuard {
     let log_dir = get_config_path();
-    std::fs::create_dir_all(&log_dir).expect("Failed to create log directory");
+    match std::fs::create_dir_all(&log_dir) {
+        Ok(_) => {}
+        Err(e) => {
+            eprintln!(
+                "Warning: failed to create log directory {}: {}",
+                log_dir.display(),
+                e
+            );
+        }
+    }
 
     let file_appender = tracing_appender::rolling::daily(&log_dir, "mcl.log");
     let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
@@ -41,19 +38,17 @@ pub fn init() -> WorkerGuard {
                 .with_ansi(false)
                 .with_filter(env_filter),
         )
-        .with(StatusLayer::new(STATUS_EVENTS.clone()))
+        .with(StatusLayer::new(error_buffer::ERROR_EVENTS.clone()))
         .init();
 
     guard
 }
 
-struct StatusLayer {
-    events: Arc<Mutex<VecDeque<StatusEvent>>>,
-}
+struct StatusLayer;
 
 impl StatusLayer {
-    fn new(events: Arc<Mutex<VecDeque<StatusEvent>>>) -> Self {
-        Self { events }
+    fn new(_events: Arc<Mutex<std::collections::VecDeque<ErrorEvent>>>) -> Self {
+        Self
     }
 }
 
@@ -61,21 +56,24 @@ impl<S: Subscriber> Layer<S> for StatusLayer {
     fn on_event(&self, event: &tracing::Event<'_>, _ctx: Context<'_, S>) {
         let level = *event.metadata().level();
 
-        if level > Level::WARN {
+        if level > Level::INFO {
             return;
         }
 
         let mut visitor = MessageVisitor::default();
         event.record(&mut visitor);
 
-        if let Ok(mut events) = self.events.lock() {
-            events.push_back(StatusEvent {
+        crate::tui::log_buffer::push_log(crate::tui::log_buffer::LogEntry {
+            level,
+            message: visitor.message.clone(),
+        });
+
+        if level <= Level::WARN {
+            error_buffer::push_error(ErrorEvent {
                 level,
                 message: visitor.message,
+                pushed_at: std::time::Instant::now(),
             });
-            while events.len() > MAX_STATUS_EVENTS {
-                events.pop_front();
-            }
         }
     }
 }

@@ -1,9 +1,14 @@
 mod cli;
 pub mod config;
+pub mod instance;
+pub mod net;
 pub mod tui;
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let _guard = tui::logging::init();
-    color_eyre::install().expect("Failed to install color-eyre");
-    cli::init()
+    if let Err(e) = color_eyre::install() {
+        eprintln!("Failed to install color-eyre: {}", e);
+    }
+    cli::init().await
 }

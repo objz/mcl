@@ -1,5 +1,8 @@
 pub mod layout;
+pub mod log_buffer;
 pub mod logging;
+pub mod error_buffer;
+pub mod progress;
 pub mod theme;
 pub mod widgets;
 
@@ -11,9 +14,9 @@ use crossterm::{
 };
 use ratatui::{prelude::CrosstermBackend, Terminal};
 
-pub fn show() -> color_eyre::Result<()> {
+pub async fn show() -> color_eyre::Result<()> {
     let mut terminal = init_ratatui()?;
-    let result = layout::App::default().run(&mut terminal);
+    let result = layout::App::default().run(&mut terminal).await;
     if let Err(err) = restore_ratatui() {
         eprintln!(
             "failed to restore terminal. Run 'reset' or restart your terminal to recover: {}",
