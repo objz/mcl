@@ -1,0 +1,99 @@
+use once_cell::sync::Lazy;
+use std::sync::Mutex;
+
+use ratatui::{
+    buffer::Buffer,
+    layout::Rect,
+    style::{Modifier, Style},
+    text::{Line, Span},
+    widgets::{Paragraph, Widget},
+};
+
+use crate::tui::theme::THEME;
+
+static CONFIRM_STATE: Lazy<Mutex<ConfirmState>> = Lazy::new(|| Mutex::new(ConfirmState::default()));
+
+#[derive(Debug, Default)]
+struct ConfirmState {
+    instance_name: String,
+}
+
+pub fn set_pending_delete(name: impl Into<String>) {
+    match CONFIRM_STATE.lock() {
+        Ok(mut s) => {
+            s.instance_name = name.into();
+        }
+        Err(e) => {
+            tracing::error!("Confirm popup state lock poisoned: {}", e);
+        }
+    }
+}
+
+pub fn pending_delete_name() -> String {
+    match CONFIRM_STATE.lock() {
+        Ok(s) => s.instance_name.clone(),
+        Err(_) => String::new(),
+    }
+}
+
+pub fn clear_pending() {
+    match CONFIRM_STATE.lock() {
+        Ok(mut s) => {
+            s.instance_name.clear();
+        }
+        Err(e) => {
+            tracing::error!("Confirm popup state lock poisoned: {}", e);
+        }
+    }
+}
+
+pub struct ConfirmPopup {
+    instance_name: String,
+}
+
+impl ConfirmPopup {
+    pub fn new(instance_name: impl Into<String>) -> Self {
+        Self {
+            instance_name: instance_name.into(),
+        }
+    }
+}
+
+impl Widget for ConfirmPopup {
+    fn render(self, area: Rect, buf: &mut Buffer) {
+        use super::{base::PopupFrame, keybind_line};
+
+        let title = Line::from(vec![Span::styled(
+            format!(" Delete '{}' ", self.instance_name),
+            Style::default()
+                .fg(THEME.colors.border_focused)
+                .add_modifier(Modifier::BOLD),
+        )]);
+        let kb = keybind_line(&[("y", " yes"), ("n", " no")]);
+
+        let popup = PopupFrame {
+            title,
+            border_color: THEME.colors.border_focused,
+            bg: Some(THEME.colors.row_alternate_bg),
+            keybinds: Some(kb),
+            content: Box::new(|inner, buf| {
+                Paragraph::new("This will permanently remove the instance")
+                    .style(Style::default().fg(THEME.colors.foreground))
+                    .render(inner, buf);
+            }),
+        };
+
+        popup.render(area, buf);
+    }
+}
+
+pub fn confirm_popup_area(frame_area: Rect, name: &str) -> Rect {
+    use super::{centered_rect, word_wrap_size};
+    const MAX_W: usize = 48;
+    const BODY: &str = "This will permanently remove the instance";
+    let title_w = name.len() + 12;
+    let (body_w, _) = word_wrap_size(BODY, MAX_W);
+    let inner_w = title_w.max(body_w).min(MAX_W);
+    let (_, lines) = word_wrap_size(BODY, inner_w);
+    centered_rect(frame_area, inner_w, lines)
+}
