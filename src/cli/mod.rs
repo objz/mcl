@@ -1,7 +1,7 @@
 use crate::tui;
 use clap::{Arg, ArgAction, Command};
 
-pub fn init() {
+pub async fn init() {
     let matches = Command::new("mcl")
         .about("Minecraft CLI Launcher")
         .version("1.0.0")
@@ -79,14 +79,23 @@ pub fn init() {
         .get_matches();
 
     if matches.subcommand().is_none() {
-        tui::show().unwrap()
+        match tui::show().await {
+            Ok(_) => {}
+            Err(e) => {
+                tracing::error!("TUI error: {}", e);
+            }
+        }
     }
 
     match matches.subcommand() {
         Some(("launch", launch_matches)) => {
-            let profile = launch_matches
-                .get_one::<String>("profile")
-                .expect("Profile is required");
+            let profile = match launch_matches.get_one::<String>("profile") {
+                Some(p) => p,
+                None => {
+                    tracing::error!("Launch subcommand missing required --profile argument");
+                    return;
+                }
+            };
 
             let mem_default = String::from("Default");
             let memory = launch_matches
