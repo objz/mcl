@@ -152,15 +152,7 @@ pub async fn run_neoforge_installer(
     Ok(())
 }
 
-pub fn detect_java_path() -> String {
-    if let Ok(java_home) = std::env::var("JAVA_HOME") {
-        let path = std::path::Path::new(&java_home).join("bin").join("java");
-        if path.exists() {
-            return path.to_string_lossy().to_string();
-        }
-    }
-    "java".to_string()
-}
+
 
 #[cfg(test)]
 mod tests {

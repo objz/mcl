@@ -112,7 +112,17 @@ impl InstanceManager {
         }
 
         let installer = crate::instance::loader::get_installer(loader);
-        let effective_loader_version = loader_version.unwrap_or("latest");
+        let effective_loader_version = match loader_version {
+            Some(v) => v,
+            None if loader == ModLoader::Vanilla => "vanilla",
+            None => {
+                tracing::error!("No loader version provided for {} loader", loader);
+                return Err(InstanceError::InvalidName(format!(
+                    "A loader version is required for {}",
+                    loader
+                )));
+            }
+        };
         match installer
             .install(&self.client, game_version, effective_loader_version, &instance_dir)
             .await

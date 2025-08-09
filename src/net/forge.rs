@@ -141,18 +141,7 @@ pub async fn run_forge_installer(
     Ok(())
 }
 
-/// Detect the path to a Java runtime.
-///
-/// Checks `JAVA_HOME` first, then falls back to `"java"` assuming it is on `PATH`.
-pub fn detect_java_path() -> String {
-    if let Ok(java_home) = std::env::var("JAVA_HOME") {
-        let path = std::path::Path::new(&java_home).join("bin").join("java");
-        if path.exists() {
-            return path.to_string_lossy().to_string();
-        }
-    }
-    "java".to_string()
-}
+
 
 #[cfg(test)]
 mod tests {

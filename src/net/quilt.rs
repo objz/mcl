@@ -31,20 +31,7 @@ pub struct QuiltLibrary {
     pub url: String,
 }
 
-/// `org.quiltmc:quilt-loader:0.20.0` → `org/quiltmc/quilt-loader/0.20.0/quilt-loader-0.20.0.jar`
-fn maven_coord_to_path(coord: &str) -> Option<String> {
-    let parts: Vec<&str> = coord.split(':').collect();
-    match parts.as_slice() {
-        [group, artifact, version] => {
-            let group_path = group.replace('.', "/");
-            Some(format!(
-                "{}/{}/{}/{}-{}.jar",
-                group_path, artifact, version, artifact, version
-            ))
-        }
-        _ => None,
-    }
-}
+
 
 pub async fn fetch_quilt_versions(
     client: &HttpClient,
@@ -126,7 +113,7 @@ pub async fn download_quilt_libraries(
     let libraries_dir = instance_dir.join(".minecraft").join("libraries");
 
     for lib in &profile.libraries {
-        let maven_path = match maven_coord_to_path(&lib.name) {
+        let maven_path = match crate::net::maven_coord_to_path(&lib.name) {
             Some(p) => p,
             None => {
                 tracing::error!(
@@ -187,10 +174,10 @@ mod tests {
     #[test]
     fn test_maven_coord_to_path() {
         assert_eq!(
-            maven_coord_to_path("org.quiltmc:quilt-loader:0.20.0"),
+            crate::net::maven_coord_to_path("org.quiltmc:quilt-loader:0.20.0"),
             Some("org/quiltmc/quilt-loader/0.20.0/quilt-loader-0.20.0.jar".to_string())
         );
-        assert_eq!(maven_coord_to_path("invalid"), None);
-        assert_eq!(maven_coord_to_path("only:two"), None);
+        assert_eq!(crate::net::maven_coord_to_path("invalid"), None);
+        assert_eq!(crate::net::maven_coord_to_path("only:two"), None);
     }
 }

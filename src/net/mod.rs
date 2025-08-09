@@ -20,6 +20,7 @@ pub enum NetError {
     StatusError { status: u16, url: String },
 }
 
+#[derive(Clone)]
 pub struct HttpClient {
     inner: Client,
 }
@@ -113,4 +114,28 @@ pub async fn download_file(
     }
 
     Ok(())
+}
+
+pub fn detect_java_path() -> String {
+    if let Ok(java_home) = std::env::var("JAVA_HOME") {
+        let path = std::path::Path::new(&java_home).join("bin").join("java");
+        if path.exists() {
+            return path.to_string_lossy().to_string();
+        }
+    }
+    "java".to_string()
+}
+
+pub fn maven_coord_to_path(coord: &str) -> Option<String> {
+    let parts: Vec<&str> = coord.split(':').collect();
+    match parts.as_slice() {
+        [group, artifact, version] => {
+            let group_path = group.replace('.', "/");
+            Some(format!(
+                "{}/{}/{}/{}-{}.jar",
+                group_path, artifact, version, artifact, version
+            ))
+        }
+        _ => None,
+    }
 }
