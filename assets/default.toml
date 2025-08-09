@@ -3,6 +3,7 @@ debug = false
 
 [paths]
 instances_dir = "~/.local/share/mcl/instances"
+meta_dir = "~/.local/share/mcl/meta"
 # java_path is optional, leave commented out by default
 
 [defaults]

@@ -18,6 +18,8 @@ impl Default for General {
 pub struct Paths {
     #[serde(default = "default_instances_dir")]
     pub instances_dir: String,
+    #[serde(default = "default_meta_dir")]
+    pub meta_dir: String,
     pub java_path: Option<String>,
 }
 
@@ -25,10 +27,15 @@ fn default_instances_dir() -> String {
     "~/.local/share/mcl/instances".to_string()
 }
 
+fn default_meta_dir() -> String {
+    "~/.local/share/mcl/meta".to_string()
+}
+
 impl Default for Paths {
     fn default() -> Self {
         Paths {
             instances_dir: default_instances_dir(),
+            meta_dir: default_meta_dir(),
             java_path: None,
         }
     }
@@ -37,6 +44,23 @@ impl Default for Paths {
 impl Paths {
     pub fn resolve_instances_dir(&self) -> std::path::PathBuf {
         let raw = &self.instances_dir;
+        if let Some(stripped) = raw.strip_prefix("~/") {
+            return match dirs_next::home_dir() {
+                Some(home) => home.join(stripped),
+                None => std::path::PathBuf::from(raw),
+            };
+        }
+        if raw == "~" {
+            return match dirs_next::home_dir() {
+                Some(home) => home,
+                None => std::path::PathBuf::from(raw),
+            };
+        }
+        std::path::PathBuf::from(raw)
+    }
+
+    pub fn resolve_meta_dir(&self) -> std::path::PathBuf {
+        let raw = &self.meta_dir;
         if let Some(stripped) = raw.strip_prefix("~/") {
             return match dirs_next::home_dir() {
                 Some(home) => home.join(stripped),

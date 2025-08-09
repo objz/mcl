@@ -48,6 +48,7 @@ pub enum FocusedArea {
 impl Default for App {
     fn default() -> Self {
         let instances_dir = crate::config::SETTINGS.paths.resolve_instances_dir();
+        let meta_dir = crate::config::SETTINGS.paths.resolve_meta_dir();
 
         match std::fs::create_dir_all(&instances_dir) {
             Ok(_) => {}
@@ -56,7 +57,14 @@ impl Default for App {
             }
         }
 
-        let manager = InstanceManager::new(instances_dir);
+        match std::fs::create_dir_all(&meta_dir) {
+            Ok(_) => {}
+            Err(e) => {
+                tracing::error!("Failed to create meta dir: {}", e);
+            }
+        }
+
+        let manager = InstanceManager::new(instances_dir, meta_dir);
         let instances = manager.load_all();
         let profiles_state = profiles::State::with_instances(instances);
 
@@ -254,13 +262,14 @@ impl App {
 
     fn spawn_create(&self, params: new_instance::WizardParams) {
         let instances_dir = self.instance_manager.instances_dir.clone();
+        let meta_dir = crate::config::SETTINGS.paths.resolve_meta_dir();
         let pending_instances = PENDING_INSTANCES.clone();
 
         tokio::spawn(async move {
             progress::set_action(format!("Creating instance '{}'...", params.name));
             progress::set_sub_action(format!("{} {}", params.game_version, params.loader));
 
-            let manager = InstanceManager::new(instances_dir);
+            let manager = InstanceManager::new(instances_dir, meta_dir);
             match manager
                 .create(
                     &params.name,
@@ -375,5 +384,4 @@ impl App {
         frame.render_widget(list, inner);
     }
 }
-
 

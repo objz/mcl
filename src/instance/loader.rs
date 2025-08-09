@@ -30,6 +30,7 @@ pub trait ModLoaderInstaller: Send + Sync {
         game_version: &str,
         loader_version: &str,
         instance_dir: &Path,
+        meta_dir: &Path,
     ) -> Result<(), NetError>;
 }
 
@@ -55,6 +56,7 @@ impl ModLoaderInstaller for VanillaInstaller {
         _game_version: &str,
         _loader_version: &str,
         _instance_dir: &Path,
+        _meta_dir: &Path,
     ) -> Result<(), NetError> {
         // Vanilla: no loader to install; Minecraft files downloaded by Mojang API separately
         Ok(())
@@ -91,7 +93,8 @@ impl ModLoaderInstaller for FabricInstaller {
         client: &HttpClient,
         game_version: &str,
         loader_version: &str,
-        instance_dir: &Path,
+        _instance_dir: &Path,
+        meta_dir: &Path,
     ) -> Result<(), NetError> {
         let profile =
             match fabric::fetch_fabric_profile(client, game_version, loader_version).await {
@@ -101,7 +104,7 @@ impl ModLoaderInstaller for FabricInstaller {
                 }
             };
 
-        match fabric::download_fabric_libraries(client, &profile, instance_dir).await {
+        match fabric::download_fabric_libraries(client, &profile, meta_dir).await {
             Ok(()) => {}
             Err(e) => {
                 return Err(e);
@@ -139,6 +142,7 @@ impl ModLoaderInstaller for ForgeInstaller {
         game_version: &str,
         loader_version: &str,
         instance_dir: &Path,
+        _meta_dir: &Path,
     ) -> Result<(), NetError> {
         let installer_jar = instance_dir.join(".minecraft").join("forge-installer.jar");
 
@@ -202,7 +206,8 @@ impl ModLoaderInstaller for QuiltInstaller {
         client: &HttpClient,
         game_version: &str,
         loader_version: &str,
-        instance_dir: &Path,
+        _instance_dir: &Path,
+        meta_dir: &Path,
     ) -> Result<(), NetError> {
         let profile =
             match quilt::fetch_quilt_profile(client, game_version, loader_version).await {
@@ -212,7 +217,7 @@ impl ModLoaderInstaller for QuiltInstaller {
                 }
             };
 
-        match quilt::download_quilt_libraries(client, &profile, instance_dir).await {
+        match quilt::download_quilt_libraries(client, &profile, meta_dir).await {
             Ok(()) => {}
             Err(e) => {
                 return Err(e);
@@ -250,6 +255,7 @@ impl ModLoaderInstaller for NeoForgeInstaller {
         _game_version: &str,
         loader_version: &str,
         instance_dir: &Path,
+        _meta_dir: &Path,
     ) -> Result<(), NetError> {
         let installer_jar = instance_dir
             .join(".minecraft")
@@ -321,7 +327,8 @@ mod tests {
         let client = HttpClient::new();
         let installer = VanillaInstaller;
         let tmp = std::env::temp_dir().join("mcl_test_vanilla_install");
-        match installer.install(&client, "1.20.1", "vanilla", &tmp).await {
+        let meta = std::env::temp_dir().join("mcl_test_meta");
+        match installer.install(&client, "1.20.1", "vanilla", &tmp, &meta).await {
             Ok(()) => {}
             Err(e) => assert!(false, "install failed: {}", e),
         }

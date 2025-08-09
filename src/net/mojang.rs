@@ -7,7 +7,7 @@ use std::{
     },
 };
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use tokio::task::JoinSet;
 
 use super::{download_file, HttpClient, NetError};
@@ -105,12 +105,12 @@ pub struct JavaVersion {
     pub major_version: u32,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct AssetIndexContent {
     pub objects: HashMap<String, AssetObject>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct AssetObject {
     pub hash: String,
     pub size: u64,
@@ -130,15 +130,19 @@ pub async fn fetch_version_meta(
 pub async fn download_client_jar(
     client: &HttpClient,
     meta: &VersionMeta,
-    instance_dir: &Path,
+    meta_dir: &Path,
 ) -> Result<(), NetError> {
-    set_action("Downloading Minecraft client...");
-
-    let jar_path = instance_dir
-        .join(".minecraft")
+    let jar_path = meta_dir
         .join("versions")
         .join(&meta.id)
         .join(format!("{}.jar", meta.id));
+
+    if jar_path.exists() {
+        tracing::info!("Client JAR already cached: {}", meta.id);
+        return Ok(());
+    }
+
+    set_action(format!("Downloading Minecraft {}...", meta.id));
 
     let result = download_file(client, &meta.downloads.client.url, &jar_path, |current, total| {
         set_progress(current, total);
@@ -152,7 +156,7 @@ pub async fn download_client_jar(
 pub async fn download_libraries(
     client: &HttpClient,
     meta: &VersionMeta,
-    instance_dir: &Path,
+    meta_dir: &Path,
 ) -> Result<(), NetError> {
     set_action("Downloading libraries...");
 
@@ -167,12 +171,19 @@ pub async fn download_libraries(
             None => continue,
         };
 
-        let destination = instance_dir
-            .join(".minecraft")
-            .join("libraries")
-            .join(&artifact.path);
+        let destination = meta_dir.join("libraries").join(&artifact.path);
+
+        if destination.exists() {
+            continue;
+        }
 
         downloads.push((artifact.url.clone(), destination, artifact.path.clone()));
+    }
+
+    if downloads.is_empty() {
+        tracing::info!("All libraries already cached");
+        clear();
+        return Ok(());
     }
 
     let result = run_parallel_downloads(client, downloads, false).await;
@@ -183,7 +194,7 @@ pub async fn download_libraries(
 pub async fn download_assets(
     client: &HttpClient,
     meta: &VersionMeta,
-    instance_dir: &Path,
+    meta_dir: &Path,
 ) -> Result<(), NetError> {
     set_action("Downloading assets...");
 
@@ -195,10 +206,38 @@ pub async fn download_assets(
         }
     };
 
+    let index_path = meta_dir
+        .join("assets")
+        .join("indexes")
+        .join(format!("{}.json", meta.asset_index.id));
+    if !index_path.exists() {
+        match serde_json::to_string(&asset_index) {
+            Ok(json) => {
+                if let Some(parent) = index_path.parent() {
+                    match tokio::fs::create_dir_all(parent).await {
+                        Ok(_) => {}
+                        Err(e) => {
+                            tracing::error!("Failed to create asset index dir: {}", e);
+                        }
+                    }
+                }
+                match tokio::fs::write(&index_path, json).await {
+                    Ok(_) => {}
+                    Err(e) => {
+                        tracing::error!("Failed to write asset index: {}", e);
+                    }
+                }
+            }
+            Err(e) => {
+                tracing::error!("Failed to serialize asset index: {}", e);
+            }
+        }
+    }
+
     let mut downloads = Vec::new();
     for object in asset_index.objects.values() {
         if object.hash.len() < 2 {
-            let message = format!("Invalid asset hash for version {}: {}", meta.id, object.hash);
+            let message = format!("Invalid asset hash: {}", object.hash);
             tracing::error!("{}", message);
             clear();
             return Err(NetError::Parse(message));
@@ -206,14 +245,23 @@ pub async fn download_assets(
 
         let prefix = &object.hash[..2];
         let url = format!("{}/{}/{}", ASSETS_BASE_URL, prefix, object.hash);
-        let destination = instance_dir
-            .join(".minecraft")
+        let destination = meta_dir
             .join("assets")
             .join("objects")
             .join(prefix)
             .join(&object.hash);
 
+        if destination.exists() {
+            continue;
+        }
+
         downloads.push((url, destination, object.hash.clone()));
+    }
+
+    if downloads.is_empty() {
+        tracing::info!("All assets already cached");
+        clear();
+        return Ok(());
     }
 
     let result = run_parallel_downloads(client, downloads, true).await;

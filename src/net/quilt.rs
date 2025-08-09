@@ -108,9 +108,9 @@ pub async fn fetch_quilt_profile(
 pub async fn download_quilt_libraries(
     client: &HttpClient,
     profile: &QuiltProfile,
-    instance_dir: &Path,
+    meta_dir: &Path,
 ) -> Result<(), NetError> {
-    let libraries_dir = instance_dir.join(".minecraft").join("libraries");
+    let libraries_dir = meta_dir.join("libraries");
 
     for lib in &profile.libraries {
         let maven_path = match crate::net::maven_coord_to_path(&lib.name) {

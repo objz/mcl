@@ -23,13 +23,15 @@ pub enum InstanceError {
 
 pub struct InstanceManager {
     pub instances_dir: PathBuf,
+    pub meta_dir: PathBuf,
     client: crate::net::HttpClient,
 }
 
 impl InstanceManager {
-    pub fn new(instances_dir: impl Into<PathBuf>) -> Self {
+    pub fn new(instances_dir: impl Into<PathBuf>, meta_dir: impl Into<PathBuf>) -> Self {
         InstanceManager {
             instances_dir: instances_dir.into(),
+            meta_dir: meta_dir.into(),
             client: crate::net::HttpClient::new(),
         }
     }
@@ -67,6 +69,21 @@ impl InstanceManager {
             }
         }
 
+        for meta_subdir in &[
+            self.meta_dir.join("versions"),
+            self.meta_dir.join("libraries"),
+            self.meta_dir.join("assets").join("objects"),
+            self.meta_dir.join("assets").join("indexes"),
+        ] {
+            match std::fs::create_dir_all(meta_subdir) {
+                Ok(_) => {}
+                Err(e) => {
+                    tracing::error!("Failed to create meta directory: {}", e);
+                    return Err(InstanceError::Io(e));
+                }
+            }
+        }
+
         let manifest = match crate::net::mojang::fetch_version_manifest(&self.client).await {
             Ok(m) => m,
             Err(e) => {
@@ -90,21 +107,21 @@ impl InstanceManager {
             }
         };
 
-        match crate::net::mojang::download_client_jar(&self.client, &version_meta, &instance_dir).await {
+        match crate::net::mojang::download_client_jar(&self.client, &version_meta, &self.meta_dir).await {
             Ok(_) => {}
             Err(e) => {
                 return Err(InstanceError::Download(e));
             }
         }
 
-        match crate::net::mojang::download_libraries(&self.client, &version_meta, &instance_dir).await {
+        match crate::net::mojang::download_libraries(&self.client, &version_meta, &self.meta_dir).await {
             Ok(_) => {}
             Err(e) => {
                 return Err(InstanceError::Download(e));
             }
         }
 
-        match crate::net::mojang::download_assets(&self.client, &version_meta, &instance_dir).await {
+        match crate::net::mojang::download_assets(&self.client, &version_meta, &self.meta_dir).await {
             Ok(_) => {}
             Err(e) => {
                 return Err(InstanceError::Download(e));
@@ -124,7 +141,13 @@ impl InstanceManager {
             }
         };
         match installer
-            .install(&self.client, game_version, effective_loader_version, &instance_dir)
+            .install(
+                &self.client,
+                game_version,
+                effective_loader_version,
+                &instance_dir,
+                &self.meta_dir,
+            )
             .await
         {
             Ok(_) => {}
@@ -291,8 +314,10 @@ mod tests {
 
     fn test_manager() -> (InstanceManager, PathBuf) {
         let tmp = std::env::temp_dir().join(format!("mcl_test_{}", uuid_like()));
+        let meta = std::env::temp_dir().join(format!("mcl_meta_test_{}", uuid_like()));
         std::fs::create_dir_all(&tmp).ok();
-        (InstanceManager::new(tmp.clone()), tmp)
+        std::fs::create_dir_all(&meta).ok();
+        (InstanceManager::new(tmp.clone(), meta), tmp)
     }
 
     fn uuid_like() -> String {
