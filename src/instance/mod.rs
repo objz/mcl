@@ -4,4 +4,4 @@ pub mod models;
 
 pub use manager::{InstanceError, InstanceManager};
 pub use loader::{get_installer, ModLoaderInstaller, VanillaInstaller};
-pub use models::{InstanceConfig, InstanceState, ModLoader};
+pub use models::{InstanceConfig, ModLoader};

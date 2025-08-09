@@ -151,7 +151,7 @@ impl ModLoaderInstaller for ForgeInstaller {
             }
         }
 
-        let java_path = forge::detect_java_path();
+        let java_path = crate::net::detect_java_path();
         match forge::run_forge_installer(&installer_jar, instance_dir, &java_path).await {
             Ok(()) => {}
             Err(e) => {
@@ -262,7 +262,7 @@ impl ModLoaderInstaller for NeoForgeInstaller {
             }
         }
 
-        let java_path = neoforge::detect_java_path();
+        let java_path = crate::net::detect_java_path();
         match neoforge::run_neoforge_installer(&installer_jar, instance_dir, &java_path).await {
             Ok(()) => {}
             Err(e) => {

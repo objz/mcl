@@ -17,7 +17,6 @@ use ratatui::{
     layout::{Constraint, Direction, Layout},
     Frame,
 };
-use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -48,7 +47,7 @@ pub enum FocusedArea {
 
 impl Default for App {
     fn default() -> Self {
-        let instances_dir = resolve_instances_dir();
+        let instances_dir = crate::config::SETTINGS.paths.resolve_instances_dir();
 
         match std::fs::create_dir_all(&instances_dir) {
             Ok(_) => {}
@@ -287,11 +286,9 @@ impl App {
     }
 
     fn dismiss_expired_errors(&self) {
-        const DISMISS_MS: u128 = 5000;
-
         loop {
             match error_buffer::peek_error() {
-                Some(event) if event.pushed_at.elapsed().as_millis() >= DISMISS_MS => {
+                Some(event) if event.pushed_at.elapsed().as_millis() >= error_buffer::AUTO_DISMISS_MS => {
                     error_buffer::pop_error();
                 }
                 _ => break,
@@ -340,29 +337,8 @@ impl App {
                     .add_modifier(Modifier::BOLD),
             )]))
             .title_bottom(
-                Line::from(vec![
-                    Span::styled(
-                        "[S]",
-                        Style::default()
-                            .fg(THEME.colors.border_focused)
-                            .add_modifier(Modifier::BOLD),
-                    ),
-                    Span::styled(
-                        "/",
-                        Style::default().fg(THEME.colors.border_unfocused),
-                    ),
-                    Span::styled(
-                        "[Esc]",
-                        Style::default()
-                            .fg(THEME.colors.border_focused)
-                            .add_modifier(Modifier::BOLD),
-                    ),
-                    Span::styled(
-                        " close ",
-                        Style::default().fg(THEME.colors.border_unfocused),
-                    ),
-                ])
-                .alignment(Alignment::Right),
+                crate::tui::widgets::popups::keybind_line(&[("S", " close"), ("Esc", " close")])
+                    .alignment(Alignment::Right)
             )
             .borders(Borders::ALL)
             .border_type(BorderType::Rounded)
@@ -400,22 +376,4 @@ impl App {
     }
 }
 
-fn resolve_instances_dir() -> PathBuf {
-    let raw_dir = &crate::config::SETTINGS.paths.instances_dir;
 
-    if raw_dir == "~" {
-        return match dirs_next::home_dir() {
-            Some(home) => home,
-            None => PathBuf::from(raw_dir),
-        };
-    }
-
-    if let Some(stripped) = raw_dir.strip_prefix("~/") {
-        return match dirs_next::home_dir() {
-            Some(home) => home.join(stripped),
-            None => PathBuf::from(raw_dir),
-        };
-    }
-
-    PathBuf::from(raw_dir)
-}

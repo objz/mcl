@@ -90,6 +90,7 @@ pub static SETTINGS: Lazy<Config> = Lazy::new(|| {
                 general: types::General::default(),
                 paths: types::Paths::default(),
                 defaults: types::Defaults::default(),
+                colors: types::Colors::default(),
             }
         }
     }

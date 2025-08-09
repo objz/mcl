@@ -39,15 +39,6 @@ pub struct InstanceConfig {
     pub resolution: Option<(u32, u32)>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum InstanceState {
-    Ready,
-    Downloading,
-    Running,
-    Error(String),
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

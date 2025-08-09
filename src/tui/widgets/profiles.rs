@@ -10,7 +10,7 @@ use ratatui::{
     Frame,
 };
 
-use crate::instance::models::{InstanceConfig, InstanceState};
+use crate::instance::models::InstanceConfig;
 use crate::tui::{layout::FocusedArea, theme::THEME};
 
 use super::{popups, styled_title, WidgetKey};
@@ -18,7 +18,6 @@ use super::{popups, styled_title, WidgetKey};
 #[derive(Debug, Default)]
 pub struct State {
     pub instances: Vec<InstanceConfig>,
-    pub instance_states: Vec<InstanceState>,
     pub list_state: ListState,
     pub scrollbar_state: ScrollbarState,
     pub show_popup: bool,
@@ -31,7 +30,6 @@ impl State {
         let count = instances.len();
         let mut s = State {
             instances,
-            instance_states: vec![InstanceState::Ready; count],
             list_state: ListState::default(),
             scrollbar_state: ScrollbarState::default(),
             show_popup: false,
@@ -131,14 +129,12 @@ impl State {
         self.instances.retain(|i| i.name != name);
         let after = self.instances.len();
         if after < before {
-            self.instance_states.truncate(after);
             self.update_scrollbar();
         }
     }
 
     pub fn add_instance(&mut self, instance: InstanceConfig) {
         self.instances.push(instance);
-        self.instance_states.push(InstanceState::Ready);
         self.update_scrollbar();
     }
 }

@@ -8,7 +8,7 @@ use ratatui::{
 use tracing::Level;
 
 use super::base::PopupFrame;
-use crate::tui::error_buffer::ErrorEvent;
+use crate::tui::error_buffer::{ErrorEvent, AUTO_DISMISS_MS, SLIDE_START_MS};
 use crate::tui::theme::THEME;
 
 pub struct ErrorPopup {
@@ -60,10 +60,8 @@ pub fn popup_area(frame_area: Rect, message: &str, base_y: u16, elapsed_ms: u128
 
     const MAX_W: usize = 58;
     const MIN_W: usize = 22;
-    const SLIDE_START_MS: u128 = 3500;
-    const DISMISS_MS: u128 = 5000;
 
-    if elapsed_ms >= DISMISS_MS {
+    if elapsed_ms >= AUTO_DISMISS_MS {
         return None;
     }
 
@@ -85,7 +83,7 @@ pub fn popup_area(frame_area: Rect, message: &str, base_y: u16, elapsed_ms: u128
         });
     }
 
-    let progress = (elapsed_ms - SLIDE_START_MS) as f32 / (DISMISS_MS - SLIDE_START_MS) as f32;
+    let progress = (elapsed_ms - SLIDE_START_MS) as f32 / (AUTO_DISMISS_MS - SLIDE_START_MS) as f32;
     let slide = (progress * popup_w as f32) as u16;
     let new_x = base_x.saturating_add(slide);
 
