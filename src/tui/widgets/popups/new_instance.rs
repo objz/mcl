@@ -627,32 +627,9 @@ fn visible_versions(state: &WizardState) -> Vec<crate::net::mojang::VersionEntry
             .iter()
             .filter(|v| state.show_snapshots || v.version_type == "release")
             .filter(|v| q.is_empty() || v.id.to_lowercase().contains(&q))
-            .filter(|v| is_version_loader_compatible(&v.id, loader))
             .cloned()
             .collect(),
         _ => Vec::new(),
-    }
-}
-
-fn is_version_loader_compatible(version_id: &str, loader: ModLoader) -> bool {
-    let parts: Vec<u32> = version_id
-        .split('.')
-        .take(2)
-        .filter_map(|s| s.parse().ok())
-        .collect();
-
-    let (major, minor) = match parts.as_slice() {
-        [maj, min, ..] => (*maj, *min),
-        [maj] => (*maj, 0),
-        _ => return false,
-    };
-
-    match loader {
-        ModLoader::Vanilla | ModLoader::Forge => true,
-        ModLoader::Fabric | ModLoader::Quilt => {
-            major > 1 || (major == 1 && minor >= 14)
-        }
-        ModLoader::NeoForge => major == 1 && minor >= 20,
     }
 }
 
