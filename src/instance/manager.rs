@@ -52,11 +52,63 @@ impl InstanceManager {
         }
 
         let instance_dir = self.instances_dir.join(name);
+        let instance_json = instance_dir.join("instance.json");
 
-        if instance_dir.exists() {
+        if instance_json.exists() {
             tracing::error!("Instance '{}' already exists", name);
             return Err(InstanceError::AlreadyExists(name.to_string()));
         }
+
+        if instance_dir.exists() && !instance_json.exists() {
+            match std::fs::remove_dir_all(&instance_dir) {
+                Ok(_) => {}
+                Err(e) => {
+                    tracing::error!(
+                        "Failed to remove partial instance directory '{}': {}",
+                        instance_dir.display(),
+                        e
+                    );
+                    return Err(InstanceError::Io(e));
+                }
+            }
+        }
+
+        match std::fs::create_dir_all(&instance_dir) {
+            Ok(_) => {}
+            Err(e) => {
+                tracing::error!("Failed to create instance directory: {}", e);
+                return Err(InstanceError::Io(e));
+            }
+        }
+
+        let result = self
+            .create_inner(name, game_version, loader, loader_version, &instance_dir)
+            .await;
+
+        if result.is_err() {
+            match std::fs::remove_dir_all(&instance_dir) {
+                Ok(_) => {}
+                Err(e) => {
+                    tracing::warn!(
+                        "Failed to clean up partial instance directory '{}': {}",
+                        instance_dir.display(),
+                        e
+                    );
+                }
+            }
+        }
+
+        result
+    }
+
+    async fn create_inner(
+        &self,
+        name: &str,
+        game_version: &str,
+        loader: ModLoader,
+        loader_version: Option<&str>,
+        instance_dir: &std::path::Path,
+    ) -> Result<InstanceConfig, InstanceError> {
 
         let minecraft_dir = instance_dir.join(".minecraft");
         for subdir in &["mods", "config", "resourcepacks", "shaderpacks", "saves"] {
@@ -64,6 +116,17 @@ impl InstanceManager {
                 Ok(_) => {}
                 Err(e) => {
                     tracing::error!("Failed to create directory: {}", e);
+                    return Err(InstanceError::Io(e));
+                }
+            }
+        }
+
+        let launcher_profiles_path = minecraft_dir.join("launcher_profiles.json");
+        if !launcher_profiles_path.exists() {
+            match std::fs::write(&launcher_profiles_path, "{}") {
+                Ok(_) => {}
+                Err(e) => {
+                    tracing::error!("Failed to create launcher_profiles.json: {}", e);
                     return Err(InstanceError::Io(e));
                 }
             }

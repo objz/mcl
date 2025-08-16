@@ -23,9 +23,11 @@ fn game_version_to_neoforge_prefix(game_version: &str) -> Option<String> {
     let parts: Vec<&str> = game_version.split('.').collect();
     match parts.as_slice() {
         // "1.21" → prefix "21.0."
-        [_major, minor] => Some(format!("{}.0.", minor)),
+        ["1", minor] => Some(format!("{}.0.", minor)),
         // "1.20.4" → prefix "20.4."
-        [_major, minor, patch] => Some(format!("{}.{}.", minor, patch)),
+        ["1", minor, patch] => Some(format!("{}.{}.", minor, patch)),
+        [major, minor] => Some(format!("{}.{}.", major, minor)),
+        [major, minor, _patch] => Some(format!("{}.{}.", major, minor)),
         _ => None,
     }
 }

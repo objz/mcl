@@ -56,10 +56,6 @@ impl<S: Subscriber> Layer<S> for StatusLayer {
     fn on_event(&self, event: &tracing::Event<'_>, _ctx: Context<'_, S>) {
         let level = *event.metadata().level();
 
-        if level > Level::INFO {
-            return;
-        }
-
         let mut visitor = MessageVisitor::default();
         event.record(&mut visitor);
 

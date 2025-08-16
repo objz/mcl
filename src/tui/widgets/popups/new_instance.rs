@@ -652,9 +652,7 @@ fn is_version_loader_compatible(version_id: &str, loader: ModLoader) -> bool {
         ModLoader::Fabric | ModLoader::Quilt => {
             major > 1 || (major == 1 && minor >= 14)
         }
-        ModLoader::NeoForge => {
-            major > 1 || (major == 1 && minor >= 20)
-        }
+        ModLoader::NeoForge => major == 1 && minor >= 20,
     }
 }
 
@@ -699,7 +697,6 @@ fn ensure_versions_loaded(state: &mut WizardState) {
                 }
             },
             Err(e) => {
-                tracing::error!("Failed to fetch MC versions: {}", e);
                 match versions_arc.lock() {
                     Ok(mut s) => {
                         s.versions = LoadState::Error(e.to_string());
@@ -734,7 +731,6 @@ fn ensure_loader_versions_loaded(state: &mut WizardState, loader: ModLoader, gam
                 }
             },
             Err(e) => {
-                tracing::error!("Failed to fetch {} versions for {}: {}", loader, game_version, e);
                 match versions_arc.lock() {
                     Ok(mut s) => {
                         s.loader_versions = LoadState::Error(e.to_string());

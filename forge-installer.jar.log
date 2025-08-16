@@ -1,0 +1,14 @@
+JVM info: Arch Linux - 21.0.10 - 21.0.10+7
+java.net.preferIPv4Stack=true
+Current Time: 06/04/2026 11:22:00
+Host: files.minecraftforge.net [104.21.58.163, 172.67.161.211]
+Host: maven.minecraftforge.net [172.67.161.211, 104.21.58.163]
+Host: libraries.minecraft.net [150.171.109.101]
+Host: launchermeta.mojang.com [150.171.109.101]
+Host: piston-meta.mojang.com [150.171.109.101]
+Host: sessionserver.mojang.com [150.171.109.100]
+Host: authserver.mojang.com [Unknown]
+Target Directory: /home/consti/.local/share/mcl/instances/sfsdfd/.minecraft
+Data kindly mirrored by CreeperHost at https://www.creeperhost.net/
+There is no Minecraft launcher profile in "/home/consti/.local/share/mcl/instances/sfsdfd/.minecraft", you need to run the launcher first!
+There was an error during installation
