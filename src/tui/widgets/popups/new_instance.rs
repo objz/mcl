@@ -454,11 +454,11 @@ fn wizard_title(_state: &WizardState) -> Line<'static> {
 fn step_keybinds(state: &WizardState) -> ratatui::text::Line<'static> {
     use super::keybind_line;
     match state.step {
-        WizardStep::Name        => keybind_line(&[("Enter", " continue"), ("Esc", " cancel")]),
-        WizardStep::Loader      => keybind_line(&[("j/k", " move"), ("h", " back"), ("l/Enter", " select"), ("Esc", " cancel")]),
-        WizardStep::Version     => keybind_line(&[("j/k", " move"), ("/", " search"), ("s", " snapshots"), ("h", " back"), ("l/Enter", " select"), ("Esc", " cancel")]),
-        WizardStep::LoaderVersion => keybind_line(&[("j/k", " move"), ("h", " back"), ("l/Enter", " select"), ("Esc", " cancel")]),
-        WizardStep::Confirm     => keybind_line(&[("h", " back"), ("Enter", " create"), ("Esc", " cancel")]),
+        WizardStep::Name          => keybind_line(&[("Enter", " continue")]),
+        WizardStep::Loader        => keybind_line(&[("h", " back"), ("Enter", " select")]),
+        WizardStep::Version       => keybind_line(&[("/", " search"), ("s", " snap"), ("h", " back"), ("Enter", " select")]),
+        WizardStep::LoaderVersion => keybind_line(&[("h", " back"), ("Enter", " select")]),
+        WizardStep::Confirm       => keybind_line(&[("h", " back"), ("Enter", " create")]),
     }
 }
 
