@@ -5,14 +5,23 @@ use async_trait::async_trait;
 use crate::instance::models::ModLoader;
 use crate::net::fabric;
 use crate::net::forge;
+use crate::net::mojang;
 use crate::net::neoforge;
 use crate::net::quilt;
 use crate::net::{HttpClient, NetError};
+
+#[derive(Debug, Clone)]
+pub struct GameVersion {
+    pub id: String,
+    pub stable: bool,
+}
 
 #[async_trait]
 pub trait ModLoaderInstaller: Send + Sync {
     /// Returns the ModLoader variant this installer handles.
     fn loader_type(&self) -> ModLoader;
+
+    async fn get_game_versions(&self, client: &HttpClient) -> Result<Vec<GameVersion>, NetError>;
 
     /// Returns available loader versions for the given Minecraft version.
     /// For Vanilla, returns a single placeholder entry.
@@ -42,6 +51,24 @@ impl ModLoaderInstaller for VanillaInstaller {
         ModLoader::Vanilla
     }
 
+    async fn get_game_versions(&self, client: &HttpClient) -> Result<Vec<GameVersion>, NetError> {
+        let manifest = match mojang::fetch_version_manifest(client).await {
+            Ok(m) => m,
+            Err(e) => {
+                return Err(e);
+            }
+        };
+
+        Ok(manifest
+            .versions
+            .into_iter()
+            .map(|version| GameVersion {
+                id: version.id,
+                stable: version.version_type == "release",
+            })
+            .collect())
+    }
+
     async fn get_versions(
         &self,
         _client: &HttpClient,
@@ -69,6 +96,13 @@ pub struct FabricInstaller;
 impl ModLoaderInstaller for FabricInstaller {
     fn loader_type(&self) -> ModLoader {
         ModLoader::Fabric
+    }
+
+    async fn get_game_versions(&self, client: &HttpClient) -> Result<Vec<GameVersion>, NetError> {
+        match fabric::fetch_fabric_game_versions(client).await {
+            Ok(versions) => Ok(versions),
+            Err(e) => Err(e),
+        }
     }
 
     async fn get_versions(
@@ -121,6 +155,13 @@ pub struct ForgeInstaller;
 impl ModLoaderInstaller for ForgeInstaller {
     fn loader_type(&self) -> ModLoader {
         ModLoader::Forge
+    }
+
+    async fn get_game_versions(&self, client: &HttpClient) -> Result<Vec<GameVersion>, NetError> {
+        match forge::fetch_forge_game_versions(client).await {
+            Ok(versions) => Ok(versions),
+            Err(e) => Err(e),
+        }
     }
 
     async fn get_versions(
@@ -184,6 +225,13 @@ impl ModLoaderInstaller for QuiltInstaller {
         ModLoader::Quilt
     }
 
+    async fn get_game_versions(&self, client: &HttpClient) -> Result<Vec<GameVersion>, NetError> {
+        match quilt::fetch_quilt_game_versions(client).await {
+            Ok(versions) => Ok(versions),
+            Err(e) => Err(e),
+        }
+    }
+
     async fn get_versions(
         &self,
         client: &HttpClient,
@@ -234,6 +282,13 @@ pub struct NeoForgeInstaller;
 impl ModLoaderInstaller for NeoForgeInstaller {
     fn loader_type(&self) -> ModLoader {
         ModLoader::NeoForge
+    }
+
+    async fn get_game_versions(&self, client: &HttpClient) -> Result<Vec<GameVersion>, NetError> {
+        match neoforge::fetch_neoforge_game_versions(client).await {
+            Ok(versions) => Ok(versions),
+            Err(e) => Err(e),
+        }
     }
 
     async fn get_versions(
@@ -331,6 +386,19 @@ mod tests {
         match installer.install(&client, "1.20.1", "vanilla", &tmp, &meta).await {
             Ok(()) => {}
             Err(e) => assert!(false, "install failed: {}", e),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_vanilla_get_game_versions() {
+        let client = HttpClient::new();
+        let installer = VanillaInstaller;
+        match installer.get_game_versions(&client).await {
+            Ok(versions) => {
+                assert!(!versions.is_empty());
+                assert!(versions.iter().any(|version| version.id == "1.20.1"));
+            }
+            Err(e) => assert!(false, "get_game_versions failed: {}", e),
         }
     }
 }

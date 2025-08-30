@@ -2,6 +2,7 @@ use std::path::Path;
 
 use serde::Deserialize;
 
+use crate::instance::loader::GameVersion;
 use crate::net::{download_file, HttpClient, NetError};
 use crate::tui::progress::set_action;
 
@@ -82,6 +83,65 @@ pub async fn fetch_neoforge_versions(
         .collect();
 
     Ok(versions)
+}
+
+pub async fn fetch_neoforge_game_versions(
+    client: &HttpClient,
+) -> Result<Vec<GameVersion>, NetError> {
+    let response = match client.inner().get(NEOFORGE_API_BASE).send().await {
+        Ok(r) => r,
+        Err(e) => {
+            tracing::error!("GET {} failed: {}", NEOFORGE_API_BASE, e);
+            return Err(NetError::Http(e));
+        }
+    };
+
+    if !response.status().is_success() {
+        let status = response.status().as_u16();
+        tracing::error!("HTTP {} for {}", status, NEOFORGE_API_BASE);
+        return Err(NetError::StatusError {
+            status,
+            url: NEOFORGE_API_BASE.to_string(),
+        });
+    }
+
+    let maven: NeoForgeMavenVersions = match response.json().await {
+        Ok(m) => m,
+        Err(e) => {
+            tracing::error!("Failed to parse NeoForge versions: {}", e);
+            return Err(NetError::Http(e));
+        }
+    };
+
+    let mut game_versions: Vec<String> = Vec::new();
+    for version in &maven.versions {
+        let parts: Vec<&str> = version.split('.').collect();
+        if parts.len() >= 2 {
+            match (parts[0].parse::<u32>(), parts[1].parse::<u32>()) {
+                (Ok(major), Ok(minor)) => {
+                    let mc_version = if minor == 0 {
+                        format!("1.{}", major)
+                    } else {
+                        format!("1.{}.{}", major, minor)
+                    };
+
+                    if !game_versions.contains(&mc_version) {
+                        game_versions.push(mc_version);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    game_versions.reverse();
+
+    Ok(game_versions
+        .into_iter()
+        .map(|version| GameVersion {
+            id: version,
+            stable: true,
+        })
+        .collect())
 }
 
 pub async fn download_neoforge_installer(
@@ -172,6 +232,18 @@ mod tests {
                 );
             }
             Err(e) => assert!(false, "fetch_neoforge_versions failed: {}", e),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_fetch_game_versions() {
+        let client = HttpClient::new();
+        match fetch_neoforge_game_versions(&client).await {
+            Ok(versions) => {
+                assert!(!versions.is_empty(), "Should have NeoForge game versions");
+                assert!(versions.iter().any(|version| version.id == "1.21"));
+            }
+            Err(e) => assert!(false, "fetch_neoforge_game_versions failed: {}", e),
         }
     }
 

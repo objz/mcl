@@ -2,6 +2,7 @@ use std::path::Path;
 
 use serde::Deserialize;
 
+use crate::instance::loader::GameVersion;
 use crate::net::{download_file, HttpClient, NetError};
 use crate::tui::progress::set_sub_action;
 
@@ -21,6 +22,12 @@ pub struct FabricVersion {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+pub struct FabricGameVersion {
+    pub version: String,
+    pub stable: bool,
+}
+
+#[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FabricProfile {
     pub id: String,
@@ -35,6 +42,41 @@ pub struct FabricLibrary {
 }
 
 
+
+pub async fn fetch_fabric_game_versions(
+    client: &HttpClient,
+) -> Result<Vec<GameVersion>, NetError> {
+    let url = format!("{}/versions/game", FABRIC_META_BASE);
+    let response = match client.inner().get(&url).send().await {
+        Ok(r) => r,
+        Err(e) => {
+            tracing::error!("Fabric game versions GET {} failed: {}", url, e);
+            return Err(NetError::Http(e));
+        }
+    };
+
+    if !response.status().is_success() {
+        let status = response.status().as_u16();
+        tracing::error!("HTTP {} for {}", status, url);
+        return Err(NetError::StatusError { status, url });
+    }
+
+    let versions: Vec<FabricGameVersion> = match response.json().await {
+        Ok(v) => v,
+        Err(e) => {
+            tracing::error!("Failed to parse Fabric game versions: {}", e);
+            return Err(NetError::Http(e));
+        }
+    };
+
+    Ok(versions
+        .into_iter()
+        .map(|version| GameVersion {
+            id: version.version,
+            stable: version.stable,
+        })
+        .collect())
+}
 
 pub async fn fetch_fabric_versions(
     client: &HttpClient,
@@ -178,6 +220,18 @@ mod tests {
                 );
             }
             Err(e) => assert!(false, "fetch_fabric_versions failed: {}", e),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_fetch_game_versions() {
+        let client = HttpClient::new();
+        match fetch_fabric_game_versions(&client).await {
+            Ok(versions) => {
+                assert!(!versions.is_empty(), "Should have Fabric game versions");
+                assert!(versions.iter().any(|version| version.id == "1.20.1"));
+            }
+            Err(e) => assert!(false, "fetch_fabric_game_versions failed: {}", e),
         }
     }
 

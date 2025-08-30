@@ -1,5 +1,5 @@
 use super::base::PopupFrame;
-use crate::instance::{loader::get_installer, models::ModLoader};
+use crate::instance::{loader::{get_installer, GameVersion}, models::ModLoader};
 use crate::tui::layout::FocusedArea;
 use crate::tui::theme::THEME;
 use crate::tui::widgets::profiles;
@@ -53,7 +53,7 @@ impl<T> Default for LoadState<T> {
 pub struct WizardState {
     pub step: WizardStep,
     pub name_input: String,
-    pub versions: LoadState<Vec<crate::net::mojang::VersionEntry>>,
+    pub versions: LoadState<Vec<GameVersion>>,
     pub version_idx: usize,
     pub show_snapshots: bool,
     pub loader_idx: usize,
@@ -68,11 +68,11 @@ impl WizardState {
         *self = WizardState::default();
     }
 
-    pub fn selected_version(&self) -> Option<&crate::net::mojang::VersionEntry> {
+    pub fn selected_version(&self) -> Option<&GameVersion> {
         if let LoadState::Loaded(ref versions) = self.versions {
             let visible: Vec<_> = versions
                 .iter()
-                .filter(|v| self.show_snapshots || v.version_type == "release")
+                .filter(|v| self.show_snapshots || v.stable)
                 .collect();
             visible.get(self.version_idx).copied()
         } else {
@@ -487,10 +487,10 @@ fn render_version_step(state: &WizardState, area: Rect, buf: &mut ratatui::buffe
             let items: Vec<ListItem> = visible_versions(state)
                 .into_iter()
                 .map(|version| {
-                    let suffix = if version.version_type == "release" {
+                    let suffix = if version.stable {
                         String::new()
                     } else {
-                        format!(" ({})", version.version_type)
+                        " (snapshot)".to_string()
                     };
                     ListItem::new(format!("{}{}", version.id, suffix))
                 })
@@ -619,13 +619,12 @@ fn render_confirm_step(state: &WizardState, area: Rect, buf: &mut ratatui::buffe
     .render(area, buf);
 }
 
-fn visible_versions(state: &WizardState) -> Vec<crate::net::mojang::VersionEntry> {
+fn visible_versions(state: &WizardState) -> Vec<GameVersion> {
     let q = state.version_search.to_lowercase();
-    let loader = state.selected_loader();
     match &state.versions {
         LoadState::Loaded(versions) => versions
             .iter()
-            .filter(|v| state.show_snapshots || v.version_type == "release")
+            .filter(|v| state.show_snapshots || v.stable)
             .filter(|v| q.is_empty() || v.id.to_lowercase().contains(&q))
             .cloned()
             .collect(),
@@ -661,12 +660,14 @@ fn ensure_versions_loaded(state: &mut WizardState) {
 
     state.versions = LoadState::Loading;
     let versions_arc = WIZARD_STATE.clone();
+    let loader = state.selected_loader();
     tokio::spawn(async move {
         let client = crate::net::HttpClient::new();
-        match crate::net::mojang::fetch_version_manifest(&client).await {
-            Ok(manifest) => match versions_arc.lock() {
+        let installer = get_installer(loader);
+        match installer.get_game_versions(&client).await {
+            Ok(versions) => match versions_arc.lock() {
                 Ok(mut s) => {
-                    s.versions = LoadState::Loaded(manifest.versions);
+                    s.versions = LoadState::Loaded(versions);
                     clamp_version_index(&mut s);
                 }
                 Err(e) => {

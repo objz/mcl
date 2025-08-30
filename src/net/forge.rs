@@ -3,6 +3,7 @@ use std::path::Path;
 
 use serde::Deserialize;
 
+use crate::instance::loader::GameVersion;
 use crate::net::{download_file, HttpClient, NetError};
 use crate::tui::progress::set_action;
 
@@ -59,6 +60,50 @@ pub async fn fetch_forge_versions(
     versions.sort();
     versions.dedup();
     Ok(versions)
+}
+
+pub async fn fetch_forge_game_versions(client: &HttpClient) -> Result<Vec<GameVersion>, NetError> {
+    let response = match client.inner().get(FORGE_PROMOTIONS_URL).send().await {
+        Ok(r) => r,
+        Err(e) => {
+            tracing::error!("GET {} failed: {}", FORGE_PROMOTIONS_URL, e);
+            return Err(NetError::Http(e));
+        }
+    };
+
+    if !response.status().is_success() {
+        let status = response.status().as_u16();
+        tracing::error!("HTTP {} for {}", status, FORGE_PROMOTIONS_URL);
+        return Err(NetError::StatusError {
+            status,
+            url: FORGE_PROMOTIONS_URL.to_string(),
+        });
+    }
+
+    let promos: ForgePromotions = match response.json().await {
+        Ok(p) => p,
+        Err(e) => {
+            tracing::error!("Failed to parse Forge promotions: {}", e);
+            return Err(NetError::Http(e));
+        }
+    };
+
+    let mut game_versions: Vec<String> = promos
+        .promos
+        .keys()
+        .filter_map(|key| key.rsplit_once('-').map(|(version, _)| version.to_string()))
+        .collect();
+    game_versions.sort();
+    game_versions.dedup();
+    game_versions.reverse();
+
+    Ok(game_versions
+        .into_iter()
+        .map(|version| GameVersion {
+            id: version,
+            stable: true,
+        })
+        .collect())
 }
 
 /// Download the Forge installer JAR for the given game + forge version combo.
@@ -156,6 +201,18 @@ mod tests {
                 assert!(!versions.is_empty(), "Should have Forge versions for 1.20.1");
             }
             Err(e) => assert!(false, "fetch_forge_versions failed: {}", e),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_fetch_game_versions() {
+        let client = HttpClient::new();
+        match fetch_forge_game_versions(&client).await {
+            Ok(versions) => {
+                assert!(!versions.is_empty(), "Should have Forge game versions");
+                assert!(versions.iter().any(|version| version.id == "1.20.1"));
+            }
+            Err(e) => assert!(false, "fetch_forge_game_versions failed: {}", e),
         }
     }
 }
