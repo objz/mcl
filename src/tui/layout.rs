@@ -183,7 +183,7 @@ impl App {
     fn handle_key_event(&mut self, key_event: KeyEvent) -> color_eyre::Result<()> {
         if self.focused == FocusedArea::StatusExpanded {
             match key_event.code {
-                KeyCode::Char('S') | KeyCode::Char('q') | KeyCode::Esc => {
+                KeyCode::Char('S') | KeyCode::Esc => {
                     self.focused = self.pre_overlay_focused;
                     self.log_scroll = 0;
                     return Ok(());
@@ -204,7 +204,7 @@ impl App {
 
         if self.focused == FocusedArea::ConfirmDelete {
             match key_event.code {
-                KeyCode::Char('y') | KeyCode::Char('Y') => {
+                KeyCode::Enter | KeyCode::Char('y') | KeyCode::Char('Y') => {
                     let name = confirm_popup::pending_delete_name();
                     if !name.is_empty() {
                         match self.instance_manager.delete(&name) {
@@ -220,7 +220,7 @@ impl App {
                     self.focused = FocusedArea::Profiles;
                     return Ok(());
                 }
-                KeyCode::Char('n') | KeyCode::Char('N') => {
+                KeyCode::Esc | KeyCode::Char('n') | KeyCode::Char('N') => {
                     confirm_popup::clear_pending();
                     self.focused = FocusedArea::Profiles;
                     return Ok(());
@@ -362,8 +362,7 @@ impl App {
             .title_bottom(
                 crate::tui::widgets::popups::keybind_line(&[
                     ("j/k", " scroll"),
-                    ("S", " close"),
-                    ("q", " close"),
+                    ("S/Esc", " close"),
                 ])
                 .alignment(Alignment::Right),
             )
@@ -401,14 +400,14 @@ impl App {
         let clamped = scroll.min(total.saturating_sub(1));
 
         let list_area = Rect {
-            width: inner.width.saturating_sub(1),
+            width: inner.width,
             ..inner
         };
         let scrollbar_area = Rect {
-            x: inner.x + inner.width.saturating_sub(1),
-            y: inner.y,
+            x: overlay.x + overlay.width.saturating_sub(1),
+            y: overlay.y + 1,
             width: 1,
-            height: inner.height,
+            height: overlay.height.saturating_sub(2),
         };
 
         let list = List::new(items);

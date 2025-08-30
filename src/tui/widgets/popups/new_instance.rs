@@ -168,8 +168,8 @@ pub fn handle_key(key_event: &KeyEvent, profiles_state: &mut profiles::State) {
     match state.step {
         WizardStep::Name => handle_name_key(&mut state, key_event, profiles_state),
         WizardStep::Version => handle_version_key(&mut state, key_event, profiles_state),
-        WizardStep::Loader => handle_loader_key(&mut state, key_event),
-        WizardStep::LoaderVersion => handle_loader_version_key(&mut state, key_event),
+        WizardStep::Loader => handle_loader_key(&mut state, key_event, profiles_state),
+        WizardStep::LoaderVersion => handle_loader_version_key(&mut state, key_event, profiles_state),
         WizardStep::Confirm => handle_confirm_key(&mut state, key_event, profiles_state),
     }
 }
@@ -220,8 +220,10 @@ fn handle_name_key(
     profiles_state: &mut profiles::State,
 ) {
     match key_event.code {
-        KeyCode::Esc => close_popup(state, profiles_state),
-        KeyCode::Enter => {
+        KeyCode::Esc | KeyCode::Left | KeyCode::Char('h') => {
+            close_popup(state, profiles_state);
+        }
+        KeyCode::Enter | KeyCode::Right | KeyCode::Char('l') => {
             if state.name_input.trim().is_empty() {
                 return;
             }
@@ -280,8 +282,11 @@ fn handle_version_key(
                 state.version_search.clear();
                 clamp_version_index(state);
             } else {
-                state.step = WizardStep::Loader;
+                close_popup(state, profiles_state);
             }
+        }
+        KeyCode::Left | KeyCode::Char('h') if !state.version_search_active => {
+            state.step = WizardStep::Loader;
         }
         KeyCode::Char('j') | KeyCode::Down => {
             if visible_count > 0 {
@@ -291,7 +296,7 @@ fn handle_version_key(
         KeyCode::Char('k') | KeyCode::Up => {
             state.version_idx = state.version_idx.saturating_sub(1);
         }
-        KeyCode::Char('s') => {
+        KeyCode::Char('s') if !state.version_search_active => {
             state.show_snapshots = !state.show_snapshots;
             clamp_version_index(state);
         }
@@ -299,7 +304,7 @@ fn handle_version_key(
             state.version_search_active = true;
             state.version_idx = 0;
         }
-        KeyCode::Enter => {
+        KeyCode::Enter | KeyCode::Right | KeyCode::Char('l') if !state.version_search_active => {
             if state.selected_version().is_none() {
                 return;
             }
@@ -316,21 +321,28 @@ fn handle_version_key(
                 }
             }
         }
-        KeyCode::Char('q') => close_popup(state, profiles_state),
+        KeyCode::Enter if state.version_search_active => {
+            state.version_search_active = false;
+        }
         _ => {}
     }
 }
 
-fn handle_loader_key(state: &mut WizardState, key_event: &KeyEvent) {
+fn handle_loader_key(
+    state: &mut WizardState,
+    key_event: &KeyEvent,
+    profiles_state: &mut profiles::State,
+) {
     match key_event.code {
-        KeyCode::Esc => state.step = WizardStep::Name,
+        KeyCode::Esc => close_popup(state, profiles_state),
+        KeyCode::Left | KeyCode::Char('h') => state.step = WizardStep::Name,
         KeyCode::Char('j') | KeyCode::Down => {
             state.loader_idx = (state.loader_idx + 1).min(4);
         }
         KeyCode::Char('k') | KeyCode::Up => {
             state.loader_idx = state.loader_idx.saturating_sub(1);
         }
-        KeyCode::Enter => {
+        KeyCode::Enter | KeyCode::Right | KeyCode::Char('l') => {
             state.versions = LoadState::Idle;
             state.version_idx = 0;
             state.version_search.clear();
@@ -342,7 +354,11 @@ fn handle_loader_key(state: &mut WizardState, key_event: &KeyEvent) {
     }
 }
 
-fn handle_loader_version_key(state: &mut WizardState, key_event: &KeyEvent) {
+fn handle_loader_version_key(
+    state: &mut WizardState,
+    key_event: &KeyEvent,
+    profiles_state: &mut profiles::State,
+) {
     if state.selected_loader() == ModLoader::Vanilla {
         state.step = WizardStep::Confirm;
         return;
@@ -354,7 +370,8 @@ fn handle_loader_version_key(state: &mut WizardState, key_event: &KeyEvent) {
     };
 
     match key_event.code {
-        KeyCode::Esc => state.step = WizardStep::Version,
+        KeyCode::Esc => close_popup(state, profiles_state),
+        KeyCode::Left | KeyCode::Char('h') => state.step = WizardStep::Version,
         KeyCode::Char('j') | KeyCode::Down => {
             if version_count > 0 {
                 state.loader_version_idx =
@@ -364,7 +381,7 @@ fn handle_loader_version_key(state: &mut WizardState, key_event: &KeyEvent) {
         KeyCode::Char('k') | KeyCode::Up => {
             state.loader_version_idx = state.loader_version_idx.saturating_sub(1);
         }
-        KeyCode::Enter => {
+        KeyCode::Enter | KeyCode::Right | KeyCode::Char('l') => {
             if state.selected_loader_version().is_none() {
                 return;
             }
@@ -380,7 +397,8 @@ fn handle_confirm_key(
     profiles_state: &mut profiles::State,
 ) {
     match key_event.code {
-        KeyCode::Esc => {
+        KeyCode::Esc => close_popup(state, profiles_state),
+        KeyCode::Left | KeyCode::Char('h') => {
             if state.selected_loader() == ModLoader::Vanilla {
                 state.step = WizardStep::Version;
             } else {
@@ -436,11 +454,11 @@ fn wizard_title(_state: &WizardState) -> Line<'static> {
 fn step_keybinds(state: &WizardState) -> ratatui::text::Line<'static> {
     use super::keybind_line;
     match state.step {
-        WizardStep::Name => keybind_line(&[("Enter", " continue"), ("Esc", " close")]),
-        WizardStep::Version => keybind_line(&[("j/k", " move"), ("/", " search"), ("s", " snapshots"), ("Enter", " select"), ("Esc", " back")]),
-        WizardStep::Loader => keybind_line(&[("j/k", " move"), ("Enter", " select"), ("Esc", " back")]),
-        WizardStep::LoaderVersion => keybind_line(&[("j/k", " move"), ("Enter", " select"), ("Esc", " back")]),
-        WizardStep::Confirm => keybind_line(&[("Enter", " create"), ("Esc", " back")]),
+        WizardStep::Name        => keybind_line(&[("Enter", " continue"), ("Esc", " cancel")]),
+        WizardStep::Loader      => keybind_line(&[("j/k", " move"), ("h", " back"), ("l/Enter", " select"), ("Esc", " cancel")]),
+        WizardStep::Version     => keybind_line(&[("j/k", " move"), ("/", " search"), ("s", " snapshots"), ("h", " back"), ("l/Enter", " select"), ("Esc", " cancel")]),
+        WizardStep::LoaderVersion => keybind_line(&[("j/k", " move"), ("h", " back"), ("l/Enter", " select"), ("Esc", " cancel")]),
+        WizardStep::Confirm     => keybind_line(&[("h", " back"), ("Enter", " create"), ("Esc", " cancel")]),
     }
 }
 
