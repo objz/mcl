@@ -361,8 +361,7 @@ impl App {
             )]))
             .title_bottom(
                 crate::tui::widgets::popups::keybind_line(&[
-                    ("j/k", " scroll"),
-                    ("S/Esc", " close"),
+                    ("S", " close"),
                 ])
                 .alignment(Alignment::Right),
             )

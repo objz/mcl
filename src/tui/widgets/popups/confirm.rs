@@ -69,7 +69,7 @@ impl Widget for ConfirmPopup {
                 .fg(THEME.colors.border_focused)
                 .add_modifier(Modifier::BOLD),
         )]);
-        let kb = keybind_line(&[("Enter", " confirm"), ("Esc", " cancel")]);
+        let kb = keybind_line(&[("Enter", " confirm")]);
 
         let popup = PopupFrame {
             title,
