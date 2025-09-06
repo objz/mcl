@@ -1,11 +1,11 @@
 use crossterm::event::KeyCode;
 use ratatui::{
-    layout::{Constraint, Direction, Layout, Rect},
+    layout::Rect,
     style::{Modifier, Style},
     text::{Line, Span, Text},
     widgets::{
-        Block, BorderType, Borders, List, ListItem, ListState, Paragraph, Scrollbar,
-        ScrollbarOrientation, ScrollbarState, Widget,
+        Block, BorderType, Borders, List, ListItem, ListState, Scrollbar, ScrollbarOrientation,
+        ScrollbarState,
     },
     Frame,
 };
@@ -13,7 +13,7 @@ use ratatui::{
 use crate::instance::models::InstanceConfig;
 use crate::tui::{layout::FocusedArea, theme::THEME};
 
-use super::{popups, styled_title, WidgetKey};
+use super::{popups, search::SearchState, styled_title, WidgetKey};
 
 #[derive(Debug, Default)]
 pub struct State {
@@ -21,8 +21,7 @@ pub struct State {
     pub list_state: ListState,
     pub scrollbar_state: ScrollbarState,
     pub show_popup: bool,
-    pub search_mode: bool,
-    pub search_query: String,
+    pub search: SearchState,
 }
 
 impl State {
@@ -33,8 +32,7 @@ impl State {
             list_state: ListState::default(),
             scrollbar_state: ScrollbarState::default(),
             show_popup: false,
-            search_mode: false,
-            search_query: String::new(),
+            search: SearchState::default(),
         };
         if count > 0 {
             s.list_state.select(Some(0));
@@ -52,17 +50,12 @@ impl State {
     }
 
     fn filtered_indices(&self) -> Vec<usize> {
-        if self.search_query.is_empty() {
-            (0..self.instances.len()).collect()
-        } else {
-            let q = self.search_query.to_lowercase();
-            self.instances
-                .iter()
-                .enumerate()
-                .filter(|(_, inst)| inst.name.to_lowercase().contains(&q))
-                .map(|(i, _)| i)
-                .collect()
-        }
+        self.instances
+            .iter()
+            .enumerate()
+            .filter(|(_, inst)| self.search.matches(&inst.name))
+            .map(|(i, _)| i)
+            .collect()
     }
 
     fn next(&mut self) {
@@ -142,24 +135,23 @@ impl State {
 impl WidgetKey for State {
     fn handle_key(&mut self, key_event: &crossterm::event::KeyEvent) {
         match key_event.code {
-            KeyCode::Char('/') if !self.search_mode => {
-                self.search_mode = true;
+            KeyCode::Char('/') if !self.search.active => {
+                self.search.activate();
                 self.list_state.select(Some(0));
                 self.update_scrollbar();
             }
-            KeyCode::Esc if self.search_mode => {
-                self.search_mode = false;
-                self.search_query.clear();
+            KeyCode::Esc if self.search.active => {
+                self.search.deactivate();
                 self.list_state.select(Some(0));
                 self.update_scrollbar();
             }
-            KeyCode::Backspace if self.search_mode => {
-                self.search_query.pop();
+            KeyCode::Backspace if self.search.active => {
+                self.search.pop();
                 self.list_state.select(Some(0));
                 self.update_scrollbar();
             }
-            KeyCode::Char(c) if self.search_mode && c != 'j' && c != 'k' => {
-                self.search_query.push(c);
+            KeyCode::Char(c) if self.search.active && c != 'j' && c != 'k' => {
+                self.search.push(c);
                 self.list_state.select(Some(0));
                 self.update_scrollbar();
             }
@@ -167,9 +159,7 @@ impl WidgetKey for State {
                 self.show_popup = true;
                 self.update_scrollbar();
             }
-            KeyCode::Char('d') => {
-                // Deletion handled by layout.rs which calls remove_instance
-            }
+            KeyCode::Char('d') => {}
             KeyCode::Char('j') | KeyCode::Down => self.next(),
             KeyCode::Char('k') | KeyCode::Up => self.previous(),
             _ => {}
@@ -184,11 +174,15 @@ pub fn render(frame: &mut Frame, area: Rect, focused: FocusedArea, state: &mut S
         THEME.colors.border_unfocused
     };
 
-    let block = Block::default()
+    let mut block = Block::default()
         .title(styled_title("Profiles", true))
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .border_style(Style::default().fg(color));
+
+    if let Some(search_line) = state.search.title_line() {
+        block = block.title_top(search_line);
+    }
 
     frame.render_widget(&block, area);
 
@@ -200,16 +194,7 @@ pub fn render(frame: &mut Frame, area: Rect, focused: FocusedArea, state: &mut S
     };
 
     let inner_area = block.inner(area);
-
-    let (list_area, search_area) = if state.search_mode {
-        let chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([Constraint::Min(1), Constraint::Length(1)])
-            .split(inner_area);
-        (chunks[0], Some(chunks[1]))
-    } else {
-        (inner_area, None)
-    };
+    let list_area = inner_area;
 
     let filtered = state.filtered_indices();
     let items: Vec<ListItem> = filtered
@@ -244,13 +229,6 @@ pub fn render(frame: &mut Frame, area: Rect, focused: FocusedArea, state: &mut S
         .highlight_symbol("");
 
     frame.render_stateful_widget(list, list_area, &mut state.list_state);
-
-    if let Some(sa) = search_area {
-        let search_text = format!("/ {}\u{2588}", state.search_query);
-        let paragraph =
-            Paragraph::new(search_text).style(Style::default().fg(THEME.colors.border_focused));
-        paragraph.render(sa, frame.buffer_mut());
-    }
 
     frame.render_stateful_widget(
         Scrollbar::default()

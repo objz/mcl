@@ -11,6 +11,7 @@ pub struct PopupFrame<'a> {
     pub border_color: Color,
     pub bg: Option<Color>,
     pub keybinds: Option<Line<'a>>,
+    pub search_line: Option<Line<'a>>,
     pub content: Box<dyn Fn(Rect, &mut Buffer) + 'a>,
 }
 
@@ -27,6 +28,10 @@ impl<'a> Widget for PopupFrame<'a> {
             .borders(Borders::ALL)
             .border_type(BorderType::Rounded)
             .border_style(Style::default().fg(self.border_color));
+
+        if let Some(sl) = self.search_line {
+            block = block.title_top(sl.alignment(Alignment::Right));
+        }
 
         if let Some(kb) = self.keybinds {
             block = block.title_bottom(kb.alignment(Alignment::Right));

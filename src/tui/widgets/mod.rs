@@ -9,6 +9,7 @@ pub mod content;
 pub mod details;
 pub mod popups;
 pub mod profiles;
+pub mod search;
 pub mod status;
 
 pub fn styled_title(title: &str, highlight: bool) -> Line<'_> {

@@ -43,6 +43,7 @@ impl Widget for ErrorPopup {
             border_color,
             bg: None,
             keybinds: None,
+            search_line: None,
             content: Box::new(move |inner, buf| {
                 Paragraph::new(message.as_str())
                     .wrap(Wrap { trim: true })

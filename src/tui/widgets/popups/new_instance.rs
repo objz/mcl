@@ -59,8 +59,7 @@ pub struct WizardState {
     pub loader_idx: usize,
     pub loader_versions: LoadState<Vec<String>>,
     pub loader_version_idx: usize,
-    pub version_search: String,
-    pub version_search_active: bool,
+    pub version_search: crate::tui::widgets::search::SearchState,
 }
 
 impl WizardState {
@@ -131,11 +130,14 @@ pub fn render(frame: &mut Frame, area: Rect, _focused: FocusedArea) {
 
     let keybinds = step_keybinds(&snapshot);
 
+    let search_line = snapshot.version_search.title_line();
+
     let popup = PopupFrame {
         title: wizard_title(&snapshot),
         border_color: THEME.colors.border_focused,
         bg: Some(THEME.colors.row_alternate_bg),
         keybinds: Some(keybinds),
+        search_line,
         content: Box::new(move |popup_area, buf| {
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
@@ -245,11 +247,11 @@ fn handle_version_key(
     profiles_state: &mut profiles::State,
 ) {
     // Search mode: route char input to search query
-    if state.version_search_active {
+    if state.version_search.active {
         match key_event.code {
             KeyCode::Esc => {
-                state.version_search_active = false;
-                state.version_search.clear();
+                state.version_search.active = false;
+                state.version_search.deactivate();
                 clamp_version_index(state);
                 return;
             }
@@ -277,15 +279,15 @@ fn handle_version_key(
 
     match key_event.code {
         KeyCode::Esc => {
-            if state.version_search_active {
-                state.version_search_active = false;
-                state.version_search.clear();
+            if state.version_search.active {
+                state.version_search.active = false;
+                state.version_search.deactivate();
                 clamp_version_index(state);
             } else {
                 close_popup(state, profiles_state);
             }
         }
-        KeyCode::Left | KeyCode::Char('h') if !state.version_search_active => {
+        KeyCode::Left | KeyCode::Char('h') if !state.version_search.active => {
             state.step = WizardStep::Loader;
         }
         KeyCode::Char('j') | KeyCode::Down => {
@@ -296,15 +298,15 @@ fn handle_version_key(
         KeyCode::Char('k') | KeyCode::Up => {
             state.version_idx = state.version_idx.saturating_sub(1);
         }
-        KeyCode::Char('s') if !state.version_search_active => {
+        KeyCode::Char('s') if !state.version_search.active => {
             state.show_snapshots = !state.show_snapshots;
             clamp_version_index(state);
         }
-        KeyCode::Char('/') if !state.version_search_active => {
-            state.version_search_active = true;
+        KeyCode::Char('/') if !state.version_search.active => {
+            state.version_search.activate();
             state.version_idx = 0;
         }
-        KeyCode::Enter | KeyCode::Right | KeyCode::Char('l') if !state.version_search_active => {
+        KeyCode::Enter | KeyCode::Right | KeyCode::Char('l') if !state.version_search.active => {
             if state.selected_version().is_none() {
                 return;
             }
@@ -321,8 +323,8 @@ fn handle_version_key(
                 }
             }
         }
-        KeyCode::Enter if state.version_search_active => {
-            state.version_search_active = false;
+        KeyCode::Enter if state.version_search.active => {
+            state.version_search.active = false;
         }
         _ => {}
     }
@@ -345,8 +347,8 @@ fn handle_loader_key(
         KeyCode::Enter | KeyCode::Right | KeyCode::Char('l') => {
             state.versions = LoadState::Idle;
             state.version_idx = 0;
-            state.version_search.clear();
-            state.version_search_active = false;
+            state.version_search.deactivate();
+            state.version_search.active = false;
             state.step = WizardStep::Version;
             ensure_versions_loaded(state);
         }
@@ -484,24 +486,6 @@ fn render_version_step(state: &WizardState, area: Rect, buf: &mut ratatui::buffe
                 .render(area, buf);
         }
         LoadState::Loaded(_) => {
-            // Split area for search bar (when active) + list
-            let (search_area, list_area) = if state.version_search_active || !state.version_search.is_empty() {
-                let chunks = Layout::default()
-                    .direction(Direction::Vertical)
-                    .constraints([Constraint::Length(1), Constraint::Min(1)])
-                    .split(area);
-                (Some(chunks[0]), chunks[1])
-            } else {
-                (None, area)
-            };
-
-            if let Some(sa) = search_area {
-                let search_display = format!("/ {}█", state.version_search);
-                Paragraph::new(search_display.as_str())
-                    .style(Style::default().fg(THEME.colors.border_focused))
-                    .render(sa, buf);
-            }
-
             let items: Vec<ListItem> = visible_versions(state)
                 .into_iter()
                 .map(|version| {
@@ -523,7 +507,7 @@ fn render_version_step(state: &WizardState, area: Rect, buf: &mut ratatui::buffe
                 .highlight_symbol("▶ ");
 
             let mut list_state = ListState::default().with_selected(Some(state.version_idx));
-            StatefulWidget::render(list, list_area, buf, &mut list_state);
+            StatefulWidget::render(list, area, buf, &mut list_state);
         }
     }
 }
@@ -638,7 +622,7 @@ fn render_confirm_step(state: &WizardState, area: Rect, buf: &mut ratatui::buffe
 }
 
 fn visible_versions(state: &WizardState) -> Vec<GameVersion> {
-    let q = state.version_search.to_lowercase();
+    let q = state.version_search.query.to_lowercase();
     match &state.versions {
         LoadState::Loaded(versions) => versions
             .iter()

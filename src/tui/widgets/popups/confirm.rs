@@ -76,6 +76,7 @@ impl Widget for ConfirmPopup {
             border_color: THEME.colors.border_focused,
             bg: Some(THEME.colors.row_alternate_bg),
             keybinds: Some(kb),
+            search_line: None,
             content: Box::new(|inner, buf| {
                 Paragraph::new("This will permanently remove the instance")
                     .style(Style::default().fg(THEME.colors.foreground))
