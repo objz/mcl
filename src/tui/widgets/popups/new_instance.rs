@@ -184,34 +184,31 @@ pub fn take_result() -> Option<WizardParams> {
 }
 
 pub fn popup_rect(frame_area: Rect) -> Rect {
+    use ratatui::layout::Constraint;
+
     let step = match WIZARD_STATE.lock() {
         Ok(s) => s.step.clone(),
         Err(_) => WizardStep::Name,
     };
 
-    let popup_w = frame_area.width / 2;
-    let x = frame_area.width / 4;
+    let w = Constraint::Percentage(50);
 
     match step {
         WizardStep::Name => {
             let h = 6u16.min(frame_area.height.saturating_sub(4));
-            let y = (frame_area.height.saturating_sub(h)) / 2;
-            Rect { x, y, width: popup_w, height: h }
+            frame_area.centered(w, Constraint::Length(h))
         }
         WizardStep::Version | WizardStep::LoaderVersion => {
             let h = (frame_area.height * 2 / 3).max(10).min(frame_area.height.saturating_sub(4));
-            let y = (frame_area.height.saturating_sub(h)) / 2;
-            Rect { x, y, width: popup_w, height: h }
+            frame_area.centered(w, Constraint::Length(h))
         }
         WizardStep::Loader => {
             let h = 9u16.min(frame_area.height.saturating_sub(4));
-            let y = (frame_area.height.saturating_sub(h)) / 2;
-            Rect { x, y, width: popup_w, height: h }
+            frame_area.centered(w, Constraint::Length(h))
         }
         WizardStep::Confirm => {
             let h = 8u16.min(frame_area.height.saturating_sub(4));
-            let y = (frame_area.height.saturating_sub(h)) / 2;
-            Rect { x, y, width: popup_w, height: h }
+            frame_area.centered(w, Constraint::Length(h))
         }
     }
 }
@@ -250,7 +247,6 @@ fn handle_version_key(
     if state.version_search.active {
         match key_event.code {
             KeyCode::Esc => {
-                state.version_search.active = false;
                 state.version_search.deactivate();
                 clamp_version_index(state);
                 return;
@@ -279,13 +275,7 @@ fn handle_version_key(
 
     match key_event.code {
         KeyCode::Esc => {
-            if state.version_search.active {
-                state.version_search.active = false;
-                state.version_search.deactivate();
-                clamp_version_index(state);
-            } else {
-                close_popup(state, profiles_state);
-            }
+            close_popup(state, profiles_state);
         }
         KeyCode::Left | KeyCode::Char('h') if !state.version_search.active => {
             state.step = WizardStep::Loader;

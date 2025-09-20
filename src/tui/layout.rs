@@ -246,7 +246,10 @@ impl App {
                         self.pre_overlay_focused = self.focused;
                         self.focused = FocusedArea::StatusExpanded;
                     }
-                    KeyCode::Char('d') if self.focused == FocusedArea::Profiles => {
+                    KeyCode::Char('d')
+                        if self.focused == FocusedArea::Profiles
+                            && !self.profiles_state.search.active =>
+                    {
                         if let Some(instance) = self.profiles_state.selected_instance() {
                             let name = instance.name.clone();
                             confirm_popup::set_pending_delete(&name);

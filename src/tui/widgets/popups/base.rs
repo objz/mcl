@@ -3,7 +3,7 @@ use ratatui::{
     layout::{Alignment, Rect},
     style::{Color, Style},
     text::Line,
-    widgets::{Block, BorderType, Borders, Clear, Widget},
+    widgets::{Block, BorderType, Clear, Widget},
 };
 
 pub struct PopupFrame<'a> {
@@ -23,9 +23,8 @@ impl<'a> Widget for PopupFrame<'a> {
             buf.set_style(area, Style::default().bg(bg));
         }
 
-        let mut block = Block::default()
+        let mut block = Block::bordered()
             .title_top(self.title)
-            .borders(Borders::ALL)
             .border_type(BorderType::Rounded)
             .border_style(Style::default().fg(self.border_color));
 

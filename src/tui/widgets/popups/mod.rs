@@ -40,13 +40,10 @@ pub fn word_wrap_size(text: &str, max_inner_width: usize) -> (usize, usize) {
 }
 
 pub fn centered_rect(frame: Rect, inner_w: usize, inner_h: usize) -> Rect {
-    let popup_w = (inner_w + 2) as u16;
-    let popup_h = (inner_h + 2) as u16;
-    let popup_w = popup_w.min(frame.width.saturating_sub(4));
-    let popup_h = popup_h.min(frame.height.saturating_sub(4));
-    let x = (frame.width.saturating_sub(popup_w)) / 2;
-    let y = (frame.height.saturating_sub(popup_h)) / 2;
-    Rect { x, y, width: popup_w, height: popup_h }
+    let popup_w = ((inner_w + 2) as u16).min(frame.width.saturating_sub(4));
+    let popup_h = ((inner_h + 2) as u16).min(frame.height.saturating_sub(4));
+    use ratatui::layout::Constraint;
+    frame.centered(Constraint::Length(popup_w), Constraint::Length(popup_h))
 }
 
 pub fn top_right_rect(frame: Rect, inner_w: usize, inner_h: usize) -> Rect {
