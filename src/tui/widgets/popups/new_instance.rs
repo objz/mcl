@@ -5,6 +5,7 @@ use crate::tui::theme::THEME;
 use crate::tui::widgets::profiles;
 use crossterm::event::{KeyCode, KeyEvent};
 use once_cell::sync::Lazy;
+use ratatui_textarea::{Input, TextArea};
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
@@ -49,10 +50,10 @@ impl<T> Default for LoadState<T> {
     }
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Clone)]
 pub struct WizardState {
     pub step: WizardStep,
-    pub name_input: String,
+    pub name_textarea: TextArea<'static>,
     pub versions: LoadState<Vec<GameVersion>>,
     pub version_idx: usize,
     pub show_snapshots: bool,
@@ -60,6 +61,26 @@ pub struct WizardState {
     pub loader_versions: LoadState<Vec<String>>,
     pub loader_version_idx: usize,
     pub version_search: crate::tui::widgets::search::SearchState,
+}
+
+impl Default for WizardState {
+    fn default() -> Self {
+        let mut textarea = TextArea::default();
+        textarea.set_cursor_line_style(Style::default());
+        textarea.set_placeholder_text("Instance name...");
+
+        Self {
+            step: WizardStep::Name,
+            name_textarea: textarea,
+            versions: LoadState::Idle,
+            version_idx: 0,
+            show_snapshots: false,
+            loader_idx: 0,
+            loader_versions: LoadState::Idle,
+            loader_version_idx: 0,
+            version_search: crate::tui::widgets::search::SearchState::default(),
+        }
+    }
 }
 
 impl WizardState {
@@ -223,18 +244,20 @@ fn handle_name_key(
             close_popup(state, profiles_state);
         }
         KeyCode::Enter | KeyCode::Right | KeyCode::Char('l') => {
-            if state.name_input.trim().is_empty() {
+            if state
+                .name_textarea
+                .lines()
+                .first()
+                .map(|line| line.trim().is_empty())
+                .unwrap_or(true)
+            {
                 return;
             }
             state.step = WizardStep::Loader;
         }
-        KeyCode::Backspace => {
-            state.name_input.pop();
+        _ => {
+            state.name_textarea.input(Input::from(key_event.clone()));
         }
-        KeyCode::Char(c) => {
-            state.name_input.push(c);
-        }
-        _ => {}
     }
 }
 
@@ -404,7 +427,12 @@ fn handle_confirm_key(
             };
 
             let params = WizardParams {
-                name: state.name_input.trim().to_string(),
+                name: state
+                    .name_textarea
+                    .lines()
+                    .first()
+                    .map(|line| line.trim().to_string())
+                    .unwrap_or_default(),
                 game_version: selected_version,
                 loader: state.selected_loader(),
                 loader_version: if state.selected_loader() == ModLoader::Vanilla {
@@ -455,11 +483,9 @@ fn step_keybinds(state: &WizardState) -> ratatui::text::Line<'static> {
 }
 
 fn render_name_step(state: &WizardState, area: Rect, buf: &mut ratatui::buffer::Buffer) {
-    let display = format!("{}█", state.name_input);
-    Paragraph::new(display.as_str())
-        .style(Style::default().fg(THEME.colors.foreground))
-        .wrap(Wrap { trim: false })
-        .render(area, buf);
+    let mut textarea = state.name_textarea.clone();
+    textarea.set_style(Style::default().fg(THEME.colors.foreground));
+    textarea.render(area, buf);
 }
 
 fn render_version_step(state: &WizardState, area: Rect, buf: &mut ratatui::buffer::Buffer) {
@@ -591,7 +617,13 @@ fn render_confirm_step(state: &WizardState, area: Rect, buf: &mut ratatui::buffe
     Paragraph::new(vec![
         Line::from(vec![
             Span::styled("Name: ", label_style),
-            Span::raw(state.name_input.as_str()),
+            Span::raw(
+                state.name_textarea
+                    .lines()
+                    .first()
+                    .cloned()
+                    .unwrap_or_default(),
+            ),
         ]),
         Line::from(vec![
             Span::styled("MC: ", label_style),

@@ -29,7 +29,8 @@ pub struct App {
     pre_overlay_focused: FocusedArea,
     profiles_state: profiles::State,
     instance_manager: InstanceManager,
-    log_list_state: ratatui::widgets::ListState,
+    log_list_state: tui_logger::TuiWidgetState,
+    throbber_state: throbber_widgets_tui::ThrobberState,
 }
 
 #[derive(Default, Debug, Clone, Copy, PartialEq)]
@@ -75,7 +76,9 @@ impl Default for App {
             pre_overlay_focused: FocusedArea::default(),
             profiles_state,
             instance_manager: manager,
-            log_list_state: ratatui::widgets::ListState::default(),
+            log_list_state: tui_logger::TuiWidgetState::new()
+                .set_default_display_level(log::LevelFilter::Debug),
+            throbber_state: throbber_widgets_tui::ThrobberState::default(),
         }
     }
 }
@@ -90,6 +93,8 @@ impl App {
             self.dismiss_expired_errors();
 
             self.drain_pending_instances();
+            self.throbber_state.calc_next();
+            tui_logger::move_events();
             terminal.draw(|frame| self.render_frame(frame))?;
             self.handle_events().wrap_err("handle events failed")?;
         }
@@ -130,7 +135,7 @@ impl App {
 
         widgets::account::render(frame, bottom_chunks[0], self.focused);
         widgets::details::render(frame, bottom_chunks[1], self.focused);
-        widgets::status::render(frame, bottom_chunks[2], self.focused);
+        widgets::status::render(frame, bottom_chunks[2], self.focused, &mut self.throbber_state);
 
         if self.focused == FocusedArea::StatusExpanded {
             Self::render_log_overlay(frame, &mut self.log_list_state);
@@ -185,15 +190,17 @@ impl App {
             match key_event.code {
                 KeyCode::Char('S') | KeyCode::Esc => {
                     self.focused = self.pre_overlay_focused;
-                    self.log_list_state.select(None);
+                    self.log_list_state.transition(tui_logger::TuiWidgetEvent::EscapeKey);
                     return Ok(());
                 }
                 KeyCode::Char('j') | KeyCode::Down => {
-                    self.log_list_state.select_next();
+                    self.log_list_state
+                        .transition(tui_logger::TuiWidgetEvent::DownKey);
                     return Ok(());
                 }
                 KeyCode::Char('k') | KeyCode::Up => {
-                    self.log_list_state.select_previous();
+                    self.log_list_state
+                        .transition(tui_logger::TuiWidgetEvent::UpKey);
                     return Ok(());
                 }
                 _ => {
@@ -332,18 +339,15 @@ impl App {
         }
     }
 
-    fn render_log_overlay(frame: &mut Frame, list_state: &mut ratatui::widgets::ListState) {
-        use crate::tui::log_buffer;
+    fn render_log_overlay(frame: &mut Frame, log_state: &mut tui_logger::TuiWidgetState) {
         use crate::tui::theme::THEME;
         use ratatui::{
             layout::{Alignment, Rect},
-            style::{Color, Modifier, Style},
-            text::{Line, Span},
-            widgets::{
-                Block, BorderType, Borders, Clear, List, ListItem,
-                Scrollbar, ScrollbarOrientation, ScrollbarState,
-            },
+            style::{Modifier, Style},
+            text::Line,
+            widgets::{Block, BorderType, Clear},
         };
+        use tui_logger::TuiLoggerWidget;
 
         let area = frame.area();
         let overlay = Rect {
@@ -355,84 +359,24 @@ impl App {
 
         frame.render_widget(Clear, overlay);
 
-        let block = Block::default()
-            .title(Line::from(vec![Span::styled(
-                " Logs ",
+        let block = Block::bordered()
+            .title_top(Line::from(" Logs ").style(
                 Style::default()
                     .fg(THEME.colors.foreground)
                     .add_modifier(Modifier::BOLD),
-            )]))
+            ))
             .title_bottom(
-                crate::tui::widgets::popups::keybind_line(&[
-                    ("S", " close"),
-                ])
-                .alignment(Alignment::Right),
+                crate::tui::widgets::popups::keybind_line(&[("S", " close")])
+                    .alignment(Alignment::Right),
             )
-            .borders(Borders::ALL)
             .border_type(BorderType::Rounded)
             .border_style(Style::default().fg(THEME.colors.border_focused));
 
-        let inner = block.inner(overlay);
-        frame.render_widget(block, overlay);
+        let widget = TuiLoggerWidget::default()
+            .block(block)
+            .state(log_state)
+            .style(Style::default().fg(THEME.colors.foreground));
 
-        let logs = log_buffer::get_logs();
-        let total = logs.len();
-
-        let items: Vec<ListItem> = logs
-            .iter()
-            .map(|entry| {
-                let (level_str, level_color) = match entry.level {
-                    tracing::Level::ERROR => ("ERROR", Color::Red),
-                    tracing::Level::WARN  => ("WARN ", Color::Yellow),
-                    _                     => ("INFO ", THEME.colors.border_unfocused),
-                };
-                ListItem::new(Line::from(vec![
-                    Span::styled(
-                        format!("{} ", level_str),
-                        Style::default().fg(level_color).add_modifier(Modifier::BOLD),
-                    ),
-                    Span::styled(
-                        entry.message.as_str(),
-                        Style::default().fg(THEME.colors.foreground),
-                    ),
-                ]))
-            })
-            .collect();
-
-        let list_area = Rect {
-            width: inner.width,
-            ..inner
-        };
-        let scrollbar_area = Rect {
-            x: overlay.x + overlay.width.saturating_sub(1),
-            y: overlay.y + 1,
-            width: 1,
-            height: overlay.height.saturating_sub(2),
-        };
-
-        let list = List::new(items).highlight_style(
-            Style::default().fg(THEME.colors.row_highlight)
-        );
-        frame.render_stateful_widget(list, list_area, list_state);
-
-        let scroll_pos = list_state.selected().unwrap_or(0);
-        let mut scrollbar_state = ScrollbarState::new(total.saturating_sub(1))
-            .position(scroll_pos);
-        frame.render_stateful_widget(
-            Scrollbar::default()
-                .orientation(ScrollbarOrientation::VerticalRight)
-                .begin_symbol(Some("▲"))
-                .end_symbol(Some("▼"))
-                .thumb_symbol("┃")
-                .track_symbol(Some(""))
-                .style(
-                    Style::default()
-                        .fg(THEME.colors.border_focused)
-                        .add_modifier(Modifier::BOLD),
-                ),
-            scrollbar_area,
-            &mut scrollbar_state,
-        );
+        frame.render_widget(widget, overlay);
     }
 }
-

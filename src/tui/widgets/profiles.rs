@@ -3,12 +3,10 @@ use ratatui::{
     layout::Rect,
     style::{Modifier, Style},
     text::{Line, Span, Text},
-    widgets::{
-        Block, BorderType, Borders, List, ListItem, ListState, Scrollbar, ScrollbarOrientation,
-        ScrollbarState,
-    },
+    widgets::{Block, BorderType, Borders, Scrollbar, ScrollbarOrientation, ScrollbarState},
     Frame,
 };
+use tui_widget_list::{ListBuilder, ListState as TuiListState, ListView};
 
 use crate::instance::models::InstanceConfig;
 use crate::tui::{layout::FocusedArea, theme::THEME};
@@ -18,7 +16,7 @@ use super::{popups, search::SearchState, styled_title, WidgetKey};
 #[derive(Debug, Default)]
 pub struct State {
     pub instances: Vec<InstanceConfig>,
-    pub list_state: ListState,
+    pub list_state: TuiListState,
     pub scrollbar_state: ScrollbarState,
     pub show_popup: bool,
     pub search: SearchState,
@@ -29,13 +27,13 @@ impl State {
         let count = instances.len();
         let mut s = State {
             instances,
-            list_state: ListState::default(),
+            list_state: TuiListState::default(),
             scrollbar_state: ScrollbarState::default(),
             show_popup: false,
             search: SearchState::default(),
         };
         if count > 0 {
-            s.list_state.select(Some(0));
+            s.list_state.selected = Some(0);
         }
         s.update_scrollbar();
         s
@@ -44,7 +42,7 @@ impl State {
     pub fn selected_instance(&self) -> Option<&InstanceConfig> {
         let filtered = self.filtered_indices();
         self.list_state
-            .selected()
+            .selected
             .and_then(|i| filtered.get(i))
             .and_then(|&idx| self.instances.get(idx))
     }
@@ -63,17 +61,10 @@ impl State {
         if count == 0 {
             return;
         }
-        let i = match self.list_state.selected() {
-            Some(i) => {
-                if i >= count.saturating_sub(1) {
-                    0
-                } else {
-                    i + 1
-                }
-            }
-            None => 0,
-        };
-        self.list_state.select(Some(i));
+        self.list_state.next();
+        if self.list_state.selected.unwrap_or(0) >= count {
+            self.list_state.selected = Some(0);
+        }
         self.update_scrollbar();
     }
 
@@ -82,17 +73,10 @@ impl State {
         if count == 0 {
             return;
         }
-        let i = match self.list_state.selected() {
-            Some(i) => {
-                if i == 0 {
-                    count.saturating_sub(1)
-                } else {
-                    i - 1
-                }
-            }
-            None => 0,
-        };
-        self.list_state.select(Some(i));
+        self.list_state.previous();
+        if self.list_state.selected.is_none() {
+            self.list_state.selected = Some(count.saturating_sub(1));
+        }
         self.update_scrollbar();
     }
 
@@ -100,17 +84,18 @@ impl State {
         let filtered = self.filtered_indices();
         let count = filtered.len();
         let items = count.saturating_sub(1);
-        let index = self.list_state.selected().unwrap_or(0);
+        let index = self.list_state.selected.unwrap_or(0);
 
         if count == 0 {
-            self.list_state.select(None);
-        } else if self.list_state.selected().is_none() {
-            self.list_state.select(Some(0));
+            self.list_state.selected = None;
+        } else if self.list_state.selected.is_none() {
+            self.list_state.selected = Some(0);
         } else if index > items {
-            self.list_state.select(Some(items));
+            self.list_state.selected = Some(items);
         }
 
-        self.scrollbar_state = ScrollbarState::new(items).position(index);
+        self.scrollbar_state =
+            ScrollbarState::new(items).position(self.list_state.selected.unwrap_or(0));
     }
 
     pub fn wants_popup(&self) -> bool {
@@ -137,22 +122,22 @@ impl WidgetKey for State {
         match key_event.code {
             KeyCode::Char('/') if !self.search.active => {
                 self.search.activate();
-                self.list_state.select(Some(0));
+                self.list_state.selected = Some(0);
                 self.update_scrollbar();
             }
             KeyCode::Esc if self.search.active => {
                 self.search.deactivate();
-                self.list_state.select(Some(0));
+                self.list_state.selected = Some(0);
                 self.update_scrollbar();
             }
             KeyCode::Backspace if self.search.active => {
                 self.search.pop();
-                self.list_state.select(Some(0));
+                self.list_state.selected = Some(0);
                 self.update_scrollbar();
             }
             KeyCode::Char(c) if self.search.active && c != 'j' && c != 'k' => {
                 self.search.push(c);
-                self.list_state.select(Some(0));
+                self.list_state.selected = Some(0);
                 self.update_scrollbar();
             }
             KeyCode::Char('a') => {
@@ -184,8 +169,6 @@ pub fn render(frame: &mut Frame, area: Rect, focused: FocusedArea, state: &mut S
         block = block.title_top(search_line);
     }
 
-    frame.render_widget(&block, area);
-
     let scrollbar_area = Rect {
         x: area.x + area.width.saturating_sub(1),
         y: area.y + 1,
@@ -193,42 +176,40 @@ pub fn render(frame: &mut Frame, area: Rect, focused: FocusedArea, state: &mut S
         height: area.height.saturating_sub(2),
     };
 
-    let inner_area = block.inner(area);
-    let list_area = inner_area;
-
     let filtered = state.filtered_indices();
-    let items: Vec<ListItem> = filtered
-        .iter()
-        .map(|&idx| {
-            let instance = &state.instances[idx];
+    let count = filtered.len();
 
-            let name_line = Line::from(vec![
-                Span::raw(" "),
-                Span::styled(
-                    instance.name.as_str(),
-                    Style::default()
-                        .fg(THEME.colors.border_focused)
-                        .add_modifier(Modifier::BOLD),
-                ),
-            ]);
-            let info_line = Line::from(vec![
-                Span::raw("   "),
-                Span::styled(
-                    format!("{} \u{00b7} {}", instance.game_version, instance.loader),
-                    Style::default().fg(THEME.colors.border_unfocused),
-                ),
-            ]);
-            let spacer = Line::from("");
+    let builder = ListBuilder::new(|context| {
+        let idx = filtered[context.index];
+        let instance = &state.instances[idx];
 
-            ListItem::new(Text::from(vec![name_line, info_line, spacer]))
-        })
-        .collect();
+        let name_line = Line::from(vec![
+            Span::raw(" "),
+            Span::styled(
+                instance.name.as_str(),
+                Style::default()
+                    .fg(THEME.colors.border_focused)
+                    .add_modifier(Modifier::BOLD),
+            ),
+        ]);
+        let info_line = Line::from(vec![
+            Span::raw("   "),
+            Span::styled(
+                format!("{} \u{00b7} {}", instance.game_version, instance.loader),
+                Style::default().fg(THEME.colors.border_unfocused),
+            ),
+        ]);
+        let spacer = Line::from("");
 
-    let list = List::new(items)
-        .highlight_style(Style::default().bg(THEME.colors.row_alternate_bg))
-        .highlight_symbol("");
+        let item = Text::from(vec![name_line, info_line, spacer]);
+        (item, 3)
+    });
 
-    frame.render_stateful_widget(list, list_area, &mut state.list_state);
+    let list = ListView::new(builder, count)
+        .block(block)
+        .style(Style::default().bg(THEME.colors.row_alternate_bg));
+
+    frame.render_stateful_widget(list, area, &mut state.list_state);
 
     frame.render_stateful_widget(
         Scrollbar::default()

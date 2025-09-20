@@ -28,8 +28,16 @@ pub fn init() -> WorkerGuard {
     let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
 
     let env_filter = EnvFilter::builder()
-        .with_default_directive(Level::INFO.into())
+        .with_default_directive(Level::DEBUG.into())
         .from_env_lossy();
+
+    match tui_logger::init_logger(log::LevelFilter::Trace) {
+        Ok(_) => {}
+        Err(e) => {
+            eprintln!("Warning: tui-logger init failed: {}", e);
+        }
+    }
+    tui_logger::set_default_level(log::LevelFilter::Debug);
 
     tracing_subscriber::registry()
         .with(
@@ -38,6 +46,7 @@ pub fn init() -> WorkerGuard {
                 .with_ansi(false)
                 .with_filter(env_filter),
         )
+        .with(tui_logger::TuiTracingSubscriberLayer)
         .with(StatusLayer::new(error_buffer::ERROR_EVENTS.clone()))
         .init();
 
@@ -58,11 +67,6 @@ impl<S: Subscriber> Layer<S> for StatusLayer {
 
         let mut visitor = MessageVisitor::default();
         event.record(&mut visitor);
-
-        crate::tui::log_buffer::push_log(crate::tui::log_buffer::LogEntry {
-            level,
-            message: visitor.message.clone(),
-        });
 
         if level <= Level::WARN {
             error_buffer::push_error(ErrorEvent {

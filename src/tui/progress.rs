@@ -24,10 +24,7 @@ pub fn set_action(text: impl Into<String>) {
             tracing::error!("Progress lock poisoned: {}", e);
         }
     }
-    crate::tui::log_buffer::push_log(crate::tui::log_buffer::LogEntry {
-        level: tracing::Level::INFO,
-        message: text,
-    });
+    tracing::info!("{}", text);
 }
 
 pub fn set_progress(current: u64, total: u64) {
@@ -51,10 +48,7 @@ pub fn set_sub_action(text: impl Into<String>) {
             tracing::error!("Progress lock poisoned: {}", e);
         }
     }
-    crate::tui::log_buffer::push_log(crate::tui::log_buffer::LogEntry {
-        level: tracing::Level::INFO,
-        message: format!("  {}", text),
-    });
+    tracing::debug!("  {}", text);
 }
 
 pub fn clear() {

@@ -1,5 +1,4 @@
 pub mod layout;
-pub mod log_buffer;
 pub mod logging;
 pub mod error_buffer;
 pub mod progress;
