@@ -29,7 +29,7 @@ pub struct App {
     pre_overlay_focused: FocusedArea,
     profiles_state: profiles::State,
     instance_manager: InstanceManager,
-    log_scroll: usize,
+    log_list_state: ratatui::widgets::ListState,
 }
 
 #[derive(Default, Debug, Clone, Copy, PartialEq)]
@@ -75,7 +75,7 @@ impl Default for App {
             pre_overlay_focused: FocusedArea::default(),
             profiles_state,
             instance_manager: manager,
-            log_scroll: 0,
+            log_list_state: ratatui::widgets::ListState::default(),
         }
     }
 }
@@ -133,7 +133,7 @@ impl App {
         widgets::status::render(frame, bottom_chunks[2], self.focused);
 
         if self.focused == FocusedArea::StatusExpanded {
-            Self::render_log_overlay(frame, self.log_scroll);
+            Self::render_log_overlay(frame, &mut self.log_list_state);
         }
 
         let all_errors = error_buffer::peek_all_errors();
@@ -185,15 +185,15 @@ impl App {
             match key_event.code {
                 KeyCode::Char('S') | KeyCode::Esc => {
                     self.focused = self.pre_overlay_focused;
-                    self.log_scroll = 0;
+                    self.log_list_state.select(None);
                     return Ok(());
                 }
                 KeyCode::Char('j') | KeyCode::Down => {
-                    self.log_scroll = self.log_scroll.saturating_add(1);
+                    self.log_list_state.select_next();
                     return Ok(());
                 }
                 KeyCode::Char('k') | KeyCode::Up => {
-                    self.log_scroll = self.log_scroll.saturating_sub(1);
+                    self.log_list_state.select_previous();
                     return Ok(());
                 }
                 _ => {
@@ -329,7 +329,7 @@ impl App {
         }
     }
 
-    fn render_log_overlay(frame: &mut Frame, scroll: usize) {
+    fn render_log_overlay(frame: &mut Frame, list_state: &mut ratatui::widgets::ListState) {
         use crate::tui::log_buffer;
         use crate::tui::theme::THEME;
         use ratatui::{
@@ -337,8 +337,8 @@ impl App {
             style::{Color, Modifier, Style},
             text::{Line, Span},
             widgets::{
-                Block, BorderType, Borders, Clear, List, ListItem, ListState,
-                Scrollbar, ScrollbarOrientation, ScrollbarState, StatefulWidget,
+                Block, BorderType, Borders, Clear, List, ListItem,
+                Scrollbar, ScrollbarOrientation, ScrollbarState,
             },
         };
 
@@ -396,8 +396,6 @@ impl App {
             })
             .collect();
 
-        let clamped = scroll.min(total.saturating_sub(1));
-
         let list_area = Rect {
             width: inner.width,
             ..inner
@@ -409,13 +407,14 @@ impl App {
             height: overlay.height.saturating_sub(2),
         };
 
-        let list = List::new(items);
-        let mut list_state = ListState::default();
-        list_state.select(Some(clamped));
-        StatefulWidget::render(list, list_area, frame.buffer_mut(), &mut list_state);
+        let list = List::new(items).highlight_style(
+            Style::default().fg(THEME.colors.row_highlight)
+        );
+        frame.render_stateful_widget(list, list_area, list_state);
 
+        let scroll_pos = list_state.selected().unwrap_or(0);
         let mut scrollbar_state = ScrollbarState::new(total.saturating_sub(1))
-            .position(clamped);
+            .position(scroll_pos);
         frame.render_stateful_widget(
             Scrollbar::default()
                 .orientation(ScrollbarOrientation::VerticalRight)
