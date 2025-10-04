@@ -119,24 +119,31 @@ impl State {
 
 impl WidgetKey for State {
     fn handle_key(&mut self, key_event: &crossterm::event::KeyEvent) {
+        if self.search.active {
+            match key_event.code {
+                KeyCode::Esc => {
+                    self.search.deactivate();
+                    self.list_state.selected = Some(0);
+                    self.update_scrollbar();
+                }
+                KeyCode::Backspace => {
+                    self.search.pop();
+                    self.list_state.selected = Some(0);
+                    self.update_scrollbar();
+                }
+                KeyCode::Char(c) => {
+                    self.search.push(c);
+                    self.list_state.selected = Some(0);
+                    self.update_scrollbar();
+                }
+                _ => {}
+            }
+            return;
+        }
+
         match key_event.code {
-            KeyCode::Char('/') if !self.search.active => {
+            KeyCode::Char('/') => {
                 self.search.activate();
-                self.list_state.selected = Some(0);
-                self.update_scrollbar();
-            }
-            KeyCode::Esc if self.search.active => {
-                self.search.deactivate();
-                self.list_state.selected = Some(0);
-                self.update_scrollbar();
-            }
-            KeyCode::Backspace if self.search.active => {
-                self.search.pop();
-                self.list_state.selected = Some(0);
-                self.update_scrollbar();
-            }
-            KeyCode::Char(c) if self.search.active && c != 'j' && c != 'k' => {
-                self.search.push(c);
                 self.list_state.selected = Some(0);
                 self.update_scrollbar();
             }
@@ -183,31 +190,42 @@ pub fn render(frame: &mut Frame, area: Rect, focused: FocusedArea, state: &mut S
         let idx = filtered[context.index];
         let instance = &state.instances[idx];
 
-        let name_line = Line::from(vec![
-            Span::raw(" "),
-            Span::styled(
-                instance.name.as_str(),
+        let (name_style, info_style, bg) = if context.is_selected {
+            (
+                Style::default()
+                    .fg(THEME.colors.row_highlight)
+                    .add_modifier(Modifier::BOLD),
+                Style::default().fg(THEME.colors.foreground),
+                THEME.colors.row_alternate_bg,
+            )
+        } else {
+            (
                 Style::default()
                     .fg(THEME.colors.border_focused)
                     .add_modifier(Modifier::BOLD),
-            ),
+                Style::default().fg(THEME.colors.border_unfocused),
+                THEME.colors.row_background,
+            )
+        };
+
+        let name_line = Line::from(vec![
+            Span::raw(" "),
+            Span::styled(instance.name.as_str(), name_style),
         ]);
         let info_line = Line::from(vec![
             Span::raw("   "),
             Span::styled(
                 format!("{} \u{00b7} {}", instance.game_version, instance.loader),
-                Style::default().fg(THEME.colors.border_unfocused),
+                info_style,
             ),
         ]);
         let spacer = Line::from("");
 
-        let item = Text::from(vec![name_line, info_line, spacer]);
+        let item = Text::from(vec![name_line, info_line, spacer]).style(Style::default().bg(bg));
         (item, 3)
     });
 
-    let list = ListView::new(builder, count)
-        .block(block)
-        .style(Style::default().bg(THEME.colors.row_alternate_bg));
+    let list = ListView::new(builder, count).block(block);
 
     frame.render_stateful_widget(list, area, &mut state.list_state);
 

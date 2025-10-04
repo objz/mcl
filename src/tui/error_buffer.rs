@@ -1,4 +1,5 @@
 use std::collections::VecDeque;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
@@ -9,9 +10,11 @@ pub const AUTO_DISMISS_MS: u128 = 5000;
 pub const SLIDE_START_MS: u128 = 3500;
 
 const MAX_ERROR_EVENTS: usize = 50;
+static NEXT_ERROR_ID: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Debug, Clone)]
 pub struct ErrorEvent {
+    pub id: u64,
     pub level: Level,
     pub message: String,
     pub pushed_at: Instant,
@@ -23,6 +26,8 @@ pub static ERROR_EVENTS: Lazy<Arc<Mutex<VecDeque<ErrorEvent>>>> =
 pub fn push_error(event: ErrorEvent) {
     match ERROR_EVENTS.lock() {
         Ok(mut events) => {
+            let mut event = event;
+            event.id = NEXT_ERROR_ID.fetch_add(1, Ordering::Relaxed);
             events.push_back(event);
             while events.len() > MAX_ERROR_EVENTS {
                 events.pop_front();

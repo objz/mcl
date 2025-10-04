@@ -5,7 +5,6 @@ use crate::tui::theme::THEME;
 use crate::tui::widgets::profiles;
 use crossterm::event::{KeyCode, KeyEvent};
 use once_cell::sync::Lazy;
-use ratatui_textarea::{Input, TextArea};
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
@@ -14,6 +13,7 @@ use ratatui::{
     Frame,
 };
 use std::sync::{Arc, Mutex};
+use tui_prompts::{FocusState, State as PromptState, TextState};
 
 static WIZARD_STATE: Lazy<Arc<Mutex<WizardState>>> = Lazy::new(|| Arc::new(Mutex::new(WizardState::default())));
 static WIZARD_RESULT: Lazy<Arc<Mutex<Option<WizardParams>>>> = Lazy::new(|| Arc::new(Mutex::new(None)));
@@ -53,7 +53,7 @@ impl<T> Default for LoadState<T> {
 #[derive(Debug, Clone)]
 pub struct WizardState {
     pub step: WizardStep,
-    pub name_textarea: TextArea<'static>,
+    pub name_state: TextState<'static>,
     pub versions: LoadState<Vec<GameVersion>>,
     pub version_idx: usize,
     pub show_snapshots: bool,
@@ -65,13 +65,9 @@ pub struct WizardState {
 
 impl Default for WizardState {
     fn default() -> Self {
-        let mut textarea = TextArea::default();
-        textarea.set_cursor_line_style(Style::default());
-        textarea.set_placeholder_text("Instance name...");
-
         Self {
             step: WizardStep::Name,
-            name_textarea: textarea,
+            name_state: TextState::new().with_focus(FocusState::Focused),
             versions: LoadState::Idle,
             version_idx: 0,
             show_snapshots: false,
@@ -240,23 +236,17 @@ fn handle_name_key(
     profiles_state: &mut profiles::State,
 ) {
     match key_event.code {
-        KeyCode::Esc | KeyCode::Left | KeyCode::Char('h') => {
+        KeyCode::Esc => {
             close_popup(state, profiles_state);
         }
-        KeyCode::Enter | KeyCode::Right | KeyCode::Char('l') => {
-            if state
-                .name_textarea
-                .lines()
-                .first()
-                .map(|line| line.trim().is_empty())
-                .unwrap_or(true)
-            {
+        KeyCode::Enter => {
+            if state.name_state.value().trim().is_empty() {
                 return;
             }
             state.step = WizardStep::Loader;
         }
         _ => {
-            state.name_textarea.input(Input::from(key_event.clone()));
+            state.name_state.handle_key_event(key_event.clone());
         }
     }
 }
@@ -427,12 +417,7 @@ fn handle_confirm_key(
             };
 
             let params = WizardParams {
-                name: state
-                    .name_textarea
-                    .lines()
-                    .first()
-                    .map(|line| line.trim().to_string())
-                    .unwrap_or_default(),
+                name: state.name_state.value().trim().to_string(),
                 game_version: selected_version,
                 loader: state.selected_loader(),
                 loader_version: if state.selected_loader() == ModLoader::Vanilla {
@@ -483,9 +468,16 @@ fn step_keybinds(state: &WizardState) -> ratatui::text::Line<'static> {
 }
 
 fn render_name_step(state: &WizardState, area: Rect, buf: &mut ratatui::buffer::Buffer) {
-    let mut textarea = state.name_textarea.clone();
-    textarea.set_style(Style::default().fg(THEME.colors.foreground));
-    textarea.render(area, buf);
+    let value = state.name_state.value();
+    let display = if value.is_empty() {
+        "█".to_string()
+    } else {
+        format!("{}█", value)
+    };
+
+    Paragraph::new(display)
+        .style(Style::default().fg(THEME.colors.foreground))
+        .render(area, buf);
 }
 
 fn render_version_step(state: &WizardState, area: Rect, buf: &mut ratatui::buffer::Buffer) {
@@ -617,13 +609,7 @@ fn render_confirm_step(state: &WizardState, area: Rect, buf: &mut ratatui::buffe
     Paragraph::new(vec![
         Line::from(vec![
             Span::styled("Name: ", label_style),
-            Span::raw(
-                state.name_textarea
-                    .lines()
-                    .first()
-                    .cloned()
-                    .unwrap_or_default(),
-            ),
+            Span::raw(state.name_state.value()),
         ]),
         Line::from(vec![
             Span::styled("MC: ", label_style),

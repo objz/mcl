@@ -17,8 +17,10 @@ use ratatui::{
     layout::{Constraint, Direction, Layout},
     Frame,
 };
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+use tachyonfx::{fx, Effect, EffectRenderer, Interpolation, Motion};
 
 static PENDING_INSTANCES: Lazy<Arc<Mutex<Vec<InstanceConfig>>>> =
     Lazy::new(|| Arc::new(Mutex::new(Vec::new())));
@@ -31,6 +33,13 @@ pub struct App {
     instance_manager: InstanceManager,
     log_list_state: tui_logger::TuiWidgetState,
     throbber_state: throbber_widgets_tui::ThrobberState,
+    error_effects: HashMap<u64, ErrorEffectState>,
+}
+
+enum ErrorEffectState {
+    SlidingIn(Effect),
+    Idle,
+    FadingOut(Effect),
 }
 
 #[derive(Default, Debug, Clone, Copy, PartialEq)]
@@ -79,6 +88,7 @@ impl Default for App {
             log_list_state: tui_logger::TuiWidgetState::new()
                 .set_default_display_level(log::LevelFilter::Debug),
             throbber_state: throbber_widgets_tui::ThrobberState::default(),
+            error_effects: HashMap::new(),
         }
     }
 }
@@ -142,13 +152,15 @@ impl App {
         }
 
         let all_errors = error_buffer::peek_all_errors();
+        self.sync_error_effects(&all_errors);
         let mut next_y: u16 = 1;
         for event in all_errors {
             let elapsed_ms = event.pushed_at.elapsed().as_millis();
             match popup_area(frame.area(), &event.message, next_y, elapsed_ms) {
                 Some(area) => {
                     next_y = next_y.saturating_add(area.height + 1);
-                    frame.render_widget(ErrorPopup::new(event), area);
+                    frame.render_widget(ErrorPopup::new(event.clone()), area);
+                    self.render_error_effect(frame, area, &event, elapsed_ms);
                 }
                 None => {}
             }
@@ -243,6 +255,11 @@ impl App {
                 new_instance::handle_key(&key_event, &mut self.profiles_state);
             }
             _ => {
+                if self.focused == FocusedArea::Profiles && self.profiles_state.search.active {
+                    self.profiles_state.handle_key(&key_event);
+                    return Ok(());
+                }
+
                 match key_event.code {
                     KeyCode::Char('q') => self.exit = true,
                     KeyCode::Char('P') => self.focused = FocusedArea::Profiles,
@@ -378,5 +395,61 @@ impl App {
             .style(Style::default().fg(THEME.colors.foreground));
 
         frame.render_widget(widget, overlay);
+    }
+
+    fn sync_error_effects(&mut self, events: &[error_buffer::ErrorEvent]) {
+        let active_ids: std::collections::HashSet<u64> = events.iter().map(|event| event.id).collect();
+        self.error_effects.retain(|id, _| active_ids.contains(id));
+
+        for event in events {
+            self.error_effects.entry(event.id).or_insert_with(|| {
+                ErrorEffectState::SlidingIn(fx::slide_in(
+                    Motion::RightToLeft,
+                    8,
+                    0,
+                    ratatui::style::Color::Reset,
+                    (300, Interpolation::SineOut),
+                ))
+            });
+        }
+    }
+
+    fn render_error_effect(
+        &mut self,
+        frame: &mut Frame,
+        area: ratatui::layout::Rect,
+        event: &error_buffer::ErrorEvent,
+        elapsed_ms: u128,
+    ) {
+        const FADE_OUT_MS: u128 = 500;
+        let fade_start_ms = error_buffer::AUTO_DISMISS_MS.saturating_sub(FADE_OUT_MS);
+
+        if elapsed_ms >= fade_start_ms {
+            let entry = self.error_effects.entry(event.id).or_insert(ErrorEffectState::Idle);
+            if !matches!(entry, ErrorEffectState::FadingOut(_)) {
+                *entry = ErrorEffectState::FadingOut(tachyonfx::fx::fade_to_fg(
+                    ratatui::style::Color::DarkGray,
+                    (FADE_OUT_MS as u32, Interpolation::SineIn),
+                ));
+            }
+        }
+
+        if let Some(effect_state) = self.error_effects.get_mut(&event.id) {
+            match effect_state {
+                ErrorEffectState::SlidingIn(effect) => {
+                    if effect.running() {
+                        frame.render_effect(effect, area, tachyonfx::Duration::from_millis(16));
+                    } else {
+                        *effect_state = ErrorEffectState::Idle;
+                    }
+                }
+                ErrorEffectState::Idle => {}
+                ErrorEffectState::FadingOut(effect) => {
+                    if effect.running() {
+                        frame.render_effect(effect, area, tachyonfx::Duration::from_millis(16));
+                    }
+                }
+            }
+        }
     }
 }

@@ -70,6 +70,7 @@ impl<S: Subscriber> Layer<S> for StatusLayer {
 
         if level <= Level::WARN {
             error_buffer::push_error(ErrorEvent {
+                id: 0,
                 level,
                 message: visitor.message,
                 pushed_at: std::time::Instant::now(),
