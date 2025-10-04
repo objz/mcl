@@ -152,7 +152,7 @@ pub fn render(frame: &mut Frame, area: Rect, _focused: FocusedArea) {
     let popup = PopupFrame {
         title: wizard_title(&snapshot),
         border_color: THEME.colors.border_focused,
-        bg: Some(THEME.colors.row_alternate_bg),
+        bg: None,
         keybinds: Some(keybinds),
         search_line,
         content: Box::new(move |popup_area, buf| {
@@ -468,16 +468,37 @@ fn step_keybinds(state: &WizardState) -> ratatui::text::Line<'static> {
 }
 
 fn render_name_step(state: &WizardState, area: Rect, buf: &mut ratatui::buffer::Buffer) {
+    use ratatui::text::{Line, Span};
+    use ratatui::style::Modifier;
+
     let value = state.name_state.value();
-    let display = if value.is_empty() {
-        "█".to_string()
+    let line = if value.is_empty() {
+        Line::from(vec![
+            Span::styled(
+                "Instance name...",
+                Style::default()
+                    .fg(THEME.colors.border_unfocused),
+            ),
+            Span::styled(
+                "\u{2588}",
+                Style::default()
+                    .fg(THEME.colors.border_focused)
+                    .add_modifier(Modifier::SLOW_BLINK),
+            ),
+        ])
     } else {
-        format!("{}█", value)
+        Line::from(vec![
+            Span::styled(value, Style::default().fg(THEME.colors.foreground)),
+            Span::styled(
+                "\u{2588}",
+                Style::default()
+                    .fg(THEME.colors.border_focused)
+                    .add_modifier(Modifier::SLOW_BLINK),
+            ),
+        ])
     };
 
-    Paragraph::new(display)
-        .style(Style::default().fg(THEME.colors.foreground))
-        .render(area, buf);
+    Paragraph::new(line).render(area, buf);
 }
 
 fn render_version_step(state: &WizardState, area: Rect, buf: &mut ratatui::buffer::Buffer) {
