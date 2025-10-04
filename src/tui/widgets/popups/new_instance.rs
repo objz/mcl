@@ -152,7 +152,7 @@ pub fn render(frame: &mut Frame, area: Rect, _focused: FocusedArea) {
     let popup = PopupFrame {
         title: wizard_title(&snapshot),
         border_color: THEME.colors.border_focused,
-        bg: None,
+        bg: Some(THEME.colors.popup_bg),
         keybinds: Some(keybinds),
         search_line,
         content: Box::new(move |popup_area, buf| {
@@ -511,7 +511,7 @@ fn render_version_step(state: &WizardState, area: Rect, buf: &mut ratatui::buffe
         LoadState::Error(message) => {
             Paragraph::new(message.as_str())
                 .wrap(Wrap { trim: true })
-                .style(Style::default().fg(ratatui::style::Color::Red))
+                .style(Style::default().fg(THEME.colors.error))
                 .render(area, buf);
         }
         LoadState::Loaded(_) => {
@@ -588,7 +588,7 @@ fn render_loader_version_step(
         LoadState::Error(message) => {
             Paragraph::new(message.as_str())
                 .wrap(Wrap { trim: true })
-                .style(Style::default().fg(ratatui::style::Color::Red))
+                .style(Style::default().fg(THEME.colors.error))
                 .render(area, buf);
         }
         LoadState::Loaded(versions) => {

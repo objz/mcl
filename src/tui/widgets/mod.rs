@@ -1,8 +1,9 @@
 use crossterm::event::KeyEvent;
 use ratatui::{
-    style::{Color, Style},
+    style::Style,
     text::{Line, Span},
 };
+use crate::tui::theme::THEME;
 
 pub mod account;
 pub mod content;
@@ -20,7 +21,7 @@ pub fn styled_title(title: &str, highlight: bool) -> Line<'_> {
         let first = chars.next().unwrap_or_default().to_string();
         let rest: String = chars.collect();
         Line::from(vec![
-            Span::styled(first, Style::default().fg(Color::Yellow)),
+            Span::styled(first, Style::default().fg(THEME.colors.accent)),
             Span::raw(rest),
         ])
     }

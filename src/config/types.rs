@@ -118,6 +118,32 @@ pub struct Colors {
     pub row_background: Color,
     #[serde(deserialize_with = "deserialize_color")]
     pub row_alternate_bg: Color,
+    #[serde(deserialize_with = "deserialize_color", default = "default_popup_bg")]
+    pub popup_bg: Color,
+    #[serde(deserialize_with = "deserialize_color", default = "default_error")]
+    pub error: Color,
+    #[serde(deserialize_with = "deserialize_color", default = "default_warn")]
+    pub warn: Color,
+    #[serde(deserialize_with = "deserialize_color", default = "default_success")]
+    pub success: Color,
+    #[serde(deserialize_with = "deserialize_color", default = "default_accent")]
+    pub accent: Color,
+    #[serde(deserialize_with = "deserialize_color", default = "default_text_idle")]
+    pub text_idle: Color,
+    #[serde(
+        deserialize_with = "deserialize_color",
+        default = "default_progress_fill"
+    )]
+    pub progress_fill: Color,
+    #[serde(
+        deserialize_with = "deserialize_color",
+        default = "default_progress_track"
+    )]
+    pub progress_track: Color,
+    #[serde(deserialize_with = "deserialize_color", default = "default_badge_text")]
+    pub badge_text: Color,
+    #[serde(deserialize_with = "deserialize_color", default = "default_fade_to")]
+    pub fade_to: Color,
 }
 
 impl Default for Colors {
@@ -130,8 +156,58 @@ impl Default for Colors {
             row_highlight: Color::White,
             row_background: Color::Reset,
             row_alternate_bg: Color::Reset,
+            popup_bg: default_popup_bg(),
+            error: default_error(),
+            warn: default_warn(),
+            success: default_success(),
+            accent: default_accent(),
+            text_idle: default_text_idle(),
+            progress_fill: default_progress_fill(),
+            progress_track: default_progress_track(),
+            badge_text: default_badge_text(),
+            fade_to: default_fade_to(),
         }
     }
+}
+
+fn default_popup_bg() -> Color {
+    Color::Rgb(0x1e, 0x1e, 0x1e)
+}
+
+fn default_error() -> Color {
+    Color::Red
+}
+
+fn default_warn() -> Color {
+    Color::Yellow
+}
+
+fn default_success() -> Color {
+    Color::Green
+}
+
+fn default_accent() -> Color {
+    Color::Yellow
+}
+
+fn default_text_idle() -> Color {
+    Color::DarkGray
+}
+
+fn default_progress_fill() -> Color {
+    Color::Green
+}
+
+fn default_progress_track() -> Color {
+    Color::DarkGray
+}
+
+fn default_badge_text() -> Color {
+    Color::Black
+}
+
+fn default_fade_to() -> Color {
+    Color::DarkGray
 }
 
 pub fn parse_color(color: &str) -> Color {

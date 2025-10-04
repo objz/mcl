@@ -1,19 +1,20 @@
 use ratatui::{
     layout::Rect,
-    style::{Color, Style},
+    style::Style,
     widgets::{Block, BorderType, Borders, Paragraph},
     Frame,
 };
 
 use crate::tui::layout::FocusedArea;
+use crate::tui::theme::THEME;
 
 use super::styled_title;
 
 pub fn render(frame: &mut Frame, area: Rect, focused: FocusedArea) {
     let color = if focused == FocusedArea::Content {
-        Color::White
+        THEME.colors.border_focused
     } else {
-        Color::DarkGray
+        THEME.colors.border_unfocused
     };
 
     let block = Block::default()
@@ -28,9 +29,9 @@ pub fn render(frame: &mut Frame, area: Rect, focused: FocusedArea) {
 
 pub fn title(frame: &mut Frame, area: Rect, focused: FocusedArea) {
     let color = if focused == FocusedArea::Content {
-        Color::White
+        THEME.colors.border_focused
     } else {
-        Color::DarkGray
+        THEME.colors.border_unfocused
     };
 
     let block = Block::default()

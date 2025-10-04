@@ -142,8 +142,8 @@ pub async fn download_forge_installer(
 
 /// Run the Forge installer JAR to install Forge into the instance directory.
 ///
-/// Requires a Java runtime. The installer is invoked with `--installClient` pointing
-/// at the instance's `.minecraft` subdirectory.
+/// Requires a Java runtime. The installer is invoked with `--installClient` from
+/// the instance directory.
 pub async fn run_forge_installer(
     installer_path: &Path,
     instance_dir: &Path,
@@ -157,7 +157,7 @@ pub async fn run_forge_installer(
         .arg("-jar")
         .arg(installer_path)
         .arg("--installClient")
-        .arg(instance_dir.join(".minecraft"))
+        .current_dir(instance_dir)
         .output()
         .await
     {

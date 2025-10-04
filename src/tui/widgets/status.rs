@@ -1,6 +1,6 @@
 use ratatui::{
     layout::{Constraint, Layout, Rect},
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::Span,
     widgets::{Block, BorderType, Borders, Gauge, Paragraph},
     Frame,
@@ -20,9 +20,9 @@ pub fn render(
     throbber_state: &mut ThrobberState,
 ) {
     let border_color = if focused == FocusedArea::Status {
-        Color::White
+        THEME.colors.border_focused
     } else {
-        Color::DarkGray
+        THEME.colors.border_unfocused
     };
 
     let block = Block::default()
@@ -34,14 +34,20 @@ pub fn render(
     let state = match PROGRESS.lock() {
         Ok(s) => s.clone(),
         Err(_) => {
-            let idle = Paragraph::new(Span::styled("Ready", Style::default().fg(Color::DarkGray)));
+            let idle = Paragraph::new(Span::styled(
+                "Ready",
+                Style::default().fg(THEME.colors.text_idle),
+            ));
             frame.render_widget(idle.block(block), area);
             return;
         }
     };
 
     if state.current_action.is_none() {
-        let idle = Paragraph::new(Span::styled("Ready", Style::default().fg(Color::DarkGray)));
+        let idle = Paragraph::new(Span::styled(
+            "Ready",
+            Style::default().fg(THEME.colors.text_idle),
+        ));
         frame.render_widget(idle.block(block), area);
         return;
     }
@@ -70,8 +76,8 @@ pub fn render(
             let gauge = Gauge::default()
                 .gauge_style(
                     Style::default()
-                        .fg(Color::Green)
-                        .bg(Color::DarkGray)
+                        .fg(THEME.colors.progress_fill)
+                        .bg(THEME.colors.progress_track)
                         .add_modifier(Modifier::BOLD),
                 )
                 .percent(pct);

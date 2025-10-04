@@ -1,7 +1,7 @@
 use ratatui::{
     buffer::Buffer,
     layout::Rect,
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Paragraph, Widget, Wrap},
 };
@@ -24,15 +24,15 @@ impl ErrorPopup {
 impl Widget for ErrorPopup {
     fn render(self, area: Rect, buf: &mut Buffer) {
         let (border_color, label) = match self.event.level {
-            Level::ERROR => (Color::Red, "ERROR"),
-            Level::WARN => (Color::Yellow, "WARN"),
+            Level::ERROR => (THEME.colors.error, "ERROR"),
+            Level::WARN => (THEME.colors.warn, "WARN"),
             _ => (THEME.colors.border_focused, "INFO"),
         };
 
         let title = Line::from(vec![Span::styled(
             format!(" {} ", label),
             Style::default()
-                .fg(Color::Black)
+                .fg(THEME.colors.badge_text)
                 .bg(border_color)
                 .add_modifier(Modifier::BOLD),
         )]);
@@ -41,7 +41,7 @@ impl Widget for ErrorPopup {
         let popup = PopupFrame {
             title,
             border_color,
-            bg: None,
+            bg: Some(THEME.colors.popup_bg),
             keybinds: None,
             search_line: None,
             content: Box::new(move |inner, buf| {

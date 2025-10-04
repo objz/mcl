@@ -398,6 +398,7 @@ impl App {
     }
 
     fn sync_error_effects(&mut self, events: &[error_buffer::ErrorEvent]) {
+        use crate::tui::theme::THEME;
         let active_ids: std::collections::HashSet<u64> = events.iter().map(|event| event.id).collect();
         self.error_effects.retain(|id, _| active_ids.contains(id));
 
@@ -407,7 +408,7 @@ impl App {
                     Motion::RightToLeft,
                     8,
                     0,
-                    ratatui::style::Color::Reset,
+                    THEME.colors.popup_bg,
                     (300, Interpolation::SineOut),
                 ))
             });
@@ -421,6 +422,7 @@ impl App {
         event: &error_buffer::ErrorEvent,
         elapsed_ms: u128,
     ) {
+        use crate::tui::theme::THEME;
         const FADE_OUT_MS: u128 = 500;
         let fade_start_ms = error_buffer::AUTO_DISMISS_MS.saturating_sub(FADE_OUT_MS);
 
@@ -428,7 +430,7 @@ impl App {
             let entry = self.error_effects.entry(event.id).or_insert(ErrorEffectState::Idle);
             if !matches!(entry, ErrorEffectState::FadingOut(_)) {
                 *entry = ErrorEffectState::FadingOut(tachyonfx::fx::fade_to_fg(
-                    ratatui::style::Color::DarkGray,
+                    THEME.colors.fade_to,
                     (FADE_OUT_MS as u32, Interpolation::SineIn),
                 ));
             }
