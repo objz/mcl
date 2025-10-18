@@ -391,8 +391,7 @@ impl App {
 
         let widget = TuiLoggerWidget::default()
             .block(block)
-            .state(log_state)
-            .style(Style::default().fg(THEME.colors.foreground));
+            .state(log_state);
 
         frame.render_widget(widget, overlay);
     }
