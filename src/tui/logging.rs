@@ -8,11 +8,13 @@ use tracing_subscriber::layer::Context;
 use tracing_subscriber::prelude::*;
 use tracing_subscriber::{EnvFilter, Layer};
 
-use crate::config::get_config_path;
 use crate::tui::error_buffer::{self, ErrorEvent};
 
 pub fn init() -> WorkerGuard {
-    let log_dir = get_config_path();
+    let log_dir = match dirs_next::cache_dir() {
+        Some(d) => d.join("mcl"),
+        None => std::path::PathBuf::from("./cache"),
+    };
     match std::fs::create_dir_all(&log_dir) {
         Ok(_) => {}
         Err(e) => {
@@ -28,16 +30,23 @@ pub fn init() -> WorkerGuard {
     let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
 
     let env_filter = EnvFilter::builder()
-        .with_default_directive(Level::DEBUG.into())
+        .with_default_directive(Level::INFO.into())
         .from_env_lossy();
 
-    match tui_logger::init_logger(log::LevelFilter::Trace) {
+    let rust_log = std::env::var("RUST_LOG").unwrap_or_default().to_lowercase();
+    let tui_level = if rust_log.contains("debug") || rust_log.contains("trace") {
+        log::LevelFilter::Debug
+    } else {
+        log::LevelFilter::Info
+    };
+
+    match tui_logger::init_logger(log::LevelFilter::Debug) {
         Ok(_) => {}
         Err(e) => {
             eprintln!("Warning: tui-logger init failed: {}", e);
         }
     }
-    tui_logger::set_default_level(log::LevelFilter::Debug);
+    tui_logger::set_default_level(tui_level);
 
     tracing_subscriber::registry()
         .with(
