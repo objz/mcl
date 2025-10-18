@@ -13,6 +13,36 @@ use crate::tui::{layout::FocusedArea, theme::THEME};
 
 use super::{popups, search::SearchState, styled_title, WidgetKey};
 
+fn format_last_played(last_played: Option<chrono::DateTime<chrono::Utc>>) -> String {
+    let Some(dt) = last_played else {
+        return "Never played".to_string();
+    };
+    let secs = chrono::Utc::now()
+        .signed_duration_since(dt)
+        .num_seconds()
+        .max(0) as u64;
+    match secs {
+        0..=59 => "Just now".to_string(),
+        60..=3599 => format!("{} minutes ago", secs / 60),
+        3600..=86399 => format!("{} hours ago", secs / 3600),
+        86400..=2591999 => format!("{} days ago", secs / 86400),
+        2592000..=31535999 => format!("{} months ago", secs / 2592000),
+        _ => "Over a year ago".to_string(),
+    }
+}
+
+fn loader_color(loader: crate::instance::models::ModLoader) -> ratatui::style::Color {
+    use crate::instance::models::ModLoader;
+    use ratatui::style::Color;
+    match loader {
+        ModLoader::Vanilla => Color::Green,
+        ModLoader::Fabric => Color::Rgb(0x71, 0xa5, 0xde),
+        ModLoader::Forge => Color::Rgb(0xe0, 0x7b, 0x39),
+        ModLoader::NeoForge => Color::Rgb(0xe0, 0x54, 0x1b),
+        ModLoader::Quilt => Color::Rgb(0xa6, 0x5c, 0xcb),
+    }
+}
+
 #[derive(Debug, Default)]
 pub struct State {
     pub instances: Vec<InstanceConfig>,
@@ -190,7 +220,7 @@ pub fn render(frame: &mut Frame, area: Rect, focused: FocusedArea, state: &mut S
         let idx = filtered[context.index];
         let instance = &state.instances[idx];
 
-        let (name_style, info_style, bg) = if context.is_selected {
+        let (name_style, meta_style, bg) = if context.is_selected {
             (
                 Style::default()
                     .fg(THEME.colors.row_highlight)
@@ -208,21 +238,21 @@ pub fn render(frame: &mut Frame, area: Rect, focused: FocusedArea, state: &mut S
             )
         };
 
+        let indicator = Span::styled(
+            "\u{258c} ",
+            Style::default().fg(loader_color(instance.loader)),
+        );
         let name_line = Line::from(vec![
-            Span::raw(" "),
+            indicator,
             Span::styled(instance.name.as_str(), name_style),
         ]);
-        let info_line = Line::from(vec![
+        let meta_line = Line::from(vec![
             Span::raw("   "),
-            Span::styled(
-                format!("{} \u{00b7} {}", instance.game_version, instance.loader),
-                info_style,
-            ),
+            Span::styled(format_last_played(instance.last_played), meta_style),
         ]);
-        let spacer = Line::from("");
 
-        let item = Text::from(vec![name_line, info_line, spacer]).style(Style::default().bg(bg));
-        (item, 3)
+        let item = Text::from(vec![name_line, meta_line]).style(Style::default().bg(bg));
+        (item, 2)
     });
 
     let list = ListView::new(builder, count).block(block);

@@ -89,12 +89,15 @@ impl Widget for ConfirmPopup {
 }
 
 pub fn confirm_popup_area(frame_area: Rect, name: &str) -> Rect {
-    use super::{centered_rect, word_wrap_size};
+    use super::word_wrap_size;
+    use ratatui::layout::Constraint;
     const MAX_W: usize = 48;
     const BODY: &str = "This will permanently remove the instance";
     let title_w = name.len() + 12;
     let (body_w, _) = word_wrap_size(BODY, MAX_W);
     let inner_w = title_w.max(body_w).min(MAX_W);
     let (_, lines) = word_wrap_size(BODY, inner_w);
-    centered_rect(frame_area, inner_w, lines)
+    let popup_w = ((inner_w + 2) as u16).min(frame_area.width.saturating_sub(4));
+    let popup_h = ((lines + 2) as u16).min(frame_area.height.saturating_sub(4));
+    frame_area.centered(Constraint::Length(popup_w), Constraint::Length(popup_h))
 }

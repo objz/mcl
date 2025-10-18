@@ -29,6 +29,7 @@ pub struct App {
     exit: bool,
     focused: FocusedArea,
     pre_overlay_focused: FocusedArea,
+    content_tab: widgets::content::ContentTab,
     profiles_state: profiles::State,
     instance_manager: InstanceManager,
     log_list_state: tui_logger::TuiWidgetState,
@@ -83,6 +84,7 @@ impl Default for App {
             exit: false,
             focused: FocusedArea::default(),
             pre_overlay_focused: FocusedArea::default(),
+            content_tab: widgets::content::ContentTab::default(),
             profiles_state,
             instance_manager: manager,
             log_list_state: tui_logger::TuiWidgetState::new()
@@ -131,8 +133,13 @@ impl App {
             ])
             .split(chunks[1]);
 
-        widgets::content::title(frame, main_chunks[0], self.focused);
-        widgets::content::render(frame, main_chunks[1], self.focused);
+        widgets::content::title(
+            frame,
+            main_chunks[0],
+            self.focused,
+            self.profiles_state.selected_instance(),
+        );
+        widgets::content::render(frame, main_chunks[1], self.focused, self.content_tab);
 
         let bottom_chunks = Layout::default()
             .direction(Direction::Horizontal)
@@ -270,6 +277,12 @@ impl App {
                         self.pre_overlay_focused = self.focused;
                         self.focused = FocusedArea::StatusExpanded;
                     }
+                    KeyCode::Tab if self.focused == FocusedArea::Content => {
+                        self.content_tab = self.content_tab.next();
+                    }
+                    KeyCode::BackTab if self.focused == FocusedArea::Content => {
+                        self.content_tab = self.content_tab.previous();
+                    }
                     KeyCode::Char('d')
                         if self.focused == FocusedArea::Profiles
                             && !self.profiles_state.search.active =>
@@ -359,7 +372,7 @@ impl App {
     fn render_log_overlay(frame: &mut Frame, log_state: &mut tui_logger::TuiWidgetState) {
         use crate::tui::theme::THEME;
         use ratatui::{
-            layout::{Alignment, Rect},
+            layout::{Alignment, Margin},
             style::{Modifier, Style},
             text::Line,
             widgets::{Block, BorderType, Clear},
@@ -367,12 +380,7 @@ impl App {
         use tui_logger::TuiLoggerWidget;
 
         let area = frame.area();
-        let overlay = Rect {
-            x: area.x + 1,
-            y: area.y + 1,
-            width: area.width.saturating_sub(2),
-            height: area.height.saturating_sub(2),
-        };
+        let overlay = area.inner(Margin::new(1, 1));
 
         frame.render_widget(Clear, overlay);
 
@@ -426,15 +434,18 @@ impl App {
         elapsed_ms: u128,
     ) {
         use crate::tui::theme::THEME;
-        const FADE_OUT_MS: u128 = 500;
-        let fade_start_ms = error_buffer::AUTO_DISMISS_MS.saturating_sub(FADE_OUT_MS);
+        const FLY_OUT_MS: u128 = 300;
+        let fly_start_ms = error_buffer::AUTO_DISMISS_MS.saturating_sub(FLY_OUT_MS);
 
-        if elapsed_ms >= fade_start_ms {
+        if elapsed_ms >= fly_start_ms {
             let entry = self.error_effects.entry(event.id).or_insert(ErrorEffectState::Idle);
             if !matches!(entry, ErrorEffectState::FadingOut(_)) {
-                *entry = ErrorEffectState::FadingOut(tachyonfx::fx::fade_to_fg(
-                    THEME.colors.fade_to,
-                    (FADE_OUT_MS as u32, Interpolation::SineIn),
+                *entry = ErrorEffectState::FadingOut(fx::slide_out(
+                    Motion::LeftToRight,
+                    8,
+                    0,
+                    THEME.colors.popup_bg,
+                    (FLY_OUT_MS as u32, Interpolation::SineIn),
                 ));
             }
         }

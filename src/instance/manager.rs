@@ -351,6 +351,12 @@ impl InstanceManager {
             }
         }
     }
+
+    pub fn touch_last_played(&self, name: &str) -> Result<(), InstanceError> {
+        let mut config = self.load_one(name)?;
+        config.last_played = Some(chrono::Utc::now());
+        self.save(&config)
+    }
 }
 
 fn validate_name(name: &str) -> Result<(), InstanceError> {
