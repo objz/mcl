@@ -68,6 +68,8 @@ pub fn render(
     focused: FocusedArea,
     tab: ContentTab,
     instance: Option<&crate::instance::InstanceConfig>,
+    mods_state: &mut super::mods_list::ModsState,
+    instances_dir: &std::path::Path,
 ) {
     let border_color = if focused == FocusedArea::Content {
         THEME.colors.border_focused
@@ -102,6 +104,20 @@ pub fn render(
     frame.render_widget(tabs, tabs_area);
 
     match tab {
+        ContentTab::Mods => {
+            if let Some(instance) = instance {
+                if mods_state.loaded_for.as_deref() != Some(instance.name.as_str()) {
+                    mods_state.load_mods(instances_dir, &instance.name);
+                }
+                super::mods_list::render(frame, content_area, mods_state);
+            } else {
+                frame.render_widget(
+                    Paragraph::new("No instance selected.")
+                        .style(Style::default().fg(THEME.colors.text_idle)),
+                    content_area,
+                );
+            }
+        }
         ContentTab::Logs => {
             let lines = instance
                 .map(|i| crate::instance_logs::get_all(&i.name))
@@ -123,7 +139,7 @@ pub fn render(
         }
         _ => {
             let body = match tab {
-                ContentTab::Mods => "No mods installed.",
+                ContentTab::Mods => unreachable!(),
                 ContentTab::ResourcePacks => "No resource packs installed.",
                 ContentTab::Shaders => "No shaders installed.",
                 ContentTab::Screenshots => "No screenshots.",
@@ -190,7 +206,7 @@ pub fn title(
                                 .fg(THEME.colors.success)
                                 .add_modifier(Modifier::BOLD),
                         )
-                        .throbber_set(throbber_widgets_tui::PARENTHESIS)
+                        .throbber_set(throbber_widgets_tui::BRAILLE_EIGHT_DOUBLE)
                         .use_type(throbber_widgets_tui::WhichUse::Spin);
                     frame.render_stateful_widget(throbber, left_area, throbber_state);
                 }

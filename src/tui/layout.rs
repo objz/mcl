@@ -31,6 +31,7 @@ pub struct App {
     pre_overlay_focused: FocusedArea,
     content_tab: widgets::content::ContentTab,
     profiles_state: profiles::State,
+    mods_state: widgets::mods_list::ModsState,
     instance_manager: InstanceManager,
     log_list_state: tui_logger::TuiWidgetState,
     throbber_state: throbber_widgets_tui::ThrobberState,
@@ -87,6 +88,7 @@ impl Default for App {
             pre_overlay_focused: FocusedArea::default(),
             content_tab: widgets::content::ContentTab::default(),
             profiles_state,
+            mods_state: widgets::mods_list::ModsState::default(),
             instance_manager: manager,
             log_list_state: tui_logger::TuiWidgetState::new()
                 .set_default_display_level(log::LevelFilter::Debug),
@@ -152,6 +154,8 @@ impl App {
             self.focused,
             self.content_tab,
             self.profiles_state.selected_instance(),
+            &mut self.mods_state,
+            &self.instance_manager.instances_dir,
         );
 
         let bottom_chunks = Layout::default()
@@ -272,6 +276,18 @@ impl App {
                 _ => {
                     return Ok(());
                 }
+            }
+        }
+
+        if self.focused == FocusedArea::Content
+            && self.content_tab == widgets::content::ContentTab::Mods
+        {
+            if widgets::mods_list::handle_key(
+                &key_event,
+                &mut self.mods_state,
+                &self.instance_manager.instances_dir,
+            ) {
+                return Ok(());
             }
         }
 

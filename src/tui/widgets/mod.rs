@@ -8,6 +8,7 @@ use crate::tui::theme::THEME;
 pub mod account;
 pub mod content;
 pub mod details;
+pub mod mods_list;
 pub mod popups;
 pub mod profiles;
 pub mod search;

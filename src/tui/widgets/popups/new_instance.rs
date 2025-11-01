@@ -705,8 +705,9 @@ fn ensure_versions_loaded(state: &mut WizardState) {
         let client = crate::net::HttpClient::new();
         let installer = get_installer(loader);
         match installer.get_game_versions(&client).await {
-            Ok(versions) => match versions_arc.lock() {
+            Ok(mut versions) => match versions_arc.lock() {
                 Ok(mut s) => {
+                    sort_versions_semver(&mut versions);
                     s.versions = LoadState::Loaded(versions);
                     clamp_version_index(&mut s);
                 }
@@ -760,4 +761,26 @@ fn ensure_loader_versions_loaded(state: &mut WizardState, loader: ModLoader, gam
             }
         }
     });
+}
+
+fn compare_semver(a: &str, b: &str) -> std::cmp::Ordering {
+    let parse_parts = |s: &str| -> Vec<u64> {
+        s.split('.')
+            .map(|p| p.parse::<u64>().unwrap_or(0))
+            .collect()
+    };
+    let a_parts = parse_parts(a);
+    let b_parts = parse_parts(b);
+    for (ap, bp) in a_parts.iter().zip(b_parts.iter()) {
+        match ap.cmp(bp) {
+            std::cmp::Ordering::Equal => continue,
+            other => return other,
+        }
+    }
+    a_parts.len().cmp(&b_parts.len())
+}
+
+fn sort_versions_semver(versions: &mut Vec<GameVersion>) {
+    // Sort newest first (descending), so compare b vs a
+    versions.sort_by(|a, b| compare_semver(&b.id, &a.id));
 }
