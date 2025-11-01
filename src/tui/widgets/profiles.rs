@@ -242,7 +242,7 @@ pub fn render(frame: &mut Frame, area: Rect, focused: FocusedArea, state: &mut S
         let run_state = get_run_state(&instance.name);
         let indicator = match &run_state {
             Some(RunState::Running) | Some(RunState::Starting) => {
-                Span::styled("\u{25c9} ", Style::default().fg(THEME.colors.success))
+                Span::styled("\u{25b6} ", Style::default().fg(THEME.colors.success))
             }
             Some(RunState::Crashed(_)) => {
                 Span::styled("\u{2717} ", Style::default().fg(THEME.colors.error))

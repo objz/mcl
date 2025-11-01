@@ -448,12 +448,8 @@ fn close_popup(state: &mut WizardState, profiles_state: &mut profiles::State) {
 }
 
 fn wizard_title(_state: &WizardState) -> Line<'static> {
-    Line::styled(
-        "New Instance",
-        Style::default()
-            .fg(THEME.colors.foreground)
-            .add_modifier(Modifier::BOLD),
-    )
+    use crate::tui::widgets::styled_title;
+    styled_title("New Instance", true)
 }
 
 fn step_keybinds(state: &WizardState) -> ratatui::text::Line<'static> {
@@ -528,6 +524,7 @@ fn render_version_step(state: &WizardState, area: Rect, buf: &mut ratatui::buffe
                 .collect();
 
             let list = List::new(items)
+                .style(Style::default().fg(THEME.colors.foreground))
                 .highlight_style(
                     Style::default()
                         .fg(THEME.colors.row_highlight)
@@ -556,6 +553,7 @@ fn render_loader_step(state: &WizardState, area: Rect, buf: &mut ratatui::buffer
         .collect();
 
     let list = List::new(items)
+        .style(Style::default().fg(THEME.colors.foreground))
         .highlight_style(
             Style::default()
                 .fg(THEME.colors.row_highlight)
@@ -598,6 +596,7 @@ fn render_loader_version_step(
                 .collect();
 
             let list = List::new(items)
+                .style(Style::default().fg(THEME.colors.foreground))
                 .highlight_style(
                     Style::default()
                         .fg(THEME.colors.row_highlight)

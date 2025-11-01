@@ -316,6 +316,14 @@ impl App {
                             }
                         }
                     }
+                    KeyCode::Esc
+                        if self.focused == FocusedArea::Profiles
+                            && !self.profiles_state.search.active =>
+                    {
+                        if let Some(instance) = self.profiles_state.selected_instance() {
+                            crate::running::send_kill(&instance.name);
+                        }
+                    }
                     _ => {}
                 }
 
@@ -370,7 +378,8 @@ impl App {
 
     fn spawn_launch(&self, instance: crate::instance::InstanceConfig) {
         use crate::instance::launch;
-        use crate::{running, tui::error_buffer};
+        use crate::running;
+        use crate::tui::error_buffer;
 
         let instances_dir = self.instance_manager.instances_dir.clone();
         let meta_dir = self.instance_manager.meta_dir.clone();

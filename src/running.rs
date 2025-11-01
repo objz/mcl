@@ -16,6 +16,9 @@ pub static RUNNING: Lazy<Arc<Mutex<HashMap<String, RunState>>>> =
 pub static PENDING_LAST_PLAYED: Lazy<Arc<Mutex<Vec<(String, DateTime<Utc>)>>>> =
     Lazy::new(|| Arc::new(Mutex::new(Vec::new())));
 
+pub static KILL_SENDERS: Lazy<Arc<Mutex<HashMap<String, tokio::sync::oneshot::Sender<()>>>>> =
+    Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
+
 pub fn set_state(name: &str, state: RunState) {
     if let Ok(mut map) = RUNNING.lock() {
         map.insert(name.to_string(), state);
@@ -52,4 +55,26 @@ pub fn drain_last_played() -> Vec<(String, DateTime<Utc>)> {
         .ok()
         .map(|mut q| q.drain(..).collect())
         .unwrap_or_default()
+}
+
+pub fn register_kill(name: &str, tx: tokio::sync::oneshot::Sender<()>) {
+    if let Ok(mut map) = KILL_SENDERS.lock() {
+        map.insert(name.to_string(), tx);
+    }
+}
+
+pub fn send_kill(name: &str) -> bool {
+    if let Ok(mut map) = KILL_SENDERS.lock() {
+        if let Some(tx) = map.remove(name) {
+            let _ = tx.send(());
+            return true;
+        }
+    }
+    false
+}
+
+pub fn cleanup_kill_sender(name: &str) {
+    if let Ok(mut map) = KILL_SENDERS.lock() {
+        map.remove(name);
+    }
 }

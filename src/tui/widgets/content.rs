@@ -59,15 +59,6 @@ impl ContentTab {
     }
 }
 
-fn spinner_char() -> char {
-    const FRAMES: &[char] = &['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
-    let ms = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis();
-    FRAMES[(ms / 100) as usize % FRAMES.len()]
-}
-
 pub fn render(
     frame: &mut Frame,
     area: Rect,
@@ -182,7 +173,7 @@ pub fn title(
             let run_state = crate::running::get(&inst.name);
             let (prefix, prefix_style) = match run_state {
                 Some(RunState::Running) | Some(RunState::Starting) => (
-                    format!("{} ", spinner_char()),
+                    String::from("\u{25b6} "),
                     Style::default()
                         .fg(THEME.colors.success)
                         .add_modifier(Modifier::BOLD),

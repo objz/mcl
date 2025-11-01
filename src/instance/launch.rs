@@ -252,6 +252,8 @@ pub async fn launch(
         "legacy".to_string(),
     ];
 
+    let (kill_tx, kill_rx) = tokio::sync::oneshot::channel::<()>();
+    crate::running::register_kill(&name, kill_tx);
     crate::running::set_state(&name, crate::running::RunState::Starting);
     tracing::info!(
         "[{}] Starting Minecraft ({} {})",
@@ -272,6 +274,7 @@ pub async fn launch(
     let mut child = match cmd.spawn() {
         Ok(c) => c,
         Err(e) => {
+            crate::running::cleanup_kill_sender(&name);
             crate::running::remove(&name);
             return Err(LaunchError::Io(e));
         }
@@ -308,7 +311,17 @@ pub async fn launch(
             });
         }
 
-        let code = child.wait().await.ok().and_then(|s| s.code());
+        let code = tokio::select! {
+            _ = kill_rx => {
+                tracing::info!("[{}] Kill requested, terminating process", name_for_task);
+                let _ = child.kill().await;
+                let _ = child.wait().await;
+                None
+            }
+            result = child.wait() => {
+                result.ok().and_then(|s| s.code())
+            }
+        };
         tracing::info!("[{}] Exited with code {:?}", name_for_task, code);
 
         if code == Some(0) {
@@ -325,6 +338,7 @@ pub async fn launch(
             tracing::warn!("Failed to update last_played for '{}': {}", name_for_task, e);
         }
         crate::running::push_last_played(&name_for_task, chrono::Utc::now());
+        crate::running::cleanup_kill_sender(&name_for_task);
     });
 
     Ok(())
