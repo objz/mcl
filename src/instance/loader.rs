@@ -145,6 +145,23 @@ impl ModLoaderInstaller for FabricInstaller {
             }
         }
 
+        let profiles_dir = meta_dir.join("loader-profiles");
+        match std::fs::create_dir_all(&profiles_dir) {
+            Ok(_) => {
+                let profile_path =
+                    profiles_dir.join(format!("fabric-{}-{}.json", game_version, loader_version));
+                match serde_json::to_string_pretty(&profile) {
+                    Ok(json) => {
+                        if let Err(e) = std::fs::write(&profile_path, &json) {
+                            tracing::warn!("Failed to save Fabric profile: {}", e);
+                        }
+                    }
+                    Err(e) => tracing::warn!("Failed to serialize Fabric profile: {}", e),
+                }
+            }
+            Err(e) => tracing::warn!("Failed to create loader-profiles dir: {}", e),
+        }
+
         Ok(())
     }
 }
@@ -183,7 +200,7 @@ impl ModLoaderInstaller for ForgeInstaller {
         game_version: &str,
         loader_version: &str,
         instance_dir: &Path,
-        _meta_dir: &Path,
+        meta_dir: &Path,
     ) -> Result<(), NetError> {
         let installer_jar = instance_dir.join(".minecraft").join("forge-installer.jar");
 
@@ -210,6 +227,68 @@ impl ModLoaderInstaller for ForgeInstaller {
                 "Failed to remove Forge installer JAR {}: {}",
                 installer_jar.display(),
                 e
+            );
+        }
+
+        let forge_ver_json = instance_dir
+            .join(".minecraft")
+            .join("versions")
+            .join(format!("{}-forge-{}", game_version, loader_version))
+            .join(format!("{}-forge-{}.json", game_version, loader_version));
+        if forge_ver_json.exists() {
+            #[derive(serde::Deserialize)]
+            #[serde(rename_all = "camelCase")]
+            struct ForgeVersionJson {
+                main_class: String,
+                #[serde(default)]
+                libraries: Vec<ForgeVersionLib>,
+            }
+            #[derive(serde::Deserialize)]
+            struct ForgeVersionLib {
+                name: String,
+            }
+            match std::fs::read(&forge_ver_json)
+                .ok()
+                .and_then(|b| serde_json::from_slice::<ForgeVersionJson>(&b).ok())
+            {
+                Some(forge_ver) => {
+                    let profile_dir = meta_dir.join("loader-profiles");
+                    match std::fs::create_dir_all(&profile_dir) {
+                        Ok(_) => {
+                            let profile_path = profile_dir
+                                .join(format!("forge-{}-{}.json", game_version, loader_version));
+                            let libs: Vec<serde_json::Value> = forge_ver
+                                .libraries
+                                .iter()
+                                .map(|l| serde_json::json!({"name": l.name}))
+                                .collect();
+                            let json_val = serde_json::json!({
+                                "mainClass": forge_ver.main_class,
+                                "libraries": libs
+                            });
+                            match serde_json::to_string_pretty(&json_val) {
+                                Ok(json) => {
+                                    if let Err(e) = std::fs::write(&profile_path, &json) {
+                                        tracing::warn!("Failed to save Forge profile: {}", e);
+                                    }
+                                }
+                                Err(e) => {
+                                    tracing::warn!("Failed to serialize Forge profile: {}", e)
+                                }
+                            }
+                        }
+                        Err(e) => tracing::warn!("Failed to create loader-profiles dir: {}", e),
+                    }
+                }
+                None => tracing::warn!(
+                    "Could not read Forge version JSON at {}",
+                    forge_ver_json.display()
+                ),
+            }
+        } else {
+            tracing::warn!(
+                "Forge version JSON not found at {} — profile not saved",
+                forge_ver_json.display()
             );
         }
 
@@ -272,6 +351,23 @@ impl ModLoaderInstaller for QuiltInstaller {
             }
         }
 
+        let profiles_dir = meta_dir.join("loader-profiles");
+        match std::fs::create_dir_all(&profiles_dir) {
+            Ok(_) => {
+                let profile_path =
+                    profiles_dir.join(format!("quilt-{}-{}.json", game_version, loader_version));
+                match serde_json::to_string_pretty(&profile) {
+                    Ok(json) => {
+                        if let Err(e) = std::fs::write(&profile_path, &json) {
+                            tracing::warn!("Failed to save Quilt profile: {}", e);
+                        }
+                    }
+                    Err(e) => tracing::warn!("Failed to serialize Quilt profile: {}", e),
+                }
+            }
+            Err(e) => tracing::warn!("Failed to create loader-profiles dir: {}", e),
+        }
+
         Ok(())
     }
 }
@@ -310,7 +406,7 @@ impl ModLoaderInstaller for NeoForgeInstaller {
         _game_version: &str,
         loader_version: &str,
         instance_dir: &Path,
-        _meta_dir: &Path,
+        meta_dir: &Path,
     ) -> Result<(), NetError> {
         let installer_jar = instance_dir
             .join(".minecraft")
@@ -337,6 +433,69 @@ impl ModLoaderInstaller for NeoForgeInstaller {
                 "Failed to remove NeoForge installer JAR {}: {}",
                 installer_jar.display(),
                 e
+            );
+        }
+
+        let neo_ver_json = instance_dir
+            .join(".minecraft")
+            .join("versions")
+            .join(format!("neoforge-{}", loader_version))
+            .join(format!("neoforge-{}.json", loader_version));
+        if neo_ver_json.exists() {
+            #[derive(serde::Deserialize)]
+            #[serde(rename_all = "camelCase")]
+            struct ForgeVersionJson {
+                main_class: String,
+                #[serde(default)]
+                libraries: Vec<ForgeVersionLib>,
+            }
+            #[derive(serde::Deserialize)]
+            struct ForgeVersionLib {
+                name: String,
+            }
+            match std::fs::read(&neo_ver_json)
+                .ok()
+                .and_then(|b| serde_json::from_slice::<ForgeVersionJson>(&b).ok())
+            {
+                Some(neo_ver) => {
+                    let profile_dir = meta_dir.join("loader-profiles");
+                    match std::fs::create_dir_all(&profile_dir) {
+                        Ok(_) => {
+                            let profile_path =
+                                profile_dir.join(format!("neoforge-{}.json", loader_version));
+                            let libs: Vec<serde_json::Value> = neo_ver
+                                .libraries
+                                .iter()
+                                .map(|l| serde_json::json!({"name": l.name}))
+                                .collect();
+                            let json_val = serde_json::json!({
+                                "mainClass": neo_ver.main_class,
+                                "libraries": libs
+                            });
+                            match serde_json::to_string_pretty(&json_val) {
+                                Ok(json) => {
+                                    if let Err(e) = std::fs::write(&profile_path, &json) {
+                                        tracing::warn!("Failed to save NeoForge profile: {}", e);
+                                    }
+                                }
+                                Err(e) => tracing::warn!(
+                                    "Failed to serialize NeoForge profile: {}",
+                                    e
+                                ),
+                            }
+                        }
+                        Err(e) => tracing::warn!("Failed to create loader-profiles dir: {}", e),
+                    }
+                }
+                None => tracing::warn!(
+                    "Could not read NeoForge version JSON at {}",
+                    neo_ver_json.display()
+                ),
+            }
+        } else {
+            tracing::warn!(
+                "NeoForge version JSON not found at {} — profile not saved",
+                neo_ver_json.display()
             );
         }
 

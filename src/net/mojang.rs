@@ -17,19 +17,19 @@ const MANIFEST_URL: &str = "https://piston-meta.mojang.com/mc/game/version_manif
 const ASSETS_BASE_URL: &str = "https://resources.download.minecraft.net";
 const MAX_CONCURRENT_DOWNLOADS: usize = 10;
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct VersionManifest {
     pub latest: LatestVersions,
     pub versions: Vec<VersionEntry>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct LatestVersions {
     pub release: String,
     pub snapshot: String,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct VersionEntry {
     pub id: String,
     #[serde(rename = "type")]
@@ -38,7 +38,7 @@ pub struct VersionEntry {
     pub sha1: String,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct VersionMeta {
     pub id: String,
@@ -49,38 +49,38 @@ pub struct VersionMeta {
     pub java_version: Option<JavaVersion>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct AssetIndex {
     pub id: String,
     pub url: String,
     pub sha1: String,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct VersionDownloads {
     pub client: Download,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Download {
     pub url: String,
     pub sha1: String,
     pub size: u64,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Library {
     pub name: String,
     pub downloads: LibraryDownloads,
     pub rules: Option<Vec<Rule>>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct LibraryDownloads {
     pub artifact: Option<Artifact>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Artifact {
     pub url: String,
     pub path: String,
@@ -88,18 +88,18 @@ pub struct Artifact {
     pub size: u64,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Rule {
     pub action: String,
     pub os: Option<OsRule>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct OsRule {
     pub name: Option<String>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct JavaVersion {
     pub major_version: u32,

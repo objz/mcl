@@ -105,6 +105,7 @@ impl App {
             self.dismiss_expired_errors();
 
             self.drain_pending_instances();
+            self.drain_pending_last_played();
             self.throbber_state.calc_next();
             tui_logger::move_events();
             terminal.draw(|frame| self.render_frame(frame))?;
@@ -139,7 +140,13 @@ impl App {
             self.focused,
             self.profiles_state.selected_instance(),
         );
-        widgets::content::render(frame, main_chunks[1], self.focused, self.content_tab);
+        widgets::content::render(
+            frame,
+            main_chunks[1],
+            self.focused,
+            self.content_tab,
+            self.profiles_state.selected_instance(),
+        );
 
         let bottom_chunks = Layout::default()
             .direction(Direction::Horizontal)
@@ -293,6 +300,22 @@ impl App {
                             self.focused = FocusedArea::ConfirmDelete;
                         }
                     }
+                    KeyCode::Enter
+                        if self.focused == FocusedArea::Profiles
+                            && !self.profiles_state.search.active =>
+                    {
+                        if let Some(instance) = self.profiles_state.selected_instance().cloned() {
+                            let can_launch = matches!(
+                                crate::running::get(&instance.name),
+                                None | Some(crate::running::RunState::Crashed(_))
+                            );
+                            if can_launch {
+                                crate::running::remove(&instance.name);
+                                crate::instance_logs::clear(&instance.name);
+                                self.spawn_launch(instance);
+                            }
+                        }
+                    }
                     _ => {}
                 }
 
@@ -345,6 +368,30 @@ impl App {
         });
     }
 
+    fn spawn_launch(&self, instance: crate::instance::InstanceConfig) {
+        use crate::instance::launch;
+        use crate::{running, tui::error_buffer};
+
+        let instances_dir = self.instance_manager.instances_dir.clone();
+        let meta_dir = self.instance_manager.meta_dir.clone();
+
+        tokio::spawn(async move {
+            match launch::launch(&instance, &instances_dir, &meta_dir).await {
+                Ok(()) => {}
+                Err(e) => {
+                    tracing::error!("Launch failed for '{}': {}", instance.name, e);
+                    running::remove(&instance.name);
+                    error_buffer::push_error(error_buffer::ErrorEvent {
+                        id: 0,
+                        level: tracing::Level::ERROR,
+                        message: format!("Failed to launch '{}': {}", instance.name, e),
+                        pushed_at: std::time::Instant::now(),
+                    });
+                }
+            }
+        });
+    }
+
     fn dismiss_expired_errors(&self) {
         loop {
             match error_buffer::peek_error() {
@@ -365,6 +412,17 @@ impl App {
             }
             Err(e) => {
                 tracing::error!("Pending instance queue lock poisoned: {}", e);
+            }
+        }
+    }
+
+    fn drain_pending_last_played(&mut self) {
+        for (name, time) in crate::running::drain_last_played() {
+            for inst in &mut self.profiles_state.instances {
+                if inst.name == name {
+                    inst.last_played = Some(time);
+                    break;
+                }
             }
         }
     }

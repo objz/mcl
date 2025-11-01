@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::instance::loader::GameVersion;
 use crate::net::{download_file, HttpClient, NetError};
@@ -24,7 +24,7 @@ pub struct QuiltGameVersion {
     pub stable: bool,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct QuiltProfile {
     pub id: String,
@@ -32,7 +32,7 @@ pub struct QuiltProfile {
     pub libraries: Vec<QuiltLibrary>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct QuiltLibrary {
     pub name: String,
     pub url: String,

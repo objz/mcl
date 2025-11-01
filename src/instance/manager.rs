@@ -177,6 +177,18 @@ impl InstanceManager {
             }
         }
 
+        let meta_json_path = self.meta_dir.join("versions").join(game_version).join("meta.json");
+        match serde_json::to_string_pretty(&version_meta) {
+            Ok(json) => {
+                if let Err(e) = std::fs::write(&meta_json_path, &json) {
+                    tracing::warn!("Failed to save version meta: {}", e);
+                }
+            }
+            Err(e) => {
+                tracing::warn!("Failed to serialize version meta: {}", e);
+            }
+        }
+
         match crate::net::mojang::download_libraries(&self.client, &version_meta, &self.meta_dir).await {
             Ok(_) => {}
             Err(e) => {

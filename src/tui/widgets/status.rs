@@ -34,21 +34,27 @@ pub fn render(
     let state = match PROGRESS.lock() {
         Ok(s) => s.clone(),
         Err(_) => {
-            let idle = Paragraph::new(Span::styled(
-                "Ready",
-                Style::default().fg(THEME.colors.text_idle),
-            ));
-            frame.render_widget(idle.block(block), area);
+            frame.render_widget(
+                Paragraph::new(Span::styled(
+                    "Ready",
+                    Style::default().fg(THEME.colors.text_idle),
+                ))
+                .block(block),
+                area,
+            );
             return;
         }
     };
 
     if state.current_action.is_none() {
-        let idle = Paragraph::new(Span::styled(
-            "Ready",
-            Style::default().fg(THEME.colors.text_idle),
-        ));
-        frame.render_widget(idle.block(block), area);
+        frame.render_widget(
+            Paragraph::new(Span::styled(
+                "Ready",
+                Style::default().fg(THEME.colors.text_idle),
+            ))
+            .block(block),
+            area,
+        );
         return;
     }
 
@@ -67,12 +73,7 @@ pub fn render(
             ])
             .split(inner);
 
-            let ratio = if total > 0 {
-                (current as f64 / total as f64).min(1.0)
-            } else {
-                0.0
-            };
-            let pct = (ratio * 100.0) as u16;
+            let ratio = (current as f64 / total as f64).min(1.0);
             let gauge = Gauge::default()
                 .gauge_style(
                     Style::default()
@@ -80,14 +81,12 @@ pub fn render(
                         .bg(THEME.colors.progress_track)
                         .add_modifier(Modifier::BOLD),
                 )
-                .percent(pct);
+                .percent((ratio * 100.0) as u16);
             frame.render_widget(gauge, chunks[0]);
-
             frame.render_widget(
                 Paragraph::new(action_text).style(Style::default().fg(THEME.colors.foreground)),
                 chunks[1],
             );
-
             if !sub_text.is_empty() {
                 frame.render_widget(
                     Paragraph::new(sub_text)
@@ -99,7 +98,6 @@ pub fn render(
         _ => {
             let chunks =
                 Layout::vertical([Constraint::Length(1), Constraint::Length(1)]).split(inner);
-
             let throbber = Throbber::default()
                 .label(action_text)
                 .style(Style::default().fg(THEME.colors.foreground))
@@ -109,7 +107,6 @@ pub fn render(
                         .add_modifier(Modifier::BOLD),
                 );
             frame.render_stateful_widget(throbber, chunks[0], throbber_state);
-
             if !sub_text.is_empty() {
                 frame.render_widget(
                     Paragraph::new(sub_text)

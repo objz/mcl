@@ -136,6 +136,13 @@ pub fn maven_coord_to_path(coord: &str) -> Option<String> {
                 group_path, artifact, version, artifact, version
             ))
         }
+        [group, artifact, version, classifier] => {
+            let group_path = group.replace('.', "/");
+            Some(format!(
+                "{}/{}/{}/{}-{}-{}.jar",
+                group_path, artifact, version, artifact, version, classifier
+            ))
+        }
         _ => None,
     }
 }

@@ -9,6 +9,7 @@ use ratatui::{
 use tui_widget_list::{ListBuilder, ListState as TuiListState, ListView};
 
 use crate::instance::models::InstanceConfig;
+use crate::running::{get as get_run_state, RunState};
 use crate::tui::{layout::FocusedArea, theme::THEME};
 
 use super::{popups, search::SearchState, styled_title, WidgetKey};
@@ -225,7 +226,7 @@ pub fn render(frame: &mut Frame, area: Rect, focused: FocusedArea, state: &mut S
                 Style::default()
                     .fg(THEME.colors.row_highlight)
                     .add_modifier(Modifier::BOLD),
-                Style::default().fg(THEME.colors.foreground),
+                Style::default().fg(THEME.colors.row_highlight),
                 THEME.colors.row_alternate_bg,
             )
         } else {
@@ -238,16 +239,37 @@ pub fn render(frame: &mut Frame, area: Rect, focused: FocusedArea, state: &mut S
             )
         };
 
-        let indicator = Span::styled(
-            "\u{258c} ",
-            Style::default().fg(loader_color(instance.loader)),
-        );
+        let run_state = get_run_state(&instance.name);
+        let indicator = match &run_state {
+            Some(RunState::Running) | Some(RunState::Starting) => {
+                Span::styled("\u{25c9} ", Style::default().fg(THEME.colors.success))
+            }
+            Some(RunState::Crashed(_)) => {
+                Span::styled("\u{2717} ", Style::default().fg(THEME.colors.error))
+            }
+            None => Span::styled(
+                "\u{258c} ",
+                Style::default().fg(loader_color(instance.loader)),
+            ),
+        };
         let name_line = Line::from(vec![
             indicator,
             Span::styled(instance.name.as_str(), name_style),
         ]);
+        let meta_indicator = match &run_state {
+            Some(RunState::Running) | Some(RunState::Starting) => {
+                Span::styled("\u{258c} ", Style::default().fg(THEME.colors.success))
+            }
+            Some(RunState::Crashed(_)) => {
+                Span::styled("\u{258c} ", Style::default().fg(THEME.colors.error))
+            }
+            None => Span::styled(
+                "\u{258c} ",
+                Style::default().fg(loader_color(instance.loader)),
+            ),
+        };
         let meta_line = Line::from(vec![
-            Span::raw("   "),
+            meta_indicator,
             Span::styled(format_last_played(instance.last_played), meta_style),
         ]);
 

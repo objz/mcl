@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::instance::loader::GameVersion;
 use crate::net::{download_file, HttpClient, NetError};
@@ -27,7 +27,7 @@ pub struct FabricGameVersion {
     pub stable: bool,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FabricProfile {
     pub id: String,
@@ -35,7 +35,7 @@ pub struct FabricProfile {
     pub libraries: Vec<FabricLibrary>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct FabricLibrary {
     pub name: String,
     pub url: String,
