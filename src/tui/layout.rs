@@ -34,6 +34,7 @@ pub struct App {
     instance_manager: InstanceManager,
     log_list_state: tui_logger::TuiWidgetState,
     throbber_state: throbber_widgets_tui::ThrobberState,
+    throbber_tick: u8,
     error_effects: HashMap<u64, ErrorEffectState>,
 }
 
@@ -90,6 +91,7 @@ impl Default for App {
             log_list_state: tui_logger::TuiWidgetState::new()
                 .set_default_display_level(log::LevelFilter::Debug),
             throbber_state: throbber_widgets_tui::ThrobberState::default(),
+            throbber_tick: 0,
             error_effects: HashMap::new(),
         }
     }
@@ -106,7 +108,10 @@ impl App {
 
             self.drain_pending_instances();
             self.drain_pending_last_played();
-            self.throbber_state.calc_next();
+            self.throbber_tick = self.throbber_tick.wrapping_add(1);
+            if self.throbber_tick % 8 == 0 {
+                self.throbber_state.calc_next();
+            }
             tui_logger::move_events();
             terminal.draw(|frame| self.render_frame(frame))?;
             self.handle_events().wrap_err("handle events failed")?;
@@ -139,6 +144,7 @@ impl App {
             main_chunks[0],
             self.focused,
             self.profiles_state.selected_instance(),
+            &mut self.throbber_state,
         );
         widgets::content::render(
             frame,
@@ -178,6 +184,11 @@ impl App {
                 }
                 None => {}
             }
+        }
+
+        if self.profiles_state.show_popup {
+            let area = new_instance::popup_rect(frame.area());
+            new_instance::render(frame, area, self.focused);
         }
 
         if self.focused == FocusedArea::ConfirmDelete {

@@ -5,9 +5,12 @@ use ratatui::{
     widgets::{Block, BorderType, Borders, Paragraph, Tabs},
     Frame,
 };
+use throbber_widgets_tui::{Throbber, ThrobberState};
 
 use crate::tui::layout::FocusedArea;
 use crate::tui::theme::THEME;
+
+use super::styled_title;
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub enum ContentTab {
@@ -141,6 +144,7 @@ pub fn title(
     area: Rect,
     focused: FocusedArea,
     instance: Option<&crate::instance::InstanceConfig>,
+    throbber_state: &mut ThrobberState,
 ) {
     let color = if focused == FocusedArea::Content {
         THEME.colors.border_focused
@@ -149,6 +153,7 @@ pub fn title(
     };
 
     let block = Block::default()
+        .title(styled_title("Content", true))
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .border_style(Style::default().fg(color));
@@ -169,44 +174,57 @@ pub fn title(
                 Layout::horizontal([Constraint::Min(0), Constraint::Length(32)]).areas(inner);
 
             use crate::running::RunState;
-
             let run_state = crate::running::get(&inst.name);
-            let (prefix, prefix_style) = match run_state {
-                Some(RunState::Running) | Some(RunState::Starting) => (
-                    String::from("\u{25b6} "),
-                    Style::default()
-                        .fg(THEME.colors.success)
-                        .add_modifier(Modifier::BOLD),
-                ),
-                Some(RunState::Crashed(_)) => (
-                    String::from("\u{2717} "),
-                    Style::default()
-                        .fg(THEME.colors.error)
-                        .add_modifier(Modifier::BOLD),
-                ),
-                None => (String::new(), Style::default()),
-            };
 
-            let name_line = if prefix.is_empty() {
-                Line::from(Span::styled(
-                    inst.name.as_str(),
-                    Style::default()
-                        .fg(THEME.colors.foreground)
-                        .add_modifier(Modifier::BOLD),
-                ))
-            } else {
-                Line::from(vec![
-                    Span::styled(prefix, prefix_style),
-                    Span::styled(
-                        inst.name.as_str(),
-                        Style::default()
-                            .fg(THEME.colors.foreground)
-                            .add_modifier(Modifier::BOLD),
-                    ),
-                ])
-            };
-
-            frame.render_widget(Paragraph::new(name_line), left_area);
+            match run_state {
+                Some(RunState::Running) | Some(RunState::Starting) => {
+                    let throbber = Throbber::default()
+                        .label(inst.name.as_str())
+                        .style(
+                            Style::default()
+                                .fg(THEME.colors.foreground)
+                                .add_modifier(Modifier::BOLD),
+                        )
+                        .throbber_style(
+                            Style::default()
+                                .fg(THEME.colors.success)
+                                .add_modifier(Modifier::BOLD),
+                        )
+                        .throbber_set(throbber_widgets_tui::PARENTHESIS)
+                        .use_type(throbber_widgets_tui::WhichUse::Spin);
+                    frame.render_stateful_widget(throbber, left_area, throbber_state);
+                }
+                Some(RunState::Crashed(_)) => {
+                    frame.render_widget(
+                        Paragraph::new(Line::from(vec![
+                            Span::styled(
+                                "\u{2717} ",
+                                Style::default()
+                                    .fg(THEME.colors.error)
+                                    .add_modifier(Modifier::BOLD),
+                            ),
+                            Span::styled(
+                                inst.name.as_str(),
+                                Style::default()
+                                    .fg(THEME.colors.foreground)
+                                    .add_modifier(Modifier::BOLD),
+                            ),
+                        ])),
+                        left_area,
+                    );
+                }
+                None => {
+                    frame.render_widget(
+                        Paragraph::new(Span::styled(
+                            inst.name.as_str(),
+                            Style::default()
+                                .fg(THEME.colors.foreground)
+                                .add_modifier(Modifier::BOLD),
+                        )),
+                        left_area,
+                    );
+                }
+            }
 
             let loader_str = match &inst.loader_version {
                 Some(lv) => format!("{} \u{00b7} {} {}", inst.game_version, inst.loader, lv),

@@ -449,7 +449,7 @@ fn close_popup(state: &mut WizardState, profiles_state: &mut profiles::State) {
 
 fn wizard_title(_state: &WizardState) -> Line<'static> {
     use crate::tui::widgets::styled_title;
-    styled_title("New Instance", true)
+    styled_title("New Instance", false)
 }
 
 fn step_keybinds(state: &WizardState) -> ratatui::text::Line<'static> {
@@ -519,15 +519,17 @@ fn render_version_step(state: &WizardState, area: Rect, buf: &mut ratatui::buffe
                     } else {
                         " (snapshot)".to_string()
                     };
-                    ListItem::new(format!("{}{}", version.id, suffix))
+                    ListItem::new(Line::from(Span::styled(
+                        format!("{}{}", version.id, suffix),
+                        Style::default().fg(THEME.colors.foreground),
+                    )))
                 })
                 .collect();
 
             let list = List::new(items)
-                .style(Style::default().fg(THEME.colors.foreground))
                 .highlight_style(
                     Style::default()
-                        .fg(THEME.colors.row_highlight)
+                        .fg(THEME.colors.accent)
                         .add_modifier(Modifier::BOLD),
                 )
                 .highlight_symbol("▶ ");
@@ -549,14 +551,18 @@ fn render_loader_step(state: &WizardState, area: Rect, buf: &mut ratatui::buffer
 
     let items: Vec<ListItem> = loaders
         .into_iter()
-        .map(|loader| ListItem::new(loader.to_string()))
+        .map(|loader| {
+            ListItem::new(Line::from(Span::styled(
+                loader.to_string(),
+                Style::default().fg(THEME.colors.foreground),
+            )))
+        })
         .collect();
 
     let list = List::new(items)
-        .style(Style::default().fg(THEME.colors.foreground))
         .highlight_style(
             Style::default()
-                .fg(THEME.colors.row_highlight)
+                .fg(THEME.colors.accent)
                 .add_modifier(Modifier::BOLD),
         )
         .highlight_symbol("▶ ");
@@ -592,14 +598,18 @@ fn render_loader_version_step(
         LoadState::Loaded(versions) => {
             let items: Vec<ListItem> = versions
                 .iter()
-                .map(|version| ListItem::new(version.clone()))
+                .map(|version| {
+                    ListItem::new(Line::from(Span::styled(
+                        version.clone(),
+                        Style::default().fg(THEME.colors.foreground),
+                    )))
+                })
                 .collect();
 
             let list = List::new(items)
-                .style(Style::default().fg(THEME.colors.foreground))
                 .highlight_style(
                     Style::default()
-                        .fg(THEME.colors.row_highlight)
+                        .fg(THEME.colors.accent)
                         .add_modifier(Modifier::BOLD),
                 )
                 .highlight_symbol("▶ ");

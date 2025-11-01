@@ -72,7 +72,11 @@ pub fn popup_area(frame_area: Rect, message: &str, base_y: u16, elapsed_ms: u128
     let popup_w = (inner_w + 2) as u16;
     let popup_h = (h + 2) as u16;
     let popup_w = popup_w.min(frame_area.width.saturating_sub(4));
-    let popup_h = popup_h.min(frame_area.height.saturating_sub(2));
+    let max_h = frame_area.height.saturating_sub(base_y).saturating_sub(1);
+    if max_h < 3 {
+        return None;
+    }
+    let popup_h = popup_h.min(max_h);
     let base_x = frame_area.width.saturating_sub(popup_w + 2);
     Some(Rect {
         x: base_x,

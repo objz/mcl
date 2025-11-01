@@ -12,7 +12,7 @@ use crate::instance::models::InstanceConfig;
 use crate::running::{get as get_run_state, RunState};
 use crate::tui::{layout::FocusedArea, theme::THEME};
 
-use super::{popups, search::SearchState, styled_title, WidgetKey};
+use super::{search::SearchState, styled_title, WidgetKey};
 
 fn format_last_played(last_played: Option<chrono::DateTime<chrono::Utc>>) -> String {
     let Some(dt) = last_played else {
@@ -227,7 +227,7 @@ pub fn render(frame: &mut Frame, area: Rect, focused: FocusedArea, state: &mut S
                     .fg(THEME.colors.row_highlight)
                     .add_modifier(Modifier::BOLD),
                 Style::default().fg(THEME.colors.row_highlight),
-                THEME.colors.row_alternate_bg,
+                THEME.colors.row_background,
             )
         } else {
             (
@@ -235,43 +235,28 @@ pub fn render(frame: &mut Frame, area: Rect, focused: FocusedArea, state: &mut S
                     .fg(THEME.colors.border_focused)
                     .add_modifier(Modifier::BOLD),
                 Style::default().fg(THEME.colors.border_unfocused),
-                THEME.colors.row_background,
+                THEME.colors.row_alternate_bg,
             )
         };
 
-        let run_state = get_run_state(&instance.name);
-        let indicator = match &run_state {
-            Some(RunState::Running) | Some(RunState::Starting) => {
-                Span::styled("\u{25b6} ", Style::default().fg(THEME.colors.success))
-            }
-            Some(RunState::Crashed(_)) => {
-                Span::styled("\u{2717} ", Style::default().fg(THEME.colors.error))
-            }
-            None => Span::styled(
-                "\u{258c} ",
-                Style::default().fg(loader_color(instance.loader)),
-            ),
-        };
+        let stripe = Span::styled(
+            "\u{258c} ",
+            Style::default().fg(loader_color(instance.loader)),
+        );
         let name_line = Line::from(vec![
-            indicator,
+            stripe.clone(),
             Span::styled(instance.name.as_str(), name_style),
         ]);
-        let meta_indicator = match &run_state {
-            Some(RunState::Running) | Some(RunState::Starting) => {
-                Span::styled("\u{258c} ", Style::default().fg(THEME.colors.success))
-            }
-            Some(RunState::Crashed(_)) => {
-                Span::styled("\u{258c} ", Style::default().fg(THEME.colors.error))
-            }
-            None => Span::styled(
-                "\u{258c} ",
-                Style::default().fg(loader_color(instance.loader)),
+
+        let (meta_text, meta_text_style) = match get_run_state(&instance.name) {
+            Some(RunState::Running) | Some(RunState::Starting) => (
+                "Playing".to_string(),
+                Style::default().fg(THEME.colors.success),
             ),
+            _ => (format_last_played(instance.last_played), meta_style),
         };
-        let meta_line = Line::from(vec![
-            meta_indicator,
-            Span::styled(format_last_played(instance.last_played), meta_style),
-        ]);
+
+        let meta_line = Line::from(vec![stripe, Span::styled(meta_text, meta_text_style)]);
 
         let item = Text::from(vec![name_line, meta_line]).style(Style::default().bg(bg));
         (item, 2)
@@ -296,9 +281,4 @@ pub fn render(frame: &mut Frame, area: Rect, focused: FocusedArea, state: &mut S
         scrollbar_area,
         &mut state.scrollbar_state,
     );
-
-    if state.show_popup {
-        let popup_area = popups::new_instance::popup_rect(frame.area());
-        popups::new_instance::render(frame, popup_area, focused);
-    }
 }
