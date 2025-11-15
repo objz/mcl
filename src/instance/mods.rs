@@ -60,7 +60,7 @@ pub fn scan_mods(instances_dir: &Path, instance_name: &str) -> Vec<ModEntry> {
         let (name, description, icon_bytes) = read_mod_metadata(&path);
         let icon_lines = icon_bytes
             .as_ref()
-            .and_then(|bytes| make_icon_pixels(bytes, 4, 2));
+            .and_then(|bytes| make_icon_pixels(bytes, 6, 3));
 
         entries.push(ModEntry {
             file_stem: file_stem.clone(),
@@ -116,7 +116,11 @@ fn read_zip_bytes(archive: &mut zip::ZipArchive<std::fs::File>, path: &str) -> O
     Some(bytes)
 }
 
-fn make_icon_pixels(bytes: &[u8], width: u16, height: u16) -> Option<Vec<Vec<IconCell>>> {
+pub(crate) fn make_icon_pixels(
+    bytes: &[u8],
+    width: u16,
+    height: u16,
+) -> Option<Vec<Vec<IconCell>>> {
     let img = image::load_from_memory(bytes).ok()?;
     let resized = img.resize_exact(
         u32::from(width),

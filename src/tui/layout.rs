@@ -31,7 +31,9 @@ pub struct App {
     pre_overlay_focused: FocusedArea,
     content_tab: widgets::content::ContentTab,
     profiles_state: profiles::State,
-    mods_state: widgets::mods_list::ModsState,
+    mods_state: widgets::content_list::ContentListState,
+    resource_packs_state: widgets::content_list::ContentListState,
+    shaders_state: widgets::content_list::ContentListState,
     instance_manager: InstanceManager,
     log_list_state: tui_logger::TuiWidgetState,
     throbber_state: throbber_widgets_tui::ThrobberState,
@@ -88,7 +90,9 @@ impl Default for App {
             pre_overlay_focused: FocusedArea::default(),
             content_tab: widgets::content::ContentTab::default(),
             profiles_state,
-            mods_state: widgets::mods_list::ModsState::default(),
+            mods_state: widgets::content_list::ContentListState::default(),
+            resource_packs_state: widgets::content_list::ContentListState::default(),
+            shaders_state: widgets::content_list::ContentListState::default(),
             instance_manager: manager,
             log_list_state: tui_logger::TuiWidgetState::new()
                 .set_default_display_level(log::LevelFilter::Debug),
@@ -110,6 +114,9 @@ impl App {
 
             self.drain_pending_instances();
             self.drain_pending_last_played();
+            self.mods_state.drain_pending();
+            self.resource_packs_state.drain_pending();
+            self.shaders_state.drain_pending();
             self.throbber_tick = self.throbber_tick.wrapping_add(1);
             if self.throbber_tick % 8 == 0 {
                 self.throbber_state.calc_next();
@@ -155,6 +162,8 @@ impl App {
             self.content_tab,
             self.profiles_state.selected_instance(),
             &mut self.mods_state,
+            &mut self.resource_packs_state,
+            &mut self.shaders_state,
             &self.instance_manager.instances_dir,
         );
 
@@ -279,15 +288,19 @@ impl App {
             }
         }
 
-        if self.focused == FocusedArea::Content
-            && self.content_tab == widgets::content::ContentTab::Mods
-        {
-            if widgets::mods_list::handle_key(
-                &key_event,
-                &mut self.mods_state,
-                &self.instance_manager.instances_dir,
-            ) {
-                return Ok(());
+        if self.focused == FocusedArea::Content {
+            let state = match self.content_tab {
+                widgets::content::ContentTab::Mods => Some(&mut self.mods_state),
+                widgets::content::ContentTab::ResourcePacks => {
+                    Some(&mut self.resource_packs_state)
+                }
+                widgets::content::ContentTab::Shaders => Some(&mut self.shaders_state),
+                _ => None,
+            };
+            if let Some(state) = state {
+                if widgets::content_list::handle_key(&key_event, state) {
+                    return Ok(());
+                }
             }
         }
 
@@ -311,10 +324,14 @@ impl App {
                         self.pre_overlay_focused = self.focused;
                         self.focused = FocusedArea::StatusExpanded;
                     }
-                    KeyCode::Tab if self.focused == FocusedArea::Content => {
+                    KeyCode::Tab | KeyCode::Char('l') | KeyCode::Right
+                        if self.focused == FocusedArea::Content =>
+                    {
                         self.content_tab = self.content_tab.next();
                     }
-                    KeyCode::BackTab if self.focused == FocusedArea::Content => {
+                    KeyCode::BackTab | KeyCode::Char('h') | KeyCode::Left
+                        if self.focused == FocusedArea::Content =>
+                    {
                         self.content_tab = self.content_tab.previous();
                     }
                     KeyCode::Char('d')

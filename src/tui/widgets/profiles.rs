@@ -275,7 +275,7 @@ pub fn render(frame: &mut Frame, area: Rect, focused: FocusedArea, state: &mut S
                     .fg(THEME.colors.border_focused)
                     .add_modifier(Modifier::BOLD),
             )
-            .thumb_symbol("\u{2503}")
+            .thumb_symbol("\u{2551}")
             .track_symbol(Some(""))
             .end_symbol(Some("\u{25bc}")),
         scrollbar_area,

@@ -68,10 +68,14 @@ pub fn render(
     focused: FocusedArea,
     tab: ContentTab,
     instance: Option<&crate::instance::InstanceConfig>,
-    mods_state: &mut super::mods_list::ModsState,
+    mods_state: &mut super::content_list::ContentListState,
+    resource_packs_state: &mut super::content_list::ContentListState,
+    shaders_state: &mut super::content_list::ContentListState,
     instances_dir: &std::path::Path,
 ) {
-    let border_color = if focused == FocusedArea::Content {
+    let is_focused = focused == FocusedArea::Content;
+
+    let border_color = if is_focused {
         THEME.colors.border_focused
     } else {
         THEME.colors.border_unfocused
@@ -107,9 +111,70 @@ pub fn render(
         ContentTab::Mods => {
             if let Some(instance) = instance {
                 if mods_state.loaded_for.as_deref() != Some(instance.name.as_str()) {
-                    mods_state.load_mods(instances_dir, &instance.name);
+                    mods_state.start_load(
+                        instances_dir,
+                        &instance.name,
+                        crate::instance::scan_mods,
+                    );
                 }
-                super::mods_list::render(frame, content_area, mods_state);
+                super::content_list::render(
+                    frame,
+                    content_area,
+                    mods_state,
+                    is_focused,
+                    "Loading mods...",
+                    "No mods installed.",
+                );
+            } else {
+                frame.render_widget(
+                    Paragraph::new("No instance selected.")
+                        .style(Style::default().fg(THEME.colors.text_idle)),
+                    content_area,
+                );
+            }
+        }
+        ContentTab::ResourcePacks => {
+            if let Some(instance) = instance {
+                if resource_packs_state.loaded_for.as_deref() != Some(instance.name.as_str()) {
+                    resource_packs_state.start_load(
+                        instances_dir,
+                        &instance.name,
+                        crate::instance::scan_resource_packs,
+                    );
+                }
+                super::content_list::render(
+                    frame,
+                    content_area,
+                    resource_packs_state,
+                    is_focused,
+                    "Loading resource packs...",
+                    "No resource packs installed.",
+                );
+            } else {
+                frame.render_widget(
+                    Paragraph::new("No instance selected.")
+                        .style(Style::default().fg(THEME.colors.text_idle)),
+                    content_area,
+                );
+            }
+        }
+        ContentTab::Shaders => {
+            if let Some(instance) = instance {
+                if shaders_state.loaded_for.as_deref() != Some(instance.name.as_str()) {
+                    shaders_state.start_load(
+                        instances_dir,
+                        &instance.name,
+                        crate::instance::scan_shaders,
+                    );
+                }
+                super::content_list::render(
+                    frame,
+                    content_area,
+                    shaders_state,
+                    is_focused,
+                    "Loading shaders...",
+                    "No shaders installed.",
+                );
             } else {
                 frame.render_widget(
                     Paragraph::new("No instance selected.")
@@ -139,12 +204,9 @@ pub fn render(
         }
         _ => {
             let body = match tab {
-                ContentTab::Mods => unreachable!(),
-                ContentTab::ResourcePacks => "No resource packs installed.",
-                ContentTab::Shaders => "No shaders installed.",
                 ContentTab::Screenshots => "No screenshots.",
                 ContentTab::Worlds => "No worlds saved.",
-                ContentTab::Logs => unreachable!(),
+                _ => unreachable!(),
             };
 
             frame.render_widget(
