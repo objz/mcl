@@ -13,7 +13,7 @@ use color_eyre::eyre::Context;
 use crossterm::event::{self, Event};
 use once_cell::sync::Lazy;
 use ratatui::{
-    crossterm::event::{KeyCode, KeyEvent, KeyEventKind},
+    crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers},
     layout::{Constraint, Direction, Layout},
     Frame,
 };
@@ -325,6 +325,25 @@ impl App {
                             let name = instance.name.clone();
                             confirm_popup::set_pending_delete(&name);
                             self.focused = FocusedArea::ConfirmDelete;
+                        }
+                    }
+                    KeyCode::Enter
+                        if self.focused == FocusedArea::Profiles
+                            && !self.profiles_state.search.active
+                            && key_event.modifiers.contains(KeyModifiers::SHIFT) =>
+                    {
+                        if let Some(instance) = self.profiles_state.selected_instance() {
+                            let dir = self.instance_manager.instances_dir
+                                .join(&instance.name)
+                                .join(".minecraft");
+                            if let Err(e) = std::process::Command::new("xdg-open")
+                                .arg(&dir)
+                                .stdout(std::process::Stdio::null())
+                                .stderr(std::process::Stdio::null())
+                                .spawn()
+                            {
+                                tracing::error!("Failed to open instance directory: {}", e);
+                            }
                         }
                     }
                     KeyCode::Enter
