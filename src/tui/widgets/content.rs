@@ -71,6 +71,7 @@ pub fn render(
     mods_state: &mut super::content_list::ContentListState,
     resource_packs_state: &mut super::content_list::ContentListState,
     shaders_state: &mut super::content_list::ContentListState,
+    worlds_state: &mut super::content_list::ContentListState,
     screenshots_state: &mut super::screenshots_grid::ScreenshotsState,
     instances_dir: &std::path::Path,
 ) {
@@ -217,12 +218,30 @@ pub fn render(
                 );
             }
         }
-        _ => {
-            frame.render_widget(
-                Paragraph::new("No worlds saved.")
-                    .style(Style::default().fg(THEME.colors.text_idle)),
-                content_area,
-            );
+        ContentTab::Worlds => {
+            if let Some(instance) = instance {
+                if worlds_state.loaded_for.as_deref() != Some(instance.name.as_str()) {
+                    worlds_state.start_load(
+                        instances_dir,
+                        &instance.name,
+                        crate::instance::scan_worlds,
+                    );
+                }
+                super::content_list::render(
+                    frame,
+                    content_area,
+                    worlds_state,
+                    is_focused,
+                    "Loading worlds...",
+                    "No worlds saved.",
+                );
+            } else {
+                frame.render_widget(
+                    Paragraph::new("No instance selected.")
+                        .style(Style::default().fg(THEME.colors.text_idle)),
+                    content_area,
+                );
+            }
         }
     }
 }

@@ -172,6 +172,47 @@ impl ContentListState {
     }
 }
 
+pub fn handle_key_no_toggle(key_event: &KeyEvent, state: &mut ContentListState) -> bool {
+    match key_event.code {
+        KeyCode::Char('j') | KeyCode::Down => {
+            let count = state.entries.len();
+            if count == 0 {
+                return true;
+            }
+            let current = state.list_state.selected.unwrap_or(0);
+            state.list_state.selected = Some((current + 1).min(count - 1));
+            state.update_scrollbar();
+            true
+        }
+        KeyCode::Char('k') | KeyCode::Up => {
+            let current = state.list_state.selected.unwrap_or(0);
+            state.list_state.selected = Some(current.saturating_sub(1));
+            state.update_scrollbar();
+            true
+        }
+        KeyCode::Enter if key_event.modifiers.contains(KeyModifiers::SHIFT) => {
+            if let Some(entry) = state
+                .list_state
+                .selected
+                .and_then(|i| state.entries.get(i))
+            {
+                if let Some(dir) = entry.path.parent() {
+                    if let Err(e) = std::process::Command::new("xdg-open")
+                        .arg(dir)
+                        .stdout(std::process::Stdio::null())
+                        .stderr(std::process::Stdio::null())
+                        .spawn()
+                    {
+                        tracing::error!("Failed to open directory: {}", e);
+                    }
+                }
+            }
+            true
+        }
+        _ => false,
+    }
+}
+
 /// Returns `true` if the key was consumed.
 pub fn handle_key(key_event: &KeyEvent, state: &mut ContentListState) -> bool {
     match key_event.code {
@@ -310,6 +351,9 @@ pub fn render(
             let item = Text::from(vec![Line::from(line)]).style(Style::default().bg(background));
             (item, 1)
         } else if has_icon {
+            let icon_row_count = icon_pixels.as_ref().map(|r| r.len()).unwrap_or(0);
+            let height = icon_row_count.max(2) as u16;
+
             let mut line_0 = icon_spans(icon_pixels.as_ref(), 0);
             line_0.push(Span::raw(" "));
             if use_mc_colors {
@@ -326,15 +370,13 @@ pub fn render(
                 line_1.push(Span::styled(stripped_desc, description_style));
             }
 
-            let line_2 = icon_spans(icon_pixels.as_ref(), 2);
+            let mut lines = vec![Line::from(line_0), Line::from(line_1)];
+            for r in 2..icon_row_count {
+                lines.push(Line::from(icon_spans(icon_pixels.as_ref(), r)));
+            }
 
-            let item = Text::from(vec![
-                Line::from(line_0),
-                Line::from(line_1),
-                Line::from(line_2),
-            ])
-            .style(Style::default().bg(background));
-            (item, 3)
+            let item = Text::from(lines).style(Style::default().bg(background));
+            (item, height)
         } else {
             let mut line_0 = Vec::new();
             line_0.push(Span::raw(" "));

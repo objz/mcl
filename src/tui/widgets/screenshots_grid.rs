@@ -7,7 +7,7 @@ use ratatui::{
     layout::{Constraint, Layout, Rect},
     style::{Modifier, Style},
     text::Span,
-    widgets::Paragraph,
+    widgets::{Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState},
     Frame,
 };
 use ratatui_image::{protocol::StatefulProtocol, Resize, StatefulImage};
@@ -31,6 +31,7 @@ pub struct ScreenshotsState {
     pub loading: bool,
     cols: usize,
     visible_rows: usize,
+    pub scrollbar_state: ScrollbarState,
     pub font_size: (u16, u16),
     pending_entries: Arc<Mutex<Option<(String, Vec<ScreenshotEntry>)>>>,
     pending_images: Arc<Mutex<Vec<(usize, image::DynamicImage)>>>,
@@ -48,6 +49,7 @@ impl Default for ScreenshotsState {
             loading: false,
             cols: 3,
             visible_rows: 2,
+            scrollbar_state: ScrollbarState::default(),
             font_size: (8, 16),
             pending_entries: Arc::new(Mutex::new(None)),
             pending_images: Arc::new(Mutex::new(Vec::new())),
@@ -154,6 +156,16 @@ impl ScreenshotsState {
         } else if row >= self.scroll_row + self.visible_rows {
             self.scroll_row = row.saturating_sub(self.visible_rows - 1);
         }
+
+        let total = self.total_rows().saturating_sub(1);
+        self.scrollbar_state = ScrollbarState::new(total).position(self.scroll_row);
+    }
+
+    fn total_rows(&self) -> usize {
+        if self.cols == 0 {
+            return 0;
+        }
+        (self.entries.len() + self.cols - 1) / self.cols
     }
 }
 
@@ -314,4 +326,26 @@ pub fn render(frame: &mut Frame, area: Rect, state: &mut ScreenshotsState, is_fo
             );
         }
     }
+
+    let scrollbar_area = Rect {
+        x: area.x + area.width.saturating_sub(0),
+        y: area.y + 1,
+        width: 1,
+        height: area.height.saturating_sub(2),
+    };
+    frame.render_stateful_widget(
+        Scrollbar::default()
+            .orientation(ScrollbarOrientation::VerticalRight)
+            .begin_symbol(Some("\u{25b2}"))
+            .style(
+                Style::default()
+                    .fg(THEME.colors.border_focused)
+                    .add_modifier(Modifier::BOLD),
+            )
+            .thumb_symbol("\u{2551}")
+            .track_symbol(Some(""))
+            .end_symbol(Some("\u{25bc}")),
+        scrollbar_area,
+        &mut state.scrollbar_state,
+    );
 }

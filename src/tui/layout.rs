@@ -34,6 +34,7 @@ pub struct App {
     mods_state: widgets::content_list::ContentListState,
     resource_packs_state: widgets::content_list::ContentListState,
     shaders_state: widgets::content_list::ContentListState,
+    worlds_state: widgets::content_list::ContentListState,
     screenshots_state: widgets::screenshots_grid::ScreenshotsState,
     picker: ratatui_image::picker::Picker,
     instance_manager: InstanceManager,
@@ -95,6 +96,7 @@ impl App {
             mods_state: widgets::content_list::ContentListState::default(),
             resource_packs_state: widgets::content_list::ContentListState::default(),
             shaders_state: widgets::content_list::ContentListState::default(),
+            worlds_state: widgets::content_list::ContentListState::default(),
             screenshots_state: {
                 let mut s = widgets::screenshots_grid::ScreenshotsState::default();
                 s.font_size = picker.font_size();
@@ -125,6 +127,7 @@ impl App {
             self.mods_state.drain_pending();
             self.resource_packs_state.drain_pending();
             self.shaders_state.drain_pending();
+            self.worlds_state.drain_pending();
             self.screenshots_state.drain_pending_entries();
             self.screenshots_state.request_visible_loads();
             self.create_screenshot_protocols();
@@ -175,6 +178,7 @@ impl App {
             &mut self.mods_state,
             &mut self.resource_packs_state,
             &mut self.shaders_state,
+            &mut self.worlds_state,
             &mut self.screenshots_state,
             &self.instance_manager.instances_dir,
         );
@@ -308,6 +312,13 @@ impl App {
                 ) {
                     return Ok(());
                 }
+            } else if self.content_tab == widgets::content::ContentTab::Worlds {
+                if widgets::content_list::handle_key_no_toggle(
+                    &key_event,
+                    &mut self.worlds_state,
+                ) {
+                    return Ok(());
+                }
             } else {
                 let state = match self.content_tab {
                     widgets::content::ContentTab::Mods => Some(&mut self.mods_state),
@@ -385,6 +396,12 @@ impl App {
                         }
                     }
                     KeyCode::Enter
+                        if self.focused == FocusedArea::Profiles
+                            && !self.profiles_state.search.active =>
+                    {
+                        self.focused = FocusedArea::Content;
+                    }
+                    KeyCode::Char('l')
                         if self.focused == FocusedArea::Profiles
                             && !self.profiles_state.search.active =>
                     {
