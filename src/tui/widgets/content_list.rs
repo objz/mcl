@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
     layout::Rect,
     style::{Color, Modifier, Style},
@@ -189,6 +189,25 @@ pub fn handle_key(key_event: &KeyEvent, state: &mut ContentListState) -> bool {
             let current = state.list_state.selected.unwrap_or(0);
             state.list_state.selected = Some(current.saturating_sub(1));
             state.update_scrollbar();
+            true
+        }
+        KeyCode::Enter if key_event.modifiers.contains(KeyModifiers::SHIFT) => {
+            if let Some(entry) = state
+                .list_state
+                .selected
+                .and_then(|i| state.entries.get(i))
+            {
+                if let Some(dir) = entry.path.parent() {
+                    if let Err(e) = std::process::Command::new("xdg-open")
+                        .arg(dir)
+                        .stdout(std::process::Stdio::null())
+                        .stderr(std::process::Stdio::null())
+                        .spawn()
+                    {
+                        tracing::error!("Failed to open directory: {}", e);
+                    }
+                }
+            }
             true
         }
         KeyCode::Enter => {

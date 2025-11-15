@@ -34,6 +34,8 @@ pub struct App {
     mods_state: widgets::content_list::ContentListState,
     resource_packs_state: widgets::content_list::ContentListState,
     shaders_state: widgets::content_list::ContentListState,
+    screenshots_state: widgets::screenshots_grid::ScreenshotsState,
+    picker: ratatui_image::picker::Picker,
     instance_manager: InstanceManager,
     log_list_state: tui_logger::TuiWidgetState,
     throbber_state: throbber_widgets_tui::ThrobberState,
@@ -61,8 +63,8 @@ pub enum FocusedArea {
     ConfirmDelete,
 }
 
-impl Default for App {
-    fn default() -> Self {
+impl App {
+    pub fn new(picker: ratatui_image::picker::Picker) -> Self {
         let instances_dir = crate::config::SETTINGS.paths.resolve_instances_dir();
         let meta_dir = crate::config::SETTINGS.paths.resolve_meta_dir();
 
@@ -93,6 +95,12 @@ impl Default for App {
             mods_state: widgets::content_list::ContentListState::default(),
             resource_packs_state: widgets::content_list::ContentListState::default(),
             shaders_state: widgets::content_list::ContentListState::default(),
+            screenshots_state: {
+                let mut s = widgets::screenshots_grid::ScreenshotsState::default();
+                s.font_size = picker.font_size();
+                s
+            },
+            picker,
             instance_manager: manager,
             log_list_state: tui_logger::TuiWidgetState::new()
                 .set_default_display_level(log::LevelFilter::Debug),
@@ -117,6 +125,9 @@ impl App {
             self.mods_state.drain_pending();
             self.resource_packs_state.drain_pending();
             self.shaders_state.drain_pending();
+            self.screenshots_state.drain_pending_entries();
+            self.screenshots_state.request_visible_loads();
+            self.create_screenshot_protocols();
             self.throbber_tick = self.throbber_tick.wrapping_add(1);
             if self.throbber_tick % 8 == 0 {
                 self.throbber_state.calc_next();
@@ -164,6 +175,7 @@ impl App {
             &mut self.mods_state,
             &mut self.resource_packs_state,
             &mut self.shaders_state,
+            &mut self.screenshots_state,
             &self.instance_manager.instances_dir,
         );
 
@@ -289,17 +301,26 @@ impl App {
         }
 
         if self.focused == FocusedArea::Content {
-            let state = match self.content_tab {
-                widgets::content::ContentTab::Mods => Some(&mut self.mods_state),
-                widgets::content::ContentTab::ResourcePacks => {
-                    Some(&mut self.resource_packs_state)
-                }
-                widgets::content::ContentTab::Shaders => Some(&mut self.shaders_state),
-                _ => None,
-            };
-            if let Some(state) = state {
-                if widgets::content_list::handle_key(&key_event, state) {
+            if self.content_tab == widgets::content::ContentTab::Screenshots {
+                if widgets::screenshots_grid::handle_key(
+                    &key_event,
+                    &mut self.screenshots_state,
+                ) {
                     return Ok(());
+                }
+            } else {
+                let state = match self.content_tab {
+                    widgets::content::ContentTab::Mods => Some(&mut self.mods_state),
+                    widgets::content::ContentTab::ResourcePacks => {
+                        Some(&mut self.resource_packs_state)
+                    }
+                    widgets::content::ContentTab::Shaders => Some(&mut self.shaders_state),
+                    _ => None,
+                };
+                if let Some(state) = state {
+                    if widgets::content_list::handle_key(&key_event, state) {
+                        return Ok(());
+                    }
                 }
             }
         }
@@ -496,6 +517,14 @@ impl App {
                     break;
                 }
             }
+        }
+    }
+
+    fn create_screenshot_protocols(&mut self) {
+        let pending = self.screenshots_state.take_pending_images();
+        for (idx, img) in pending {
+            let proto = self.picker.new_resize_protocol(img);
+            self.screenshots_state.set_protocol(idx, proto);
         }
     }
 

@@ -18,7 +18,10 @@ pub async fn show() -> color_eyre::Result<()> {
         )
     );
 
-    let result = layout::App::default().run(&mut terminal).await;
+    let picker = ratatui_image::picker::Picker::from_query_stdio()
+        .unwrap_or_else(|_| ratatui_image::picker::Picker::halfblocks());
+
+    let result = layout::App::new(picker).run(&mut terminal).await;
 
     let _ = crossterm::execute!(
         std::io::stdout(),

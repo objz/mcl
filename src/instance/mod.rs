@@ -4,6 +4,7 @@ pub mod loader;
 pub mod models;
 pub mod mods;
 pub mod resource_packs;
+pub mod screenshots;
 pub mod shaders;
 
 pub use launch::LaunchError;

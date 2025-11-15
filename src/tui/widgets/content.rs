@@ -71,6 +71,7 @@ pub fn render(
     mods_state: &mut super::content_list::ContentListState,
     resource_packs_state: &mut super::content_list::ContentListState,
     shaders_state: &mut super::content_list::ContentListState,
+    screenshots_state: &mut super::screenshots_grid::ScreenshotsState,
     instances_dir: &std::path::Path,
 ) {
     let is_focused = focused == FocusedArea::Content;
@@ -202,15 +203,24 @@ pub fn render(
                 );
             }
         }
+        ContentTab::Screenshots => {
+            if let Some(instance) = instance {
+                if screenshots_state.loaded_for.as_deref() != Some(instance.name.as_str()) {
+                    screenshots_state.start_load(instances_dir, &instance.name);
+                }
+                super::screenshots_grid::render(frame, content_area, screenshots_state, is_focused);
+            } else {
+                frame.render_widget(
+                    Paragraph::new("No instance selected.")
+                        .style(Style::default().fg(THEME.colors.text_idle)),
+                    content_area,
+                );
+            }
+        }
         _ => {
-            let body = match tab {
-                ContentTab::Screenshots => "No screenshots.",
-                ContentTab::Worlds => "No worlds saved.",
-                _ => unreachable!(),
-            };
-
             frame.render_widget(
-                Paragraph::new(body).style(Style::default().fg(THEME.colors.text_idle)),
+                Paragraph::new("No worlds saved.")
+                    .style(Style::default().fg(THEME.colors.text_idle)),
                 content_area,
             );
         }
