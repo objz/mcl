@@ -282,31 +282,52 @@ pub async fn launch(
 
     crate::running::set_state(&name, crate::running::RunState::Running);
 
+    let log_file_path =
+        crate::instance::log_files::create_log_file(instances_dir, &name);
+
     let name_for_task = name.clone();
     let instances_dir_owned = instances_dir.to_path_buf();
     let meta_dir_owned = meta_dir.to_path_buf();
 
     tokio::spawn(async move {
+        use std::io::Write;
+        use std::sync::{Arc, Mutex};
         use tokio::io::AsyncBufReadExt;
+
+        let log_writer: Arc<Mutex<Option<std::fs::File>>> = Arc::new(Mutex::new(
+            log_file_path.and_then(|p| std::fs::File::create(p).ok()),
+        ));
 
         if let Some(stdout) = child.stdout.take() {
             let n = name_for_task.clone();
+            let w = log_writer.clone();
             let mut lines = tokio::io::BufReader::new(stdout).lines();
             tokio::spawn(async move {
                 while let Ok(Some(line)) = lines.next_line().await {
                     tracing::info!(target: "mc_instance", "[{}] {}", n, line);
                     crate::instance_logs::push(&n, &line);
+                    if let Ok(mut f) = w.lock() {
+                        if let Some(f) = f.as_mut() {
+                            let _ = writeln!(f, "{}", line);
+                        }
+                    }
                 }
             });
         }
 
         if let Some(stderr) = child.stderr.take() {
             let n = name_for_task.clone();
+            let w = log_writer.clone();
             let mut lines = tokio::io::BufReader::new(stderr).lines();
             tokio::spawn(async move {
                 while let Ok(Some(line)) = lines.next_line().await {
                     tracing::warn!(target: "mc_instance", "[{}] {}", n, line);
                     crate::instance_logs::push(&n, &line);
+                    if let Ok(mut f) = w.lock() {
+                        if let Some(f) = f.as_mut() {
+                            let _ = writeln!(f, "[STDERR] {}", line);
+                        }
+                    }
                 }
             });
         }

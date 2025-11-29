@@ -73,6 +73,7 @@ pub fn render(
     shaders_state: &mut super::content_list::ContentListState,
     worlds_state: &mut super::content_list::ContentListState,
     screenshots_state: &mut super::screenshots_grid::ScreenshotsState,
+    logs_state: &mut super::logs_viewer::LogsState,
     instances_dir: &std::path::Path,
 ) {
     let is_focused = focused == FocusedArea::Content;
@@ -186,20 +187,15 @@ pub fn render(
             }
         }
         ContentTab::Logs => {
-            let lines = instance
-                .map(|i| crate::instance_logs::get_all(&i.name))
-                .unwrap_or_default();
-            if lines.is_empty() {
-                frame.render_widget(
-                    Paragraph::new("No logs yet.")
-                        .style(Style::default().fg(THEME.colors.text_idle)),
-                    content_area,
-                );
+            if let Some(instance) = instance {
+                if logs_state.loaded_for.as_deref() != Some(instance.name.as_str()) {
+                    logs_state.start_load(instances_dir, &instance.name);
+                }
+                super::logs_viewer::render(frame, content_area, logs_state, is_focused);
             } else {
                 frame.render_widget(
-                    Paragraph::new(lines.join("\n"))
-                        .style(Style::default().fg(THEME.colors.text_idle))
-                        .wrap(ratatui::widgets::Wrap { trim: false }),
+                    Paragraph::new("No instance selected.")
+                        .style(Style::default().fg(THEME.colors.text_idle)),
                     content_area,
                 );
             }

@@ -9,6 +9,7 @@ pub mod account;
 pub mod content;
 pub mod content_list;
 pub mod details;
+pub mod logs_viewer;
 pub mod screenshots_grid;
 pub mod popups;
 pub mod profiles;

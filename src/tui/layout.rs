@@ -36,6 +36,7 @@ pub struct App {
     shaders_state: widgets::content_list::ContentListState,
     worlds_state: widgets::content_list::ContentListState,
     screenshots_state: widgets::screenshots_grid::ScreenshotsState,
+    logs_state: widgets::logs_viewer::LogsState,
     picker: ratatui_image::picker::Picker,
     instance_manager: InstanceManager,
     log_list_state: tui_logger::TuiWidgetState,
@@ -97,6 +98,7 @@ impl App {
             resource_packs_state: widgets::content_list::ContentListState::default(),
             shaders_state: widgets::content_list::ContentListState::default(),
             worlds_state: widgets::content_list::ContentListState::default(),
+            logs_state: widgets::logs_viewer::LogsState::default(),
             screenshots_state: {
                 let mut s = widgets::screenshots_grid::ScreenshotsState::default();
                 s.font_size = picker.font_size();
@@ -128,6 +130,7 @@ impl App {
             self.resource_packs_state.drain_pending();
             self.shaders_state.drain_pending();
             self.worlds_state.drain_pending();
+            self.logs_state.drain_pending();
             self.screenshots_state.drain_pending_entries();
             self.screenshots_state.request_visible_loads();
             self.create_screenshot_protocols();
@@ -180,6 +183,7 @@ impl App {
             &mut self.shaders_state,
             &mut self.worlds_state,
             &mut self.screenshots_state,
+            &mut self.logs_state,
             &self.instance_manager.instances_dir,
         );
 
@@ -305,7 +309,11 @@ impl App {
         }
 
         if self.focused == FocusedArea::Content {
-            if self.content_tab == widgets::content::ContentTab::Screenshots {
+            if self.content_tab == widgets::content::ContentTab::Logs {
+                if widgets::logs_viewer::handle_key(&key_event, &mut self.logs_state) {
+                    return Ok(());
+                }
+            } else if self.content_tab == widgets::content::ContentTab::Screenshots {
                 if widgets::screenshots_grid::handle_key(
                     &key_event,
                     &mut self.screenshots_state,
