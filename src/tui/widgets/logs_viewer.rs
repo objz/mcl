@@ -13,7 +13,7 @@ use ratatui::{
 };
 use tui_widget_list::{ListBuilder, ListState as TuiListState, ListView};
 
-use crate::instance::log_files::{LogFileEntry, read_log_file, scan_log_files};
+use crate::instance::log_files::{read_log_file, scan_log_files, LogFileEntry};
 use crate::tui::theme::THEME;
 
 pub struct LogsState {
@@ -29,6 +29,8 @@ pub struct LogsState {
     pub viewer_scrollbar_state: ScrollbarState,
     selected_path: Option<std::path::PathBuf>,
     pending: Arc<Mutex<Option<(String, Vec<LogFileEntry>)>>>,
+    rescan_counter: u8,
+    instances_dir_cache: Option<std::path::PathBuf>,
 }
 
 impl Default for LogsState {
@@ -46,6 +48,8 @@ impl Default for LogsState {
             viewer_scrollbar_state: ScrollbarState::default(),
             selected_path: None,
             pending: Arc::new(Mutex::new(None)),
+            rescan_counter: 0,
+            instances_dir_cache: None,
         }
     }
 }
@@ -54,6 +58,7 @@ impl LogsState {
     pub fn start_load(&mut self, instances_dir: &Path, instance_name: &str) {
         self.loading = true;
         self.loaded_for = Some(instance_name.to_string());
+        self.instances_dir_cache = Some(instances_dir.to_path_buf());
         self.entries.clear();
         self.list_state = TuiListState::default();
         self.viewer_lines.clear();
@@ -88,21 +93,86 @@ impl LogsState {
 
         if let Some((instance_name, entries)) = taken {
             if self.loaded_for.as_deref() == Some(&instance_name) {
+                let prev_selected = self.list_state.selected;
                 self.entries = entries;
                 self.loading = false;
-                if !self.entries.is_empty() {
+
+                let display_count = self.display_count();
+
+                if display_count > 0 && prev_selected.is_none() {
                     self.list_state.selected = Some(0);
-                    self.load_selected();
+                    self.load_selected_content();
+                } else if let Some(sel) = prev_selected {
+                    if sel >= display_count && display_count > 0 {
+                        self.list_state.selected = Some(display_count - 1);
+                    }
                 }
                 self.update_scrollbar();
             }
         }
     }
 
-    fn load_selected(&mut self) {
+    pub fn try_rescan(&mut self) {
+        self.rescan_counter = self.rescan_counter.wrapping_add(1);
+        if self.rescan_counter % 120 != 0 {
+            return;
+        }
+
+        let (Some(dir), Some(name)) = (&self.instances_dir_cache, &self.loaded_for) else {
+            return;
+        };
+
+        let dir = dir.clone();
+        let tag = name.clone();
+        let pending = self.pending.clone();
+
+        tokio::spawn(async move {
+            let scan_dir = dir.clone();
+            let scan_name = tag.clone();
+            let entries =
+                tokio::task::spawn_blocking(move || scan_log_files(&scan_dir, &scan_name))
+                    .await
+                    .unwrap_or_default();
+
+            if let Ok(mut slot) = pending.lock() {
+                *slot = Some((tag, entries));
+            }
+        });
+    }
+
+    fn has_live(&self) -> bool {
+        let name = self.loaded_for.as_deref().unwrap_or("");
+        !crate::instance_logs::get_all(name).is_empty()
+    }
+
+    fn display_count(&self) -> usize {
+        self.entries.len() + if self.has_live() { 1 } else { 0 }
+    }
+
+    fn is_live_selected(&self) -> bool {
+        self.has_live() && self.list_state.selected == Some(0)
+    }
+
+    fn file_index_for_selected(&self) -> Option<usize> {
+        let sel = self.list_state.selected?;
+        let offset = if self.has_live() { 1 } else { 0 };
+        if sel < offset {
+            None
+        } else {
+            Some(sel - offset)
+        }
+    }
+
+    fn load_selected_content(&mut self) {
+        if self.is_live_selected() {
+            self.selected_path = None;
+            self.viewer_lines.clear();
+            self.viewer_scroll = 0;
+            return;
+        }
+
         let path = self
-            .list_state
-            .selected
+            .file_index_for_selected()
             .and_then(|i| self.entries.get(i))
             .map(|e| e.path.clone());
 
@@ -120,19 +190,19 @@ impl LogsState {
     }
 
     fn update_scrollbar(&mut self) {
-        let count = self.entries.len();
+        let count = self.display_count();
         let max = count.saturating_sub(1);
         let pos = self.list_state.selected.unwrap_or(0);
         self.scrollbar_state = ScrollbarState::new(max).position(pos);
     }
 
-    fn update_viewer_scrollbar(&mut self, visible_height: usize) {
-        self.viewer_max_scroll = self.viewer_lines.len().saturating_sub(visible_height);
+    fn update_viewer_scrollbar(&mut self, visible_height: usize, line_count: usize) {
+        self.viewer_max_scroll = line_count.saturating_sub(visible_height);
         if self.viewer_scroll > self.viewer_max_scroll {
             self.viewer_scroll = self.viewer_max_scroll;
         }
-        self.viewer_scrollbar_state = ScrollbarState::new(self.viewer_max_scroll)
-            .position(self.viewer_scroll);
+        self.viewer_scrollbar_state =
+            ScrollbarState::new(self.viewer_max_scroll).position(self.viewer_scroll);
     }
 }
 
@@ -142,27 +212,27 @@ pub fn handle_key(key_event: &KeyEvent, state: &mut LogsState) -> bool {
             KeyCode::Char('j') | KeyCode::Down => {
                 if state.viewer_scroll < state.viewer_max_scroll {
                     state.viewer_scroll += 1;
-                    state.viewer_scrollbar_state =
-                        ScrollbarState::new(state.viewer_max_scroll).position(state.viewer_scroll);
+                    state.viewer_scrollbar_state = ScrollbarState::new(state.viewer_max_scroll)
+                        .position(state.viewer_scroll);
                 }
                 true
             }
             KeyCode::Char('k') | KeyCode::Up => {
                 state.viewer_scroll = state.viewer_scroll.saturating_sub(1);
-                state.viewer_scrollbar_state =
-                    ScrollbarState::new(state.viewer_max_scroll).position(state.viewer_scroll);
+                state.viewer_scrollbar_state = ScrollbarState::new(state.viewer_max_scroll)
+                    .position(state.viewer_scroll);
                 true
             }
             KeyCode::Char('G') => {
                 state.viewer_scroll = state.viewer_max_scroll;
-                state.viewer_scrollbar_state =
-                    ScrollbarState::new(state.viewer_max_scroll).position(state.viewer_scroll);
+                state.viewer_scrollbar_state = ScrollbarState::new(state.viewer_max_scroll)
+                    .position(state.viewer_scroll);
                 true
             }
             KeyCode::Char('g') => {
                 state.viewer_scroll = 0;
-                state.viewer_scrollbar_state =
-                    ScrollbarState::new(state.viewer_max_scroll).position(state.viewer_scroll);
+                state.viewer_scrollbar_state = ScrollbarState::new(state.viewer_max_scroll)
+                    .position(state.viewer_scroll);
                 true
             }
             KeyCode::Esc | KeyCode::Char('h') | KeyCode::Left => {
@@ -172,29 +242,27 @@ pub fn handle_key(key_event: &KeyEvent, state: &mut LogsState) -> bool {
             _ => false,
         }
     } else {
+        let display_count = state.display_count();
         match key_event.code {
             KeyCode::Char('j') | KeyCode::Down => {
-                let count = state.entries.len();
-                if count == 0 {
+                if display_count == 0 {
                     return true;
                 }
                 let current = state.list_state.selected.unwrap_or(0);
-                state.list_state.selected = Some((current + 1).min(count - 1));
-                state.load_selected();
+                state.list_state.selected = Some((current + 1).min(display_count - 1));
+                state.load_selected_content();
                 state.update_scrollbar();
                 true
             }
             KeyCode::Char('k') | KeyCode::Up => {
                 let current = state.list_state.selected.unwrap_or(0);
                 state.list_state.selected = Some(current.saturating_sub(1));
-                state.load_selected();
+                state.load_selected_content();
                 state.update_scrollbar();
                 true
             }
             KeyCode::Enter | KeyCode::Char('l') | KeyCode::Right => {
-                if !state.viewer_lines.is_empty() {
-                    state.viewer_focused = true;
-                }
+                state.viewer_focused = true;
                 true
             }
             _ => false,
@@ -205,20 +273,16 @@ pub fn handle_key(key_event: &KeyEvent, state: &mut LogsState) -> bool {
 pub fn render(frame: &mut Frame, area: Rect, state: &mut LogsState, is_focused: bool) {
     if state.loading {
         frame.render_widget(
-            Paragraph::new("Loading logs...")
-                .style(Style::default().fg(THEME.colors.text_idle)),
+            Paragraph::new("Loading logs...").style(Style::default().fg(THEME.colors.text_idle)),
             area,
         );
         return;
     }
 
-    if state.entries.is_empty() {
-        let instance_name = state.loaded_for.as_deref().unwrap_or("");
-        let live_lines = crate::instance_logs::get_all(instance_name);
-        if !live_lines.is_empty() {
-            render_live_log(frame, area, &live_lines, state);
-            return;
-        }
+    let has_live = state.has_live();
+    let display_count = state.display_count();
+
+    if display_count == 0 {
         frame.render_widget(
             Paragraph::new("No logs yet.").style(Style::default().fg(THEME.colors.text_idle)),
             area,
@@ -226,14 +290,25 @@ pub fn render(frame: &mut Frame, area: Rect, state: &mut LogsState, is_focused: 
         return;
     }
 
+    if state.list_state.selected.is_none() && display_count > 0 {
+        state.list_state.selected = Some(0);
+        state.load_selected_content();
+    }
+
     let [list_area, viewer_area] =
         Layout::horizontal([Constraint::Length(30), Constraint::Min(0)]).areas(area);
 
-    render_list(frame, list_area, state, is_focused);
-    render_viewer(frame, viewer_area, state, is_focused);
+    render_list(frame, list_area, state, is_focused, has_live);
+    render_viewer(frame, viewer_area, state, is_focused, has_live);
 }
 
-fn render_list(frame: &mut Frame, area: Rect, state: &mut LogsState, is_focused: bool) {
+fn render_list(
+    frame: &mut Frame,
+    area: Rect,
+    state: &mut LogsState,
+    is_focused: bool,
+    has_live: bool,
+) {
     let list_focused = is_focused && !state.viewer_focused;
     let border_color = if list_focused {
         THEME.colors.border_focused
@@ -249,15 +324,7 @@ fn render_list(frame: &mut Frame, area: Rect, state: &mut LogsState, is_focused:
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    let count = state.entries.len();
-    if count == 0 {
-        return;
-    }
-
-    let instance_name = state.loaded_for.clone().unwrap_or_default();
-    let has_live = !crate::instance_logs::get_all(&instance_name).is_empty();
-
-    let display_count = count + if has_live { 1 } else { 0 };
+    let display_count = state.display_count();
 
     let entries_snapshot: Vec<(String, bool)> = {
         let mut v = Vec::new();
@@ -325,43 +392,31 @@ fn render_list(frame: &mut Frame, area: Rect, state: &mut LogsState, is_focused:
     );
 }
 
-fn render_viewer(frame: &mut Frame, area: Rect, state: &mut LogsState, is_focused: bool) {
+fn render_viewer(
+    frame: &mut Frame,
+    area: Rect,
+    state: &mut LogsState,
+    is_focused: bool,
+    has_live: bool,
+) {
     let viewer_focused = is_focused && state.viewer_focused;
+    let is_live = has_live && state.list_state.selected == Some(0);
 
-    let instance_name = state.loaded_for.clone().unwrap_or_default();
-    let is_live_selected = state.list_state.selected == Some(0)
-        && !crate::instance_logs::get_all(&instance_name).is_empty();
-
-    let lines = if is_live_selected {
-        crate::instance_logs::get_all(&instance_name)
+    let lines: Vec<String> = if is_live {
+        let name = state.loaded_for.as_deref().unwrap_or("");
+        crate::instance_logs::get_all(name)
     } else {
         state.viewer_lines.clone()
     };
 
-    if lines.is_empty() {
-        frame.render_widget(
-            Paragraph::new(" Select a log file")
-                .style(Style::default().fg(THEME.colors.text_idle)),
-            area,
-        );
-        return;
-    }
+    let visible_height = area.height.saturating_sub(1) as usize;
+    state.update_viewer_scrollbar(visible_height, lines.len());
 
-    let visible_height = area.height as usize;
-    state.update_viewer_scrollbar(visible_height);
-
-    if is_live_selected && !state.viewer_focused {
+    if is_live && !state.viewer_focused {
         state.viewer_scroll = state.viewer_max_scroll;
         state.viewer_scrollbar_state =
             ScrollbarState::new(state.viewer_max_scroll).position(state.viewer_scroll);
     }
-
-    let styled_lines: Vec<Line> = lines
-        .iter()
-        .skip(state.viewer_scroll)
-        .take(visible_height)
-        .map(|line| Line::from(Span::styled(line.as_str(), line_level_style(line))))
-        .collect();
 
     let border_color = if viewer_focused {
         THEME.colors.border_focused
@@ -371,6 +426,8 @@ fn render_viewer(frame: &mut Frame, area: Rect, state: &mut LogsState, is_focuse
 
     let hint = if viewer_focused {
         " Esc/h: back  j/k: scroll  g/G: top/bottom "
+    } else if lines.is_empty() {
+        " Select a log "
     } else {
         " Enter/l: view "
     };
@@ -380,15 +437,23 @@ fn render_viewer(frame: &mut Frame, area: Rect, state: &mut LogsState, is_focuse
         .border_type(BorderType::Rounded)
         .border_style(Style::default().fg(border_color))
         .title_top(
-            Line::from(Span::styled(
-                hint,
-                Style::default().fg(THEME.colors.text_idle),
-            ))
-            .right_aligned(),
+            Line::from(Span::styled(hint, Style::default().fg(THEME.colors.text_idle)))
+                .right_aligned(),
         );
 
     let inner = block.inner(area);
     frame.render_widget(block, area);
+
+    if lines.is_empty() {
+        return;
+    }
+
+    let styled_lines: Vec<Line> = lines
+        .iter()
+        .skip(state.viewer_scroll)
+        .take(visible_height)
+        .map(|line| Line::from(Span::styled(line.as_str(), line_level_style(line))))
+        .collect();
 
     frame.render_widget(Paragraph::new(styled_lines), inner);
 
@@ -413,26 +478,6 @@ fn render_viewer(frame: &mut Frame, area: Rect, state: &mut LogsState, is_focuse
         scrollbar_area,
         &mut state.viewer_scrollbar_state,
     );
-}
-
-fn render_live_log(
-    frame: &mut Frame,
-    area: Rect,
-    lines: &[String],
-    state: &mut LogsState,
-) {
-    let visible = area.height as usize;
-    state.update_viewer_scrollbar(visible);
-
-    let start = lines.len().saturating_sub(visible);
-    let styled: Vec<Line> = lines
-        .iter()
-        .skip(start)
-        .take(visible)
-        .map(|l| Line::from(Span::styled(l.as_str(), line_level_style(l))))
-        .collect();
-
-    frame.render_widget(Paragraph::new(styled), area);
 }
 
 fn line_level_style(line: &str) -> Style {

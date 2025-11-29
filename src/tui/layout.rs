@@ -131,6 +131,7 @@ impl App {
             self.shaders_state.drain_pending();
             self.worlds_state.drain_pending();
             self.logs_state.drain_pending();
+            self.logs_state.try_rescan();
             self.screenshots_state.drain_pending_entries();
             self.screenshots_state.request_visible_loads();
             self.create_screenshot_protocols();
