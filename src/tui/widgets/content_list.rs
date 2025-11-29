@@ -303,6 +303,12 @@ pub fn render(
         let show_selected = is_focused && context.is_selected;
         let use_mc_colors = *enabled && !show_selected;
 
+        let stripe_bg = if context.index % 2 == 0 {
+            Color::Reset
+        } else {
+            THEME.colors.row_alternate_bg
+        };
+
         let (name_style, description_style, background) = match (*enabled, show_selected) {
             (true, true) => (
                 Style::default()
@@ -316,7 +322,7 @@ pub fn render(
                     .fg(THEME.colors.foreground)
                     .add_modifier(Modifier::BOLD),
                 Style::default().fg(THEME.colors.text_idle),
-                THEME.colors.row_alternate_bg,
+                stripe_bg,
             ),
             (false, true) => (
                 Style::default()
@@ -330,7 +336,7 @@ pub fn render(
                     .fg(THEME.colors.text_idle)
                     .add_modifier(Modifier::CROSSED_OUT),
                 Style::default().fg(THEME.colors.text_idle),
-                THEME.colors.row_alternate_bg,
+                stripe_bg,
             ),
         };
 

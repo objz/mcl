@@ -2,7 +2,7 @@ use ratatui::{
     layout::{Alignment, Constraint, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, BorderType, Borders, Paragraph, Tabs},
+    widgets::{Block, BorderType, Borders, Paragraph},
     Frame,
 };
 use throbber_widgets_tui::{Throbber, ThrobberState};
@@ -84,31 +84,43 @@ pub fn render(
         THEME.colors.border_unfocused
     };
 
+    let tab_titles: Vec<Span> = ContentTab::ALL
+        .iter()
+        .enumerate()
+        .flat_map(|(i, t)| {
+            let mut spans = Vec::new();
+            if i > 0 {
+                spans.push(Span::styled(
+                    "\u{2022}",
+                    Style::default().fg(THEME.colors.border_unfocused),
+                ));
+            }
+            if i == tab.index() {
+                spans.push(Span::styled(
+                    format!(" {} ", t.label()),
+                    Style::default()
+                        .fg(THEME.colors.accent)
+                        .bg(THEME.colors.row_background)
+                        .add_modifier(Modifier::BOLD),
+                ));
+            } else {
+                spans.push(Span::styled(
+                    format!(" {} ", t.label()),
+                    Style::default().fg(THEME.colors.foreground),
+                ));
+            }
+            spans
+        })
+        .collect();
+
     let block = Block::default()
+        .title_top(Line::from(tab_titles))
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .border_style(Style::default().fg(border_color));
 
-    let inner = block.inner(area);
+    let content_area = block.inner(area);
     frame.render_widget(block, area);
-
-    let [tabs_area, content_area] =
-        Layout::vertical([Constraint::Length(1), Constraint::Min(0)]).areas(inner);
-
-    let tab_titles: Vec<&str> = ContentTab::ALL.iter().map(|t| t.label()).collect();
-    let tabs = Tabs::new(tab_titles)
-        .select(tab.index())
-        .highlight_style(
-            Style::default()
-                .fg(THEME.colors.accent)
-                .add_modifier(Modifier::BOLD),
-        )
-        .divider(Span::styled(
-            " │ ",
-            Style::default().fg(THEME.colors.border_unfocused),
-        ));
-
-    frame.render_widget(tabs, tabs_area);
 
     match tab {
         ContentTab::Mods => {

@@ -1,7 +1,7 @@
 use crossterm::event::KeyCode;
 use ratatui::{
     layout::Rect,
-    style::{Modifier, Style},
+    style::{Color, Modifier, Style},
     text::{Line, Span, Text},
     widgets::{Block, BorderType, Borders, Scrollbar, ScrollbarOrientation, ScrollbarState},
     Frame,
@@ -221,6 +221,12 @@ pub fn render(frame: &mut Frame, area: Rect, focused: FocusedArea, state: &mut S
         let idx = filtered[context.index];
         let instance = &state.instances[idx];
 
+        let stripe_bg = if context.index % 2 == 0 {
+            Color::Reset
+        } else {
+            THEME.colors.row_alternate_bg
+        };
+
         let (name_style, meta_style, bg) = if context.is_selected {
             (
                 Style::default()
@@ -235,7 +241,7 @@ pub fn render(frame: &mut Frame, area: Rect, focused: FocusedArea, state: &mut S
                     .fg(THEME.colors.border_focused)
                     .add_modifier(Modifier::BOLD),
                 Style::default().fg(THEME.colors.border_unfocused),
-                THEME.colors.row_alternate_bg,
+                stripe_bg,
             )
         };
 

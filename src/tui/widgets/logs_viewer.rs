@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
     layout::{Constraint, Layout, Rect},
-    style::{Modifier, Style},
+    style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{
         Block, BorderType, Borders, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState,
@@ -142,7 +142,10 @@ impl LogsState {
 
     fn has_live(&self) -> bool {
         let name = self.loaded_for.as_deref().unwrap_or("");
-        !crate::instance_logs::get_all(name).is_empty()
+        matches!(
+            crate::running::get(name),
+            Some(crate::running::RunState::Running) | Some(crate::running::RunState::Starting)
+        )
     }
 
     fn display_count(&self) -> usize {
@@ -367,6 +370,8 @@ fn render_list(
 
         let bg = if show_selected {
             THEME.colors.row_background
+        } else if context.index % 2 == 0 {
+            Color::Reset
         } else {
             THEME.colors.row_alternate_bg
         };
@@ -419,9 +424,10 @@ fn render_viewer(
     };
 
     let visible_height = area.height as usize;
+    let was_at_bottom = state.viewer_scroll >= state.viewer_max_scroll.saturating_sub(1);
     state.update_viewer_scrollbar(visible_height, lines.len());
 
-    if is_live && !state.viewer_focused {
+    if is_live && was_at_bottom {
         state.viewer_scroll = state.viewer_max_scroll;
         state.viewer_scrollbar_state =
             ScrollbarState::new(state.viewer_max_scroll).position(state.viewer_scroll);
