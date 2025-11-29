@@ -191,19 +191,25 @@ pub fn handle_key(key_event: &KeyEvent, state: &mut ScreenshotsState) -> bool {
             }
             true
         }
-        KeyCode::Char('l') | KeyCode::Right => {
+        KeyCode::Char('L') | KeyCode::Right
+            if key_event.modifiers.contains(KeyModifiers::SHIFT) =>
+        {
             if state.selected + 1 < count {
                 state.selected += 1;
                 state.ensure_visible();
             }
             true
         }
-        KeyCode::Char('h') | KeyCode::Left => {
+        KeyCode::Char('H') | KeyCode::Left
+            if key_event.modifiers.contains(KeyModifiers::SHIFT) =>
+        {
             state.selected = state.selected.saturating_sub(1);
             state.ensure_visible();
             true
         }
-        KeyCode::Char('j') | KeyCode::Down => {
+        KeyCode::Char('J') | KeyCode::Down
+            if key_event.modifiers.contains(KeyModifiers::SHIFT) =>
+        {
             let next = state.selected + cols;
             if next < count {
                 state.selected = next;
@@ -211,7 +217,9 @@ pub fn handle_key(key_event: &KeyEvent, state: &mut ScreenshotsState) -> bool {
             state.ensure_visible();
             true
         }
-        KeyCode::Char('k') | KeyCode::Up => {
+        KeyCode::Char('K') | KeyCode::Up
+            if key_event.modifiers.contains(KeyModifiers::SHIFT) =>
+        {
             state.selected = state.selected.saturating_sub(cols);
             state.ensure_visible();
             true

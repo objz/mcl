@@ -1,7 +1,7 @@
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
     layout::{Constraint, Layout, Rect},
     style::{Modifier, Style},
@@ -207,9 +207,11 @@ impl LogsState {
 }
 
 pub fn handle_key(key_event: &KeyEvent, state: &mut LogsState) -> bool {
+    let shift = key_event.modifiers.contains(KeyModifiers::SHIFT);
+
     if state.viewer_focused {
         match key_event.code {
-            KeyCode::Char('j') | KeyCode::Down => {
+            KeyCode::Char('J') | KeyCode::Down if shift => {
                 if state.viewer_scroll < state.viewer_max_scroll {
                     state.viewer_scroll += 1;
                     state.viewer_scrollbar_state = ScrollbarState::new(state.viewer_max_scroll)
@@ -217,7 +219,7 @@ pub fn handle_key(key_event: &KeyEvent, state: &mut LogsState) -> bool {
                 }
                 true
             }
-            KeyCode::Char('k') | KeyCode::Up => {
+            KeyCode::Char('K') | KeyCode::Up if shift => {
                 state.viewer_scroll = state.viewer_scroll.saturating_sub(1);
                 state.viewer_scrollbar_state = ScrollbarState::new(state.viewer_max_scroll)
                     .position(state.viewer_scroll);
@@ -235,7 +237,11 @@ pub fn handle_key(key_event: &KeyEvent, state: &mut LogsState) -> bool {
                     .position(state.viewer_scroll);
                 true
             }
-            KeyCode::Esc | KeyCode::Char('h') | KeyCode::Left => {
+            KeyCode::Esc => {
+                state.viewer_focused = false;
+                true
+            }
+            KeyCode::Char('H') | KeyCode::Left if shift => {
                 state.viewer_focused = false;
                 true
             }
@@ -244,7 +250,7 @@ pub fn handle_key(key_event: &KeyEvent, state: &mut LogsState) -> bool {
     } else {
         let display_count = state.display_count();
         match key_event.code {
-            KeyCode::Char('j') | KeyCode::Down => {
+            KeyCode::Char('J') | KeyCode::Down if shift => {
                 if display_count == 0 {
                     return true;
                 }
@@ -254,14 +260,18 @@ pub fn handle_key(key_event: &KeyEvent, state: &mut LogsState) -> bool {
                 state.update_scrollbar();
                 true
             }
-            KeyCode::Char('k') | KeyCode::Up => {
+            KeyCode::Char('K') | KeyCode::Up if shift => {
                 let current = state.list_state.selected.unwrap_or(0);
                 state.list_state.selected = Some(current.saturating_sub(1));
                 state.load_selected_content();
                 state.update_scrollbar();
                 true
             }
-            KeyCode::Enter | KeyCode::Char('l') | KeyCode::Right => {
+            KeyCode::Enter => {
+                state.viewer_focused = true;
+                true
+            }
+            KeyCode::Char('L') | KeyCode::Right if shift => {
                 state.viewer_focused = true;
                 true
             }
@@ -370,7 +380,7 @@ fn render_list(
     frame.render_stateful_widget(list, inner, &mut state.list_state);
 
     let scrollbar_area = Rect {
-        x: inner.x + inner.width.saturating_sub(1),
+        x: inner.x + inner.width.saturating_sub(0),
         y: inner.y + 1,
         width: 1,
         height: inner.height.saturating_sub(2),
@@ -384,7 +394,7 @@ fn render_list(
                     .fg(THEME.colors.border_focused)
                     .add_modifier(Modifier::BOLD),
             )
-            .thumb_symbol("\u{2503}")
+            .thumb_symbol("\u{2551}")
             .track_symbol(Some(""))
             .end_symbol(Some("\u{25bc}")),
         scrollbar_area,
@@ -396,10 +406,9 @@ fn render_viewer(
     frame: &mut Frame,
     area: Rect,
     state: &mut LogsState,
-    is_focused: bool,
+    _is_focused: bool,
     has_live: bool,
 ) {
-    let viewer_focused = is_focused && state.viewer_focused;
     let is_live = has_live && state.list_state.selected == Some(0);
 
     let lines: Vec<String> = if is_live {
@@ -409,7 +418,7 @@ fn render_viewer(
         state.viewer_lines.clone()
     };
 
-    let visible_height = area.height.saturating_sub(1) as usize;
+    let visible_height = area.height as usize;
     state.update_viewer_scrollbar(visible_height, lines.len());
 
     if is_live && !state.viewer_focused {
@@ -418,32 +427,6 @@ fn render_viewer(
             ScrollbarState::new(state.viewer_max_scroll).position(state.viewer_scroll);
     }
 
-    let border_color = if viewer_focused {
-        THEME.colors.border_focused
-    } else {
-        THEME.colors.border_unfocused
-    };
-
-    let hint = if viewer_focused {
-        " Esc/h: back  j/k: scroll  g/G: top/bottom "
-    } else if lines.is_empty() {
-        " Select a log "
-    } else {
-        " Enter/l: view "
-    };
-
-    let block = Block::default()
-        .borders(Borders::TOP)
-        .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(border_color))
-        .title_top(
-            Line::from(Span::styled(hint, Style::default().fg(THEME.colors.text_idle)))
-                .right_aligned(),
-        );
-
-    let inner = block.inner(area);
-    frame.render_widget(block, area);
-
     if lines.is_empty() {
         return;
     }
@@ -451,17 +434,17 @@ fn render_viewer(
     let styled_lines: Vec<Line> = lines
         .iter()
         .skip(state.viewer_scroll)
-        .take(visible_height)
+        .take(area.height as usize)
         .map(|line| Line::from(Span::styled(line.as_str(), line_level_style(line))))
         .collect();
 
-    frame.render_widget(Paragraph::new(styled_lines), inner);
+    frame.render_widget(Paragraph::new(styled_lines), area);
 
     let scrollbar_area = Rect {
-        x: inner.x + inner.width.saturating_sub(1),
-        y: inner.y + 1,
+        x: area.x + area.width.saturating_sub(0),
+        y: area.y + 1,
         width: 1,
-        height: inner.height.saturating_sub(2),
+        height: area.height.saturating_sub(2),
     };
     frame.render_stateful_widget(
         Scrollbar::default()
@@ -472,7 +455,7 @@ fn render_viewer(
                     .fg(THEME.colors.border_focused)
                     .add_modifier(Modifier::BOLD),
             )
-            .thumb_symbol("\u{2503}")
+            .thumb_symbol("\u{2551}")
             .track_symbol(Some(""))
             .end_symbol(Some("\u{25bc}")),
         scrollbar_area,
