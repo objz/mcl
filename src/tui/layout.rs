@@ -37,6 +37,7 @@ pub struct App {
     worlds_state: widgets::content_list::ContentListState,
     screenshots_state: widgets::screenshots_grid::ScreenshotsState,
     logs_state: widgets::logs_viewer::LogsState,
+    account_state: widgets::account::AccountState,
     picker: ratatui_image::picker::Picker,
     instance_manager: InstanceManager,
     log_list_state: tui_logger::TuiWidgetState,
@@ -99,6 +100,7 @@ impl App {
             shaders_state: widgets::content_list::ContentListState::default(),
             worlds_state: widgets::content_list::ContentListState::default(),
             logs_state: widgets::logs_viewer::LogsState::default(),
+            account_state: widgets::account::AccountState::default(),
             screenshots_state: {
                 let mut s = widgets::screenshots_grid::ScreenshotsState::default();
                 s.font_size = picker.font_size();
@@ -132,6 +134,8 @@ impl App {
             self.worlds_state.drain_pending();
             self.logs_state.drain_pending();
             self.logs_state.try_rescan();
+            self.account_state.drain_auth_result();
+            widgets::account::drain_device_code(&mut self.account_state);
             self.screenshots_state.drain_pending_entries();
             self.screenshots_state.request_visible_loads();
             self.create_screenshot_protocols();
@@ -197,7 +201,7 @@ impl App {
             ])
             .split(main_chunks[2]);
 
-        widgets::account::render(frame, bottom_chunks[0], self.focused);
+        widgets::account::render(frame, bottom_chunks[0], self.focused, &mut self.account_state);
         widgets::details::render(frame, bottom_chunks[1], self.focused);
         widgets::status::render(frame, bottom_chunks[2], self.focused, &mut self.throbber_state);
 
@@ -342,6 +346,12 @@ impl App {
                         return Ok(());
                     }
                 }
+            }
+        }
+
+        if self.focused == FocusedArea::Account {
+            if widgets::account::handle_key(&key_event, &mut self.account_state) {
+                return Ok(());
             }
         }
 

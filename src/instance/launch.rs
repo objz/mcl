@@ -233,9 +233,46 @@ pub async fn launch(
     ];
     jvm.extend(config.jvm_args.clone());
 
+    let account_store = crate::auth::AccountStore::load();
+    let (mc_username, mc_uuid, mc_token, mc_user_type) =
+        match account_store.active_account() {
+            Some(acc) => {
+                let token = match acc.account_type {
+                    crate::auth::AccountType::Microsoft => {
+                        match tokio::runtime::Handle::current()
+                            .block_on(crate::auth::refresh_and_get_token(acc))
+                        {
+                            Ok(t) => t,
+                            Err(e) => {
+                                tracing::error!("Token refresh failed: {e}");
+                                "0".to_string()
+                            }
+                        }
+                    }
+                    crate::auth::AccountType::Offline => "0".to_string(),
+                };
+                let user_type = match acc.account_type {
+                    crate::auth::AccountType::Microsoft => "msa",
+                    crate::auth::AccountType::Offline => "legacy",
+                };
+                (
+                    acc.username.clone(),
+                    acc.uuid.clone(),
+                    token,
+                    user_type.to_string(),
+                )
+            }
+            None => (
+                "Player".to_string(),
+                "00000000-0000-0000-0000-000000000000".to_string(),
+                "0".to_string(),
+                "legacy".to_string(),
+            ),
+        };
+
     let game_args = vec![
         "--username".to_string(),
-        "Player".to_string(),
+        mc_username,
         "--version".to_string(),
         config.game_version.clone(),
         "--gameDir".to_string(),
@@ -245,11 +282,11 @@ pub async fn launch(
         "--assetIndex".to_string(),
         meta.asset_index.id.clone(),
         "--uuid".to_string(),
-        "00000000-0000-0000-0000-000000000000".to_string(),
+        mc_uuid,
         "--accessToken".to_string(),
-        "0".to_string(),
+        mc_token,
         "--userType".to_string(),
-        "legacy".to_string(),
+        mc_user_type,
     ];
 
     let (kill_tx, kill_rx) = tokio::sync::oneshot::channel::<()>();
