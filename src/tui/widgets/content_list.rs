@@ -28,6 +28,7 @@ pub struct ContentListState {
     pub scrollbar_state: ScrollbarState,
     pub loaded_for: Option<String>,
     pub loading: bool,
+    pub search: super::search::SearchState,
     cache: HashMap<String, CachedList>,
     pending: Arc<Mutex<Option<(String, Vec<ModEntry>)>>>,
 }
@@ -40,9 +41,21 @@ impl Default for ContentListState {
             scrollbar_state: ScrollbarState::default(),
             loaded_for: None,
             loading: false,
+            search: super::search::SearchState::default(),
             cache: HashMap::new(),
             pending: Arc::new(Mutex::new(None)),
         }
+    }
+}
+
+impl ContentListState {
+    pub fn filtered_indices(&self) -> Vec<usize> {
+        self.entries
+            .iter()
+            .enumerate()
+            .filter(|(_, e)| self.search.matches(&e.name))
+            .map(|(i, _)| i)
+            .collect()
     }
 }
 
@@ -172,10 +185,45 @@ impl ContentListState {
     }
 }
 
+fn handle_search_keys(key_event: &KeyEvent, state: &mut ContentListState) -> bool {
+    if state.search.active {
+        match key_event.code {
+            KeyCode::Esc => {
+                state.search.deactivate();
+                state.list_state.selected = Some(0);
+                state.update_scrollbar();
+            }
+            KeyCode::Backspace => {
+                state.search.pop();
+                state.list_state.selected = Some(0);
+                state.update_scrollbar();
+            }
+            KeyCode::Char(c) => {
+                state.search.push(c);
+                state.list_state.selected = Some(0);
+                state.update_scrollbar();
+            }
+            _ => {}
+        }
+        return true;
+    }
+    if key_event.code == KeyCode::Char('/') {
+        state.search.activate();
+        state.list_state.selected = Some(0);
+        state.update_scrollbar();
+        return true;
+    }
+    false
+}
+
 pub fn handle_key_no_toggle(key_event: &KeyEvent, state: &mut ContentListState) -> bool {
+    if handle_search_keys(key_event, state) {
+        return true;
+    }
+    let filtered = state.filtered_indices();
+    let count = filtered.len();
     match key_event.code {
         KeyCode::Char('j') | KeyCode::Down => {
-            let count = state.entries.len();
             if count == 0 {
                 return true;
             }
@@ -191,12 +239,12 @@ pub fn handle_key_no_toggle(key_event: &KeyEvent, state: &mut ContentListState) 
             true
         }
         KeyCode::Enter if key_event.modifiers.contains(KeyModifiers::SHIFT) => {
-            if let Some(entry) = state
+            if let Some(&real_idx) = state
                 .list_state
                 .selected
-                .and_then(|i| state.entries.get(i))
+                .and_then(|i| filtered.get(i))
             {
-                if let Some(dir) = entry.path.parent() {
+                if let Some(dir) = state.entries[real_idx].path.parent() {
                     if let Err(e) = std::process::Command::new("xdg-open")
                         .arg(dir)
                         .stdout(std::process::Stdio::null())
@@ -215,9 +263,13 @@ pub fn handle_key_no_toggle(key_event: &KeyEvent, state: &mut ContentListState) 
 
 /// Returns `true` if the key was consumed.
 pub fn handle_key(key_event: &KeyEvent, state: &mut ContentListState) -> bool {
+    if handle_search_keys(key_event, state) {
+        return true;
+    }
+    let filtered = state.filtered_indices();
+    let count = filtered.len();
     match key_event.code {
         KeyCode::Char('j') | KeyCode::Down => {
-            let count = state.entries.len();
             if count == 0 {
                 return true;
             }
@@ -233,12 +285,12 @@ pub fn handle_key(key_event: &KeyEvent, state: &mut ContentListState) -> bool {
             true
         }
         KeyCode::Enter if key_event.modifiers.contains(KeyModifiers::SHIFT) => {
-            if let Some(entry) = state
+            if let Some(&real_idx) = state
                 .list_state
                 .selected
-                .and_then(|i| state.entries.get(i))
+                .and_then(|i| filtered.get(i))
             {
-                if let Some(dir) = entry.path.parent() {
+                if let Some(dir) = state.entries[real_idx].path.parent() {
                     if let Err(e) = std::process::Command::new("xdg-open")
                         .arg(dir)
                         .stdout(std::process::Stdio::null())
@@ -252,7 +304,20 @@ pub fn handle_key(key_event: &KeyEvent, state: &mut ContentListState) -> bool {
             true
         }
         KeyCode::Enter => {
-            state.toggle_selected();
+            if let Some(&real_idx) = state
+                .list_state
+                .selected
+                .and_then(|i| filtered.get(i))
+            {
+                state.list_state.selected = Some(real_idx);
+                state.toggle_selected();
+                state.list_state.selected = Some(
+                    filtered
+                        .iter()
+                        .position(|&i| i == real_idx)
+                        .unwrap_or(0),
+                );
+            }
             true
         }
         _ => false,
@@ -275,7 +340,9 @@ pub fn render(
         return;
     }
 
-    if state.entries.is_empty() {
+    let filtered = state.filtered_indices();
+
+    if filtered.is_empty() {
         frame.render_widget(
             Paragraph::new(empty_text).style(Style::default().fg(THEME.colors.text_idle)),
             area,
@@ -283,12 +350,12 @@ pub fn render(
         return;
     }
 
-    let count = state.entries.len();
+    let count = filtered.len();
 
-    let snapshot: Vec<(String, String, bool, Option<Vec<Vec<IconCell>>>)> = state
-        .entries
+    let snapshot: Vec<(String, String, bool, Option<Vec<Vec<IconCell>>>)> = filtered
         .iter()
-        .map(|entry| {
+        .map(|&i| {
+            let entry = &state.entries[i];
             (
                 entry.name.clone(),
                 entry.description.clone(),

@@ -32,6 +32,7 @@ pub struct ScreenshotsState {
     cols: usize,
     visible_rows: usize,
     pub scrollbar_state: ScrollbarState,
+    pub search: super::search::SearchState,
     pub font_size: (u16, u16),
     pending_entries: Arc<Mutex<Option<(String, Vec<ScreenshotEntry>)>>>,
     pending_images: Arc<Mutex<Vec<(usize, image::DynamicImage)>>>,
@@ -50,6 +51,7 @@ impl Default for ScreenshotsState {
             cols: 3,
             visible_rows: 2,
             scrollbar_state: ScrollbarState::default(),
+            search: super::search::SearchState::default(),
             font_size: (8, 16),
             pending_entries: Arc::new(Mutex::new(None)),
             pending_images: Arc::new(Mutex::new(Vec::new())),
@@ -170,13 +172,48 @@ impl ScreenshotsState {
 }
 
 pub fn handle_key(key_event: &KeyEvent, state: &mut ScreenshotsState) -> bool {
-    let count = state.entries.len();
+    if state.search.active {
+        match key_event.code {
+            KeyCode::Esc => {
+                state.search.deactivate();
+                state.selected = 0;
+            }
+            KeyCode::Backspace => {
+                state.search.pop();
+                state.selected = 0;
+            }
+            KeyCode::Char(c) => {
+                state.search.push(c);
+                state.selected = 0;
+            }
+            _ => {}
+        }
+        return true;
+    }
+
+    let filtered: Vec<usize> = state
+        .entries
+        .iter()
+        .enumerate()
+        .filter(|(_, e)| state.search.matches(&e.name))
+        .map(|(i, _)| i)
+        .collect();
+    let count = filtered.len();
     if count == 0 {
+        if key_event.code == KeyCode::Char('/') {
+            state.search.activate();
+            return true;
+        }
         return false;
     }
     let cols = state.cols.max(1);
 
     match key_event.code {
+        KeyCode::Char('/') => {
+            state.search.activate();
+            state.selected = 0;
+            true
+        }
         KeyCode::Enter if key_event.modifiers.contains(KeyModifiers::SHIFT) => {
             if let Some(entry) = state.entries.get(state.selected) {
                 if let Some(dir) = entry.path.parent() {

@@ -113,11 +113,24 @@ pub fn render(
         })
         .collect();
 
-    let block = Block::default()
+    let search_line = match tab {
+        ContentTab::Mods => mods_state.search.title_line(),
+        ContentTab::ResourcePacks => resource_packs_state.search.title_line(),
+        ContentTab::Shaders => shaders_state.search.title_line(),
+        ContentTab::Worlds => worlds_state.search.title_line(),
+        ContentTab::Screenshots => screenshots_state.search.title_line(),
+        ContentTab::Logs => logs_state.search.title_line(),
+    };
+
+    let mut block = Block::default()
         .title_top(Line::from(tab_titles))
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .border_style(Style::default().fg(border_color));
+
+    if let Some(sl) = search_line {
+        block = block.title_top(sl);
+    }
 
     let content_area = block.inner(area);
     frame.render_widget(block, area);

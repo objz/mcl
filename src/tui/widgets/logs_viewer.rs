@@ -27,6 +27,7 @@ pub struct LogsState {
     pub viewer_max_scroll: usize,
     pub scrollbar_state: ScrollbarState,
     pub viewer_scrollbar_state: ScrollbarState,
+    pub search: super::search::SearchState,
     selected_path: Option<std::path::PathBuf>,
     pending: Arc<Mutex<Option<(String, Vec<LogFileEntry>)>>>,
     rescan_counter: u8,
@@ -46,6 +47,7 @@ impl Default for LogsState {
             viewer_max_scroll: 0,
             scrollbar_state: ScrollbarState::default(),
             viewer_scrollbar_state: ScrollbarState::default(),
+            search: super::search::SearchState::default(),
             selected_path: None,
             pending: Arc::new(Mutex::new(None)),
             rescan_counter: 0,
@@ -251,6 +253,35 @@ pub fn handle_key(key_event: &KeyEvent, state: &mut LogsState) -> bool {
             _ => false,
         }
     } else {
+        if state.search.active {
+            match key_event.code {
+                KeyCode::Esc => {
+                    state.search.deactivate();
+                    state.list_state.selected = Some(0);
+                    state.update_scrollbar();
+                }
+                KeyCode::Backspace => {
+                    state.search.pop();
+                    state.list_state.selected = Some(0);
+                    state.update_scrollbar();
+                }
+                KeyCode::Char(c) => {
+                    state.search.push(c);
+                    state.list_state.selected = Some(0);
+                    state.update_scrollbar();
+                }
+                _ => {}
+            }
+            return true;
+        }
+
+        if key_event.code == KeyCode::Char('/') {
+            state.search.activate();
+            state.list_state.selected = Some(0);
+            state.update_scrollbar();
+            return true;
+        }
+
         let display_count = state.display_count();
         match key_event.code {
             KeyCode::Char('J') | KeyCode::Down if shift => {
