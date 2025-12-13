@@ -4,19 +4,18 @@ use std::sync::{Arc, Mutex};
 use minecraft_msa_auth::MinecraftAuthorizationFlow;
 use oauth2::basic::BasicClient;
 use oauth2::{
-    AuthUrl, ClientId, DeviceAuthorizationUrl, Scope, StandardDeviceAuthorizationResponse,
-    TokenResponse, TokenUrl,
+    AuthUrl, ClientId, DeviceAuthorizationUrl, RefreshToken, Scope,
+    StandardDeviceAuthorizationResponse, TokenResponse, TokenUrl,
 };
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 
-const CLIENT_ID: &str = "cc1b2d89-8d8b-439f-94e6-4a7fc484f672";
+const CLIENT_ID: &str = "708e91b5-99f8-4a1d-80ec-e746cbb24771";
 const DEVICE_CODE_URL: &str =
     "https://login.microsoftonline.com/consumers/oauth2/v2.0/devicecode";
 const MSA_AUTHORIZE_URL: &str =
     "https://login.microsoftonline.com/consumers/oauth2/v2.0/authorize";
-const MSA_TOKEN_URL: &str = "https://login.microsoftonline.com/common/oauth2/v2.0/token";
-const REFRESH_URL: &str = "https://login.live.com/oauth20_token.srf";
+const MSA_TOKEN_URL: &str = "https://login.microsoftonline.com/consumers/oauth2/v2.0/token";
 const MC_PROFILE_URL: &str = "https://api.minecraftservices.com/minecraft/profile";
 const KEYRING_SERVICE: &str = "mcl-launcher";
 
@@ -44,12 +43,6 @@ pub struct DeviceCodeInfo {
 pub enum AuthResult {
     Success(Account),
     Error(String),
-}
-
-#[derive(Deserialize)]
-struct RefreshTokenResponse {
-    access_token: String,
-    refresh_token: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -193,7 +186,8 @@ async fn run_full_oauth_flow() -> Result<(String, Option<String>), String> {
 
     let details: StandardDeviceAuthorizationResponse = oauth_client
         .exchange_device_code()
-        .add_scope(Scope::new("XboxLive.signin offline_access".to_string()))
+        .add_scope(Scope::new("XboxLive.signin".to_string()))
+        .add_scope(Scope::new("offline_access".to_string()))
         .request_async(&http_client)
         .await
         .map_err(|e| format!("Device code request failed: {e}"))?;
@@ -305,34 +299,36 @@ pub async fn refresh_and_get_token(account: &Account) -> Result<String, String> 
         AccountType::Offline => Ok("0".to_string()),
         AccountType::Microsoft => {
             let refresh = get_refresh_token(&account.uuid)?;
-            let client = reqwest::Client::new();
 
-            let resp = client
-                .post(REFRESH_URL)
-                .form(&[
-                    ("client_id", CLIENT_ID),
-                    ("refresh_token", refresh.as_str()),
-                    ("grant_type", "refresh_token"),
-                    (
-                        "redirect_uri",
-                        "https://login.microsoftonline.com/common/oauth2/nativeclient",
-                    ),
-                ])
-                .send()
+            let oauth_client = BasicClient::new(ClientId::new(CLIENT_ID.to_string()))
+                .set_auth_uri(
+                    AuthUrl::new(MSA_AUTHORIZE_URL.to_string()).map_err(|e| e.to_string())?,
+                )
+                .set_token_uri(
+                    TokenUrl::new(MSA_TOKEN_URL.to_string()).map_err(|e| e.to_string())?,
+                );
+
+            let http_client = reqwest::Client::new();
+
+            let token = oauth_client
+                .exchange_refresh_token(&RefreshToken::new(refresh))
+                .add_scope(Scope::new("XboxLive.signin".to_string()))
+                .add_scope(Scope::new("offline_access".to_string()))
+                .request_async(&http_client)
                 .await
-                .map_err(|e| e.to_string())?;
+                .map_err(|e| format!("Token refresh failed: {e}"))?;
 
-            let token: RefreshTokenResponse = resp.json().await.map_err(|e| e.to_string())?;
+            let ms_access_token = token.access_token().secret().to_string();
 
-            if let Some(new_refresh) = &token.refresh_token {
-                let _ = store_refresh_token(&account.uuid, new_refresh);
+            if let Some(new_refresh) = token.refresh_token() {
+                let _ = store_refresh_token(&account.uuid, new_refresh.secret());
             }
 
             let mc_flow = MinecraftAuthorizationFlow::new(reqwest::Client::new());
             let mc_token = mc_flow
-                .exchange_microsoft_token(&token.access_token)
+                .exchange_microsoft_token(&ms_access_token)
                 .await
-                .map_err(|e| e.to_string())?;
+                .map_err(|e| format!("Minecraft auth failed: {e}"))?;
 
             Ok(mc_token.access_token().as_ref().to_string())
         }

@@ -230,7 +230,7 @@ pub fn render(frame: &mut Frame, area: Rect, focused: FocusedArea, state: &mut A
 
     if state.store.accounts.is_empty() {
         frame.render_widget(
-            Paragraph::new("No accounts. Press 'a' to add.")
+            Paragraph::new("No accounts.")
                 .style(Style::default().fg(THEME.colors.text_idle)),
             inner,
         );
