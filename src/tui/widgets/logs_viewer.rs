@@ -243,7 +243,7 @@ pub fn handle_key(key_event: &KeyEvent, state: &mut LogsState) -> bool {
         }
 
         match key_event.code {
-            KeyCode::Char('J') | KeyCode::Down if shift => {
+            KeyCode::Char('j') | KeyCode::Down => {
                 if state.viewer_scroll < state.viewer_max_scroll {
                     state.viewer_scroll += 1;
                     state.viewer_scrollbar_state = ScrollbarState::new(state.viewer_max_scroll)
@@ -251,7 +251,7 @@ pub fn handle_key(key_event: &KeyEvent, state: &mut LogsState) -> bool {
                 }
                 true
             }
-            KeyCode::Char('K') | KeyCode::Up if shift => {
+            KeyCode::Char('k') | KeyCode::Up => {
                 state.viewer_scroll = state.viewer_scroll.saturating_sub(1);
                 state.viewer_scrollbar_state = ScrollbarState::new(state.viewer_max_scroll)
                     .position(state.viewer_scroll);
@@ -311,7 +311,7 @@ pub fn handle_key(key_event: &KeyEvent, state: &mut LogsState) -> bool {
 
         let display_count = state.display_count();
         match key_event.code {
-            KeyCode::Char('J') | KeyCode::Down if shift => {
+            KeyCode::Char('j') | KeyCode::Down => {
                 if display_count == 0 {
                     return true;
                 }
@@ -321,7 +321,7 @@ pub fn handle_key(key_event: &KeyEvent, state: &mut LogsState) -> bool {
                 state.update_scrollbar();
                 true
             }
-            KeyCode::Char('K') | KeyCode::Up if shift => {
+            KeyCode::Char('k') | KeyCode::Up => {
                 let current = state.list_state.selected.unwrap_or(0);
                 state.list_state.selected = Some(current.saturating_sub(1));
                 state.load_selected_content();
