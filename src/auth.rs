@@ -298,7 +298,12 @@ pub async fn refresh_and_get_token(account: &Account) -> Result<String, String> 
     match account.account_type {
         AccountType::Offline => Ok("0".to_string()),
         AccountType::Microsoft => {
-            let refresh = get_refresh_token(&account.uuid)?;
+            let refresh = get_refresh_token(&account.uuid).map_err(|_| {
+                format!(
+                    "No saved credentials for '{}'. Please remove and re-add the account.",
+                    account.username
+                )
+            })?;
 
             let oauth_client = BasicClient::new(ClientId::new(CLIENT_ID.to_string()))
                 .set_auth_uri(

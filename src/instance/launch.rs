@@ -244,7 +244,6 @@ pub async fn launch(
                         match crate::auth::refresh_and_get_token(acc).await {
                             Ok(t) => t,
                             Err(e) => {
-                                tracing::error!("Token refresh failed: {e}");
                                 return Err(LaunchError::Auth(format!(
                                     "Authentication failed: {e}"
                                 )));

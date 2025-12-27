@@ -531,7 +531,6 @@ impl App {
     fn spawn_launch(&self, instance: crate::instance::InstanceConfig) {
         use crate::instance::launch;
         use crate::running;
-        use crate::tui::error_buffer;
 
         let instances_dir = self.instance_manager.instances_dir.clone();
         let meta_dir = self.instance_manager.meta_dir.clone();
@@ -540,14 +539,8 @@ impl App {
             match launch::launch(&instance, &instances_dir, &meta_dir).await {
                 Ok(()) => {}
                 Err(e) => {
-                    tracing::error!("Launch failed for '{}': {}", instance.name, e);
+                    tracing::error!("Failed to launch '{}': {}", instance.name, e);
                     running::remove(&instance.name);
-                    error_buffer::push_error(error_buffer::ErrorEvent {
-                        id: 0,
-                        level: tracing::Level::ERROR,
-                        message: format!("Failed to launch '{}': {}", instance.name, e),
-                        pushed_at: std::time::Instant::now(),
-                    });
                 }
             }
         });
