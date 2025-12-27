@@ -602,7 +602,7 @@ impl App {
         use ratatui::{
             layout::{Alignment, Margin},
             style::{Modifier, Style},
-            text::{Line, Span},
+            text::Line,
             widgets::{
                 Block, BorderType, Clear, Paragraph, Scrollbar, ScrollbarOrientation,
             },
@@ -652,6 +652,7 @@ impl App {
         let inner = block.inner(overlay);
         frame.render_widget(block, overlay);
 
+        let search = &self.log_overlay_search;
         let styled: Vec<Line> = filtered
             .iter()
             .skip(self.log_overlay_scroll)
@@ -666,7 +667,7 @@ impl App {
                 } else {
                     Style::default().fg(THEME.colors.foreground)
                 };
-                Line::from(Span::styled(line.as_str(), style))
+                search.highlight_line(line, style)
             })
             .collect();
 

@@ -40,6 +40,38 @@ impl SearchState {
         text.to_lowercase().contains(&self.query.to_lowercase())
     }
 
+    pub fn highlight_line<'a>(&self, text: &'a str, base_style: Style) -> Line<'a> {
+        if self.query.is_empty() {
+            return Line::from(Span::styled(text, base_style));
+        }
+
+        let query_lower = self.query.to_lowercase();
+        let text_lower = text.to_lowercase();
+        let mut spans = Vec::new();
+        let mut last = 0;
+
+        for (start, _) in text_lower.match_indices(&query_lower) {
+            if start > last {
+                spans.push(Span::styled(&text[last..start], base_style));
+            }
+            spans.push(Span::styled(
+                &text[start..start + self.query.len()],
+                base_style.add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
+            ));
+            last = start + self.query.len();
+        }
+
+        if last < text.len() {
+            spans.push(Span::styled(&text[last..], base_style));
+        }
+
+        if spans.is_empty() {
+            Line::from(Span::styled(text, base_style))
+        } else {
+            Line::from(spans)
+        }
+    }
+
     pub fn title_line(&self) -> Option<Line<'static>> {
         if !self.active && self.query.is_empty() {
             return None;

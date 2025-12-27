@@ -500,14 +500,26 @@ fn render_viewer(
         return;
     }
 
+    let search = &state.viewer_search;
     let styled_lines: Vec<Line> = lines
         .iter()
         .skip(state.viewer_scroll)
         .take(visible_height)
-        .map(|line| Line::from(Span::styled(line.as_str(), line_level_style(line))))
+        .map(|line| search.highlight_line(line, line_level_style(line)))
         .collect();
 
     frame.render_widget(Paragraph::new(styled_lines), area);
+
+    if let Some(sl) = state.viewer_search.title_line() {
+        let sw = sl.width() as u16;
+        let search_area = Rect {
+            x: area.x + area.width.saturating_sub(sw + 1),
+            y: area.y,
+            width: sw + 1,
+            height: 1,
+        };
+        frame.render_widget(Paragraph::new(sl), search_area);
+    }
 
     let scrollbar_area = Rect {
         x: area.x + area.width.saturating_sub(0),

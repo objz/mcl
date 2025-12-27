@@ -239,9 +239,7 @@ pub async fn launch(
             Some(acc) => {
                 let token = match acc.account_type {
                     crate::auth::AccountType::Microsoft => {
-                        match tokio::runtime::Handle::current()
-                            .block_on(crate::auth::refresh_and_get_token(acc))
-                        {
+                        match crate::auth::refresh_and_get_token(acc).await {
                             Ok(t) => t,
                             Err(e) => {
                                 tracing::error!("Token refresh failed: {e}");
