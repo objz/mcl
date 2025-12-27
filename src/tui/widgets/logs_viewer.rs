@@ -28,6 +28,7 @@ pub struct LogsState {
     pub scrollbar_state: ScrollbarState,
     pub viewer_scrollbar_state: ScrollbarState,
     pub search: super::search::SearchState,
+    pub viewer_search: super::search::SearchState,
     selected_path: Option<std::path::PathBuf>,
     pending: Arc<Mutex<Option<(String, Vec<LogFileEntry>)>>>,
     rescan_counter: u8,
@@ -48,6 +49,7 @@ impl Default for LogsState {
             scrollbar_state: ScrollbarState::default(),
             viewer_scrollbar_state: ScrollbarState::default(),
             search: super::search::SearchState::default(),
+            viewer_search: super::search::SearchState::default(),
             selected_path: None,
             pending: Arc::new(Mutex::new(None)),
             rescan_counter: 0,
@@ -215,6 +217,31 @@ pub fn handle_key(key_event: &KeyEvent, state: &mut LogsState) -> bool {
     let shift = key_event.modifiers.contains(KeyModifiers::SHIFT);
 
     if state.viewer_focused {
+        if state.viewer_search.active {
+            match key_event.code {
+                KeyCode::Esc => {
+                    state.viewer_search.deactivate();
+                    state.viewer_scroll = 0;
+                }
+                KeyCode::Backspace => {
+                    state.viewer_search.pop();
+                    state.viewer_scroll = 0;
+                }
+                KeyCode::Char(c) => {
+                    state.viewer_search.push(c);
+                    state.viewer_scroll = 0;
+                }
+                _ => {}
+            }
+            return true;
+        }
+
+        if key_event.code == KeyCode::Char('/') {
+            state.viewer_search.activate();
+            state.viewer_scroll = 0;
+            return true;
+        }
+
         match key_event.code {
             KeyCode::Char('J') | KeyCode::Down if shift => {
                 if state.viewer_scroll < state.viewer_max_scroll {
@@ -447,18 +474,23 @@ fn render_viewer(
 ) {
     let is_live = has_live && state.list_state.selected == Some(0);
 
-    let lines: Vec<String> = if is_live {
+    let all_lines: Vec<String> = if is_live {
         let name = state.loaded_for.as_deref().unwrap_or("");
         crate::instance_logs::get_all(name)
     } else {
         state.viewer_lines.clone()
     };
 
+    let lines: Vec<&String> = all_lines
+        .iter()
+        .filter(|l| state.viewer_search.matches(l))
+        .collect();
+
     let visible_height = area.height as usize;
     let was_at_bottom = state.viewer_scroll >= state.viewer_max_scroll.saturating_sub(1);
     state.update_viewer_scrollbar(visible_height, lines.len());
 
-    if is_live && was_at_bottom {
+    if is_live && was_at_bottom && !state.viewer_search.active {
         state.viewer_scroll = state.viewer_max_scroll;
         state.viewer_scrollbar_state =
             ScrollbarState::new(state.viewer_max_scroll).position(state.viewer_scroll);
@@ -471,7 +503,7 @@ fn render_viewer(
     let styled_lines: Vec<Line> = lines
         .iter()
         .skip(state.viewer_scroll)
-        .take(area.height as usize)
+        .take(visible_height)
         .map(|line| Line::from(Span::styled(line.as_str(), line_level_style(line))))
         .collect();
 

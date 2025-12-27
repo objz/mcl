@@ -40,7 +40,10 @@ pub struct App {
     account_state: widgets::account::AccountState,
     picker: ratatui_image::picker::Picker,
     instance_manager: InstanceManager,
-    log_list_state: tui_logger::TuiWidgetState,
+    log_overlay_scroll: usize,
+    log_overlay_max_scroll: usize,
+    log_overlay_search: widgets::search::SearchState,
+    log_overlay_scrollbar: ratatui::widgets::ScrollbarState,
     throbber_state: throbber_widgets_tui::ThrobberState,
     throbber_tick: u8,
     error_effects: HashMap<u64, ErrorEffectState>,
@@ -108,8 +111,10 @@ impl App {
             },
             picker,
             instance_manager: manager,
-            log_list_state: tui_logger::TuiWidgetState::new()
-                .set_default_display_level(log::LevelFilter::Debug),
+            log_overlay_scroll: 0,
+            log_overlay_max_scroll: 0,
+            log_overlay_search: widgets::search::SearchState::default(),
+            log_overlay_scrollbar: ratatui::widgets::ScrollbarState::default(),
             throbber_state: throbber_widgets_tui::ThrobberState::default(),
             throbber_tick: 0,
             error_effects: HashMap::new(),
@@ -143,7 +148,7 @@ impl App {
             if self.throbber_tick % 8 == 0 {
                 self.throbber_state.calc_next();
             }
-            tui_logger::move_events();
+            
             terminal.draw(|frame| self.render_frame(frame))?;
             self.handle_events().wrap_err("handle events failed")?;
         }
@@ -206,7 +211,7 @@ impl App {
         widgets::status::render(frame, bottom_chunks[2], self.focused, &mut self.throbber_state);
 
         if self.focused == FocusedArea::StatusExpanded {
-            Self::render_log_overlay(frame, &mut self.log_list_state);
+            self.render_log_overlay(frame);
         }
 
         let all_errors = error_buffer::peek_all_errors();
@@ -262,20 +267,47 @@ impl App {
 
     fn handle_key_event(&mut self, key_event: KeyEvent) -> color_eyre::Result<()> {
         if self.focused == FocusedArea::StatusExpanded {
+            if self.log_overlay_search.active {
+                match key_event.code {
+                    KeyCode::Esc => {
+                        self.log_overlay_search.deactivate();
+                    }
+                    KeyCode::Backspace => {
+                        self.log_overlay_search.pop();
+                    }
+                    KeyCode::Char(c) => {
+                        self.log_overlay_search.push(c);
+                    }
+                    _ => {}
+                }
+                return Ok(());
+            }
             match key_event.code {
                 KeyCode::Char('S') | KeyCode::Esc => {
                     self.focused = self.pre_overlay_focused;
-                    self.log_list_state.transition(tui_logger::TuiWidgetEvent::EscapeKey);
+                    self.log_overlay_search.deactivate();
                     return Ok(());
                 }
                 KeyCode::Char('j') | KeyCode::Down => {
-                    self.log_list_state
-                        .transition(tui_logger::TuiWidgetEvent::DownKey);
+                    if self.log_overlay_scroll < self.log_overlay_max_scroll {
+                        self.log_overlay_scroll += 1;
+                    }
                     return Ok(());
                 }
                 KeyCode::Char('k') | KeyCode::Up => {
-                    self.log_list_state
-                        .transition(tui_logger::TuiWidgetEvent::UpKey);
+                    self.log_overlay_scroll = self.log_overlay_scroll.saturating_sub(1);
+                    return Ok(());
+                }
+                KeyCode::Char('G') => {
+                    self.log_overlay_scroll = self.log_overlay_max_scroll;
+                    return Ok(());
+                }
+                KeyCode::Char('g') => {
+                    self.log_overlay_scroll = 0;
+                    return Ok(());
+                }
+                KeyCode::Char('/') => {
+                    self.log_overlay_search.activate();
                     return Ok(());
                 }
                 _ => {
@@ -564,43 +596,103 @@ impl App {
         }
     }
 
-    fn render_log_overlay(frame: &mut Frame, log_state: &mut tui_logger::TuiWidgetState) {
+    fn render_log_overlay(&mut self, frame: &mut Frame) {
+        use crate::tui::logging::get_app_logs;
         use crate::tui::theme::THEME;
         use ratatui::{
             layout::{Alignment, Margin},
             style::{Modifier, Style},
-            text::Line,
-            widgets::{Block, BorderType, Clear},
+            text::{Line, Span},
+            widgets::{
+                Block, BorderType, Clear, Paragraph, Scrollbar, ScrollbarOrientation,
+            },
         };
-        use tui_logger::TuiLoggerWidget;
 
         let area = frame.area();
         let overlay = area.inner(Margin::new(1, 1));
 
         frame.render_widget(Clear, overlay);
 
-        let block = Block::bordered()
+        let all_lines = get_app_logs();
+        let filtered: Vec<&String> = all_lines
+            .iter()
+            .filter(|l| self.log_overlay_search.matches(l))
+            .collect();
+
+        let visible_height = overlay.height.saturating_sub(2) as usize;
+        let was_at_bottom = self.log_overlay_scroll >= self.log_overlay_max_scroll.saturating_sub(1);
+        self.log_overlay_max_scroll = filtered.len().saturating_sub(visible_height);
+        if was_at_bottom {
+            self.log_overlay_scroll = self.log_overlay_max_scroll;
+        } else if self.log_overlay_scroll > self.log_overlay_max_scroll {
+            self.log_overlay_scroll = self.log_overlay_max_scroll;
+        }
+        self.log_overlay_scrollbar = ratatui::widgets::ScrollbarState::new(
+            self.log_overlay_max_scroll,
+        )
+        .position(self.log_overlay_scroll);
+
+        let mut block = Block::bordered()
             .title_top(Line::from(" Logs ").style(
                 Style::default()
                     .fg(THEME.colors.foreground)
                     .add_modifier(Modifier::BOLD),
             ))
             .title_bottom(
-                crate::tui::widgets::popups::keybind_line(&[("S", " close")])
+                crate::tui::widgets::popups::keybind_line(&[("S", " close"), ("/", " search")])
                     .alignment(Alignment::Right),
             )
             .border_type(BorderType::Rounded)
             .border_style(Style::default().fg(THEME.colors.border_focused));
 
-        let widget = TuiLoggerWidget::default()
-            .block(block)
-            .state(log_state)
-            .style_error(Style::default().fg(THEME.colors.error))
-            .style_warn(Style::default().fg(THEME.colors.warn))
-            .style_info(Style::default().fg(THEME.colors.foreground))
-            .style_debug(Style::default().fg(THEME.colors.text_idle));
+        if let Some(sl) = self.log_overlay_search.title_line() {
+            block = block.title_top(sl);
+        }
 
-        frame.render_widget(widget, overlay);
+        let inner = block.inner(overlay);
+        frame.render_widget(block, overlay);
+
+        let styled: Vec<Line> = filtered
+            .iter()
+            .skip(self.log_overlay_scroll)
+            .take(visible_height)
+            .map(|line| {
+                let style = if line.contains("ERROR") || line.contains("FATAL") {
+                    Style::default().fg(THEME.colors.error)
+                } else if line.contains("WARN") {
+                    Style::default().fg(THEME.colors.warn)
+                } else if line.contains("DEBUG") || line.contains("TRACE") {
+                    Style::default().fg(THEME.colors.text_idle)
+                } else {
+                    Style::default().fg(THEME.colors.foreground)
+                };
+                Line::from(Span::styled(line.as_str(), style))
+            })
+            .collect();
+
+        frame.render_widget(Paragraph::new(styled), inner);
+
+        let scrollbar_area = ratatui::layout::Rect {
+            x: inner.x + inner.width.saturating_sub(1),
+            y: inner.y + 1,
+            width: 1,
+            height: inner.height.saturating_sub(2),
+        };
+        frame.render_stateful_widget(
+            Scrollbar::default()
+                .orientation(ScrollbarOrientation::VerticalRight)
+                .begin_symbol(Some("\u{25b2}"))
+                .style(
+                    Style::default()
+                        .fg(THEME.colors.border_focused)
+                        .add_modifier(Modifier::BOLD),
+                )
+                .thumb_symbol("\u{2503}")
+                .track_symbol(Some(""))
+                .end_symbol(Some("\u{25bc}")),
+            scrollbar_area,
+            &mut self.log_overlay_scrollbar,
+        );
     }
 
     fn sync_error_effects(&mut self, events: &[error_buffer::ErrorEvent]) {

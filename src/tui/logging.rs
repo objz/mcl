@@ -8,7 +8,26 @@ use tracing_subscriber::layer::Context;
 use tracing_subscriber::prelude::*;
 use tracing_subscriber::{EnvFilter, Layer};
 
+use once_cell::sync::Lazy;
+
 use crate::tui::error_buffer::{self, ErrorEvent};
+
+static APP_LOG_LINES: Lazy<Arc<Mutex<Vec<String>>>> =
+    Lazy::new(|| Arc::new(Mutex::new(Vec::new())));
+
+pub fn get_app_logs() -> Vec<String> {
+    APP_LOG_LINES.lock().map(|l| l.clone()).unwrap_or_default()
+}
+
+fn push_app_log(line: String) {
+    if let Ok(mut lines) = APP_LOG_LINES.lock() {
+        lines.push(line);
+        if lines.len() > 5000 {
+            let drain = lines.len() - 5000;
+            lines.drain(..drain);
+        }
+    }
+}
 
 pub fn init() -> WorkerGuard {
     let log_dir = match dirs_next::cache_dir() {
@@ -73,9 +92,20 @@ impl StatusLayer {
 impl<S: Subscriber> Layer<S> for StatusLayer {
     fn on_event(&self, event: &tracing::Event<'_>, _ctx: Context<'_, S>) {
         let level = *event.metadata().level();
+        let target = event.metadata().target();
 
         let mut visitor = MessageVisitor::default();
         event.record(&mut visitor);
+
+        let level_str = match level {
+            Level::ERROR => "ERROR",
+            Level::WARN => "WARN",
+            Level::INFO => "INFO",
+            Level::DEBUG => "DEBUG",
+            Level::TRACE => "TRACE",
+        };
+        let now = chrono::Local::now().format("%H:%M:%S");
+        push_app_log(format!("{now}:{level_str}:{target}: {}", visitor.message));
 
         if level <= Level::WARN {
             error_buffer::push_error(ErrorEvent {
