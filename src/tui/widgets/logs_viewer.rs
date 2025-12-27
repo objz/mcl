@@ -510,17 +510,6 @@ fn render_viewer(
 
     frame.render_widget(Paragraph::new(styled_lines), area);
 
-    if let Some(sl) = state.viewer_search.title_line() {
-        let sw = sl.width() as u16;
-        let search_area = Rect {
-            x: area.x + area.width.saturating_sub(sw + 1),
-            y: area.y,
-            width: sw + 1,
-            height: 1,
-        };
-        frame.render_widget(Paragraph::new(sl), search_area);
-    }
-
     let scrollbar_area = Rect {
         x: area.x + area.width.saturating_sub(0),
         y: area.y + 1,

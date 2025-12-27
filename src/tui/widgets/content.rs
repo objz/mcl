@@ -119,7 +119,13 @@ pub fn render(
         ContentTab::Shaders => shaders_state.search.title_line(),
         ContentTab::Worlds => worlds_state.search.title_line(),
         ContentTab::Screenshots => screenshots_state.search.title_line(),
-        ContentTab::Logs => logs_state.search.title_line(),
+        ContentTab::Logs => {
+            if logs_state.viewer_focused {
+                logs_state.viewer_search.title_line()
+            } else {
+                logs_state.search.title_line()
+            }
+        }
     };
 
     let mut block = Block::default()

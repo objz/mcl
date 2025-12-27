@@ -14,6 +14,8 @@ pub enum LaunchError {
     Json(#[from] serde_json::Error),
     #[error("{0} launch is not yet supported")]
     NotSupported(String),
+    #[error("{0}")]
+    Auth(String),
 }
 
 #[derive(serde::Deserialize)]
@@ -243,7 +245,9 @@ pub async fn launch(
                             Ok(t) => t,
                             Err(e) => {
                                 tracing::error!("Token refresh failed: {e}");
-                                "0".to_string()
+                                return Err(LaunchError::Auth(format!(
+                                    "Authentication failed: {e}"
+                                )));
                             }
                         }
                     }
