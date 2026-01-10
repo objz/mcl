@@ -532,6 +532,8 @@ impl App {
         use crate::instance::launch;
         use crate::running;
 
+        running::set_state(&instance.name, running::RunState::Authenticating);
+
         let instances_dir = self.instance_manager.instances_dir.clone();
         let meta_dir = self.instance_manager.meta_dir.clone();
 

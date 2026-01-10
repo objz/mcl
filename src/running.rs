@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum RunState {
+    Authenticating,
     Starting,
     Running,
     Crashed(Option<i32>),
