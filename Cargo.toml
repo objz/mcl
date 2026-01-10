@@ -35,7 +35,6 @@ ratatui-image = { version = "10.0.6", default-features = false, features = ["cro
 image = { version = "0.25", default-features = false, features = ["png"] }
 zip = "2"
 minecraft-msa-auth = "0.4.0"
-keyring = "3.6.3"
 oauth2 = "5.0.0"
 
 

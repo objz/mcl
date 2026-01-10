@@ -11,13 +11,10 @@ use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 
 const CLIENT_ID: &str = "708e91b5-99f8-4a1d-80ec-e746cbb24771";
-const DEVICE_CODE_URL: &str =
-    "https://login.microsoftonline.com/consumers/oauth2/v2.0/devicecode";
-const MSA_AUTHORIZE_URL: &str =
-    "https://login.microsoftonline.com/consumers/oauth2/v2.0/authorize";
+const DEVICE_CODE_URL: &str = "https://login.microsoftonline.com/consumers/oauth2/v2.0/devicecode";
+const MSA_AUTHORIZE_URL: &str = "https://login.microsoftonline.com/consumers/oauth2/v2.0/authorize";
 const MSA_TOKEN_URL: &str = "https://login.microsoftonline.com/consumers/oauth2/v2.0/token";
 const MC_PROFILE_URL: &str = "https://api.minecraftservices.com/minecraft/profile";
-const KEYRING_SERVICE: &str = "mcl-launcher";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Account {
@@ -25,6 +22,8 @@ pub struct Account {
     pub username: String,
     pub account_type: AccountType,
     pub active: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub refresh_token: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -50,8 +49,6 @@ struct McProfile {
     id: String,
     name: String,
 }
-
-// ── Account Store ──────────────────────────────────────────────
 
 pub struct AccountStore {
     pub accounts: Vec<Account>,
@@ -105,9 +102,6 @@ impl AccountStore {
             return;
         }
         let account = self.accounts.remove(index);
-        if account.account_type == AccountType::Microsoft {
-            let _ = delete_refresh_token(&account.uuid);
-        }
         if account.active && !self.accounts.is_empty() {
             self.accounts[0].active = true;
         }
@@ -121,28 +115,6 @@ fn account_store_path() -> PathBuf {
         .join("mcl")
         .join("accounts.json")
 }
-
-// ── Keyring ────────────────────────────────────────────────────
-
-fn store_refresh_token(uuid: &str, token: &str) -> Result<(), String> {
-    let entry = keyring::Entry::new(KEYRING_SERVICE, &format!("refresh:{uuid}"))
-        .map_err(|e| e.to_string())?;
-    entry.set_password(token).map_err(|e| e.to_string())
-}
-
-fn get_refresh_token(uuid: &str) -> Result<String, String> {
-    let entry = keyring::Entry::new(KEYRING_SERVICE, &format!("refresh:{uuid}"))
-        .map_err(|e| e.to_string())?;
-    entry.get_password().map_err(|e| e.to_string())
-}
-
-fn delete_refresh_token(uuid: &str) -> Result<(), String> {
-    let entry = keyring::Entry::new(KEYRING_SERVICE, &format!("refresh:{uuid}"))
-        .map_err(|e| e.to_string())?;
-    entry.delete_credential().map_err(|e| e.to_string())
-}
-
-// ── Offline ────────────────────────────────────────────────────
 
 pub fn offline_uuid(username: &str) -> String {
     use std::collections::hash_map::DefaultHasher;
@@ -166,10 +138,9 @@ pub fn create_offline_account(username: &str) -> Account {
         username: username.to_string(),
         account_type: AccountType::Offline,
         active: false,
+        refresh_token: None,
     }
 }
-
-// ── Microsoft Auth (oauth2 + minecraft-msa-auth) ───────────────
 
 pub static DEVICE_CODE_DISPLAY: Lazy<Arc<Mutex<Option<DeviceCodeInfo>>>> =
     Lazy::new(|| Arc::new(Mutex::new(None)));
@@ -280,25 +251,20 @@ async fn exchange_and_build_account(
         profile.id.clone()
     };
 
-    if let Some(refresh) = ms_refresh_token {
-        let _ = store_refresh_token(&uuid, refresh);
-    }
-
     AuthResult::Success(Account {
         uuid,
         username: profile.name,
         account_type: AccountType::Microsoft,
         active: false,
+        refresh_token: ms_refresh_token.map(|s| s.to_string()),
     })
 }
 
-// ── Token Refresh ──────────────────────────────────────────────
-
-pub async fn refresh_and_get_token(account: &Account) -> Result<String, String> {
+pub async fn refresh_and_get_token(account: &Account) -> Result<(String, Option<String>), String> {
     match account.account_type {
-        AccountType::Offline => Ok("0".to_string()),
+        AccountType::Offline => Ok(("0".to_string(), None)),
         AccountType::Microsoft => {
-            let refresh = get_refresh_token(&account.uuid).map_err(|_| {
+            let refresh = account.refresh_token.as_deref().ok_or_else(|| {
                 format!(
                     "No saved credentials for '{}'. Please remove and re-add the account.",
                     account.username
@@ -316,7 +282,7 @@ pub async fn refresh_and_get_token(account: &Account) -> Result<String, String> 
             let http_client = reqwest::Client::new();
 
             let token = oauth_client
-                .exchange_refresh_token(&RefreshToken::new(refresh))
+                .exchange_refresh_token(&RefreshToken::new(refresh.to_string()))
                 .add_scope(Scope::new("XboxLive.signin".to_string()))
                 .add_scope(Scope::new("offline_access".to_string()))
                 .request_async(&http_client)
@@ -324,10 +290,7 @@ pub async fn refresh_and_get_token(account: &Account) -> Result<String, String> 
                 .map_err(|e| format!("Token refresh failed: {e}"))?;
 
             let ms_access_token = token.access_token().secret().to_string();
-
-            if let Some(new_refresh) = token.refresh_token() {
-                let _ = store_refresh_token(&account.uuid, new_refresh.secret());
-            }
+            let new_refresh = token.refresh_token().map(|r| r.secret().to_string());
 
             let mc_flow = MinecraftAuthorizationFlow::new(reqwest::Client::new());
             let mc_token = mc_flow
@@ -335,7 +298,7 @@ pub async fn refresh_and_get_token(account: &Account) -> Result<String, String> 
                 .await
                 .map_err(|e| format!("Minecraft auth failed: {e}"))?;
 
-            Ok(mc_token.access_token().as_ref().to_string())
+            Ok((mc_token.access_token().as_ref().to_string(), new_refresh))
         }
     }
 }

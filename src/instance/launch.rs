@@ -235,14 +235,14 @@ pub async fn launch(
     ];
     jvm.extend(config.jvm_args.clone());
 
-    let account_store = crate::auth::AccountStore::load();
+    let mut account_store = crate::auth::AccountStore::load();
     let (mc_username, mc_uuid, mc_token, mc_user_type) =
-        match account_store.active_account() {
+        match account_store.active_account().cloned() {
             Some(acc) => {
-                let token = match acc.account_type {
+                let (token, new_refresh) = match acc.account_type {
                     crate::auth::AccountType::Microsoft => {
-                        match crate::auth::refresh_and_get_token(acc).await {
-                            Ok(t) => t,
+                        match crate::auth::refresh_and_get_token(&acc).await {
+                            Ok(pair) => pair,
                             Err(e) => {
                                 return Err(LaunchError::Auth(format!(
                                     "Authentication failed: {e}"
@@ -250,8 +250,18 @@ pub async fn launch(
                             }
                         }
                     }
-                    crate::auth::AccountType::Offline => "0".to_string(),
+                    crate::auth::AccountType::Offline => ("0".to_string(), None),
                 };
+                if let Some(new_rt) = new_refresh {
+                    if let Some(stored) = account_store
+                        .accounts
+                        .iter_mut()
+                        .find(|a| a.uuid == acc.uuid)
+                    {
+                        stored.refresh_token = Some(new_rt);
+                        account_store.save();
+                    }
+                }
                 let user_type = match acc.account_type {
                     crate::auth::AccountType::Microsoft => "msa",
                     crate::auth::AccountType::Offline => "legacy",
