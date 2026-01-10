@@ -51,6 +51,7 @@ pub struct State {
     pub scrollbar_state: ScrollbarState,
     pub show_popup: bool,
     pub search: SearchState,
+    pub renaming: Option<String>,
 }
 
 impl State {
@@ -62,6 +63,7 @@ impl State {
             scrollbar_state: ScrollbarState::default(),
             show_popup: false,
             search: SearchState::default(),
+            renaming: None,
         };
         if count > 0 {
             s.list_state.selected = Some(0);
@@ -249,10 +251,26 @@ pub fn render(frame: &mut Frame, area: Rect, focused: FocusedArea, state: &mut S
             "\u{258c} ",
             Style::default().fg(loader_color(instance.loader)),
         );
-        let name_line = Line::from(vec![
-            stripe.clone(),
-            Span::styled(instance.name.as_str(), name_style),
-        ]);
+
+        let is_renaming = context.is_selected && state.renaming.is_some();
+        let name_line = if is_renaming {
+            let rename_val = state.renaming.as_deref().unwrap_or("");
+            Line::from(vec![
+                stripe.clone(),
+                Span::styled(rename_val, Style::default().fg(THEME.colors.foreground)),
+                Span::styled(
+                    "\u{2588}",
+                    Style::default()
+                        .fg(THEME.colors.border_focused)
+                        .add_modifier(Modifier::SLOW_BLINK),
+                ),
+            ])
+        } else {
+            Line::from(vec![
+                stripe.clone(),
+                Span::styled(instance.name.as_str(), name_style),
+            ])
+        };
 
         let (meta_text, meta_text_style) = match get_run_state(&instance.name) {
             Some(RunState::Authenticating) => (

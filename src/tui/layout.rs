@@ -392,6 +392,42 @@ impl App {
                 new_instance::handle_key(&key_event, &mut self.profiles_state);
             }
             _ => {
+                if self.focused == FocusedArea::Profiles && self.profiles_state.renaming.is_some() {
+                    match key_event.code {
+                        KeyCode::Enter => {
+                            let new_name = self.profiles_state.renaming.take().unwrap_or_default();
+                            if let Some(inst) = self.profiles_state.selected_instance() {
+                                let old_name = inst.name.clone();
+                                match self.instance_manager.rename(&old_name, &new_name) {
+                                    Ok(()) => {
+                                        if let Some(inst) = self.profiles_state.instances.iter_mut().find(|i| i.name == old_name) {
+                                            inst.name = new_name.trim().to_string();
+                                        }
+                                    }
+                                    Err(e) => {
+                                        tracing::error!("Rename failed: {}", e);
+                                    }
+                                }
+                            }
+                        }
+                        KeyCode::Esc => {
+                            self.profiles_state.renaming = None;
+                        }
+                        KeyCode::Backspace => {
+                            if let Some(ref mut name) = self.profiles_state.renaming {
+                                name.pop();
+                            }
+                        }
+                        KeyCode::Char(c) => {
+                            if let Some(ref mut name) = self.profiles_state.renaming {
+                                name.push(c);
+                            }
+                        }
+                        _ => {}
+                    }
+                    return Ok(());
+                }
+
                 if self.focused == FocusedArea::Profiles && self.profiles_state.search.active {
                     self.profiles_state.handle_key(&key_event);
                     return Ok(());
@@ -466,6 +502,14 @@ impl App {
                                 crate::instance_logs::clear(&instance.name);
                                 self.spawn_launch(instance);
                             }
+                        }
+                    }
+                    KeyCode::Char('r')
+                        if self.focused == FocusedArea::Profiles
+                            && !self.profiles_state.search.active =>
+                    {
+                        if let Some(inst) = self.profiles_state.selected_instance() {
+                            self.profiles_state.renaming = Some(inst.name.clone());
                         }
                     }
                     KeyCode::Esc

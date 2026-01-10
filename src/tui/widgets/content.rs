@@ -186,6 +186,7 @@ pub fn render(
             ("Esc", " kill"),
             ("a", " add"),
             ("d", " delete"),
+            ("r", " rename"),
             ("/", " search"),
         ])
     } else {

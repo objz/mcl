@@ -271,6 +271,37 @@ impl InstanceManager {
         }
     }
 
+    pub fn rename(&self, old_name: &str, new_name: &str) -> Result<(), InstanceError> {
+        let new_name = new_name.trim();
+        if new_name.is_empty() {
+            return Err(InstanceError::InvalidName("Name cannot be empty".to_string()));
+        }
+        if old_name == new_name {
+            return Ok(());
+        }
+        let old_dir = self.instances_dir.join(old_name);
+        let new_dir = self.instances_dir.join(new_name);
+        if !old_dir.exists() {
+            return Err(InstanceError::NotFound(old_name.to_string()));
+        }
+        if new_dir.exists() {
+            return Err(InstanceError::AlreadyExists(new_name.to_string()));
+        }
+        std::fs::rename(&old_dir, &new_dir)?;
+
+        let config_path = new_dir.join("instance.json");
+        if let Ok(data) = std::fs::read_to_string(&config_path) {
+            if let Ok(mut config) = serde_json::from_str::<InstanceConfig>(&data) {
+                config.name = new_name.to_string();
+                if let Ok(json) = serde_json::to_string_pretty(&config) {
+                    let _ = std::fs::write(&config_path, json);
+                }
+            }
+        }
+
+        Ok(())
+    }
+
     pub fn load_all(&self) -> Vec<InstanceConfig> {
         let mut instances = vec![];
         let read_dir = match std::fs::read_dir(&self.instances_dir) {
