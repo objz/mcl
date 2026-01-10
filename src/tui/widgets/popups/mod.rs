@@ -70,3 +70,49 @@ pub fn keybind_line(binds: &[(&str, &str)]) -> ratatui::text::Line<'static> {
     }
     Line::from(spans)
 }
+
+pub fn keybind_lines_wrapped(
+    binds: &[(&str, &str)],
+    max_width: u16,
+) -> Vec<ratatui::text::Line<'static>> {
+    use ratatui::{style::{Modifier, Style}, text::{Line, Span}};
+    use crate::tui::theme::THEME;
+
+    let key_style = Style::default()
+        .fg(THEME.colors.border_focused)
+        .add_modifier(Modifier::BOLD);
+    let dim_style = Style::default().fg(THEME.colors.border_unfocused);
+
+    let mut rows: Vec<Line<'static>> = Vec::new();
+    let mut current_spans: Vec<Span<'static>> = Vec::new();
+    let mut current_width: usize = 0;
+
+    for (i, (key, label)) in binds.iter().enumerate() {
+        let sep_w = if i > 0 && !current_spans.is_empty() { 2 } else { 0 };
+        let item_w = key.len() + 2 + label.len();
+        let needed = sep_w + item_w;
+
+        if !current_spans.is_empty() && current_width + needed > max_width as usize {
+            rows.push(Line::from(current_spans).right_aligned());
+            current_spans = Vec::new();
+            current_width = 0;
+        }
+
+        if !current_spans.is_empty() {
+            current_spans.push(Span::styled("  ", dim_style));
+            current_width += 2;
+        }
+
+        current_spans.push(Span::styled(format!("[{}]", key), key_style));
+        if !label.is_empty() {
+            current_spans.push(Span::styled(label.to_string(), dim_style));
+        }
+        current_width += item_w;
+    }
+
+    if !current_spans.is_empty() {
+        rows.push(Line::from(current_spans).right_aligned());
+    }
+
+    rows
+}

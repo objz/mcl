@@ -25,18 +25,11 @@ pub fn render(
         THEME.colors.border_unfocused
     };
 
-    let mut block = Block::default()
+    let block = Block::default()
         .title(styled_title("Status", true))
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .border_style(Style::default().fg(border_color));
-
-    if focused == FocusedArea::Status {
-        block = block.title_bottom(
-            super::popups::keybind_line(&[("S", " expand")])
-                .alignment(ratatui::layout::Alignment::Right),
-        );
-    }
 
     let state = match PROGRESS.lock() {
         Ok(s) => s.clone(),

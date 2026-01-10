@@ -226,10 +226,13 @@ pub fn render(frame: &mut Frame, area: Rect, focused: FocusedArea, state: &mut A
         .border_style(Style::default().fg(color));
 
     if focused == FocusedArea::Account {
-        block = block.title_bottom(
-            super::popups::keybind_line(&[("⏎", " select"), ("a", " add"), ("d", " del")])
-                .alignment(ratatui::layout::Alignment::Right),
+        let lines = super::popups::keybind_lines_wrapped(
+            &[("⏎", " select"), ("a", " add"), ("d", " del")],
+            area.width.saturating_sub(2),
         );
+        for line in lines {
+            block = block.title_bottom(line);
+        }
     }
 
     let inner = block.inner(area);

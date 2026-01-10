@@ -138,49 +138,65 @@ pub fn render(
         block = block.title_top(sl);
     }
 
-    if is_focused {
-        let kb: &[(&str, &str)] = match tab {
+    let kb: Option<&[(&str, &str)]> = if is_focused {
+        Some(match tab {
             ContentTab::Mods | ContentTab::ResourcePacks | ContentTab::Shaders => &[
-                ("j/k", " nav"),
+                ("j/k", " navigate"),
                 ("⏎", " toggle"),
-                ("S+⏎", " dir"),
+                ("Shift+⏎", " open dir"),
                 ("h/l", " tabs"),
                 ("/", " search"),
             ],
             ContentTab::Worlds => &[
-                ("j/k", " nav"),
-                ("S+⏎", " dir"),
+                ("j/k", " navigate"),
+                ("Shift+⏎", " open dir"),
                 ("h/l", " tabs"),
                 ("/", " search"),
             ],
             ContentTab::Screenshots => &[
-                ("S+HJKL", " grid"),
+                ("Shift+HJKL", " grid"),
                 ("⏎", " open"),
-                ("S+⏎", " dir"),
+                ("Shift+⏎", " open dir"),
                 ("h/l", " tabs"),
                 ("/", " search"),
             ],
             ContentTab::Logs => {
                 if logs_state.viewer_focused {
                     &[
-                        ("S+JK", " scroll"),
-                        ("g/G", " top/bot"),
+                        ("j/k", " scroll"),
+                        ("g/G", " top/bottom"),
                         ("Esc", " back"),
                         ("/", " search"),
                     ]
                 } else {
                     &[
-                        ("S+JK", " nav"),
+                        ("j/k", " navigate"),
                         ("⏎", " view"),
                         ("h/l", " tabs"),
                         ("/", " search"),
                     ]
                 }
             }
-        };
-        block = block.title_bottom(
-            super::popups::keybind_line(kb).alignment(ratatui::layout::Alignment::Right),
-        );
+        })
+    } else if focused == FocusedArea::Profiles {
+        Some(&[
+            ("l", " launch"),
+            ("⏎", " content"),
+            ("Shift+⏎", " open dir"),
+            ("Esc", " kill"),
+            ("a", " add"),
+            ("d", " delete"),
+            ("/", " search"),
+        ])
+    } else {
+        None
+    };
+
+    if let Some(kb) = kb {
+        let lines = super::popups::keybind_lines_wrapped(kb, area.width.saturating_sub(2));
+        for line in lines {
+            block = block.title_bottom(line);
+        }
     }
 
     let content_area = block.inner(area);
