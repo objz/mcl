@@ -207,6 +207,20 @@ pub fn render(frame: &mut Frame, area: Rect, focused: FocusedArea, state: &mut S
         block = block.title_top(search_line);
     }
 
+    if focused == FocusedArea::Profiles {
+        block = block.title_bottom(
+            super::popups::keybind_line(&[
+                ("l", " launch"),
+                ("⏎", " content"),
+                ("a", " add"),
+                ("d", " del"),
+                ("/", " search"),
+                ("Esc", " kill"),
+            ])
+            .alignment(ratatui::layout::Alignment::Right),
+        );
+    }
+
     let scrollbar_area = Rect {
         x: area.x + area.width.saturating_sub(1),
         y: area.y + 1,

@@ -219,19 +219,25 @@ pub fn render(frame: &mut Frame, area: Rect, focused: FocusedArea, state: &mut A
         THEME.colors.border_unfocused
     };
 
-    let block = Block::default()
+    let mut block = Block::default()
         .title(styled_title("Account", true))
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .border_style(Style::default().fg(color));
+
+    if focused == FocusedArea::Account {
+        block = block.title_bottom(
+            super::popups::keybind_line(&[("⏎", " select"), ("a", " add"), ("d", " del")])
+                .alignment(ratatui::layout::Alignment::Right),
+        );
+    }
 
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
     if state.store.accounts.is_empty() {
         frame.render_widget(
-            Paragraph::new("No accounts.")
-                .style(Style::default().fg(THEME.colors.text_idle)),
+            Paragraph::new("No accounts.").style(Style::default().fg(THEME.colors.text_idle)),
             inner,
         );
     } else {

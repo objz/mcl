@@ -138,6 +138,51 @@ pub fn render(
         block = block.title_top(sl);
     }
 
+    if is_focused {
+        let kb: &[(&str, &str)] = match tab {
+            ContentTab::Mods | ContentTab::ResourcePacks | ContentTab::Shaders => &[
+                ("j/k", " nav"),
+                ("⏎", " toggle"),
+                ("S+⏎", " dir"),
+                ("h/l", " tabs"),
+                ("/", " search"),
+            ],
+            ContentTab::Worlds => &[
+                ("j/k", " nav"),
+                ("S+⏎", " dir"),
+                ("h/l", " tabs"),
+                ("/", " search"),
+            ],
+            ContentTab::Screenshots => &[
+                ("S+HJKL", " grid"),
+                ("⏎", " open"),
+                ("S+⏎", " dir"),
+                ("h/l", " tabs"),
+                ("/", " search"),
+            ],
+            ContentTab::Logs => {
+                if logs_state.viewer_focused {
+                    &[
+                        ("S+JK", " scroll"),
+                        ("g/G", " top/bot"),
+                        ("Esc", " back"),
+                        ("/", " search"),
+                    ]
+                } else {
+                    &[
+                        ("S+JK", " nav"),
+                        ("⏎", " view"),
+                        ("h/l", " tabs"),
+                        ("/", " search"),
+                    ]
+                }
+            }
+        };
+        block = block.title_bottom(
+            super::popups::keybind_line(kb).alignment(ratatui::layout::Alignment::Right),
+        );
+    }
+
     let content_area = block.inner(area);
     frame.render_widget(block, area);
 

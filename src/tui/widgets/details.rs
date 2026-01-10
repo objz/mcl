@@ -1,7 +1,7 @@
 use ratatui::{
-    layout::Rect,
+    layout::{Alignment, Rect},
     style::Style,
-    widgets::{Block, BorderType, Borders, Paragraph},
+    widgets::{Block, BorderType, Borders},
     Frame,
 };
 
@@ -19,10 +19,19 @@ pub fn render(frame: &mut Frame, area: Rect, focused: FocusedArea) {
 
     let block = Block::default()
         .title(styled_title("Details", true))
+        .title_bottom(
+            super::popups::keybind_line(&[
+                ("P", " profiles"),
+                ("C", " content"),
+                ("A", " account"),
+                ("S", " logs"),
+                ("q", " quit"),
+            ])
+            .alignment(Alignment::Right),
+        )
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .border_style(Style::default().fg(color));
 
-    let widget = Paragraph::new("TEST CONTENT").block(block);
-    frame.render_widget(widget, area);
+    frame.render_widget(block, area);
 }
