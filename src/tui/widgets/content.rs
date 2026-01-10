@@ -311,24 +311,9 @@ pub fn title(
             let run_state = crate::running::get(&inst.name);
 
             match run_state {
-                Some(RunState::Authenticating) => {
-                    let throbber = Throbber::default()
-                        .label(format!("{} \u{2022} Authenticating", inst.name.as_str()))
-                        .style(
-                            Style::default()
-                                .fg(THEME.colors.foreground)
-                                .add_modifier(Modifier::BOLD),
-                        )
-                        .throbber_style(
-                            Style::default()
-                                .fg(THEME.colors.accent)
-                                .add_modifier(Modifier::BOLD),
-                        )
-                        .throbber_set(throbber_widgets_tui::BRAILLE_EIGHT_DOUBLE)
-                        .use_type(throbber_widgets_tui::WhichUse::Spin);
-                    frame.render_stateful_widget(throbber, left_area, throbber_state);
-                }
-                Some(RunState::Running) | Some(RunState::Starting) => {
+                Some(RunState::Authenticating)
+                | Some(RunState::Running)
+                | Some(RunState::Starting) => {
                     let throbber = Throbber::default()
                         .label(inst.name.as_str())
                         .style(

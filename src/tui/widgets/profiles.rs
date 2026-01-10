@@ -256,8 +256,8 @@ pub fn render(frame: &mut Frame, area: Rect, focused: FocusedArea, state: &mut S
 
         let (meta_text, meta_text_style) = match get_run_state(&instance.name) {
             Some(RunState::Authenticating) => (
-                "Authenticating...".to_string(),
-                Style::default().fg(THEME.colors.accent),
+                "Authenticating".to_string(),
+                Style::default().fg(THEME.colors.success),
             ),
             Some(RunState::Running) | Some(RunState::Starting) => (
                 "Playing".to_string(),
