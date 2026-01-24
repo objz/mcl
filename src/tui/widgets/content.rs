@@ -2,7 +2,7 @@ use ratatui::{
     layout::{Alignment, Constraint, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, BorderType, Borders, Paragraph},
+    widgets::{Block, Borders, Paragraph},
     Frame,
 };
 use throbber_widgets_tui::{Throbber, ThrobberState};
@@ -79,9 +79,9 @@ pub fn render(
     let is_focused = focused == FocusedArea::Content;
 
     let border_color = if is_focused {
-        THEME.colors.border_focused
+        THEME.content.border_focused_fg
     } else {
-        THEME.colors.border_unfocused
+        THEME.content.border_unfocused_fg
     };
 
     let tab_titles: Vec<Span> = ContentTab::ALL
@@ -92,21 +92,21 @@ pub fn render(
             if i > 0 {
                 spans.push(Span::styled(
                     "\u{2022}",
-                    Style::default().fg(THEME.colors.border_unfocused),
+                    Style::default().fg(THEME.content.border_unfocused_fg),
                 ));
             }
             if i == tab.index() {
-                spans.push(Span::styled(
-                    format!(" {} ", t.label()),
-                    Style::default()
-                        .fg(THEME.colors.accent)
-                        .bg(THEME.colors.row_background)
-                        .add_modifier(Modifier::BOLD),
-                ));
+                let mut style = Style::default()
+                    .fg(THEME.content.tab_active_fg)
+                    .bg(THEME.content.selected_bg);
+                if THEME.content.tab_active_bold {
+                    style = style.add_modifier(Modifier::BOLD);
+                }
+                spans.push(Span::styled(format!(" {} ", t.label()), style));
             } else {
                 spans.push(Span::styled(
                     format!(" {} ", t.label()),
-                    Style::default().fg(THEME.colors.foreground),
+                    Style::default().fg(THEME.content.text_fg),
                 ));
             }
             spans
@@ -131,7 +131,7 @@ pub fn render(
     let mut block = Block::default()
         .title_top(Line::from(tab_titles))
         .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
+        .border_type(THEME.general.border_type.to_border_type())
         .border_style(Style::default().fg(border_color));
 
     if let Some(sl) = search_line {
@@ -224,7 +224,7 @@ pub fn render(
             } else {
                 frame.render_widget(
                     Paragraph::new("No instance selected.")
-                        .style(Style::default().fg(THEME.colors.text_idle)),
+                        .style(Style::default().fg(THEME.content.tab_inactive_fg)),
                     content_area,
                 );
             }
@@ -249,7 +249,7 @@ pub fn render(
             } else {
                 frame.render_widget(
                     Paragraph::new("No instance selected.")
-                        .style(Style::default().fg(THEME.colors.text_idle)),
+                        .style(Style::default().fg(THEME.content.tab_inactive_fg)),
                     content_area,
                 );
             }
@@ -274,7 +274,7 @@ pub fn render(
             } else {
                 frame.render_widget(
                     Paragraph::new("No instance selected.")
-                        .style(Style::default().fg(THEME.colors.text_idle)),
+                        .style(Style::default().fg(THEME.content.tab_inactive_fg)),
                     content_area,
                 );
             }
@@ -288,7 +288,7 @@ pub fn render(
             } else {
                 frame.render_widget(
                     Paragraph::new("No instance selected.")
-                        .style(Style::default().fg(THEME.colors.text_idle)),
+                        .style(Style::default().fg(THEME.content.tab_inactive_fg)),
                     content_area,
                 );
             }
@@ -302,7 +302,7 @@ pub fn render(
             } else {
                 frame.render_widget(
                     Paragraph::new("No instance selected.")
-                        .style(Style::default().fg(THEME.colors.text_idle)),
+                        .style(Style::default().fg(THEME.content.tab_inactive_fg)),
                     content_area,
                 );
             }
@@ -327,7 +327,7 @@ pub fn render(
             } else {
                 frame.render_widget(
                     Paragraph::new("No instance selected.")
-                        .style(Style::default().fg(THEME.colors.text_idle)),
+                        .style(Style::default().fg(THEME.content.tab_inactive_fg)),
                     content_area,
                 );
             }
@@ -343,15 +343,15 @@ pub fn title(
     throbber_state: &mut ThrobberState,
 ) {
     let color = if focused == FocusedArea::Content {
-        THEME.colors.border_focused
+        THEME.content.border_focused_fg
     } else {
-        THEME.colors.border_unfocused
+        THEME.content.border_unfocused_fg
     };
 
     let block = Block::default()
         .title(styled_title("Content", true))
         .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
+        .border_type(THEME.general.border_type.to_border_type())
         .border_style(Style::default().fg(color));
 
     let inner = block.inner(area);
@@ -361,7 +361,7 @@ pub fn title(
         None => {
             frame.render_widget(
                 Paragraph::new("No instance selected")
-                    .style(Style::default().fg(THEME.colors.text_idle)),
+                    .style(Style::default().fg(THEME.content.tab_inactive_fg)),
                 inner,
             );
         }
@@ -380,12 +380,12 @@ pub fn title(
                         .label(inst.name.as_str())
                         .style(
                             Style::default()
-                                .fg(THEME.colors.foreground)
+                                .fg(THEME.content.text_fg)
                                 .add_modifier(Modifier::BOLD),
                         )
                         .throbber_style(
                             Style::default()
-                                .fg(THEME.colors.success)
+                                .fg(THEME.general.success)
                                 .add_modifier(Modifier::BOLD),
                         )
                         .throbber_set(throbber_widgets_tui::BRAILLE_EIGHT_DOUBLE)
@@ -398,13 +398,13 @@ pub fn title(
                             Span::styled(
                                 "\u{2717} ",
                                 Style::default()
-                                    .fg(THEME.colors.error)
+                                    .fg(THEME.general.error)
                                     .add_modifier(Modifier::BOLD),
                             ),
                             Span::styled(
                                 inst.name.as_str(),
                                 Style::default()
-                                    .fg(THEME.colors.foreground)
+                                    .fg(THEME.content.text_fg)
                                     .add_modifier(Modifier::BOLD),
                             ),
                         ])),
@@ -416,7 +416,7 @@ pub fn title(
                         Paragraph::new(Span::styled(
                             inst.name.as_str(),
                             Style::default()
-                                .fg(THEME.colors.foreground)
+                                .fg(THEME.content.text_fg)
                                 .add_modifier(Modifier::BOLD),
                         )),
                         left_area,
@@ -430,7 +430,7 @@ pub fn title(
             };
             frame.render_widget(
                 Paragraph::new(loader_str)
-                    .style(Style::default().fg(THEME.colors.border_focused))
+                    .style(Style::default().fg(THEME.content.border_focused_fg))
                     .alignment(Alignment::Right),
                 right_area,
             );

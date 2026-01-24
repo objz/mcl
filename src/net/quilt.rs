@@ -38,11 +38,7 @@ pub struct QuiltLibrary {
     pub url: String,
 }
 
-
-
-pub async fn fetch_quilt_game_versions(
-    client: &HttpClient,
-) -> Result<Vec<GameVersion>, NetError> {
+pub async fn fetch_quilt_game_versions(client: &HttpClient) -> Result<Vec<GameVersion>, NetError> {
     let url = format!("{}/versions/game", QUILT_META_BASE);
 
     let response = match client.inner().get(&url).send().await {
@@ -159,10 +155,7 @@ pub async fn download_quilt_libraries(
         let maven_path = match crate::net::maven_coord_to_path(&lib.name) {
             Some(p) => p,
             None => {
-                tracing::error!(
-                    "Invalid Maven coordinate in Quilt profile: {}",
-                    lib.name
-                );
+                tracing::error!("Invalid Maven coordinate in Quilt profile: {}", lib.name);
                 return Err(NetError::Parse(format!(
                     "Invalid Maven coordinate: {}",
                     lib.name
@@ -186,10 +179,7 @@ pub async fn download_quilt_libraries(
         match download_file(client, &download_url, &dest, |_, _| {}).await {
             Ok(()) => {}
             Err(e) => {
-                tracing::error!(
-                    "Failed to download Quilt library {}: {}",
-                    lib.name, e
-                );
+                tracing::error!("Failed to download Quilt library {}: {}", lib.name, e);
                 return Err(e);
             }
         }
@@ -208,7 +198,10 @@ mod tests {
         let client = HttpClient::new();
         match fetch_quilt_versions(&client, "1.20.1").await {
             Ok(versions) => {
-                assert!(!versions.is_empty(), "Should have Quilt versions for 1.20.1");
+                assert!(
+                    !versions.is_empty(),
+                    "Should have Quilt versions for 1.20.1"
+                );
             }
             Err(e) => assert!(false, "fetch_quilt_versions failed: {}", e),
         }

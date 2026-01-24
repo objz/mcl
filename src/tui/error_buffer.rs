@@ -6,9 +6,6 @@ use std::time::Instant;
 use once_cell::sync::Lazy;
 use tracing::Level;
 
-pub const AUTO_DISMISS_MS: u128 = 5000;
-pub const SLIDE_START_MS: u128 = 3500;
-
 const MAX_ERROR_EVENTS: usize = 50;
 static NEXT_ERROR_ID: AtomicU64 = AtomicU64::new(1);
 

@@ -2,7 +2,7 @@ use ratatui::{
     layout::{Constraint, Layout, Rect},
     style::{Modifier, Style},
     text::Span,
-    widgets::{Block, BorderType, Borders, Gauge, Paragraph},
+    widgets::{Block, Borders, Gauge, Paragraph},
     Frame,
 };
 use throbber_widgets_tui::{Throbber, ThrobberState};
@@ -20,15 +20,15 @@ pub fn render(
     throbber_state: &mut ThrobberState,
 ) {
     let border_color = if focused == FocusedArea::Overview {
-        THEME.colors.border_focused
+        THEME.status.border_focused_fg
     } else {
-        THEME.colors.border_unfocused
+        THEME.status.border_unfocused_fg
     };
 
     let block = Block::default()
         .title(styled_title("Overview", true))
         .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
+        .border_type(THEME.general.border_type.to_border_type())
         .border_style(Style::default().fg(border_color));
 
     let state = match PROGRESS.lock() {
@@ -37,7 +37,7 @@ pub fn render(
             frame.render_widget(
                 Paragraph::new(Span::styled(
                     "Ready",
-                    Style::default().fg(THEME.colors.text_idle),
+                    Style::default().fg(THEME.status.label_fg),
                 ))
                 .block(block),
                 area,
@@ -50,7 +50,7 @@ pub fn render(
         frame.render_widget(
             Paragraph::new(Span::styled(
                 "Ready",
-                Style::default().fg(THEME.colors.text_idle),
+                Style::default().fg(THEME.status.label_fg),
             ))
             .block(block),
             area,
@@ -77,20 +77,19 @@ pub fn render(
             let gauge = Gauge::default()
                 .gauge_style(
                     Style::default()
-                        .fg(THEME.colors.progress_fill)
-                        .bg(THEME.colors.progress_track)
+                        .fg(THEME.status.progress_fill_fg)
+                        .bg(THEME.status.progress_track_fg)
                         .add_modifier(Modifier::BOLD),
                 )
                 .percent((ratio * 100.0) as u16);
             frame.render_widget(gauge, chunks[0]);
             frame.render_widget(
-                Paragraph::new(action_text).style(Style::default().fg(THEME.colors.foreground)),
+                Paragraph::new(action_text).style(Style::default().fg(THEME.status.text_fg)),
                 chunks[1],
             );
             if !sub_text.is_empty() {
                 frame.render_widget(
-                    Paragraph::new(sub_text)
-                        .style(Style::default().fg(THEME.colors.border_unfocused)),
+                    Paragraph::new(sub_text).style(Style::default().fg(THEME.status.label_fg)),
                     chunks[2],
                 );
             }
@@ -100,17 +99,16 @@ pub fn render(
                 Layout::vertical([Constraint::Length(1), Constraint::Length(1)]).split(inner);
             let throbber = Throbber::default()
                 .label(action_text)
-                .style(Style::default().fg(THEME.colors.foreground))
+                .style(Style::default().fg(THEME.status.text_fg))
                 .throbber_style(
                     Style::default()
-                        .fg(THEME.colors.border_focused)
+                        .fg(THEME.status.border_focused_fg)
                         .add_modifier(Modifier::BOLD),
                 );
             frame.render_stateful_widget(throbber, chunks[0], throbber_state);
             if !sub_text.is_empty() {
                 frame.render_widget(
-                    Paragraph::new(sub_text)
-                        .style(Style::default().fg(THEME.colors.border_unfocused)),
+                    Paragraph::new(sub_text).style(Style::default().fg(THEME.status.label_fg)),
                     chunks[1],
                 );
             }

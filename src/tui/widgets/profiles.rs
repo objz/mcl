@@ -1,16 +1,17 @@
+use crate::tui::theme::THEME;
 use crossterm::event::KeyCode;
 use ratatui::{
     layout::Rect,
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span, Text},
-    widgets::{Block, BorderType, Borders, Scrollbar, ScrollbarOrientation, ScrollbarState},
+    widgets::{Block, Borders, Scrollbar, ScrollbarOrientation, ScrollbarState},
     Frame,
 };
 use tui_widget_list::{ListBuilder, ListState as TuiListState, ListView};
 
 use crate::instance::models::InstanceConfig;
 use crate::running::{get as get_run_state, RunState};
-use crate::tui::{layout::FocusedArea, theme::THEME};
+use crate::tui::layout::FocusedArea;
 
 use super::{search::SearchState, styled_title, WidgetKey};
 
@@ -34,13 +35,12 @@ fn format_last_played(last_played: Option<chrono::DateTime<chrono::Utc>>) -> Str
 
 fn loader_color(loader: crate::instance::models::ModLoader) -> ratatui::style::Color {
     use crate::instance::models::ModLoader;
-    use ratatui::style::Color;
     match loader {
-        ModLoader::Vanilla => Color::Green,
-        ModLoader::Fabric => Color::Rgb(0x71, 0xa5, 0xde),
-        ModLoader::Forge => Color::Rgb(0xe0, 0x7b, 0x39),
-        ModLoader::NeoForge => Color::Rgb(0xe0, 0x54, 0x1b),
-        ModLoader::Quilt => Color::Rgb(0xa6, 0x5c, 0xcb),
+        ModLoader::Vanilla => THEME.profiles.loader_vanilla,
+        ModLoader::Fabric => THEME.profiles.loader_fabric,
+        ModLoader::Forge => THEME.profiles.loader_forge,
+        ModLoader::NeoForge => THEME.profiles.loader_neoforge,
+        ModLoader::Quilt => THEME.profiles.loader_quilt,
     }
 }
 
@@ -194,15 +194,15 @@ impl WidgetKey for State {
 
 pub fn render(frame: &mut Frame, area: Rect, focused: FocusedArea, state: &mut State) {
     let color = if focused == FocusedArea::Profiles {
-        THEME.colors.border_focused
+        THEME.profiles.border_focused_fg
     } else {
-        THEME.colors.border_unfocused
+        THEME.profiles.border_unfocused_fg
     };
 
     let mut block = Block::default()
         .title(styled_title("Profiles", true))
         .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
+        .border_type(THEME.general.border_type.to_border_type())
         .border_style(Style::default().fg(color));
 
     if let Some(search_line) = state.search.title_line() {
@@ -224,25 +224,27 @@ pub fn render(frame: &mut Frame, area: Rect, focused: FocusedArea, state: &mut S
         let instance = &state.instances[idx];
 
         let stripe_bg = if context.index % 2 == 0 {
-            Color::Reset
+            THEME.general.bg
         } else {
-            THEME.colors.row_alternate_bg
+            THEME.profiles.row_alt_bg
         };
 
         let (name_style, meta_style, bg) = if context.is_selected {
+            let mut style = Style::default().fg(THEME.profiles.selected_fg);
+            if THEME.profiles.selected_bold {
+                style = style.add_modifier(Modifier::BOLD);
+            }
             (
-                Style::default()
-                    .fg(THEME.colors.row_highlight)
-                    .add_modifier(Modifier::BOLD),
-                Style::default().fg(THEME.colors.row_highlight),
-                THEME.colors.row_background,
+                style,
+                Style::default().fg(THEME.profiles.selected_fg),
+                THEME.profiles.selected_bg,
             )
         } else {
             (
                 Style::default()
-                    .fg(THEME.colors.border_focused)
+                    .fg(THEME.profiles.border_focused_fg)
                     .add_modifier(Modifier::BOLD),
-                Style::default().fg(THEME.colors.border_unfocused),
+                Style::default().fg(THEME.profiles.border_unfocused_fg),
                 stripe_bg,
             )
         };
@@ -257,11 +259,11 @@ pub fn render(frame: &mut Frame, area: Rect, focused: FocusedArea, state: &mut S
             let rename_val = state.renaming.as_deref().unwrap_or("");
             Line::from(vec![
                 stripe.clone(),
-                Span::styled(rename_val, Style::default().fg(THEME.colors.foreground)),
+                Span::styled(rename_val, Style::default().fg(THEME.profiles.text_fg)),
                 Span::styled(
                     "\u{2588}",
                     Style::default()
-                        .fg(THEME.colors.border_focused)
+                        .fg(THEME.profiles.border_focused_fg)
                         .add_modifier(Modifier::SLOW_BLINK),
                 ),
             ])
@@ -275,11 +277,11 @@ pub fn render(frame: &mut Frame, area: Rect, focused: FocusedArea, state: &mut S
         let (meta_text, meta_text_style) = match get_run_state(&instance.name) {
             Some(RunState::Authenticating) => (
                 "Authenticating".to_string(),
-                Style::default().fg(THEME.colors.success),
+                Style::default().fg(THEME.profiles.running_fg),
             ),
             Some(RunState::Running) | Some(RunState::Starting) => (
                 "Playing".to_string(),
-                Style::default().fg(THEME.colors.success),
+                Style::default().fg(THEME.profiles.running_fg),
             ),
             _ => (format_last_played(instance.last_played), meta_style),
         };
@@ -300,7 +302,7 @@ pub fn render(frame: &mut Frame, area: Rect, focused: FocusedArea, state: &mut S
             .begin_symbol(Some("\u{25b2}"))
             .style(
                 Style::default()
-                    .fg(THEME.colors.border_focused)
+                    .fg(THEME.profiles.border_focused_fg)
                     .add_modifier(Modifier::BOLD),
             )
             .thumb_symbol("\u{2551}")

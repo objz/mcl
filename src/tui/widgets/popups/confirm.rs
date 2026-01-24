@@ -66,20 +66,20 @@ impl Widget for ConfirmPopup {
         let title = Line::from(vec![Span::styled(
             format!(" Delete '{}' ", self.instance_name),
             Style::default()
-                .fg(THEME.colors.border_focused)
+                .fg(THEME.popup_confirm.border_fg)
                 .add_modifier(Modifier::BOLD),
         )]);
         let kb = keybind_line(&[("Enter", " confirm")]);
 
         let popup = PopupFrame {
             title,
-            border_color: THEME.colors.border_focused,
-            bg: Some(THEME.colors.row_alternate_bg),
+            border_color: THEME.popup_confirm.border_fg,
+            bg: Some(THEME.popup_confirm.highlight_bg),
             keybinds: Some(kb),
             search_line: None,
             content: Box::new(|inner, buf| {
                 Paragraph::new("This will permanently remove the instance")
-                    .style(Style::default().fg(THEME.colors.foreground))
+                    .style(Style::default().fg(THEME.popup_confirm.text_fg))
                     .render(inner, buf);
             }),
         };

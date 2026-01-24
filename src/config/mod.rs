@@ -51,9 +51,9 @@ fn ensure_config_exists(default_path: &str) -> PathBuf {
     config_path
 }
 
-pub fn load_config(config_path: &PathBuf) -> Result<Config, ConfigError> {
+pub fn load_config(config_path: &std::path::Path) -> Result<Config, ConfigError> {
     let built = match ConfigLoader::builder()
-        .add_source(File::from(config_path.clone()).required(false))
+        .add_source(File::from(config_path).required(false))
         .build()
     {
         Ok(c) => c,
@@ -81,7 +81,7 @@ pub fn load_config(config_path: &PathBuf) -> Result<Config, ConfigError> {
 }
 
 pub static SETTINGS: Lazy<Config> = Lazy::new(|| {
-    let path: PathBuf = ensure_config_exists("assets/default.toml");
+    let path: PathBuf = ensure_config_exists("assets/config.toml");
     match load_config(&path) {
         Ok(config) => config,
         Err(e) => {
@@ -90,7 +90,7 @@ pub static SETTINGS: Lazy<Config> = Lazy::new(|| {
                 general: types::General::default(),
                 paths: types::Paths::default(),
                 defaults: types::Defaults::default(),
-                colors: types::Colors::default(),
+                ui: types::Ui::default(),
             }
         }
     }

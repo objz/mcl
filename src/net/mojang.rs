@@ -144,9 +144,14 @@ pub async fn download_client_jar(
 
     set_action(format!("Downloading Minecraft {}...", meta.id));
 
-    let result = download_file(client, &meta.downloads.client.url, &jar_path, |current, total| {
-        set_progress(current, total);
-    })
+    let result = download_file(
+        client,
+        &meta.downloads.client.url,
+        &jar_path,
+        |current, total| {
+            set_progress(current, total);
+        },
+    )
     .await;
 
     clear();

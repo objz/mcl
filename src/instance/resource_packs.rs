@@ -146,15 +146,7 @@ fn read_pack_description(archive: &mut zip::ZipArchive<std::fs::File>) -> String
 }
 
 fn read_pack_metadata_from_dir(dir: &Path) -> (String, String, Option<Vec<u8>>) {
-    let actual_dir = if dir
-        .file_name()
-        .and_then(|n| n.to_str())
-        .is_some_and(|n| n.ends_with(".disabled"))
-    {
-        dir.to_path_buf()
-    } else {
-        dir.to_path_buf()
-    };
+    let actual_dir = dir.to_path_buf();
 
     let description = {
         let mcmeta_path = actual_dir.join("pack.mcmeta");

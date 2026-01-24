@@ -125,7 +125,7 @@ pub fn offline_uuid(username: &str) -> String {
     format!(
         "{:08x}-{:04x}-3{:03x}-{:04x}-{:012x}",
         (h >> 32) as u32,
-        (h >> 16) as u16 & 0xFFFF,
+        (h >> 16) as u16,
         (h >> 4) as u16 & 0x0FFF,
         (h as u16 & 0x3FFF) | 0x8000,
         h & 0xFFFFFFFFFFFF,

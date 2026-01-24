@@ -4,8 +4,8 @@ pub mod mojang;
 pub mod neoforge;
 pub mod quilt;
 
-use std::path::Path;
 use reqwest::Client;
+use std::path::Path;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -35,7 +35,9 @@ impl HttpClient {
             Ok(client) => HttpClient { inner: client },
             Err(e) => {
                 tracing::error!("Failed to build HTTP client: {}", e);
-                HttpClient { inner: Client::new() }
+                HttpClient {
+                    inner: Client::new(),
+                }
             }
         }
     }
@@ -66,7 +68,10 @@ pub async fn download_file(
     if !response.status().is_success() {
         let status = response.status().as_u16();
         tracing::error!("HTTP {} for {}", status, url);
-        return Err(NetError::StatusError { status, url: url.to_string() });
+        return Err(NetError::StatusError {
+            status,
+            url: url.to_string(),
+        });
     }
 
     let total = response.content_length().unwrap_or(0);

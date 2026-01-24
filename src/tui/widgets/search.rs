@@ -77,9 +77,9 @@ impl SearchState {
             return None;
         }
 
-        let dim = Style::default().fg(THEME.colors.border_unfocused);
+        let dim = Style::default().fg(THEME.search.border_unfocused_fg);
         let accent = Style::default()
-            .fg(THEME.colors.border_focused)
+            .fg(THEME.search.border_focused_fg)
             .add_modifier(Modifier::BOLD);
 
         let mut spans = vec![

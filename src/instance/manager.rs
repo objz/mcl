@@ -109,7 +109,6 @@ impl InstanceManager {
         loader_version: Option<&str>,
         instance_dir: &std::path::Path,
     ) -> Result<InstanceConfig, InstanceError> {
-
         let minecraft_dir = instance_dir.join(".minecraft");
         for subdir in &["mods", "config", "resourcepacks", "shaderpacks", "saves"] {
             match std::fs::create_dir_all(minecraft_dir.join(subdir)) {
@@ -163,21 +162,28 @@ impl InstanceManager {
             }
         };
 
-        let version_meta = match crate::net::mojang::fetch_version_meta(&self.client, version_entry).await {
-            Ok(m) => m,
-            Err(e) => {
-                return Err(InstanceError::Download(e));
-            }
-        };
+        let version_meta =
+            match crate::net::mojang::fetch_version_meta(&self.client, version_entry).await {
+                Ok(m) => m,
+                Err(e) => {
+                    return Err(InstanceError::Download(e));
+                }
+            };
 
-        match crate::net::mojang::download_client_jar(&self.client, &version_meta, &self.meta_dir).await {
+        match crate::net::mojang::download_client_jar(&self.client, &version_meta, &self.meta_dir)
+            .await
+        {
             Ok(_) => {}
             Err(e) => {
                 return Err(InstanceError::Download(e));
             }
         }
 
-        let meta_json_path = self.meta_dir.join("versions").join(game_version).join("meta.json");
+        let meta_json_path = self
+            .meta_dir
+            .join("versions")
+            .join(game_version)
+            .join("meta.json");
         match serde_json::to_string_pretty(&version_meta) {
             Ok(json) => {
                 if let Err(e) = std::fs::write(&meta_json_path, &json) {
@@ -189,14 +195,17 @@ impl InstanceManager {
             }
         }
 
-        match crate::net::mojang::download_libraries(&self.client, &version_meta, &self.meta_dir).await {
+        match crate::net::mojang::download_libraries(&self.client, &version_meta, &self.meta_dir)
+            .await
+        {
             Ok(_) => {}
             Err(e) => {
                 return Err(InstanceError::Download(e));
             }
         }
 
-        match crate::net::mojang::download_assets(&self.client, &version_meta, &self.meta_dir).await {
+        match crate::net::mojang::download_assets(&self.client, &version_meta, &self.meta_dir).await
+        {
             Ok(_) => {}
             Err(e) => {
                 return Err(InstanceError::Download(e));
@@ -220,7 +229,7 @@ impl InstanceManager {
                 &self.client,
                 game_version,
                 effective_loader_version,
-                &instance_dir,
+                instance_dir,
                 &self.meta_dir,
             )
             .await
@@ -274,7 +283,9 @@ impl InstanceManager {
     pub fn rename(&self, old_name: &str, new_name: &str) -> Result<(), InstanceError> {
         let new_name = new_name.trim();
         if new_name.is_empty() {
-            return Err(InstanceError::InvalidName("Name cannot be empty".to_string()));
+            return Err(InstanceError::InvalidName(
+                "Name cannot be empty".to_string(),
+            ));
         }
         if old_name == new_name {
             return Ok(());

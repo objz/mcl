@@ -1,0 +1,17 @@
+[general]
+debug = false
+
+[paths]
+instances_dir = "~/.local/share/mcl/instances"
+meta_dir = "~/.local/share/mcl/meta"
+java_path = ""
+
+[defaults]
+memory_min = "512M"
+memory_max = "2G"
+
+[ui]
+error_auto_dismiss_ms = 5000
+error_slide_start_ms = 3500
+error_fly_out_ms = 300
+max_error_events = 50

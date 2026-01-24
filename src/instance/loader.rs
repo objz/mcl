@@ -99,10 +99,7 @@ impl ModLoaderInstaller for FabricInstaller {
     }
 
     async fn get_game_versions(&self, client: &HttpClient) -> Result<Vec<GameVersion>, NetError> {
-        match fabric::fetch_fabric_game_versions(client).await {
-            Ok(versions) => Ok(versions),
-            Err(e) => Err(e),
-        }
+        fabric::fetch_fabric_game_versions(client).await
     }
 
     async fn get_versions(
@@ -130,13 +127,13 @@ impl ModLoaderInstaller for FabricInstaller {
         _instance_dir: &Path,
         meta_dir: &Path,
     ) -> Result<(), NetError> {
-        let profile =
-            match fabric::fetch_fabric_profile(client, game_version, loader_version).await {
-                Ok(p) => p,
-                Err(e) => {
-                    return Err(e);
-                }
-            };
+        let profile = match fabric::fetch_fabric_profile(client, game_version, loader_version).await
+        {
+            Ok(p) => p,
+            Err(e) => {
+                return Err(e);
+            }
+        };
 
         match fabric::download_fabric_libraries(client, &profile, meta_dir).await {
             Ok(()) => {}
@@ -175,10 +172,7 @@ impl ModLoaderInstaller for ForgeInstaller {
     }
 
     async fn get_game_versions(&self, client: &HttpClient) -> Result<Vec<GameVersion>, NetError> {
-        match forge::fetch_forge_game_versions(client).await {
-            Ok(versions) => Ok(versions),
-            Err(e) => Err(e),
-        }
+        forge::fetch_forge_game_versions(client).await
     }
 
     async fn get_versions(
@@ -186,12 +180,7 @@ impl ModLoaderInstaller for ForgeInstaller {
         client: &HttpClient,
         game_version: &str,
     ) -> Result<Vec<String>, NetError> {
-        match forge::fetch_forge_versions(client, game_version).await {
-            Ok(v) => Ok(v),
-            Err(e) => {
-                Err(e)
-            }
-        }
+        forge::fetch_forge_versions(client, game_version).await
     }
 
     async fn install(
@@ -305,10 +294,7 @@ impl ModLoaderInstaller for QuiltInstaller {
     }
 
     async fn get_game_versions(&self, client: &HttpClient) -> Result<Vec<GameVersion>, NetError> {
-        match quilt::fetch_quilt_game_versions(client).await {
-            Ok(versions) => Ok(versions),
-            Err(e) => Err(e),
-        }
+        quilt::fetch_quilt_game_versions(client).await
     }
 
     async fn get_versions(
@@ -336,13 +322,12 @@ impl ModLoaderInstaller for QuiltInstaller {
         _instance_dir: &Path,
         meta_dir: &Path,
     ) -> Result<(), NetError> {
-        let profile =
-            match quilt::fetch_quilt_profile(client, game_version, loader_version).await {
-                Ok(p) => p,
-                Err(e) => {
-                    return Err(e);
-                }
-            };
+        let profile = match quilt::fetch_quilt_profile(client, game_version, loader_version).await {
+            Ok(p) => p,
+            Err(e) => {
+                return Err(e);
+            }
+        };
 
         match quilt::download_quilt_libraries(client, &profile, meta_dir).await {
             Ok(()) => {}
@@ -381,10 +366,7 @@ impl ModLoaderInstaller for NeoForgeInstaller {
     }
 
     async fn get_game_versions(&self, client: &HttpClient) -> Result<Vec<GameVersion>, NetError> {
-        match neoforge::fetch_neoforge_game_versions(client).await {
-            Ok(versions) => Ok(versions),
-            Err(e) => Err(e),
-        }
+        neoforge::fetch_neoforge_game_versions(client).await
     }
 
     async fn get_versions(
@@ -392,12 +374,7 @@ impl ModLoaderInstaller for NeoForgeInstaller {
         client: &HttpClient,
         game_version: &str,
     ) -> Result<Vec<String>, NetError> {
-        match neoforge::fetch_neoforge_versions(client, game_version).await {
-            Ok(v) => Ok(v),
-            Err(e) => {
-                Err(e)
-            }
-        }
+        neoforge::fetch_neoforge_versions(client, game_version).await
     }
 
     async fn install(
@@ -478,10 +455,9 @@ impl ModLoaderInstaller for NeoForgeInstaller {
                                         tracing::warn!("Failed to save NeoForge profile: {}", e);
                                     }
                                 }
-                                Err(e) => tracing::warn!(
-                                    "Failed to serialize NeoForge profile: {}",
-                                    e
-                                ),
+                                Err(e) => {
+                                    tracing::warn!("Failed to serialize NeoForge profile: {}", e)
+                                }
                             }
                         }
                         Err(e) => tracing::warn!("Failed to create loader-profiles dir: {}", e),
@@ -542,7 +518,10 @@ mod tests {
         let installer = VanillaInstaller;
         let tmp = std::env::temp_dir().join("mcl_test_vanilla_install");
         let meta = std::env::temp_dir().join("mcl_test_meta");
-        match installer.install(&client, "1.20.1", "vanilla", &tmp, &meta).await {
+        match installer
+            .install(&client, "1.20.1", "vanilla", &tmp, &meta)
+            .await
+        {
             Ok(()) => {}
             Err(e) => assert!(false, "install failed: {}", e),
         }

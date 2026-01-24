@@ -79,6 +79,8 @@ pub async fn init() {
         .get_matches();
 
     if matches.subcommand().is_none() {
+        // Force eager theme initialization before TUI starts (prevents lazy init inside render loop)
+        let _ = &*crate::tui::theme::THEME;
         match tui::show().await {
             Ok(_) => {}
             Err(e) => {

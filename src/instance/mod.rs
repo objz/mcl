@@ -1,7 +1,7 @@
 pub mod launch;
+pub mod loader;
 pub mod log_files;
 pub mod manager;
-pub mod loader;
 pub mod models;
 pub mod mods;
 pub mod resource_packs;

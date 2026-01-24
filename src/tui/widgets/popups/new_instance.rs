@@ -1,5 +1,8 @@
 use super::base::PopupFrame;
-use crate::instance::{loader::{get_installer, GameVersion}, models::ModLoader};
+use crate::instance::{
+    loader::{get_installer, GameVersion},
+    models::ModLoader,
+};
 use crate::tui::layout::FocusedArea;
 use crate::tui::theme::THEME;
 use crate::tui::widgets::profiles;
@@ -15,8 +18,10 @@ use ratatui::{
 use std::sync::{Arc, Mutex};
 use tui_prompts::{FocusState, State as PromptState, TextState};
 
-static WIZARD_STATE: Lazy<Arc<Mutex<WizardState>>> = Lazy::new(|| Arc::new(Mutex::new(WizardState::default())));
-static WIZARD_RESULT: Lazy<Arc<Mutex<Option<WizardParams>>>> = Lazy::new(|| Arc::new(Mutex::new(None)));
+static WIZARD_STATE: Lazy<Arc<Mutex<WizardState>>> =
+    Lazy::new(|| Arc::new(Mutex::new(WizardState::default())));
+static WIZARD_RESULT: Lazy<Arc<Mutex<Option<WizardParams>>>> =
+    Lazy::new(|| Arc::new(Mutex::new(None)));
 
 #[derive(Debug, Clone)]
 pub struct WizardParams {
@@ -151,8 +156,8 @@ pub fn render(frame: &mut Frame, area: Rect, _focused: FocusedArea) {
 
     let popup = PopupFrame {
         title: wizard_title(&snapshot),
-        border_color: THEME.colors.border_focused,
-        bg: Some(THEME.colors.popup_bg),
+        border_color: THEME.popup_new_instance.border_fg,
+        bg: Some(THEME.popup_new_instance.bg),
         keybinds: Some(keybinds),
         search_line,
         content: Box::new(move |popup_area, buf| {
@@ -188,7 +193,9 @@ pub fn handle_key(key_event: &KeyEvent, profiles_state: &mut profiles::State) {
         WizardStep::Name => handle_name_key(&mut state, key_event, profiles_state),
         WizardStep::Version => handle_version_key(&mut state, key_event, profiles_state),
         WizardStep::Loader => handle_loader_key(&mut state, key_event, profiles_state),
-        WizardStep::LoaderVersion => handle_loader_version_key(&mut state, key_event, profiles_state),
+        WizardStep::LoaderVersion => {
+            handle_loader_version_key(&mut state, key_event, profiles_state)
+        }
         WizardStep::Confirm => handle_confirm_key(&mut state, key_event, profiles_state),
     }
 }
@@ -216,7 +223,9 @@ pub fn popup_rect(frame_area: Rect) -> Rect {
             frame_area.centered(w, Constraint::Length(h))
         }
         WizardStep::Version | WizardStep::LoaderVersion => {
-            let h = (frame_area.height * 2 / 3).max(10).min(frame_area.height.saturating_sub(4));
+            let h = (frame_area.height * 2 / 3)
+                .max(10)
+                .min(frame_area.height.saturating_sub(4));
             frame_area.centered(w, Constraint::Length(h))
         }
         WizardStep::Loader => {
@@ -455,40 +464,44 @@ fn wizard_title(_state: &WizardState) -> Line<'static> {
 fn step_keybinds(state: &WizardState) -> ratatui::text::Line<'static> {
     use super::keybind_line;
     match state.step {
-        WizardStep::Name          => keybind_line(&[("Enter", " continue")]),
-        WizardStep::Loader        => keybind_line(&[("h", " back"), ("Enter", " select")]),
-        WizardStep::Version       => keybind_line(&[("/", " search"), ("s", " snap"), ("h", " back"), ("Enter", " select")]),
+        WizardStep::Name => keybind_line(&[("Enter", " continue")]),
+        WizardStep::Loader => keybind_line(&[("h", " back"), ("Enter", " select")]),
+        WizardStep::Version => keybind_line(&[
+            ("/", " search"),
+            ("s", " snap"),
+            ("h", " back"),
+            ("Enter", " select"),
+        ]),
         WizardStep::LoaderVersion => keybind_line(&[("h", " back"), ("Enter", " select")]),
-        WizardStep::Confirm       => keybind_line(&[("h", " back"), ("Enter", " create")]),
+        WizardStep::Confirm => keybind_line(&[("h", " back"), ("Enter", " create")]),
     }
 }
 
 fn render_name_step(state: &WizardState, area: Rect, buf: &mut ratatui::buffer::Buffer) {
-    use ratatui::text::{Line, Span};
     use ratatui::style::Modifier;
+    use ratatui::text::{Line, Span};
 
     let value = state.name_state.value();
     let line = if value.is_empty() {
         Line::from(vec![
             Span::styled(
                 "Instance name...",
-                Style::default()
-                    .fg(THEME.colors.border_unfocused),
+                Style::default().fg(THEME.popup_new_instance.field_inactive_border_fg),
             ),
             Span::styled(
                 "\u{2588}",
                 Style::default()
-                    .fg(THEME.colors.border_focused)
+                    .fg(THEME.popup_new_instance.border_fg)
                     .add_modifier(Modifier::SLOW_BLINK),
             ),
         ])
     } else {
         Line::from(vec![
-            Span::styled(value, Style::default().fg(THEME.colors.foreground)),
+            Span::styled(value, Style::default().fg(THEME.popup_new_instance.text_fg)),
             Span::styled(
                 "\u{2588}",
                 Style::default()
-                    .fg(THEME.colors.border_focused)
+                    .fg(THEME.popup_new_instance.border_fg)
                     .add_modifier(Modifier::SLOW_BLINK),
             ),
         ])
@@ -501,13 +514,13 @@ fn render_version_step(state: &WizardState, area: Rect, buf: &mut ratatui::buffe
     match &state.versions {
         LoadState::Idle | LoadState::Loading => {
             Paragraph::new("Loading versions...")
-                .style(Style::default().fg(THEME.colors.border_unfocused))
+                .style(Style::default().fg(THEME.popup_new_instance.field_inactive_border_fg))
                 .render(area, buf);
         }
         LoadState::Error(message) => {
             Paragraph::new(message.as_str())
                 .wrap(Wrap { trim: true })
-                .style(Style::default().fg(THEME.colors.error))
+                .style(Style::default().fg(THEME.popup_new_instance.error_fg))
                 .render(area, buf);
         }
         LoadState::Loaded(_) => {
@@ -521,7 +534,7 @@ fn render_version_step(state: &WizardState, area: Rect, buf: &mut ratatui::buffe
                     };
                     ListItem::new(Line::from(Span::styled(
                         format!("{}{}", version.id, suffix),
-                        Style::default().fg(THEME.colors.foreground),
+                        Style::default().fg(THEME.popup_new_instance.text_fg),
                     )))
                 })
                 .collect();
@@ -529,7 +542,7 @@ fn render_version_step(state: &WizardState, area: Rect, buf: &mut ratatui::buffe
             let list = List::new(items)
                 .highlight_style(
                     Style::default()
-                        .fg(THEME.colors.accent)
+                        .fg(THEME.popup_new_instance.accent_fg)
                         .add_modifier(Modifier::BOLD),
                 )
                 .highlight_symbol("▶ ");
@@ -554,7 +567,7 @@ fn render_loader_step(state: &WizardState, area: Rect, buf: &mut ratatui::buffer
         .map(|loader| {
             ListItem::new(Line::from(Span::styled(
                 loader.to_string(),
-                Style::default().fg(THEME.colors.foreground),
+                Style::default().fg(THEME.popup_new_instance.text_fg),
             )))
         })
         .collect();
@@ -562,7 +575,7 @@ fn render_loader_step(state: &WizardState, area: Rect, buf: &mut ratatui::buffer
     let list = List::new(items)
         .highlight_style(
             Style::default()
-                .fg(THEME.colors.accent)
+                .fg(THEME.popup_new_instance.accent_fg)
                 .add_modifier(Modifier::BOLD),
         )
         .highlight_symbol("▶ ");
@@ -571,14 +584,10 @@ fn render_loader_step(state: &WizardState, area: Rect, buf: &mut ratatui::buffer
     StatefulWidget::render(list, area, buf, &mut list_state);
 }
 
-fn render_loader_version_step(
-    state: &WizardState,
-    area: Rect,
-    buf: &mut ratatui::buffer::Buffer,
-) {
+fn render_loader_version_step(state: &WizardState, area: Rect, buf: &mut ratatui::buffer::Buffer) {
     if state.selected_loader() == ModLoader::Vanilla {
         Paragraph::new("Vanilla has no loader version.")
-            .style(Style::default().fg(THEME.colors.border_unfocused))
+            .style(Style::default().fg(THEME.popup_new_instance.field_inactive_border_fg))
             .render(area, buf);
         return;
     }
@@ -586,13 +595,13 @@ fn render_loader_version_step(
     match &state.loader_versions {
         LoadState::Idle | LoadState::Loading => {
             Paragraph::new(format!("Loading {} versions...", state.selected_loader()))
-                .style(Style::default().fg(THEME.colors.border_unfocused))
+                .style(Style::default().fg(THEME.popup_new_instance.field_inactive_border_fg))
                 .render(area, buf);
         }
         LoadState::Error(message) => {
             Paragraph::new(message.as_str())
                 .wrap(Wrap { trim: true })
-                .style(Style::default().fg(THEME.colors.error))
+                .style(Style::default().fg(THEME.popup_new_instance.error_fg))
                 .render(area, buf);
         }
         LoadState::Loaded(versions) => {
@@ -601,7 +610,7 @@ fn render_loader_version_step(
                 .map(|version| {
                     ListItem::new(Line::from(Span::styled(
                         version.clone(),
-                        Style::default().fg(THEME.colors.foreground),
+                        Style::default().fg(THEME.popup_new_instance.text_fg),
                     )))
                 })
                 .collect();
@@ -609,7 +618,7 @@ fn render_loader_version_step(
             let list = List::new(items)
                 .highlight_style(
                     Style::default()
-                        .fg(THEME.colors.accent)
+                        .fg(THEME.popup_new_instance.accent_fg)
                         .add_modifier(Modifier::BOLD),
                 )
                 .highlight_symbol("▶ ");
@@ -634,7 +643,7 @@ fn render_confirm_step(state: &WizardState, area: Rect, buf: &mut ratatui::buffe
             .unwrap_or_else(|| "<not selected>".to_string())
     };
 
-    let label_style = Style::default().fg(THEME.colors.border_focused);
+    let label_style = Style::default().fg(THEME.popup_new_instance.border_fg);
 
     Paragraph::new(vec![
         Line::from(vec![
@@ -654,7 +663,7 @@ fn render_confirm_step(state: &WizardState, area: Rect, buf: &mut ratatui::buffe
             Span::raw(loader_version),
         ]),
     ])
-    .style(Style::default().fg(THEME.colors.foreground))
+    .style(Style::default().fg(THEME.popup_new_instance.text_fg))
     .wrap(Wrap { trim: true })
     .render(area, buf);
 }
@@ -715,16 +724,14 @@ fn ensure_versions_loaded(state: &mut WizardState) {
                     tracing::error!("Wizard state lock poisoned: {}", e);
                 }
             },
-            Err(e) => {
-                match versions_arc.lock() {
-                    Ok(mut s) => {
-                        s.versions = LoadState::Error(e.to_string());
-                    }
-                    Err(lock_error) => {
-                        tracing::error!("Wizard state lock poisoned: {}", lock_error);
-                    }
+            Err(e) => match versions_arc.lock() {
+                Ok(mut s) => {
+                    s.versions = LoadState::Error(e.to_string());
                 }
-            }
+                Err(lock_error) => {
+                    tracing::error!("Wizard state lock poisoned: {}", lock_error);
+                }
+            },
         }
     });
 }
@@ -749,16 +756,14 @@ fn ensure_loader_versions_loaded(state: &mut WizardState, loader: ModLoader, gam
                     tracing::error!("Wizard state lock poisoned: {}", e);
                 }
             },
-            Err(e) => {
-                match versions_arc.lock() {
-                    Ok(mut s) => {
-                        s.loader_versions = LoadState::Error(e.to_string());
-                    }
-                    Err(lock_error) => {
-                        tracing::error!("Wizard state lock poisoned: {}", lock_error);
-                    }
+            Err(e) => match versions_arc.lock() {
+                Ok(mut s) => {
+                    s.loader_versions = LoadState::Error(e.to_string());
                 }
-            }
+                Err(lock_error) => {
+                    tracing::error!("Wizard state lock poisoned: {}", lock_error);
+                }
+            },
         }
     });
 }

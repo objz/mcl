@@ -186,8 +186,6 @@ pub async fn run_forge_installer(
     Ok(())
 }
 
-
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -198,7 +196,10 @@ mod tests {
         let client = HttpClient::new();
         match fetch_forge_versions(&client, "1.20.1").await {
             Ok(versions) => {
-                assert!(!versions.is_empty(), "Should have Forge versions for 1.20.1");
+                assert!(
+                    !versions.is_empty(),
+                    "Should have Forge versions for 1.20.1"
+                );
             }
             Err(e) => assert!(false, "fetch_forge_versions failed: {}", e),
         }

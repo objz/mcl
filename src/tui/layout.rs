@@ -6,8 +6,8 @@ use super::{
 use crate::instance::{InstanceConfig, InstanceManager};
 use crate::tui::error_buffer;
 use crate::tui::progress;
-use crate::tui::widgets::popups::confirm::{confirm_popup_area, ConfirmPopup};
 use crate::tui::widgets::popups::confirm as confirm_popup;
+use crate::tui::widgets::popups::confirm::{confirm_popup_area, ConfirmPopup};
 use crate::tui::widgets::popups::error::{popup_area, ErrorPopup};
 use color_eyre::eyre::Context;
 use crossterm::event::{self, Event};
@@ -150,7 +150,7 @@ impl App {
             if self.throbber_tick % 8 == 0 {
                 self.throbber_state.calc_next();
             }
-            
+
             terminal.draw(|frame| self.render_frame(frame))?;
             self.handle_events().wrap_err("handle events failed")?;
 
@@ -212,7 +212,12 @@ impl App {
             ])
             .split(main_chunks[2]);
 
-        widgets::account::render(frame, bottom_chunks[0], self.focused, &mut self.account_state);
+        widgets::account::render(
+            frame,
+            bottom_chunks[0],
+            self.focused,
+            &mut self.account_state,
+        );
         widgets::details::render(
             frame,
             bottom_chunks[1],
@@ -220,7 +225,12 @@ impl App {
             self.profiles_state.selected_instance(),
             &self.instance_manager.instances_dir,
         );
-        widgets::status::render(frame, bottom_chunks[2], self.focused, &mut self.throbber_state);
+        widgets::status::render(
+            frame,
+            bottom_chunks[2],
+            self.focused,
+            &mut self.throbber_state,
+        );
 
         if self.focused == FocusedArea::OverviewExpanded {
             self.render_log_overlay(frame);
@@ -257,18 +267,16 @@ impl App {
 
     fn handle_events(&mut self) -> color_eyre::Result<()> {
         match crossterm::event::poll(Duration::from_millis(16)) {
-            Ok(true) => {
-                match event::read() {
-                    Ok(Event::Key(key_event)) if key_event.kind == KeyEventKind::Press => self
-                        .handle_key_event(key_event)
-                        .wrap_err_with(|| format!("handling key event failed:\n{key_event:#?}")),
-                    Ok(_) => Ok(()),
-                    Err(e) => {
-                        tracing::error!("Event read error: {}", e);
-                        Ok(())
-                    }
+            Ok(true) => match event::read() {
+                Ok(Event::Key(key_event)) if key_event.kind == KeyEventKind::Press => self
+                    .handle_key_event(key_event)
+                    .wrap_err_with(|| format!("handling key event failed:\n{key_event:#?}")),
+                Ok(_) => Ok(()),
+                Err(e) => {
+                    tracing::error!("Event read error: {}", e);
+                    Ok(())
                 }
-            }
+            },
             Ok(false) => Ok(()),
             Err(e) => {
                 tracing::error!("Event poll error: {}", e);
@@ -363,17 +371,11 @@ impl App {
                     return Ok(());
                 }
             } else if self.content_tab == widgets::content::ContentTab::Screenshots {
-                if widgets::screenshots_grid::handle_key(
-                    &key_event,
-                    &mut self.screenshots_state,
-                ) {
+                if widgets::screenshots_grid::handle_key(&key_event, &mut self.screenshots_state) {
                     return Ok(());
                 }
             } else if self.content_tab == widgets::content::ContentTab::Worlds {
-                if widgets::content_list::handle_key_no_toggle(
-                    &key_event,
-                    &mut self.worlds_state,
-                ) {
+                if widgets::content_list::handle_key_no_toggle(&key_event, &mut self.worlds_state) {
                     return Ok(());
                 }
             } else {
@@ -427,7 +429,12 @@ impl App {
                                 let old_name = inst.name.clone();
                                 match self.instance_manager.rename(&old_name, &new_name) {
                                     Ok(()) => {
-                                        if let Some(inst) = self.profiles_state.instances.iter_mut().find(|i| i.name == old_name) {
+                                        if let Some(inst) = self
+                                            .profiles_state
+                                            .instances
+                                            .iter_mut()
+                                            .find(|i| i.name == old_name)
+                                        {
                                             inst.name = new_name.trim().to_string();
                                         }
                                     }
@@ -496,7 +503,9 @@ impl App {
                             && key_event.modifiers.contains(KeyModifiers::SHIFT) =>
                     {
                         if let Some(instance) = self.profiles_state.selected_instance() {
-                            let dir = self.instance_manager.instances_dir
+                            let dir = self
+                                .instance_manager
+                                .instances_dir
                                 .join(&instance.name)
                                 .join(".minecraft");
                             if let Err(e) = std::process::Command::new("xdg-open")
@@ -601,7 +610,9 @@ impl App {
 
     fn run_editor(terminal: &mut ratatui::DefaultTerminal, path: &std::path::Path) {
         use ratatui::crossterm::{
-            terminal::{disable_raw_mode, enable_raw_mode, LeaveAlternateScreen, EnterAlternateScreen},
+            terminal::{
+                disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
+            },
             ExecutableCommand,
         };
         use std::io::stdout;
@@ -612,7 +623,17 @@ impl App {
 
         let is_tui_editor = matches!(
             editor.rsplit('/').next().unwrap_or(&editor),
-            "vi" | "vim" | "nvim" | "neovim" | "nano" | "micro" | "helix" | "hx" | "emacs" | "ne" | "joe" | "mcedit"
+            "vi" | "vim"
+                | "nvim"
+                | "neovim"
+                | "nano"
+                | "micro"
+                | "helix"
+                | "hx"
+                | "emacs"
+                | "ne"
+                | "joe"
+                | "mcedit"
         );
 
         if is_tui_editor {
@@ -666,9 +687,13 @@ impl App {
     }
 
     fn dismiss_expired_errors(&self) {
+        use crate::config::SETTINGS;
         loop {
             match error_buffer::peek_error() {
-                Some(event) if event.pushed_at.elapsed().as_millis() >= error_buffer::AUTO_DISMISS_MS => {
+                Some(event)
+                    if event.pushed_at.elapsed().as_millis()
+                        >= SETTINGS.ui.error_auto_dismiss_ms as u128 =>
+                {
                     error_buffer::pop_error();
                 }
                 _ => break,
@@ -715,9 +740,7 @@ impl App {
             layout::{Alignment, Margin},
             style::{Modifier, Style},
             text::Line,
-            widgets::{
-                Block, BorderType, Clear, Paragraph, Scrollbar, ScrollbarOrientation,
-            },
+            widgets::{Block, Clear, Paragraph, Scrollbar, ScrollbarOrientation},
         };
 
         let area = frame.area();
@@ -732,30 +755,30 @@ impl App {
             .collect();
 
         let visible_height = overlay.height.saturating_sub(2) as usize;
-        let was_at_bottom = self.log_overlay_scroll >= self.log_overlay_max_scroll.saturating_sub(1);
+        let was_at_bottom =
+            self.log_overlay_scroll >= self.log_overlay_max_scroll.saturating_sub(1);
         self.log_overlay_max_scroll = filtered.len().saturating_sub(visible_height);
-        if was_at_bottom {
-            self.log_overlay_scroll = self.log_overlay_max_scroll;
-        } else if self.log_overlay_scroll > self.log_overlay_max_scroll {
+        if was_at_bottom || self.log_overlay_scroll > self.log_overlay_max_scroll {
             self.log_overlay_scroll = self.log_overlay_max_scroll;
         }
-        self.log_overlay_scrollbar = ratatui::widgets::ScrollbarState::new(
-            self.log_overlay_max_scroll,
-        )
-        .position(self.log_overlay_scroll);
+        self.log_overlay_scrollbar =
+            ratatui::widgets::ScrollbarState::new(self.log_overlay_max_scroll)
+                .position(self.log_overlay_scroll);
 
         let mut block = Block::bordered()
-            .title_top(Line::from(" Logs ").style(
-                Style::default()
-                    .fg(THEME.colors.foreground)
-                    .add_modifier(Modifier::BOLD),
-            ))
+            .title_top(
+                Line::from(" Logs ").style(
+                    Style::default()
+                        .fg(THEME.log_overlay.text_fg)
+                        .add_modifier(Modifier::BOLD),
+                ),
+            )
             .title_bottom(
                 crate::tui::widgets::popups::keybind_line(&[("O", " close"), ("/", " search")])
                     .alignment(Alignment::Right),
             )
-            .border_type(BorderType::Rounded)
-            .border_style(Style::default().fg(THEME.colors.border_focused));
+            .border_type(THEME.general.border_type.to_border_type())
+            .border_style(Style::default().fg(THEME.log_overlay.border_fg));
 
         if let Some(sl) = self.log_overlay_search.title_line() {
             block = block.title_top(sl);
@@ -771,13 +794,13 @@ impl App {
             .take(visible_height)
             .map(|line| {
                 let style = if line.contains("ERROR") || line.contains("FATAL") {
-                    Style::default().fg(THEME.colors.error)
+                    Style::default().fg(THEME.log_overlay.error_fg)
                 } else if line.contains("WARN") {
-                    Style::default().fg(THEME.colors.warn)
+                    Style::default().fg(THEME.log_overlay.warn_fg)
                 } else if line.contains("DEBUG") || line.contains("TRACE") {
-                    Style::default().fg(THEME.colors.text_idle)
+                    Style::default().fg(THEME.log_overlay.debug_fg)
                 } else {
-                    Style::default().fg(THEME.colors.foreground)
+                    Style::default().fg(THEME.log_overlay.text_fg)
                 };
                 search.highlight_line(line, style)
             })
@@ -797,7 +820,7 @@ impl App {
                 .begin_symbol(Some("\u{25b2}"))
                 .style(
                     Style::default()
-                        .fg(THEME.colors.border_focused)
+                        .fg(THEME.log_overlay.border_fg)
                         .add_modifier(Modifier::BOLD),
                 )
                 .thumb_symbol("\u{2503}")
@@ -810,7 +833,8 @@ impl App {
 
     fn sync_error_effects(&mut self, events: &[error_buffer::ErrorEvent]) {
         use crate::tui::theme::THEME;
-        let active_ids: std::collections::HashSet<u64> = events.iter().map(|event| event.id).collect();
+        let active_ids: std::collections::HashSet<u64> =
+            events.iter().map(|event| event.id).collect();
         self.error_effects.retain(|id, _| active_ids.contains(id));
 
         for event in events {
@@ -819,7 +843,7 @@ impl App {
                     Motion::RightToLeft,
                     8,
                     0,
-                    THEME.colors.popup_bg,
+                    THEME.log_overlay.bg,
                     (300, Interpolation::SineOut),
                 ))
             });
@@ -833,19 +857,24 @@ impl App {
         event: &error_buffer::ErrorEvent,
         elapsed_ms: u128,
     ) {
+        use crate::config::SETTINGS;
         use crate::tui::theme::THEME;
-        const FLY_OUT_MS: u128 = 300;
-        let fly_start_ms = error_buffer::AUTO_DISMISS_MS.saturating_sub(FLY_OUT_MS);
+        let fly_out_ms = SETTINGS.ui.error_fly_out_ms as u128;
+        let fly_start_ms = SETTINGS.ui.error_auto_dismiss_ms as u128
+            - fly_out_ms.min(SETTINGS.ui.error_auto_dismiss_ms as u128);
 
         if elapsed_ms >= fly_start_ms {
-            let entry = self.error_effects.entry(event.id).or_insert(ErrorEffectState::Idle);
+            let entry = self
+                .error_effects
+                .entry(event.id)
+                .or_insert(ErrorEffectState::Idle);
             if !matches!(entry, ErrorEffectState::FadingOut(_)) {
                 *entry = ErrorEffectState::FadingOut(fx::slide_out(
                     Motion::LeftToRight,
                     8,
                     0,
-                    THEME.colors.popup_bg,
-                    (FLY_OUT_MS as u32, Interpolation::SineIn),
+                    THEME.log_overlay.bg,
+                    (fly_out_ms as u32, Interpolation::SineIn),
                 ));
             }
         }

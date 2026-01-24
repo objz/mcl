@@ -2,7 +2,7 @@ use ratatui::{
     layout::Rect,
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, BorderType, Borders, Paragraph},
+    widgets::{Block, Borders, Paragraph},
     Frame,
 };
 
@@ -20,15 +20,15 @@ pub fn render(
     _instances_dir: &std::path::Path,
 ) {
     let color = if focused == FocusedArea::Settings {
-        THEME.colors.border_focused
+        THEME.details.border_focused_fg
     } else {
-        THEME.colors.border_unfocused
+        THEME.details.border_unfocused_fg
     };
 
     let mut block = Block::default()
         .title(styled_title("Settings", true))
         .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
+        .border_type(THEME.general.border_type.to_border_type())
         .border_style(Style::default().fg(color));
 
     if focused == FocusedArea::Settings {
@@ -47,17 +47,17 @@ pub fn render(
     let Some(inst) = instance else {
         frame.render_widget(
             Paragraph::new("No instance selected.")
-                .style(Style::default().fg(THEME.colors.text_idle)),
+                .style(Style::default().fg(THEME.details.label_fg)),
             inner,
         );
         return;
     };
 
-    let label_style = Style::default().fg(THEME.colors.text_idle);
+    let label_style = Style::default().fg(THEME.details.label_fg);
     let value_style = Style::default()
-        .fg(THEME.colors.foreground)
+        .fg(THEME.details.value_fg)
         .add_modifier(Modifier::BOLD);
-    let dim_style = Style::default().fg(THEME.colors.border_unfocused);
+    let dim_style = Style::default().fg(THEME.details.border_unfocused_fg);
 
     let memory_min = inst.memory_min.as_deref().unwrap_or("512M");
     let memory_max = inst.memory_max.as_deref().unwrap_or("2G");

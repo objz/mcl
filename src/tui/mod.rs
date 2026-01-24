@@ -1,6 +1,6 @@
+pub mod error_buffer;
 pub mod layout;
 pub mod logging;
-pub mod error_buffer;
 pub mod progress;
 pub mod theme;
 pub mod widgets;

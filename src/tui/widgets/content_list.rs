@@ -239,11 +239,7 @@ pub fn handle_key_no_toggle(key_event: &KeyEvent, state: &mut ContentListState) 
             true
         }
         KeyCode::Enter if key_event.modifiers.contains(KeyModifiers::SHIFT) => {
-            if let Some(&real_idx) = state
-                .list_state
-                .selected
-                .and_then(|i| filtered.get(i))
-            {
+            if let Some(&real_idx) = state.list_state.selected.and_then(|i| filtered.get(i)) {
                 if let Some(dir) = state.entries[real_idx].path.parent() {
                     if let Err(e) = std::process::Command::new("xdg-open")
                         .arg(dir)
@@ -285,11 +281,7 @@ pub fn handle_key(key_event: &KeyEvent, state: &mut ContentListState) -> bool {
             true
         }
         KeyCode::Enter if key_event.modifiers.contains(KeyModifiers::SHIFT) => {
-            if let Some(&real_idx) = state
-                .list_state
-                .selected
-                .and_then(|i| filtered.get(i))
-            {
+            if let Some(&real_idx) = state.list_state.selected.and_then(|i| filtered.get(i)) {
                 if let Some(dir) = state.entries[real_idx].path.parent() {
                     if let Err(e) = std::process::Command::new("xdg-open")
                         .arg(dir)
@@ -304,19 +296,11 @@ pub fn handle_key(key_event: &KeyEvent, state: &mut ContentListState) -> bool {
             true
         }
         KeyCode::Enter => {
-            if let Some(&real_idx) = state
-                .list_state
-                .selected
-                .and_then(|i| filtered.get(i))
-            {
+            if let Some(&real_idx) = state.list_state.selected.and_then(|i| filtered.get(i)) {
                 state.list_state.selected = Some(real_idx);
                 state.toggle_selected();
-                state.list_state.selected = Some(
-                    filtered
-                        .iter()
-                        .position(|&i| i == real_idx)
-                        .unwrap_or(0),
-                );
+                state.list_state.selected =
+                    Some(filtered.iter().position(|&i| i == real_idx).unwrap_or(0));
             }
             true
         }
@@ -334,7 +318,8 @@ pub fn render(
 ) {
     if state.loading {
         frame.render_widget(
-            Paragraph::new(loading_text).style(Style::default().fg(THEME.colors.text_idle)),
+            Paragraph::new(loading_text)
+                .style(Style::default().fg(THEME.content_list.text_secondary_fg)),
             area,
         );
         return;
@@ -344,7 +329,8 @@ pub fn render(
 
     if filtered.is_empty() {
         frame.render_widget(
-            Paragraph::new(empty_text).style(Style::default().fg(THEME.colors.text_idle)),
+            Paragraph::new(empty_text)
+                .style(Style::default().fg(THEME.content_list.text_secondary_fg)),
             area,
         );
         return;
@@ -373,38 +359,50 @@ pub fn render(
         let stripe_bg = if context.index % 2 == 0 {
             Color::Reset
         } else {
-            THEME.colors.row_alternate_bg
+            THEME.content_list.row_alt_bg
         };
 
         let (name_style, description_style, background) = match (*enabled, show_selected) {
-            (true, true) => (
-                Style::default()
-                    .fg(THEME.colors.row_highlight)
-                    .add_modifier(Modifier::BOLD),
-                Style::default().fg(THEME.colors.row_highlight),
-                THEME.colors.row_background,
-            ),
+            (true, true) => {
+                let mut ns = Style::default().fg(THEME.content_list.selected_fg);
+                if THEME.content_list.selected_bold {
+                    ns = ns.add_modifier(Modifier::BOLD);
+                }
+                (
+                    ns,
+                    Style::default().fg(THEME.content_list.selected_fg),
+                    THEME.content_list.selected_bg,
+                )
+            }
             (true, false) => (
                 Style::default()
-                    .fg(THEME.colors.foreground)
+                    .fg(THEME.content_list.text_fg)
                     .add_modifier(Modifier::BOLD),
-                Style::default().fg(THEME.colors.text_idle),
+                Style::default().fg(THEME.content_list.text_secondary_fg),
                 stripe_bg,
             ),
-            (false, true) => (
-                Style::default()
-                    .fg(THEME.colors.row_highlight)
-                    .add_modifier(Modifier::CROSSED_OUT),
-                Style::default().fg(THEME.colors.row_highlight),
-                THEME.colors.row_background,
-            ),
-            (false, false) => (
-                Style::default()
-                    .fg(THEME.colors.text_idle)
-                    .add_modifier(Modifier::CROSSED_OUT),
-                Style::default().fg(THEME.colors.text_idle),
-                stripe_bg,
-            ),
+            (false, true) => {
+                let mut ns = Style::default().fg(THEME.content_list.selected_fg);
+                if THEME.content_list.disabled_crossed_out {
+                    ns = ns.add_modifier(Modifier::CROSSED_OUT);
+                }
+                (
+                    ns,
+                    Style::default().fg(THEME.content_list.selected_fg),
+                    THEME.content_list.selected_bg,
+                )
+            }
+            (false, false) => {
+                let mut ns = Style::default().fg(THEME.content_list.text_secondary_fg);
+                if THEME.content_list.disabled_crossed_out {
+                    ns = ns.add_modifier(Modifier::CROSSED_OUT);
+                }
+                (
+                    ns,
+                    Style::default().fg(THEME.content_list.text_secondary_fg),
+                    stripe_bg,
+                )
+            }
         };
 
         let has_icon = icon_pixels.is_some();
@@ -488,7 +486,7 @@ pub fn render(
             .begin_symbol(Some("\u{25b2}"))
             .style(
                 Style::default()
-                    .fg(THEME.colors.border_focused)
+                    .fg(THEME.content_list.border_focused_fg)
                     .add_modifier(Modifier::BOLD),
             )
             .thumb_symbol("\u{2551}")
@@ -599,7 +597,7 @@ fn icon_spans(icon_pixels: Option<&Vec<Vec<IconCell>>>, row: usize) -> Vec<Span<
             .collect(),
         None => vec![Span::styled(
             "      ",
-            Style::default().fg(THEME.colors.text_idle),
+            Style::default().fg(THEME.content_list.text_secondary_fg),
         )],
     }
 }

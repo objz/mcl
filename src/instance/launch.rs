@@ -121,7 +121,13 @@ pub async fn launch(
         .libraries
         .iter()
         .filter(|l| lib_allowed(l))
-        .filter_map(|l| l.downloads.as_ref()?.artifact.as_ref().map(|a| lib_dir.join(&a.path)))
+        .filter_map(|l| {
+            l.downloads
+                .as_ref()?
+                .artifact
+                .as_ref()
+                .map(|a| lib_dir.join(&a.path))
+        })
         .collect();
 
     let main_class = match config.loader {
@@ -132,7 +138,9 @@ pub async fn launch(
                 .join("loader-profiles")
                 .join(format!("fabric-{}-{}.json", config.game_version, lv));
             if !profile_path.exists() {
-                return Err(LaunchError::MetaNotFound(profile_path.display().to_string()));
+                return Err(LaunchError::MetaNotFound(
+                    profile_path.display().to_string(),
+                ));
             }
             let profile: LoaderProfileJson =
                 serde_json::from_slice(&std::fs::read(&profile_path)?)?;
@@ -149,7 +157,9 @@ pub async fn launch(
                 .join("loader-profiles")
                 .join(format!("quilt-{}-{}.json", config.game_version, lv));
             if !profile_path.exists() {
-                return Err(LaunchError::MetaNotFound(profile_path.display().to_string()));
+                return Err(LaunchError::MetaNotFound(
+                    profile_path.display().to_string(),
+                ));
             }
             let profile: LoaderProfileJson =
                 serde_json::from_slice(&std::fs::read(&profile_path)?)?;
@@ -166,7 +176,9 @@ pub async fn launch(
                 .join("loader-profiles")
                 .join(format!("forge-{}-{}.json", config.game_version, lv));
             if !profile_path.exists() {
-                return Err(LaunchError::MetaNotFound(profile_path.display().to_string()));
+                return Err(LaunchError::MetaNotFound(
+                    profile_path.display().to_string(),
+                ));
             }
             let profile: LoaderProfileJson =
                 serde_json::from_slice(&std::fs::read(&profile_path)?)?;
@@ -190,7 +202,9 @@ pub async fn launch(
                 .join("loader-profiles")
                 .join(format!("neoforge-{}.json", lv));
             if !profile_path.exists() {
-                return Err(LaunchError::MetaNotFound(profile_path.display().to_string()));
+                return Err(LaunchError::MetaNotFound(
+                    profile_path.display().to_string(),
+                ));
             }
             let profile: LoaderProfileJson =
                 serde_json::from_slice(&std::fs::read(&profile_path)?)?;
@@ -227,6 +241,12 @@ pub async fn launch(
     let java = config
         .java_path
         .clone()
+        .or_else(|| {
+            crate::config::SETTINGS
+                .paths
+                .effective_java_path()
+                .map(str::to_owned)
+        })
         .unwrap_or_else(crate::net::detect_java_path);
 
     let mut jvm: Vec<String> = vec![
@@ -236,50 +256,50 @@ pub async fn launch(
     jvm.extend(config.jvm_args.clone());
 
     let mut account_store = crate::auth::AccountStore::load();
-    let (mc_username, mc_uuid, mc_token, mc_user_type) =
-        match account_store.active_account().cloned() {
-            Some(acc) => {
-                let (token, new_refresh) = match acc.account_type {
-                    crate::auth::AccountType::Microsoft => {
-                        match crate::auth::refresh_and_get_token(&acc).await {
-                            Ok(pair) => pair,
-                            Err(e) => {
-                                return Err(LaunchError::Auth(format!(
-                                    "Authentication failed: {e}"
-                                )));
-                            }
+    let (mc_username, mc_uuid, mc_token, mc_user_type) = match account_store
+        .active_account()
+        .cloned()
+    {
+        Some(acc) => {
+            let (token, new_refresh) = match acc.account_type {
+                crate::auth::AccountType::Microsoft => {
+                    match crate::auth::refresh_and_get_token(&acc).await {
+                        Ok(pair) => pair,
+                        Err(e) => {
+                            return Err(LaunchError::Auth(format!("Authentication failed: {e}")));
                         }
                     }
-                    crate::auth::AccountType::Offline => ("0".to_string(), None),
-                };
-                if let Some(new_rt) = new_refresh {
-                    if let Some(stored) = account_store
-                        .accounts
-                        .iter_mut()
-                        .find(|a| a.uuid == acc.uuid)
-                    {
-                        stored.refresh_token = Some(new_rt);
-                        account_store.save();
-                    }
                 }
-                let user_type = match acc.account_type {
-                    crate::auth::AccountType::Microsoft => "msa",
-                    crate::auth::AccountType::Offline => "legacy",
-                };
-                (
-                    acc.username.clone(),
-                    acc.uuid.clone(),
-                    token,
-                    user_type.to_string(),
-                )
+                crate::auth::AccountType::Offline => ("0".to_string(), None),
+            };
+            if let Some(new_rt) = new_refresh {
+                if let Some(stored) = account_store
+                    .accounts
+                    .iter_mut()
+                    .find(|a| a.uuid == acc.uuid)
+                {
+                    stored.refresh_token = Some(new_rt);
+                    account_store.save();
+                }
             }
-            None => (
-                "Player".to_string(),
-                "00000000-0000-0000-0000-000000000000".to_string(),
-                "0".to_string(),
-                "legacy".to_string(),
-            ),
-        };
+            let user_type = match acc.account_type {
+                crate::auth::AccountType::Microsoft => "msa",
+                crate::auth::AccountType::Offline => "legacy",
+            };
+            (
+                acc.username.clone(),
+                acc.uuid.clone(),
+                token,
+                user_type.to_string(),
+            )
+        }
+        None => (
+            "Player".to_string(),
+            "00000000-0000-0000-0000-000000000000".to_string(),
+            "0".to_string(),
+            "legacy".to_string(),
+        ),
+    };
 
     let game_args = vec![
         "--username".to_string(),
@@ -330,8 +350,7 @@ pub async fn launch(
 
     crate::running::set_state(&name, crate::running::RunState::Running);
 
-    let log_file_path =
-        crate::instance::log_files::create_log_file(instances_dir, &name);
+    let log_file_path = crate::instance::log_files::create_log_file(instances_dir, &name);
 
     let name_for_task = name.clone();
     let instances_dir_owned = instances_dir.to_path_buf();
@@ -396,15 +415,16 @@ pub async fn launch(
         if code == Some(0) {
             crate::running::remove(&name_for_task);
         } else {
-            crate::running::set_state(
-                &name_for_task,
-                crate::running::RunState::Crashed(code),
-            );
+            crate::running::set_state(&name_for_task, crate::running::RunState::Crashed(code));
         }
 
         let manager = crate::instance::InstanceManager::new(instances_dir_owned, meta_dir_owned);
         if let Err(e) = manager.touch_last_played(&name_for_task) {
-            tracing::warn!("Failed to update last_played for '{}': {}", name_for_task, e);
+            tracing::warn!(
+                "Failed to update last_played for '{}': {}",
+                name_for_task,
+                e
+            );
         }
         crate::running::push_last_played(&name_for_task, chrono::Utc::now());
         crate::running::cleanup_kill_sender(&name_for_task);

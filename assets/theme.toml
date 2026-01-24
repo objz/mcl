@@ -1,0 +1,148 @@
+[palette]
+bg = "#1e1e1e"
+surface = "#242424"
+overlay = "#1a1a1a"
+fg = "white"
+muted = "darkgray"
+accent = "yellow"
+error = "red"
+warn = "yellow"
+success = "green"
+
+[general]
+border_type = "rounded"
+fg = "fg"
+bg = "bg"
+accent = "accent"
+text_secondary = "muted"
+error = "error"
+warn = "warn"
+success = "success"
+
+[profiles]
+border_focused_fg = "fg"
+border_unfocused_fg = "muted"
+selected_fg = "accent"
+selected_bg = "overlay"
+selected_bold = true
+row_alt_bg = "surface"
+text_fg = "fg"
+running_fg = "success"
+loader_vanilla = "green"
+loader_fabric = "#71a5de"
+loader_forge = "#e07b39"
+loader_neoforge = "#e0541b"
+loader_quilt = "#a65ccb"
+
+[content]
+border_focused_fg = "fg"
+border_unfocused_fg = "muted"
+tab_active_fg = "accent"
+tab_active_bold = true
+tab_inactive_fg = "muted"
+selected_bg = "overlay"
+text_fg = "fg"
+
+[content_list]
+border_focused_fg = "fg"
+selected_fg = "accent"
+selected_bg = "overlay"
+selected_bold = true
+row_alt_bg = "surface"
+text_fg = "fg"
+text_secondary_fg = "muted"
+disabled_crossed_out = true
+
+[details]
+border_focused_fg = "fg"
+border_unfocused_fg = "muted"
+label_fg = "muted"
+value_fg = "fg"
+
+[logs]
+border_focused_fg = "fg"
+border_unfocused_fg = "muted"
+error_fg = "error"
+warn_fg = "warn"
+info_fg = "fg"
+debug_fg = "muted"
+trace_fg = "muted"
+selected_fg = "accent"
+selected_bg = "overlay"
+selected_bold = true
+row_alt_bg = "surface"
+running_fg = "success"
+text_fg = "fg"
+
+[log_overlay]
+bg = "bg"
+border_fg = "fg"
+error_fg = "error"
+warn_fg = "warn"
+info_fg = "fg"
+debug_fg = "muted"
+trace_fg = "muted"
+text_fg = "fg"
+
+[status]
+border_focused_fg = "fg"
+border_unfocused_fg = "muted"
+label_fg = "muted"
+text_fg = "fg"
+progress_fill_fg = "success"
+progress_track_fg = "muted"
+
+[search]
+border_focused_fg = "fg"
+border_unfocused_fg = "muted"
+highlight_fg = "accent"
+highlight_bold = false
+highlight_underline = true
+
+[screenshots]
+border_focused_fg = "fg"
+label_fg = "muted"
+selected_border_fg = "accent"
+
+[account]
+border_focused_fg = "fg"
+border_unfocused_fg = "muted"
+selected_fg = "accent"
+selected_bg = "overlay"
+selected_bold = true
+text_fg = "fg"
+text_secondary_fg = "muted"
+active_fg = "success"
+popup_bg = "bg"
+popup_border_fg = "fg"
+
+[popup]
+bg = "bg"
+border_fg = "fg"
+text_fg = "fg"
+keybind_active_fg = "fg"
+keybind_active_bold = true
+keybind_inactive_fg = "muted"
+
+[popup_confirm]
+border_fg = "fg"
+highlight_bg = "surface"
+text_fg = "fg"
+
+[popup_error]
+bg = "bg"
+border_fg = "fg"
+error_fg = "error"
+warn_fg = "warn"
+text_fg = "fg"
+badge_bg = "error"
+badge_text_fg = "black"
+
+[popup_new_instance]
+bg = "bg"
+border_fg = "fg"
+field_active_border_fg = "fg"
+field_inactive_border_fg = "muted"
+text_fg = "fg"
+error_fg = "error"
+accent_fg = "accent"

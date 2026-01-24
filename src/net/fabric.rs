@@ -41,11 +41,7 @@ pub struct FabricLibrary {
     pub url: String,
 }
 
-
-
-pub async fn fetch_fabric_game_versions(
-    client: &HttpClient,
-) -> Result<Vec<GameVersion>, NetError> {
+pub async fn fetch_fabric_game_versions(client: &HttpClient) -> Result<Vec<GameVersion>, NetError> {
     let url = format!("{}/versions/game", FABRIC_META_BASE);
     let response = match client.inner().get(&url).send().await {
         Ok(r) => r,
@@ -161,10 +157,7 @@ pub async fn download_fabric_libraries(
         let maven_path = match crate::net::maven_coord_to_path(&lib.name) {
             Some(p) => p,
             None => {
-                tracing::error!(
-                    "Invalid Maven coordinate in Fabric profile: {}",
-                    lib.name
-                );
+                tracing::error!("Invalid Maven coordinate in Fabric profile: {}", lib.name);
                 return Err(NetError::Parse(format!(
                     "Invalid Maven coordinate: {}",
                     lib.name
@@ -188,10 +181,7 @@ pub async fn download_fabric_libraries(
         match download_file(client, &download_url, &dest, |_, _| {}).await {
             Ok(()) => {}
             Err(e) => {
-                tracing::error!(
-                    "Failed to download Fabric library {}: {}",
-                    lib.name, e
-                );
+                tracing::error!("Failed to download Fabric library {}: {}", lib.name, e);
                 return Err(e);
             }
         }

@@ -8,7 +8,8 @@ use ratatui::{
 use tracing::Level;
 
 use super::base::PopupFrame;
-use crate::tui::error_buffer::{ErrorEvent, AUTO_DISMISS_MS};
+use crate::config::SETTINGS;
+use crate::tui::error_buffer::ErrorEvent;
 use crate::tui::theme::THEME;
 
 pub struct ErrorPopup {
@@ -24,15 +25,15 @@ impl ErrorPopup {
 impl Widget for ErrorPopup {
     fn render(self, area: Rect, buf: &mut Buffer) {
         let (border_color, label) = match self.event.level {
-            Level::ERROR => (THEME.colors.error, "ERROR"),
-            Level::WARN => (THEME.colors.warn, "WARN"),
-            _ => (THEME.colors.border_focused, "INFO"),
+            Level::ERROR => (THEME.popup_error.error_fg, "ERROR"),
+            Level::WARN => (THEME.popup_error.warn_fg, "WARN"),
+            _ => (THEME.popup_error.border_fg, "INFO"),
         };
 
         let title = Line::from(vec![Span::styled(
             format!(" {} ", label),
             Style::default()
-                .fg(THEME.colors.badge_text)
+                .fg(THEME.popup_error.badge_text_fg)
                 .bg(border_color)
                 .add_modifier(Modifier::BOLD),
         )]);
@@ -41,13 +42,13 @@ impl Widget for ErrorPopup {
         let popup = PopupFrame {
             title,
             border_color,
-            bg: Some(THEME.colors.popup_bg),
+            bg: Some(THEME.popup_error.bg),
             keybinds: None,
             search_line: None,
             content: Box::new(move |inner, buf| {
                 Paragraph::new(message.as_str())
                     .wrap(Wrap { trim: true })
-                    .style(Style::default().fg(THEME.colors.foreground))
+                    .style(Style::default().fg(THEME.popup_error.text_fg))
                     .render(inner, buf);
             }),
         };
@@ -62,7 +63,7 @@ pub fn popup_area(frame_area: Rect, message: &str, base_y: u16, elapsed_ms: u128
     const MAX_W: usize = 58;
     const MIN_W: usize = 22;
 
-    if elapsed_ms >= AUTO_DISMISS_MS {
+    if elapsed_ms >= SETTINGS.ui.error_auto_dismiss_ms as u128 {
         return None;
     }
 

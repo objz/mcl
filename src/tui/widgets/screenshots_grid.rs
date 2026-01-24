@@ -237,16 +237,12 @@ pub fn handle_key(key_event: &KeyEvent, state: &mut ScreenshotsState) -> bool {
             }
             true
         }
-        KeyCode::Char('H') | KeyCode::Left
-            if key_event.modifiers.contains(KeyModifiers::SHIFT) =>
-        {
+        KeyCode::Char('H') | KeyCode::Left if key_event.modifiers.contains(KeyModifiers::SHIFT) => {
             state.selected = state.selected.saturating_sub(1);
             state.ensure_visible();
             true
         }
-        KeyCode::Char('J') | KeyCode::Down
-            if key_event.modifiers.contains(KeyModifiers::SHIFT) =>
-        {
+        KeyCode::Char('J') | KeyCode::Down if key_event.modifiers.contains(KeyModifiers::SHIFT) => {
             let next = state.selected + cols;
             if next < count {
                 state.selected = next;
@@ -254,9 +250,7 @@ pub fn handle_key(key_event: &KeyEvent, state: &mut ScreenshotsState) -> bool {
             state.ensure_visible();
             true
         }
-        KeyCode::Char('K') | KeyCode::Up
-            if key_event.modifiers.contains(KeyModifiers::SHIFT) =>
-        {
+        KeyCode::Char('K') | KeyCode::Up if key_event.modifiers.contains(KeyModifiers::SHIFT) => {
             state.selected = state.selected.saturating_sub(cols);
             state.ensure_visible();
             true
@@ -280,7 +274,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &mut ScreenshotsState, is_fo
     if state.loading {
         frame.render_widget(
             Paragraph::new("Loading screenshots...")
-                .style(Style::default().fg(THEME.colors.text_idle)),
+                .style(Style::default().fg(THEME.screenshots.label_fg)),
             area,
         );
         return;
@@ -288,7 +282,8 @@ pub fn render(frame: &mut Frame, area: Rect, state: &mut ScreenshotsState, is_fo
 
     if state.entries.is_empty() {
         frame.render_widget(
-            Paragraph::new("No screenshots.").style(Style::default().fg(THEME.colors.text_idle)),
+            Paragraph::new("No screenshots.")
+                .style(Style::default().fg(THEME.screenshots.label_fg)),
             area,
         );
         return;
@@ -305,7 +300,10 @@ pub fn render(frame: &mut Frame, area: Rect, state: &mut ScreenshotsState, is_fo
         .first()
         .map(|e| (e.width, e.height))
         .unwrap_or((1920, 1080));
-    let (fw, fh) = (state.font_size.0.max(1) as u32, state.font_size.1.max(1) as u32);
+    let (fw, fh) = (
+        state.font_size.0.max(1) as u32,
+        state.font_size.1.max(1) as u32,
+    );
     let img_rows = (cell_width as u32 * fw * img_h / (fh * img_w)).max(2) as u16;
     let cell_height = img_rows + NAME_ROW_HEIGHT + GAP;
     let visible_rows = (area.height / cell_height).max(1) as usize;
@@ -339,11 +337,9 @@ pub fn render(frame: &mut Frame, area: Rect, state: &mut ScreenshotsState, is_fo
 
             let is_selected = is_focused && idx == state.selected;
 
-            let [img_area, name_area] = Layout::vertical([
-                Constraint::Min(0),
-                Constraint::Length(NAME_ROW_HEIGHT),
-            ])
-            .areas(cell);
+            let [img_area, name_area] =
+                Layout::vertical([Constraint::Min(0), Constraint::Length(NAME_ROW_HEIGHT)])
+                    .areas(cell);
 
             if let Some(proto) = state.protocols.get_mut(&idx) {
                 let widget: StatefulImage<StatefulProtocol> =
@@ -354,10 +350,10 @@ pub fn render(frame: &mut Frame, area: Rect, state: &mut ScreenshotsState, is_fo
             let name = &state.entries[idx].name;
             let name_style = if is_selected {
                 Style::default()
-                    .fg(THEME.colors.accent)
+                    .fg(THEME.screenshots.selected_border_fg)
                     .add_modifier(Modifier::BOLD)
             } else {
-                Style::default().fg(THEME.colors.text_idle)
+                Style::default().fg(THEME.screenshots.label_fg)
             };
 
             let truncated = if name.len() > cell_width as usize {
@@ -384,7 +380,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &mut ScreenshotsState, is_fo
             .begin_symbol(Some("\u{25b2}"))
             .style(
                 Style::default()
-                    .fg(THEME.colors.border_focused)
+                    .fg(THEME.screenshots.border_focused_fg)
                     .add_modifier(Modifier::BOLD),
             )
             .thumb_symbol("\u{2551}")

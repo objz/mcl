@@ -6,8 +6,7 @@ use crate::instance::loader::GameVersion;
 use crate::net::{download_file, HttpClient, NetError};
 use crate::tui::progress::set_action;
 
-const NEOFORGE_MAVEN_BASE: &str =
-    "https://maven.neoforged.net/releases/net/neoforged/neoforge";
+const NEOFORGE_MAVEN_BASE: &str = "https://maven.neoforged.net/releases/net/neoforged/neoforge";
 const NEOFORGE_API_BASE: &str =
     "https://maven.neoforged.net/api/maven/versions/releases/net/neoforged/neoforge";
 
@@ -163,10 +162,7 @@ pub async fn download_neoforge_installer(
     {
         Ok(()) => Ok(()),
         Err(e) => {
-            tracing::error!(
-                "Failed to download NeoForge installer from {}: {}",
-                url, e
-            );
+            tracing::error!("Failed to download NeoForge installer from {}: {}", url, e);
             Err(e)
         }
     }
@@ -213,8 +209,6 @@ pub async fn run_neoforge_installer(
 
     Ok(())
 }
-
-
 
 #[cfg(test)]
 mod tests {

@@ -6,9 +6,7 @@ use ratatui::{
     layout::{Constraint, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{
-        Block, BorderType, Borders, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState,
-    },
+    widgets::{Block, Borders, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState},
     Frame,
 };
 use tui_widget_list::{ListBuilder, ListState as TuiListState, ListView};
@@ -246,27 +244,27 @@ pub fn handle_key(key_event: &KeyEvent, state: &mut LogsState) -> bool {
             KeyCode::Char('j') | KeyCode::Down => {
                 if state.viewer_scroll < state.viewer_max_scroll {
                     state.viewer_scroll += 1;
-                    state.viewer_scrollbar_state = ScrollbarState::new(state.viewer_max_scroll)
-                        .position(state.viewer_scroll);
+                    state.viewer_scrollbar_state =
+                        ScrollbarState::new(state.viewer_max_scroll).position(state.viewer_scroll);
                 }
                 true
             }
             KeyCode::Char('k') | KeyCode::Up => {
                 state.viewer_scroll = state.viewer_scroll.saturating_sub(1);
-                state.viewer_scrollbar_state = ScrollbarState::new(state.viewer_max_scroll)
-                    .position(state.viewer_scroll);
+                state.viewer_scrollbar_state =
+                    ScrollbarState::new(state.viewer_max_scroll).position(state.viewer_scroll);
                 true
             }
             KeyCode::Char('G') => {
                 state.viewer_scroll = state.viewer_max_scroll;
-                state.viewer_scrollbar_state = ScrollbarState::new(state.viewer_max_scroll)
-                    .position(state.viewer_scroll);
+                state.viewer_scrollbar_state =
+                    ScrollbarState::new(state.viewer_max_scroll).position(state.viewer_scroll);
                 true
             }
             KeyCode::Char('g') => {
                 state.viewer_scroll = 0;
-                state.viewer_scrollbar_state = ScrollbarState::new(state.viewer_max_scroll)
-                    .position(state.viewer_scroll);
+                state.viewer_scrollbar_state =
+                    ScrollbarState::new(state.viewer_max_scroll).position(state.viewer_scroll);
                 true
             }
             KeyCode::Esc => {
@@ -344,7 +342,7 @@ pub fn handle_key(key_event: &KeyEvent, state: &mut LogsState) -> bool {
 pub fn render(frame: &mut Frame, area: Rect, state: &mut LogsState, is_focused: bool) {
     if state.loading {
         frame.render_widget(
-            Paragraph::new("Loading logs...").style(Style::default().fg(THEME.colors.text_idle)),
+            Paragraph::new("Loading logs...").style(Style::default().fg(THEME.logs.text_fg)),
             area,
         );
         return;
@@ -355,7 +353,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &mut LogsState, is_focused: 
 
     if display_count == 0 {
         frame.render_widget(
-            Paragraph::new("No logs yet.").style(Style::default().fg(THEME.colors.text_idle)),
+            Paragraph::new("No logs yet.").style(Style::default().fg(THEME.logs.text_fg)),
             area,
         );
         return;
@@ -382,14 +380,14 @@ fn render_list(
 ) {
     let list_focused = is_focused && !state.viewer_focused;
     let border_color = if list_focused {
-        THEME.colors.border_focused
+        THEME.logs.border_focused_fg
     } else {
-        THEME.colors.border_unfocused
+        THEME.logs.border_unfocused_fg
     };
 
     let block = Block::default()
         .borders(Borders::RIGHT)
-        .border_type(BorderType::Rounded)
+        .border_type(THEME.general.border_type.to_border_type())
         .border_style(Style::default().fg(border_color));
 
     let inner = block.inner(area);
@@ -413,25 +411,31 @@ fn render_list(
         let show_selected = list_focused && context.is_selected;
 
         let style = if *is_live && show_selected {
-            Style::default()
-                .fg(THEME.colors.success)
-                .add_modifier(Modifier::BOLD)
+            let s = Style::default().fg(THEME.logs.running_fg);
+            if THEME.logs.selected_bold {
+                s.add_modifier(Modifier::BOLD)
+            } else {
+                s
+            }
         } else if *is_live {
-            Style::default().fg(THEME.colors.success)
+            Style::default().fg(THEME.logs.running_fg)
         } else if show_selected {
-            Style::default()
-                .fg(THEME.colors.row_highlight)
-                .add_modifier(Modifier::BOLD)
+            let s = Style::default().fg(THEME.logs.selected_fg);
+            if THEME.logs.selected_bold {
+                s.add_modifier(Modifier::BOLD)
+            } else {
+                s
+            }
         } else {
-            Style::default().fg(THEME.colors.text_idle)
+            Style::default().fg(THEME.logs.text_fg)
         };
 
         let bg = if show_selected {
-            THEME.colors.row_background
+            THEME.logs.selected_bg
         } else if context.index % 2 == 0 {
             Color::Reset
         } else {
-            THEME.colors.row_alternate_bg
+            THEME.logs.row_alt_bg
         };
 
         let item = ratatui::text::Text::from(Line::from(Span::styled(name.clone(), style)))
@@ -454,7 +458,7 @@ fn render_list(
             .begin_symbol(Some("\u{25b2}"))
             .style(
                 Style::default()
-                    .fg(THEME.colors.border_focused)
+                    .fg(THEME.logs.border_focused_fg)
                     .add_modifier(Modifier::BOLD),
             )
             .thumb_symbol("\u{2551}")
@@ -522,7 +526,7 @@ fn render_viewer(
             .begin_symbol(Some("\u{25b2}"))
             .style(
                 Style::default()
-                    .fg(THEME.colors.border_focused)
+                    .fg(THEME.logs.border_focused_fg)
                     .add_modifier(Modifier::BOLD),
             )
             .thumb_symbol("\u{2551}")
@@ -536,12 +540,14 @@ fn render_viewer(
 fn line_level_style(line: &str) -> Style {
     let upper = line.to_uppercase();
     if upper.contains("ERROR") || upper.contains("FATAL") || upper.contains("[STDERR]") {
-        Style::default().fg(THEME.colors.error)
+        Style::default().fg(THEME.logs.error_fg)
     } else if upper.contains("WARN") {
-        Style::default().fg(THEME.colors.warn)
-    } else if upper.contains("DEBUG") || upper.contains("TRACE") {
-        Style::default().fg(THEME.colors.text_idle)
+        Style::default().fg(THEME.logs.warn_fg)
+    } else if upper.contains("DEBUG") {
+        Style::default().fg(THEME.logs.debug_fg)
+    } else if upper.contains("TRACE") {
+        Style::default().fg(THEME.logs.trace_fg)
     } else {
-        Style::default().fg(THEME.colors.foreground)
+        Style::default().fg(THEME.logs.text_fg)
     }
 }

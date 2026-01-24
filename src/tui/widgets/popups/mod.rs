@@ -46,17 +46,26 @@ pub fn top_right_rect(frame: Rect, inner_w: usize, inner_h: usize) -> Rect {
     let popup_h = popup_h.min(frame.height.saturating_sub(2));
     let x = frame.width.saturating_sub(popup_w + 2);
     let y = 1u16;
-    Rect { x, y, width: popup_w, height: popup_h }
+    Rect {
+        x,
+        y,
+        width: popup_w,
+        height: popup_h,
+    }
 }
 
 pub fn keybind_line(binds: &[(&str, &str)]) -> ratatui::text::Line<'static> {
-    use ratatui::{style::{Modifier, Style}, text::{Line, Span}};
     use crate::tui::theme::THEME;
+    use ratatui::{
+        style::{Modifier, Style},
+        text::{Line, Span},
+    };
 
-    let key_style = Style::default()
-        .fg(THEME.colors.border_focused)
-        .add_modifier(Modifier::BOLD);
-    let dim_style = Style::default().fg(THEME.colors.border_unfocused);
+    let mut key_style = Style::default().fg(THEME.popup.keybind_active_fg);
+    if THEME.popup.keybind_active_bold {
+        key_style = key_style.add_modifier(Modifier::BOLD);
+    }
+    let dim_style = Style::default().fg(THEME.popup.keybind_inactive_fg);
 
     let mut spans: Vec<Span<'static>> = Vec::new();
     for (i, (key, label)) in binds.iter().enumerate() {
@@ -75,20 +84,28 @@ pub fn keybind_lines_wrapped(
     binds: &[(&str, &str)],
     max_width: u16,
 ) -> Vec<ratatui::text::Line<'static>> {
-    use ratatui::{style::{Modifier, Style}, text::{Line, Span}};
     use crate::tui::theme::THEME;
+    use ratatui::{
+        style::{Modifier, Style},
+        text::{Line, Span},
+    };
 
-    let key_style = Style::default()
-        .fg(THEME.colors.border_focused)
-        .add_modifier(Modifier::BOLD);
-    let dim_style = Style::default().fg(THEME.colors.border_unfocused);
+    let mut key_style = Style::default().fg(THEME.popup.keybind_active_fg);
+    if THEME.popup.keybind_active_bold {
+        key_style = key_style.add_modifier(Modifier::BOLD);
+    }
+    let dim_style = Style::default().fg(THEME.popup.keybind_inactive_fg);
 
     let mut rows: Vec<Line<'static>> = Vec::new();
     let mut current_spans: Vec<Span<'static>> = Vec::new();
     let mut current_width: usize = 0;
 
     for (i, (key, label)) in binds.iter().enumerate() {
-        let sep_w = if i > 0 && !current_spans.is_empty() { 2 } else { 0 };
+        let sep_w = if i > 0 && !current_spans.is_empty() {
+            2
+        } else {
+            0
+        };
         let item_w = key.len() + 2 + label.len();
         let needed = sep_w + item_w;
 
