@@ -19,14 +19,14 @@ pub fn render(
     focused: FocusedArea,
     throbber_state: &mut ThrobberState,
 ) {
-    let border_color = if focused == FocusedArea::Status {
+    let border_color = if focused == FocusedArea::Overview {
         THEME.colors.border_focused
     } else {
         THEME.colors.border_unfocused
     };
 
     let block = Block::default()
-        .title(styled_title("Status", true))
+        .title(styled_title("Overview", true))
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .border_style(Style::default().fg(border_color));

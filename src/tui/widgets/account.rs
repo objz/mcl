@@ -220,7 +220,7 @@ pub fn render(frame: &mut Frame, area: Rect, focused: FocusedArea, state: &mut A
     };
 
     let mut block = Block::default()
-        .title(styled_title("Account", true))
+        .title(styled_title("Accounts", true))
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .border_style(Style::default().fg(color));

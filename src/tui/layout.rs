@@ -47,6 +47,7 @@ pub struct App {
     throbber_state: throbber_widgets_tui::ThrobberState,
     throbber_tick: u8,
     error_effects: HashMap<u64, ErrorEffectState>,
+    pending_editor: Option<std::path::PathBuf>,
 }
 
 enum ErrorEffectState {
@@ -61,9 +62,9 @@ pub enum FocusedArea {
     Profiles,
     Content,
     Account,
-    Details,
-    Status,
-    StatusExpanded,
+    Settings,
+    Overview,
+    OverviewExpanded,
     Popup,
     ErrorPopup,
     ConfirmDelete,
@@ -118,6 +119,7 @@ impl App {
             throbber_state: throbber_widgets_tui::ThrobberState::default(),
             throbber_tick: 0,
             error_effects: HashMap::new(),
+            pending_editor: None,
         }
     }
 }
@@ -151,6 +153,10 @@ impl App {
             
             terminal.draw(|frame| self.render_frame(frame))?;
             self.handle_events().wrap_err("handle events failed")?;
+
+            if let Some(path) = self.pending_editor.take() {
+                Self::run_editor(terminal, &path);
+            }
         }
         Ok(())
     }
@@ -207,10 +213,16 @@ impl App {
             .split(main_chunks[2]);
 
         widgets::account::render(frame, bottom_chunks[0], self.focused, &mut self.account_state);
-        widgets::details::render(frame, bottom_chunks[1], self.focused);
+        widgets::details::render(
+            frame,
+            bottom_chunks[1],
+            self.focused,
+            self.profiles_state.selected_instance(),
+            &self.instance_manager.instances_dir,
+        );
         widgets::status::render(frame, bottom_chunks[2], self.focused, &mut self.throbber_state);
 
-        if self.focused == FocusedArea::StatusExpanded {
+        if self.focused == FocusedArea::OverviewExpanded {
             self.render_log_overlay(frame);
         }
 
@@ -266,7 +278,7 @@ impl App {
     }
 
     fn handle_key_event(&mut self, key_event: KeyEvent) -> color_eyre::Result<()> {
-        if self.focused == FocusedArea::StatusExpanded {
+        if self.focused == FocusedArea::OverviewExpanded {
             if self.log_overlay_search.active {
                 match key_event.code {
                     KeyCode::Esc => {
@@ -283,7 +295,7 @@ impl App {
                 return Ok(());
             }
             match key_event.code {
-                KeyCode::Char('S') | KeyCode::Esc => {
+                KeyCode::Char('O') | KeyCode::Esc => {
                     self.focused = self.pre_overlay_focused;
                     self.log_overlay_search.deactivate();
                     return Ok(());
@@ -387,6 +399,21 @@ impl App {
             }
         }
 
+        if self.focused == FocusedArea::Settings {
+            match widgets::details::handle_key(
+                &key_event,
+                self.profiles_state.selected_instance(),
+                &self.instance_manager.instances_dir,
+            ) {
+                widgets::details::SettingsAction::EditInstance(path)
+                | widgets::details::SettingsAction::EditGlobal(path) => {
+                    self.pending_editor = Some(path);
+                    return Ok(());
+                }
+                widgets::details::SettingsAction::None => {}
+            }
+        }
+
         match self.focused {
             FocusedArea::Popup => {
                 new_instance::handle_key(&key_event, &mut self.profiles_state);
@@ -438,10 +465,10 @@ impl App {
                     KeyCode::Char('P') => self.focused = FocusedArea::Profiles,
                     KeyCode::Char('C') => self.focused = FocusedArea::Content,
                     KeyCode::Char('A') => self.focused = FocusedArea::Account,
-                    KeyCode::Char('D') => self.focused = FocusedArea::Details,
-                    KeyCode::Char('S') => {
+                    KeyCode::Char('S') => self.focused = FocusedArea::Settings,
+                    KeyCode::Char('O') => {
                         self.pre_overlay_focused = self.focused;
-                        self.focused = FocusedArea::StatusExpanded;
+                        self.focused = FocusedArea::OverviewExpanded;
                     }
                     KeyCode::Tab | KeyCode::Char('l') | KeyCode::Right
                         if self.focused == FocusedArea::Content =>
@@ -572,6 +599,52 @@ impl App {
         });
     }
 
+    fn run_editor(terminal: &mut ratatui::DefaultTerminal, path: &std::path::Path) {
+        use ratatui::crossterm::{
+            terminal::{disable_raw_mode, enable_raw_mode, LeaveAlternateScreen, EnterAlternateScreen},
+            ExecutableCommand,
+        };
+        use std::io::stdout;
+
+        let editor = std::env::var("EDITOR")
+            .or_else(|_| std::env::var("VISUAL"))
+            .unwrap_or_else(|_| "vi".to_string());
+
+        let is_tui_editor = matches!(
+            editor.rsplit('/').next().unwrap_or(&editor),
+            "vi" | "vim" | "nvim" | "neovim" | "nano" | "micro" | "helix" | "hx" | "emacs" | "ne" | "joe" | "mcedit"
+        );
+
+        if is_tui_editor {
+            let _ = stdout().execute(LeaveAlternateScreen);
+            let _ = disable_raw_mode();
+
+            let result = std::process::Command::new(&editor)
+                .arg(path)
+                .stdin(std::process::Stdio::inherit())
+                .stdout(std::process::Stdio::inherit())
+                .stderr(std::process::Stdio::inherit())
+                .status();
+
+            let _ = stdout().execute(EnterAlternateScreen);
+            let _ = enable_raw_mode();
+            let _ = terminal.clear();
+
+            if let Err(e) = result {
+                tracing::error!("Failed to open editor: {}", e);
+            }
+        } else {
+            if let Err(e) = std::process::Command::new(&editor)
+                .arg(path)
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .spawn()
+            {
+                tracing::error!("Failed to open editor: {}", e);
+            }
+        }
+    }
+
     fn spawn_launch(&self, instance: crate::instance::InstanceConfig) {
         use crate::instance::launch;
         use crate::running;
@@ -678,7 +751,7 @@ impl App {
                     .add_modifier(Modifier::BOLD),
             ))
             .title_bottom(
-                crate::tui::widgets::popups::keybind_line(&[("S", " close"), ("/", " search")])
+                crate::tui::widgets::popups::keybind_line(&[("O", " close"), ("/", " search")])
                     .alignment(Alignment::Right),
             )
             .border_type(BorderType::Rounded)
