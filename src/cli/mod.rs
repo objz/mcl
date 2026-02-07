@@ -1,140 +1,215 @@
-use crate::tui;
-use clap::{Arg, ArgAction, Command};
+mod account;
+mod content;
+mod instance;
+mod log;
+mod output;
+mod version;
+
+use clap::{Arg, ArgAction, ArgGroup, Command};
 
 pub async fn init() {
-    let matches = Command::new("mcl")
+    let matches = build_command().get_matches();
+
+    if matches.subcommand().is_none() {
+        let _ = &*crate::tui::theme::THEME;
+        if let Err(e) = crate::tui::show().await {
+            tracing::error!("TUI error: {}", e);
+        }
+        return;
+    }
+
+    let result = match matches.subcommand() {
+        Some(("instance", sub_matches)) => instance::handle_instance(sub_matches).await,
+        Some(("mod", sub_matches)) => content::handle_mod(sub_matches).await,
+        Some(("pack", sub_matches)) => content::handle_pack(sub_matches).await,
+        Some(("shader", sub_matches)) => content::handle_shader(sub_matches).await,
+        Some(("account", sub_matches)) => account::handle_account(sub_matches).await,
+        Some(("log", sub_matches)) => log::handle_log(sub_matches).await,
+        Some(("version", sub_matches)) => version::handle_version(sub_matches).await,
+        _ => Ok(()),
+    };
+
+    if let Err(e) = result {
+        eprintln!("error: {}", e);
+        std::process::exit(1);
+    }
+}
+
+fn build_command() -> Command {
+    Command::new("mcl")
         .about("Minecraft CLI Launcher")
         .version("1.0.0")
         .subcommand_required(false)
         .arg_required_else_help(false)
         .subcommand(
-            Command::new("launch")
-                .about("Launch Minecraft with a specific profile")
+            Command::new("instance")
+                .about("Manage launcher instances")
+                .subcommand_required(true)
                 .arg_required_else_help(true)
-                .arg(
-                    Arg::new("profile")
-                        .short('p')
-                        .long("profile")
-                        .help("Profile to launch (e.g., main)")
-                        .required(true)
-                        .action(ArgAction::Set),
+                .subcommand(Command::new("list").about("List instances"))
+                .subcommand(
+                    Command::new("create")
+                        .about("Create an instance")
+                        .arg_required_else_help(true)
+                        .arg(Arg::new("name").required(true).action(ArgAction::Set))
+                        .arg(
+                            Arg::new("version")
+                                .long("version")
+                                .required(true)
+                                .action(ArgAction::Set),
+                        )
+                        .arg(
+                            Arg::new("loader")
+                                .long("loader")
+                                .required(true)
+                                .action(ArgAction::Set),
+                        )
+                        .arg(
+                            Arg::new("loader-version")
+                                .long("loader-version")
+                                .action(ArgAction::Set),
+                        ),
                 )
-                .arg(
-                    Arg::new("offline")
-                        .short('o')
-                        .long("offline")
-                        .help("Launch Minecraft in offline mode")
-                        .action(ArgAction::SetTrue),
+                .subcommand(
+                    Command::new("delete")
+                        .about("Delete an instance")
+                        .arg_required_else_help(true)
+                        .arg(Arg::new("name").required(true).action(ArgAction::Set))
+                        .arg(Arg::new("yes").long("yes").action(ArgAction::SetTrue)),
                 )
-                .arg(
-                    Arg::new("memory")
-                        .short('m')
-                        .long("memory")
-                        .help("Set memory allocation for Minecraft (e.g., 4G, 512M)")
-                        .action(ArgAction::Set),
+                .subcommand(
+                    Command::new("rename")
+                        .about("Rename an instance")
+                        .arg_required_else_help(true)
+                        .arg(Arg::new("old").required(true).action(ArgAction::Set))
+                        .arg(Arg::new("new").required(true).action(ArgAction::Set)),
                 )
-                .arg(
-                    Arg::new("resolution")
-                        .short('r')
-                        .long("resolution")
-                        .help("Set screen resolution (e.g., 1920x1080)")
-                        .action(ArgAction::Set),
+                .subcommand(
+                    Command::new("launch")
+                        .about("Launch an instance")
+                        .arg_required_else_help(true)
+                        .arg(Arg::new("name").required(true).action(ArgAction::Set)),
                 )
-                .arg(
-                    Arg::new("jvm-args")
-                        .short('j')
-                        .long("jvm-args")
-                        .help("Custom JVM arguments for Minecraft (e.g., -Xmx4G)")
-                        .action(ArgAction::Set)
-                        .num_args(1..),
+                .subcommand(
+                    Command::new("config")
+                        .about("Show or update instance config")
+                        .arg_required_else_help(true)
+                        .arg(Arg::new("name").required(true).action(ArgAction::Set))
+                        .arg(Arg::new("set").long("set").action(ArgAction::Set)),
+                ),
+        )
+        .subcommand(build_content_command("mod", "mods"))
+        .subcommand(build_content_command("pack", "resource packs"))
+        .subcommand(build_content_command("shader", "shaders"))
+        .subcommand(
+            Command::new("account")
+                .about("Manage accounts")
+                .subcommand_required(true)
+                .arg_required_else_help(true)
+                .subcommand(Command::new("list").about("List accounts"))
+                .subcommand(
+                    Command::new("add")
+                        .about("Add an account")
+                        .arg(
+                            Arg::new("microsoft")
+                                .long("microsoft")
+                                .action(ArgAction::SetTrue),
+                        )
+                        .arg(Arg::new("offline").long("offline").action(ArgAction::Set))
+                        .group(
+                            ArgGroup::new("account_source")
+                                .args(["microsoft", "offline"])
+                                .required(true),
+                        ),
                 )
-                .arg(
-                    Arg::new("no-window")
-                        .short('n')
-                        .long("no-window")
-                        .help("Run Minecraft in headless mode (no graphical window)")
-                        .action(ArgAction::SetTrue),
+                .subcommand(
+                    Command::new("delete")
+                        .about("Delete an account")
+                        .arg_required_else_help(true)
+                        .arg(Arg::new("username").required(true).action(ArgAction::Set))
+                        .arg(Arg::new("yes").long("yes").action(ArgAction::SetTrue)),
+                )
+                .subcommand(
+                    Command::new("use")
+                        .about("Set active account")
+                        .arg_required_else_help(true)
+                        .arg(Arg::new("username").required(true).action(ArgAction::Set)),
                 ),
         )
         .subcommand(
-            Command::new("profiles")
-                .about("Manage Minecraft profiles")
+            Command::new("log")
+                .about("View instance logs")
+                .subcommand_required(true)
                 .arg_required_else_help(true)
-                .arg(
-                    Arg::new("list")
-                        .short('l')
-                        .long("list")
-                        .help("List all available profiles")
-                        .conflicts_with("delete")
-                        .action(ArgAction::SetTrue),
+                .subcommand(
+                    Command::new("list")
+                        .about("List log files")
+                        .arg_required_else_help(true)
+                        .arg(Arg::new("instance").required(true).action(ArgAction::Set)),
                 )
-                .arg(
-                    Arg::new("delete")
-                        .short('d')
-                        .long("delete")
-                        .help("Delete a specific profile")
-                        .action(ArgAction::Set),
+                .subcommand(
+                    Command::new("show")
+                        .about("Show a log file")
+                        .arg_required_else_help(true)
+                        .arg(Arg::new("instance").required(true).action(ArgAction::Set))
+                        .arg(Arg::new("file").long("file").action(ArgAction::Set))
+                        .arg(Arg::new("follow").long("follow").action(ArgAction::SetTrue)),
                 ),
         )
-        .get_matches();
+        .subcommand(
+            Command::new("version")
+                .about("List available game versions")
+                .subcommand_required(true)
+                .arg_required_else_help(true)
+                .subcommand(
+                    Command::new("list")
+                        .about("List available versions")
+                        .arg(Arg::new("loader").long("loader").action(ArgAction::Set))
+                        .arg(
+                            Arg::new("snapshots")
+                                .long("snapshots")
+                                .action(ArgAction::SetTrue),
+                        ),
+                ),
+        )
+}
 
-    if matches.subcommand().is_none() {
-        // Force eager theme initialization before TUI starts (prevents lazy init inside render loop)
-        let _ = &*crate::tui::theme::THEME;
-        match tui::show().await {
-            Ok(_) => {}
-            Err(e) => {
-                tracing::error!("TUI error: {}", e);
-            }
-        }
-    }
+fn build_content_command(name: &'static str, about: &'static str) -> Command {
+    Command::new(name)
+        .about(format!("Manage {}", about))
+        .subcommand_required(true)
+        .arg_required_else_help(true)
+        .subcommand(
+            Command::new("list")
+                .about(format!("List {}", about))
+                .arg_required_else_help(true)
+                .arg(Arg::new("instance").required(true).action(ArgAction::Set)),
+        )
+        .subcommand(
+            Command::new("enable")
+                .about(format!("Enable a {} entry", name))
+                .arg_required_else_help(true)
+                .arg(Arg::new("instance").required(true).action(ArgAction::Set))
+                .arg(Arg::new(name).required(true).action(ArgAction::Set)),
+        )
+        .subcommand(
+            Command::new("disable")
+                .about(format!("Disable a {} entry", name))
+                .arg_required_else_help(true)
+                .arg(Arg::new("instance").required(true).action(ArgAction::Set))
+                .arg(Arg::new(name).required(true).action(ArgAction::Set)),
+        )
+}
 
-    match matches.subcommand() {
-        Some(("launch", launch_matches)) => {
-            let profile = match launch_matches.get_one::<String>("profile") {
-                Some(p) => p,
-                None => {
-                    tracing::error!("Launch subcommand missing required --profile argument");
-                    return;
-                }
-            };
+#[cfg(test)]
+mod tests {
+    use super::build_command;
 
-            let mem_default = String::from("Default");
-            let memory = launch_matches
-                .get_one::<String>("memory")
-                .unwrap_or(&mem_default);
-
-            let res_default = String::from("Default");
-            let resolution = launch_matches
-                .get_one::<String>("resolution")
-                .unwrap_or(&res_default);
-
-            let jvm_args = launch_matches
-                .get_many::<String>("jvm-args")
-                .map(|args| args.map(|s| s.as_str()).collect::<Vec<_>>().join(" "))
-                .unwrap_or_else(|| "None".to_string());
-
-            if launch_matches.get_flag("offline") {
-                tracing::debug!("Launching profile '{}' in offline mode...", profile);
-            } else {
-                tracing::debug!("Launching profile '{}' in online mode...", profile);
-            }
-
-            tracing::debug!("Memory: {}", memory);
-            tracing::debug!("Resolution: {}", resolution);
-            tracing::debug!("JVM Args: {}", jvm_args);
-
-            if launch_matches.get_flag("no-window") {
-                tracing::debug!("Running in headless mode...");
-            }
-        }
-        Some(("profiles", profiles_matches)) => {
-            if profiles_matches.get_flag("list") {
-                tracing::debug!("Listing all profiles...");
-            } else if let Some(profile) = profiles_matches.get_one::<String>("delete") {
-                tracing::debug!("Deleting profile '{}'...", profile);
-            }
-        }
-        _ => {}
+    #[test]
+    fn parses_instance_list_subcommand() {
+        let matches = build_command()
+            .try_get_matches_from(["mcl", "instance", "list"])
+            .expect("command should parse");
+        assert!(matches.subcommand_matches("instance").is_some());
     }
 }
