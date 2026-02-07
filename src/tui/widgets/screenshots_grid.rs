@@ -21,6 +21,8 @@ const MAX_CELL_WIDTH: u16 = 52;
 const NAME_ROW_HEIGHT: u16 = 1;
 const GAP: u16 = 1;
 
+type PendingScreenshots = Arc<Mutex<Option<(String, Vec<ScreenshotEntry>)>>>;
+
 pub struct ScreenshotsState {
     pub entries: Vec<ScreenshotEntry>,
     protocols: HashMap<usize, StatefulProtocol>,
@@ -34,7 +36,7 @@ pub struct ScreenshotsState {
     pub scrollbar_state: ScrollbarState,
     pub search: super::search::SearchState,
     pub font_size: (u16, u16),
-    pending_entries: Arc<Mutex<Option<(String, Vec<ScreenshotEntry>)>>>,
+    pending_entries: PendingScreenshots,
     pending_images: Arc<Mutex<Vec<(usize, image::DynamicImage)>>>,
 }
 
@@ -167,7 +169,7 @@ impl ScreenshotsState {
         if self.cols == 0 {
             return 0;
         }
-        (self.entries.len() + self.cols - 1) / self.cols
+        self.entries.len().div_ceil(self.cols)
     }
 }
 

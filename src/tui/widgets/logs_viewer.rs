@@ -14,6 +14,8 @@ use tui_widget_list::{ListBuilder, ListState as TuiListState, ListView};
 use crate::instance::log_files::{read_log_file, scan_log_files, LogFileEntry};
 use crate::tui::theme::THEME;
 
+type PendingLogs = Arc<Mutex<Option<(String, Vec<LogFileEntry>)>>>;
+
 pub struct LogsState {
     pub entries: Vec<LogFileEntry>,
     pub list_state: TuiListState,
@@ -28,7 +30,7 @@ pub struct LogsState {
     pub search: super::search::SearchState,
     pub viewer_search: super::search::SearchState,
     selected_path: Option<std::path::PathBuf>,
-    pending: Arc<Mutex<Option<(String, Vec<LogFileEntry>)>>>,
+    pending: PendingLogs,
     rescan_counter: u8,
     instances_dir_cache: Option<std::path::PathBuf>,
 }
@@ -116,7 +118,7 @@ impl LogsState {
 
     pub fn try_rescan(&mut self) {
         self.rescan_counter = self.rescan_counter.wrapping_add(1);
-        if self.rescan_counter % 120 != 0 {
+        if !self.rescan_counter.is_multiple_of(120) {
             return;
         }
 

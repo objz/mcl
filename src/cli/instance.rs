@@ -87,7 +87,7 @@ async fn create_instance(matches: &ArgMatches) -> CliResult {
     let name = required_arg(matches, "name")?;
     let version = required_arg(matches, "version")?;
     let loader = parse_loader(required_arg(matches, "loader")?)
-        .map_err(|message| io::Error::other(message))?;
+        .map_err(io::Error::other)?;
     let loader_version = matches.get_one::<String>("loader-version").map(String::as_str);
     let manager = manager();
 

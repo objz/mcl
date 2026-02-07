@@ -14,11 +14,12 @@ pub enum RunState {
 pub static RUNNING: Lazy<Arc<Mutex<HashMap<String, RunState>>>> =
     Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
 
-pub static PENDING_LAST_PLAYED: Lazy<Arc<Mutex<Vec<(String, DateTime<Utc>)>>>> =
+type PendingLastPlayed = Arc<Mutex<Vec<(String, DateTime<Utc>)>>>;
+pub static PENDING_LAST_PLAYED: Lazy<PendingLastPlayed> =
     Lazy::new(|| Arc::new(Mutex::new(Vec::new())));
 
-pub static KILL_SENDERS: Lazy<Arc<Mutex<HashMap<String, tokio::sync::oneshot::Sender<()>>>>> =
-    Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
+type KillSenders = Arc<Mutex<HashMap<String, tokio::sync::oneshot::Sender<()>>>>;
+pub static KILL_SENDERS: Lazy<KillSenders> = Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
 
 pub fn set_state(name: &str, state: RunState) {
     if let Ok(mut map) = RUNNING.lock() {

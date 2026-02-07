@@ -147,7 +147,7 @@ impl App {
             self.screenshots_state.request_visible_loads();
             self.create_screenshot_protocols();
             self.throbber_tick = self.throbber_tick.wrapping_add(1);
-            if self.throbber_tick % 8 == 0 {
+            if self.throbber_tick.is_multiple_of(8) {
                 self.throbber_state.calc_next();
             }
 
@@ -241,13 +241,10 @@ impl App {
         let mut next_y: u16 = 1;
         for event in all_errors {
             let elapsed_ms = event.pushed_at.elapsed().as_millis();
-            match popup_area(frame.area(), &event.message, next_y, elapsed_ms) {
-                Some(area) => {
-                    next_y = next_y.saturating_add(area.height + 1);
-                    frame.render_widget(ErrorPopup::new(event.clone()), area);
-                    self.render_error_effect(frame, area, &event, elapsed_ms);
-                }
-                None => {}
+            if let Some(area) = popup_area(frame.area(), &event.message, next_y, elapsed_ms) {
+                next_y = next_y.saturating_add(area.height + 1);
+                frame.render_widget(ErrorPopup::new(event.clone()), area);
+                self.render_error_effect(frame, area, &event, elapsed_ms);
             }
         }
 
@@ -395,11 +392,10 @@ impl App {
             }
         }
 
-        if self.focused == FocusedArea::Account {
-            if widgets::account::handle_key(&key_event, &mut self.account_state) {
+        if self.focused == FocusedArea::Account
+            && widgets::account::handle_key(&key_event, &mut self.account_state) {
                 return Ok(());
             }
-        }
 
         if self.focused == FocusedArea::Settings {
             match widgets::details::handle_key(

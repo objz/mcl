@@ -4,8 +4,8 @@ use std::sync::{Arc, Mutex};
 
 const MAX_LINES: usize = 2000;
 
-pub static LOGS: Lazy<Arc<Mutex<HashMap<String, VecDeque<String>>>>> =
-    Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
+type LogsMap = Arc<Mutex<HashMap<String, VecDeque<String>>>>;
+pub static LOGS: Lazy<LogsMap> = Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
 
 pub fn push(name: &str, line: impl Into<String>) {
     if let Ok(mut logs) = LOGS.lock() {

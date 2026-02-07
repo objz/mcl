@@ -25,6 +25,12 @@ pub struct HttpClient {
     inner: Client,
 }
 
+impl Default for HttpClient {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl HttpClient {
     pub fn new() -> Self {
         match Client::builder()

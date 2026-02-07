@@ -16,6 +16,8 @@ use crate::instance::mods::ModEntry;
 use crate::tui::theme::THEME;
 
 type IconCell = (u8, u8, u8, u8, u8, u8);
+type PendingContent = Arc<Mutex<Option<(String, Vec<ModEntry>)>>>;
+type SnapshotRow = (String, String, bool, Option<Vec<Vec<IconCell>>>);
 
 struct CachedList {
     entries: Vec<ModEntry>,
@@ -30,7 +32,7 @@ pub struct ContentListState {
     pub loading: bool,
     pub search: super::search::SearchState,
     cache: HashMap<String, CachedList>,
-    pending: Arc<Mutex<Option<(String, Vec<ModEntry>)>>>,
+    pending: PendingContent,
 }
 
 impl Default for ContentListState {
@@ -338,7 +340,7 @@ pub fn render(
 
     let count = filtered.len();
 
-    let snapshot: Vec<(String, String, bool, Option<Vec<Vec<IconCell>>>)> = filtered
+    let snapshot: Vec<SnapshotRow> = filtered
         .iter()
         .map(|&i| {
             let entry = &state.entries[i];

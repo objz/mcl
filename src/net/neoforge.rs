@@ -116,19 +116,16 @@ pub async fn fetch_neoforge_game_versions(
     for version in &maven.versions {
         let parts: Vec<&str> = version.split('.').collect();
         if parts.len() >= 2 {
-            match (parts[0].parse::<u32>(), parts[1].parse::<u32>()) {
-                (Ok(major), Ok(minor)) => {
-                    let mc_version = if minor == 0 {
-                        format!("1.{}", major)
-                    } else {
-                        format!("1.{}.{}", major, minor)
-                    };
+            if let (Ok(major), Ok(minor)) = (parts[0].parse::<u32>(), parts[1].parse::<u32>()) {
+                let mc_version = if minor == 0 {
+                    format!("1.{}", major)
+                } else {
+                    format!("1.{}.{}", major, minor)
+                };
 
-                    if !game_versions.contains(&mc_version) {
-                        game_versions.push(mc_version);
-                    }
+                if !game_versions.contains(&mc_version) {
+                    game_versions.push(mc_version);
                 }
-                _ => {}
             }
         }
     }

@@ -42,18 +42,15 @@ pub enum WizardStep {
 }
 
 #[derive(Debug, Clone)]
+#[derive(Default)]
 pub enum LoadState<T> {
+    #[default]
     Idle,
     Loading,
     Loaded(T),
     Error(String),
 }
 
-impl<T> Default for LoadState<T> {
-    fn default() -> Self {
-        LoadState::Idle
-    }
-}
 
 #[derive(Debug, Clone)]
 pub struct WizardState {
@@ -255,7 +252,7 @@ fn handle_name_key(
             state.step = WizardStep::Loader;
         }
         _ => {
-            state.name_state.handle_key_event(key_event.clone());
+            state.name_state.handle_key_event(*key_event);
         }
     }
 }
@@ -785,7 +782,7 @@ fn compare_semver(a: &str, b: &str) -> std::cmp::Ordering {
     a_parts.len().cmp(&b_parts.len())
 }
 
-fn sort_versions_semver(versions: &mut Vec<GameVersion>) {
+fn sort_versions_semver(versions: &mut [GameVersion]) {
     // Sort newest first (descending), so compare b vs a
     versions.sort_by(|a, b| compare_semver(&b.id, &a.id));
 }

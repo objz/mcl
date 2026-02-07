@@ -8,13 +8,15 @@ use ratatui::{
 
 use crate::tui::theme::THEME;
 
+type ContentFn<'a> = Box<dyn Fn(Rect, &mut Buffer) + 'a>;
+
 pub struct PopupFrame<'a> {
     pub title: Line<'a>,
     pub border_color: Color,
     pub bg: Option<Color>,
     pub keybinds: Option<Line<'a>>,
     pub search_line: Option<Line<'a>>,
-    pub content: Box<dyn Fn(Rect, &mut Buffer) + 'a>,
+    pub content: ContentFn<'a>,
 }
 
 impl<'a> Widget for PopupFrame<'a> {
