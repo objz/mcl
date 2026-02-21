@@ -166,3 +166,68 @@ fn read_pack_metadata_from_dir(dir: &Path) -> (String, String, Option<Vec<u8>>) 
 
     (String::new(), description, icon_bytes)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn extract_description_from_string() {
+        let val = serde_json::json!("Simple pack");
+        assert_eq!(extract_description(&val), "Simple pack");
+    }
+
+    #[test]
+    fn extract_description_from_object_with_text() {
+        let val = serde_json::json!({"text": "Hello world"});
+        assert_eq!(extract_description(&val), "Hello world");
+    }
+
+    #[test]
+    fn extract_description_from_object_without_text() {
+        let val = serde_json::json!({"color": "red"});
+        assert_eq!(extract_description(&val), "");
+    }
+
+    #[test]
+    fn extract_description_from_array_of_strings() {
+        let val = serde_json::json!(["Hello", " ", "world"]);
+        assert_eq!(extract_description(&val), "Hello world");
+    }
+
+    #[test]
+    fn extract_description_from_array_of_objects() {
+        let val = serde_json::json!([{"text": "A"}, {"text": "B"}]);
+        assert_eq!(extract_description(&val), "AB");
+    }
+
+    #[test]
+    fn extract_description_from_mixed_array() {
+        let val = serde_json::json!(["Prefix ", {"text": "suffix"}]);
+        assert_eq!(extract_description(&val), "Prefix suffix");
+    }
+
+    #[test]
+    fn extract_description_from_empty_array() {
+        let val = serde_json::json!([]);
+        assert_eq!(extract_description(&val), "");
+    }
+
+    #[test]
+    fn extract_description_from_null() {
+        let val = serde_json::Value::Null;
+        assert_eq!(extract_description(&val), "");
+    }
+
+    #[test]
+    fn extract_description_from_number() {
+        let val = serde_json::json!(42);
+        assert_eq!(extract_description(&val), "");
+    }
+
+    #[test]
+    fn extract_description_from_bool() {
+        let val = serde_json::json!(true);
+        assert_eq!(extract_description(&val), "");
+    }
+}
