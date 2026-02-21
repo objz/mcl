@@ -150,3 +150,129 @@ pub struct Config {
     #[serde(default)]
     pub ui: Ui,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn effective_java_path_none_when_absent() {
+        let paths = Paths {
+            java_path: None,
+            ..Paths::default()
+        };
+        assert!(paths.effective_java_path().is_none());
+    }
+
+    #[test]
+    fn effective_java_path_none_when_empty() {
+        let paths = Paths {
+            java_path: Some(String::new()),
+            ..Paths::default()
+        };
+        assert!(paths.effective_java_path().is_none());
+    }
+
+    #[test]
+    fn effective_java_path_some_when_set() {
+        let paths = Paths {
+            java_path: Some("/usr/bin/java".to_string()),
+            ..Paths::default()
+        };
+        assert_eq!(paths.effective_java_path(), Some("/usr/bin/java"));
+    }
+
+    #[test]
+    fn resolve_instances_dir_absolute_path() {
+        let paths = Paths {
+            instances_dir: "/opt/mcl/instances".to_string(),
+            ..Paths::default()
+        };
+        assert_eq!(
+            paths.resolve_instances_dir(),
+            std::path::PathBuf::from("/opt/mcl/instances")
+        );
+    }
+
+    #[test]
+    fn resolve_instances_dir_tilde_prefix() {
+        let paths = Paths {
+            instances_dir: "~/games/mcl".to_string(),
+            ..Paths::default()
+        };
+        let resolved = paths.resolve_instances_dir();
+        assert!(!resolved.to_string_lossy().starts_with('~'));
+        assert!(resolved.to_string_lossy().ends_with("games/mcl"));
+    }
+
+    #[test]
+    fn resolve_instances_dir_bare_tilde() {
+        let paths = Paths {
+            instances_dir: "~".to_string(),
+            ..Paths::default()
+        };
+        let resolved = paths.resolve_instances_dir();
+        assert!(!resolved.to_string_lossy().starts_with('~'));
+    }
+
+    #[test]
+    fn resolve_meta_dir_absolute_path() {
+        let paths = Paths {
+            meta_dir: "/opt/mcl/meta".to_string(),
+            ..Paths::default()
+        };
+        assert_eq!(
+            paths.resolve_meta_dir(),
+            std::path::PathBuf::from("/opt/mcl/meta")
+        );
+    }
+
+    #[test]
+    fn resolve_meta_dir_tilde_prefix() {
+        let paths = Paths {
+            meta_dir: "~/mcl/meta".to_string(),
+            ..Paths::default()
+        };
+        let resolved = paths.resolve_meta_dir();
+        assert!(!resolved.to_string_lossy().starts_with('~'));
+        assert!(resolved.to_string_lossy().ends_with("mcl/meta"));
+    }
+
+    #[test]
+    fn defaults_have_expected_values() {
+        let d = Defaults::default();
+        assert_eq!(d.memory_min, "512M");
+        assert_eq!(d.memory_max, "2G");
+    }
+
+    #[test]
+    fn ui_defaults_have_expected_values() {
+        let ui = Ui::default();
+        assert_eq!(ui.error_auto_dismiss_ms, 5000);
+        assert_eq!(ui.error_slide_start_ms, 3500);
+        assert_eq!(ui.error_fly_out_ms, 300);
+        assert_eq!(ui.max_error_events, 50);
+    }
+
+    #[test]
+    fn config_deserializes_from_empty_toml() {
+        let config: Config = toml::from_str("").unwrap();
+        assert!(!config.general.debug);
+        assert_eq!(config.defaults.memory_max, "2G");
+    }
+
+    #[test]
+    fn config_deserializes_partial_toml() {
+        let toml_str = r#"
+[general]
+debug = true
+
+[defaults]
+memory_max = "8G"
+"#;
+        let config: Config = toml::from_str(toml_str).unwrap();
+        assert!(config.general.debug);
+        assert_eq!(config.defaults.memory_max, "8G");
+        assert_eq!(config.defaults.memory_min, "512M");
+    }
+}
