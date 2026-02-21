@@ -353,4 +353,123 @@ mod tests {
         assert!(acc.refresh_token.is_none());
         assert!(!acc.uuid.is_empty());
     }
+
+    fn make_store(dir: &std::path::Path) -> AccountStore {
+        AccountStore {
+            accounts: Vec::new(),
+            path: dir.join("accounts.json"),
+        }
+    }
+
+    fn dummy_account(name: &str) -> Account {
+        Account {
+            uuid: offline_uuid(name),
+            username: name.to_string(),
+            account_type: AccountType::Offline,
+            active: false,
+            refresh_token: None,
+        }
+    }
+
+    #[test]
+    fn store_add_first_becomes_active() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut store = make_store(tmp.path());
+        store.add(dummy_account("Alice"));
+        assert_eq!(store.accounts.len(), 1);
+        assert!(store.accounts[0].active);
+    }
+
+    #[test]
+    fn store_add_second_stays_inactive() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut store = make_store(tmp.path());
+        store.add(dummy_account("Alice"));
+        store.add(dummy_account("Bob"));
+        assert_eq!(store.accounts.len(), 2);
+        assert!(store.accounts[0].active);
+        assert!(!store.accounts[1].active);
+    }
+
+    #[test]
+    fn store_add_duplicate_uuid_replaces() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut store = make_store(tmp.path());
+        store.add(dummy_account("Alice"));
+        let mut dup = dummy_account("Alice");
+        dup.username = "AliceRenamed".to_string();
+        dup.uuid = store.accounts[0].uuid.clone();
+        store.add(dup);
+        assert_eq!(store.accounts.len(), 1);
+        assert_eq!(store.accounts[0].username, "AliceRenamed");
+    }
+
+    #[test]
+    fn store_active_account_none_when_empty() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = make_store(tmp.path());
+        assert!(store.active_account().is_none());
+    }
+
+    #[test]
+    fn store_active_account_returns_active() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut store = make_store(tmp.path());
+        store.add(dummy_account("Alice"));
+        store.add(dummy_account("Bob"));
+        let active = store.active_account().unwrap();
+        assert_eq!(active.username, "Alice");
+    }
+
+    #[test]
+    fn store_set_active_changes_active() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut store = make_store(tmp.path());
+        store.add(dummy_account("Alice"));
+        store.add(dummy_account("Bob"));
+        store.set_active(1);
+        assert!(!store.accounts[0].active);
+        assert!(store.accounts[1].active);
+    }
+
+    #[test]
+    fn store_remove_activates_first_remaining() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut store = make_store(tmp.path());
+        store.add(dummy_account("Alice"));
+        store.add(dummy_account("Bob"));
+        store.remove(0);
+        assert_eq!(store.accounts.len(), 1);
+        assert_eq!(store.accounts[0].username, "Bob");
+        assert!(store.accounts[0].active);
+    }
+
+    #[test]
+    fn store_remove_out_of_bounds_noop() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut store = make_store(tmp.path());
+        store.add(dummy_account("Alice"));
+        store.remove(5);
+        assert_eq!(store.accounts.len(), 1);
+    }
+
+    #[test]
+    fn store_save_and_reload() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut store = make_store(tmp.path());
+        store.add(dummy_account("Alice"));
+        store.add(dummy_account("Bob"));
+        store.save();
+
+        let reloaded = AccountStore {
+            accounts: serde_json::from_str(
+                &std::fs::read_to_string(tmp.path().join("accounts.json")).unwrap(),
+            )
+            .unwrap(),
+            path: tmp.path().join("accounts.json"),
+        };
+        assert_eq!(reloaded.accounts.len(), 2);
+        assert_eq!(reloaded.accounts[0].username, "Alice");
+        assert!(reloaded.accounts[0].active);
+    }
 }
