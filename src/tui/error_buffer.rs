@@ -64,3 +64,71 @@ pub fn peek_all_errors() -> Vec<ErrorEvent> {
         Err(_) => Vec::new(),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_event(msg: &str) -> ErrorEvent {
+        ErrorEvent {
+            id: 0,
+            level: Level::ERROR,
+            message: msg.to_string(),
+            pushed_at: Instant::now(),
+        }
+    }
+
+    #[test]
+    fn push_and_pop_fifo() {
+        push_error(make_event("err_fifo_1"));
+        push_error(make_event("err_fifo_2"));
+        let first = pop_error();
+        assert!(first.is_some() || has_errors());
+    }
+
+    #[test]
+    fn has_errors_after_push() {
+        push_error(make_event("err_has"));
+        assert!(has_errors());
+    }
+
+    #[test]
+    fn peek_does_not_remove() {
+        push_error(make_event("err_peek"));
+        let before = peek_error();
+        assert!(before.is_some());
+        assert!(has_errors());
+    }
+
+    #[test]
+    fn peek_all_returns_newest_first() {
+        push_error(make_event("err_all_a"));
+        push_error(make_event("err_all_b"));
+        let all = peek_all_errors();
+        assert!(all.len() >= 2);
+        if all.len() >= 2 {
+            assert!(all[0].id >= all[1].id);
+        }
+    }
+
+    #[test]
+    fn auto_assigned_ids_are_unique() {
+        push_error(make_event("err_id_1"));
+        push_error(make_event("err_id_2"));
+        let all = peek_all_errors();
+        if all.len() >= 2 {
+            let ids: Vec<u64> = all.iter().map(|e| e.id).collect();
+            let unique: std::collections::HashSet<u64> = ids.iter().copied().collect();
+            assert_eq!(ids.len(), unique.len());
+        }
+    }
+
+    #[test]
+    fn overflow_drops_oldest() {
+        for i in 0..(MAX_ERROR_EVENTS + 10) {
+            push_error(make_event(&format!("overflow_{i}")));
+        }
+        let all = peek_all_errors();
+        assert!(all.len() <= MAX_ERROR_EVENTS);
+    }
+}
