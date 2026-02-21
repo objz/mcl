@@ -302,3 +302,55 @@ pub async fn refresh_and_get_token(account: &Account) -> Result<(String, Option<
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn offline_uuid_is_valid_format() {
+        let uuid = offline_uuid("Steve");
+        let parts: Vec<&str> = uuid.split('-').collect();
+        assert_eq!(parts.len(), 5, "UUID must have 5 dash-separated parts");
+        assert_eq!(parts[0].len(), 8);
+        assert_eq!(parts[1].len(), 4);
+        assert_eq!(parts[2].len(), 4);
+        assert_eq!(parts[3].len(), 4);
+        assert_eq!(parts[4].len(), 12);
+    }
+
+    #[test]
+    fn offline_uuid_version_3_marker() {
+        let uuid = offline_uuid("Steve");
+        assert!(uuid.split('-').nth(2).unwrap().starts_with('3'));
+    }
+
+    #[test]
+    fn offline_uuid_variant_bit_set() {
+        let uuid = offline_uuid("Steve");
+        let part3 = uuid.split('-').nth(3).unwrap();
+        let first_nibble = u8::from_str_radix(&part3[..1], 16).unwrap();
+        assert!((0x8..=0xb).contains(&first_nibble));
+    }
+
+    #[test]
+    fn offline_uuid_deterministic() {
+        assert_eq!(offline_uuid("Steve"), offline_uuid("Steve"));
+        assert_eq!(offline_uuid("Alex"), offline_uuid("Alex"));
+    }
+
+    #[test]
+    fn offline_uuid_different_for_different_names() {
+        assert_ne!(offline_uuid("Steve"), offline_uuid("Alex"));
+    }
+
+    #[test]
+    fn create_offline_account_fields() {
+        let acc = create_offline_account("TestPlayer");
+        assert_eq!(acc.username, "TestPlayer");
+        assert_eq!(acc.account_type, AccountType::Offline);
+        assert!(!acc.active);
+        assert!(acc.refresh_token.is_none());
+        assert!(!acc.uuid.is_empty());
+    }
+}
