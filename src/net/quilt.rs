@@ -203,7 +203,7 @@ mod tests {
                     "Should have Quilt versions for 1.20.1"
                 );
             }
-            Err(e) => assert!(false, "fetch_quilt_versions failed: {}", e),
+            Err(e) => panic!("fetch_quilt_versions failed: {}", e),
         }
     }
 
@@ -215,7 +215,7 @@ mod tests {
                 assert!(!versions.is_empty(), "Should have Quilt game versions");
                 assert!(versions.iter().any(|version| version.id == "1.20.1"));
             }
-            Err(e) => assert!(false, "fetch_quilt_game_versions failed: {}", e),
+            Err(e) => panic!("fetch_quilt_game_versions failed: {}", e),
         }
     }
 

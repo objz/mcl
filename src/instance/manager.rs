@@ -496,7 +496,7 @@ mod tests {
 
         match manager.save(&config) {
             Ok(_) => {}
-            Err(e) => assert!(false, "save failed: {}", e),
+            Err(e) => panic!("save failed: {}", e),
         }
 
         let all = manager.load_all();

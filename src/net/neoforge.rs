@@ -222,7 +222,7 @@ mod tests {
                     "Should have NeoForge versions for 1.21"
                 );
             }
-            Err(e) => assert!(false, "fetch_neoforge_versions failed: {}", e),
+            Err(e) => panic!("fetch_neoforge_versions failed: {}", e),
         }
     }
 
@@ -234,7 +234,7 @@ mod tests {
                 assert!(!versions.is_empty(), "Should have NeoForge game versions");
                 assert!(versions.iter().any(|version| version.id == "1.21"));
             }
-            Err(e) => assert!(false, "fetch_neoforge_game_versions failed: {}", e),
+            Err(e) => panic!("fetch_neoforge_game_versions failed: {}", e),
         }
     }
 

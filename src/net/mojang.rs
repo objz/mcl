@@ -437,7 +437,7 @@ mod tests {
                 let found = manifest.versions.iter().any(|v| v.id == "1.20.1");
                 assert!(found, "1.20.1 should be in the manifest");
             }
-            Err(e) => assert!(false, "fetch_version_manifest failed: {}", e),
+            Err(e) => panic!("fetch_version_manifest failed: {}", e),
         }
     }
 }

@@ -75,9 +75,9 @@ mod tests {
                     assert_eq!(parsed.loader, config.loader);
                     assert_eq!(parsed.resolution, config.resolution);
                 }
-                Err(e) => assert!(false, "Deserialization failed: {}", e),
+                Err(e) => panic!("Deserialization failed: {}", e),
             },
-            Err(e) => assert!(false, "Serialization failed: {}", e),
+            Err(e) => panic!("Serialization failed: {}", e),
         }
     }
 }

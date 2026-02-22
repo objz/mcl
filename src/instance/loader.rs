@@ -508,7 +508,7 @@ mod tests {
                 assert!(!versions.is_empty());
                 assert_eq!(versions[0], "vanilla");
             }
-            Err(e) => assert!(false, "get_versions failed: {}", e),
+            Err(e) => panic!("get_versions failed: {}", e),
         }
     }
 
@@ -523,7 +523,7 @@ mod tests {
             .await
         {
             Ok(()) => {}
-            Err(e) => assert!(false, "install failed: {}", e),
+            Err(e) => panic!("install failed: {}", e),
         }
     }
 
@@ -536,7 +536,7 @@ mod tests {
                 assert!(!versions.is_empty());
                 assert!(versions.iter().any(|version| version.id == "1.20.1"));
             }
-            Err(e) => assert!(false, "get_game_versions failed: {}", e),
+            Err(e) => panic!("get_game_versions failed: {}", e),
         }
     }
 }

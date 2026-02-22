@@ -148,7 +148,7 @@ mod tests {
         let (tx, mut rx) = tokio::sync::oneshot::channel::<()>();
         register_kill("run_test_kill", tx);
         assert!(send_kill("run_test_kill"));
-        assert!(rx.try_recv().is_ok() || true);
+        let _ = rx.try_recv();
     }
 
     #[test]

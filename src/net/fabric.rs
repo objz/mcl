@@ -209,7 +209,7 @@ mod tests {
                     "Version should be semver-like"
                 );
             }
-            Err(e) => assert!(false, "fetch_fabric_versions failed: {}", e),
+            Err(e) => panic!("fetch_fabric_versions failed: {}", e),
         }
     }
 
@@ -221,7 +221,7 @@ mod tests {
                 assert!(!versions.is_empty(), "Should have Fabric game versions");
                 assert!(versions.iter().any(|version| version.id == "1.20.1"));
             }
-            Err(e) => assert!(false, "fetch_fabric_game_versions failed: {}", e),
+            Err(e) => panic!("fetch_fabric_game_versions failed: {}", e),
         }
     }
 
