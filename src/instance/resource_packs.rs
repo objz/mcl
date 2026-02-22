@@ -230,4 +230,68 @@ mod tests {
         let val = serde_json::json!(true);
         assert_eq!(extract_description(&val), "");
     }
+
+    fn setup_packs_dir(tmp: &std::path::Path, instance: &str) -> std::path::PathBuf {
+        let dir = tmp
+            .join(instance)
+            .join(".minecraft")
+            .join("resourcepacks");
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn scan_resource_packs_empty_dir() {
+        let tmp = tempfile::tempdir().unwrap();
+        setup_packs_dir(tmp.path(), "inst");
+        let packs = scan_resource_packs(tmp.path(), "inst");
+        assert!(packs.is_empty());
+    }
+
+    #[test]
+    fn scan_resource_packs_missing_dir_returns_empty() {
+        let tmp = tempfile::tempdir().unwrap();
+        let packs = scan_resource_packs(tmp.path(), "ghost");
+        assert!(packs.is_empty());
+    }
+
+    #[test]
+    fn scan_resource_packs_finds_zips_and_dirs() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = setup_packs_dir(tmp.path(), "inst");
+        std::fs::write(dir.join("pack-a.zip"), b"PK\x03\x04").unwrap();
+        std::fs::create_dir(dir.join("pack-b")).unwrap();
+        let packs = scan_resource_packs(tmp.path(), "inst");
+        assert_eq!(packs.len(), 2);
+    }
+
+    #[test]
+    fn scan_resource_packs_disabled_variants() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = setup_packs_dir(tmp.path(), "inst");
+        std::fs::write(dir.join("on.zip"), b"PK\x03\x04").unwrap();
+        std::fs::write(dir.join("off.zip.disabled"), b"PK\x03\x04").unwrap();
+        std::fs::create_dir(dir.join("diron")).unwrap();
+        std::fs::create_dir(dir.join("diroff.disabled")).unwrap();
+        let packs = scan_resource_packs(tmp.path(), "inst");
+        assert_eq!(packs.len(), 4);
+        let on_zip = packs.iter().find(|p| p.file_stem == "on").unwrap();
+        let off_zip = packs.iter().find(|p| p.file_stem == "off").unwrap();
+        let on_dir = packs.iter().find(|p| p.file_stem == "diron").unwrap();
+        let off_dir = packs.iter().find(|p| p.file_stem == "diroff").unwrap();
+        assert!(on_zip.enabled);
+        assert!(!off_zip.enabled);
+        assert!(on_dir.enabled);
+        assert!(!off_dir.enabled);
+    }
+
+    #[test]
+    fn scan_resource_packs_ignores_non_pack_files() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = setup_packs_dir(tmp.path(), "inst");
+        std::fs::write(dir.join("notes.txt"), "not a pack").unwrap();
+        std::fs::write(dir.join("valid.zip"), b"PK\x03\x04").unwrap();
+        let packs = scan_resource_packs(tmp.path(), "inst");
+        assert_eq!(packs.len(), 1);
+    }
 }
