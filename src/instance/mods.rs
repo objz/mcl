@@ -161,3 +161,119 @@ pub fn toggle_mod(entry: &ModEntry) -> Result<(), std::io::Error> {
     new_path.set_file_name(new_name);
     std::fs::rename(&entry.path, new_path)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn setup_mods_dir(tmp: &Path, instance: &str) -> PathBuf {
+        let dir = tmp.join(instance).join(".minecraft").join("mods");
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn scan_mods_empty_dir() {
+        let tmp = tempfile::tempdir().unwrap();
+        setup_mods_dir(tmp.path(), "inst");
+        let mods = scan_mods(tmp.path(), "inst");
+        assert!(mods.is_empty());
+    }
+
+    #[test]
+    fn scan_mods_missing_dir_returns_empty() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mods = scan_mods(tmp.path(), "ghost");
+        assert!(mods.is_empty());
+    }
+
+    #[test]
+    fn scan_mods_finds_jar_files() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = setup_mods_dir(tmp.path(), "inst");
+        std::fs::write(dir.join("cool-mod.jar"), b"PK\x03\x04").unwrap();
+        std::fs::write(dir.join("other-mod.jar.disabled"), b"PK\x03\x04").unwrap();
+        let mods = scan_mods(tmp.path(), "inst");
+        assert_eq!(mods.len(), 2);
+    }
+
+    #[test]
+    fn scan_mods_enabled_disabled_flags() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = setup_mods_dir(tmp.path(), "inst");
+        std::fs::write(dir.join("active.jar"), b"PK\x03\x04").unwrap();
+        std::fs::write(dir.join("inactive.jar.disabled"), b"PK\x03\x04").unwrap();
+        let mods = scan_mods(tmp.path(), "inst");
+        let active = mods.iter().find(|m| m.file_stem == "active").unwrap();
+        let inactive = mods.iter().find(|m| m.file_stem == "inactive").unwrap();
+        assert!(active.enabled);
+        assert!(!inactive.enabled);
+    }
+
+    #[test]
+    fn scan_mods_ignores_non_jar() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = setup_mods_dir(tmp.path(), "inst");
+        std::fs::write(dir.join("readme.txt"), "not a mod").unwrap();
+        std::fs::write(dir.join("config.json"), "{}").unwrap();
+        std::fs::write(dir.join("real.jar"), b"PK\x03\x04").unwrap();
+        let mods = scan_mods(tmp.path(), "inst");
+        assert_eq!(mods.len(), 1);
+    }
+
+    #[test]
+    fn scan_mods_sorted_case_insensitive() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = setup_mods_dir(tmp.path(), "inst");
+        std::fs::write(dir.join("Zebra.jar"), b"PK\x03\x04").unwrap();
+        std::fs::write(dir.join("alpha.jar"), b"PK\x03\x04").unwrap();
+        std::fs::write(dir.join("Beta.jar"), b"PK\x03\x04").unwrap();
+        let mods = scan_mods(tmp.path(), "inst");
+        let names: Vec<&str> = mods.iter().map(|m| m.name.as_str()).collect();
+        assert_eq!(names, vec!["alpha", "Beta", "Zebra"]);
+    }
+
+    #[test]
+    fn toggle_mod_enable() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = setup_mods_dir(tmp.path(), "inst");
+        let disabled_path = dir.join("mymod.jar.disabled");
+        std::fs::write(&disabled_path, b"PK\x03\x04").unwrap();
+
+        let entry = ModEntry {
+            file_stem: "mymod".to_string(),
+            name: "mymod".to_string(),
+            description: String::new(),
+            enabled: false,
+            icon_bytes: None,
+            path: disabled_path.clone(),
+            icon_lines: None,
+        };
+
+        toggle_mod(&entry).unwrap();
+        assert!(!disabled_path.exists());
+        assert!(dir.join("mymod.jar").exists());
+    }
+
+    #[test]
+    fn toggle_mod_disable() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = setup_mods_dir(tmp.path(), "inst");
+        let enabled_path = dir.join("mymod.jar");
+        std::fs::write(&enabled_path, b"PK\x03\x04").unwrap();
+
+        let entry = ModEntry {
+            file_stem: "mymod".to_string(),
+            name: "mymod".to_string(),
+            description: String::new(),
+            enabled: true,
+            icon_bytes: None,
+            path: enabled_path.clone(),
+            icon_lines: None,
+        };
+
+        toggle_mod(&entry).unwrap();
+        assert!(!enabled_path.exists());
+        assert!(dir.join("mymod.jar.disabled").exists());
+    }
+}
