@@ -116,3 +116,65 @@ fn read_shader_metadata_from_dir(dir: &Path) -> (String, Option<Vec<u8>>) {
 
     (description, icon_bytes)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn setup_shaders_dir(tmp: &std::path::Path, instance: &str) -> std::path::PathBuf {
+        let dir = tmp.join(instance).join(".minecraft").join("shaderpacks");
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn scan_shaders_empty_dir() {
+        let tmp = tempfile::tempdir().unwrap();
+        setup_shaders_dir(tmp.path(), "inst");
+        let shaders = scan_shaders(tmp.path(), "inst");
+        assert!(shaders.is_empty());
+    }
+
+    #[test]
+    fn scan_shaders_missing_dir_returns_empty() {
+        let tmp = tempfile::tempdir().unwrap();
+        let shaders = scan_shaders(tmp.path(), "ghost");
+        assert!(shaders.is_empty());
+    }
+
+    #[test]
+    fn scan_shaders_finds_zip_and_dir() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = setup_shaders_dir(tmp.path(), "inst");
+        std::fs::write(dir.join("shader-a.zip"), b"PK\x03\x04").unwrap();
+        std::fs::create_dir(dir.join("shader-b")).unwrap();
+        let shaders = scan_shaders(tmp.path(), "inst");
+        assert_eq!(shaders.len(), 2);
+    }
+
+    #[test]
+    fn scan_shaders_disabled_variants() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = setup_shaders_dir(tmp.path(), "inst");
+        std::fs::write(dir.join("active.zip"), b"PK\x03\x04").unwrap();
+        std::fs::write(dir.join("off.zip.disabled"), b"PK\x03\x04").unwrap();
+        std::fs::create_dir(dir.join("dirshader.disabled")).unwrap();
+        let shaders = scan_shaders(tmp.path(), "inst");
+        let active = shaders.iter().find(|s| s.file_stem == "active").unwrap();
+        let off = shaders.iter().find(|s| s.file_stem == "off").unwrap();
+        let diroff = shaders.iter().find(|s| s.file_stem == "dirshader").unwrap();
+        assert!(active.enabled);
+        assert!(!off.enabled);
+        assert!(!diroff.enabled);
+    }
+
+    #[test]
+    fn scan_shaders_ignores_non_shader_files() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = setup_shaders_dir(tmp.path(), "inst");
+        std::fs::write(dir.join("readme.txt"), "not a shader").unwrap();
+        std::fs::write(dir.join("valid.zip"), b"PK\x03\x04").unwrap();
+        let shaders = scan_shaders(tmp.path(), "inst");
+        assert_eq!(shaders.len(), 1);
+    }
+}
