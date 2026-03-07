@@ -112,6 +112,96 @@ pub fn game_version_from_dependencies(deps: &HashMap<String, String>) -> Option<
     deps.get("minecraft").cloned()
 }
 
+// --- API client functions ---
+
+const API_BASE: &str = "https://api.modrinth.com/v2";
+
+pub async fn fetch_project(
+    client: &crate::net::HttpClient,
+    slug_or_id: &str,
+) -> Result<ProjectInfo, crate::net::NetError> {
+    let url = format!("{}/project/{}", API_BASE, slug_or_id);
+    let resp = client
+        .inner()
+        .get(&url)
+        .send()
+        .await?;
+    if !resp.status().is_success() {
+        return Err(crate::net::NetError::StatusError {
+            status: resp.status().as_u16(),
+            url,
+        });
+    }
+    resp.json().await.map_err(crate::net::NetError::Http)
+}
+
+pub async fn fetch_versions(
+    client: &crate::net::HttpClient,
+    slug_or_id: &str,
+) -> Result<Vec<VersionInfo>, crate::net::NetError> {
+    let url = format!(
+        "{}/project/{}/version?loaders=[\"fabric\",\"forge\",\"neoforge\",\"quilt\"]",
+        API_BASE, slug_or_id
+    );
+    let resp = client
+        .inner()
+        .get(&url)
+        .send()
+        .await?;
+    if !resp.status().is_success() {
+        return Err(crate::net::NetError::StatusError {
+            status: resp.status().as_u16(),
+            url,
+        });
+    }
+    resp.json().await.map_err(crate::net::NetError::Http)
+}
+
+pub async fn fetch_version(
+    client: &crate::net::HttpClient,
+    version_id: &str,
+) -> Result<VersionInfo, crate::net::NetError> {
+    let url = format!("{}/version/{}", API_BASE, version_id);
+    let resp = client
+        .inner()
+        .get(&url)
+        .send()
+        .await?;
+    if !resp.status().is_success() {
+        return Err(crate::net::NetError::StatusError {
+            status: resp.status().as_u16(),
+            url,
+        });
+    }
+    resp.json().await.map_err(crate::net::NetError::Http)
+}
+
+pub async fn download_mrpack(
+    client: &crate::net::HttpClient,
+    version: &VersionInfo,
+    dest: &std::path::Path,
+) -> Result<std::path::PathBuf, crate::net::NetError> {
+    let file = version
+        .files
+        .iter()
+        .find(|f| f.primary)
+        .or_else(|| version.files.first())
+        .ok_or_else(|| crate::net::NetError::Parse("No files in version".to_string()))?;
+
+    let mrpack_path = dest.join(&file.filename);
+    crate::net::download_file(client, &file.url, &mrpack_path, |_, _| {}).await?;
+    Ok(mrpack_path)
+}
+
+pub fn parse_mrpack(path: &std::path::Path) -> Result<MrpackIndex, String> {
+    let file = std::fs::File::open(path).map_err(|e| format!("Cannot open .mrpack: {e}"))?;
+    let mut archive = zip::ZipArchive::new(file).map_err(|e| format!("Invalid ZIP: {e}"))?;
+    let entry = archive
+        .by_name("modrinth.index.json")
+        .map_err(|_| "Missing modrinth.index.json in .mrpack".to_string())?;
+    serde_json::from_reader(entry).map_err(|e| format!("Invalid manifest JSON: {e}"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -232,5 +322,31 @@ mod tests {
             game_version_from_dependencies(&index.dependencies),
             Some("1.21.4".to_string())
         );
+    }
+
+    #[tokio::test]
+    async fn test_fetch_project() {
+        let client = crate::net::HttpClient::new();
+        let project = fetch_project(&client, "fabulously-optimized").await;
+        match project {
+            Ok(p) => {
+                assert_eq!(p.slug, "fabulously-optimized");
+                assert!(!p.title.is_empty());
+            }
+            Err(e) => panic!("fetch_project failed: {e}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_fetch_versions() {
+        let client = crate::net::HttpClient::new();
+        let versions = fetch_versions(&client, "fabulously-optimized").await;
+        match versions {
+            Ok(v) => {
+                assert!(!v.is_empty());
+                assert!(!v[0].files.is_empty());
+            }
+            Err(e) => panic!("fetch_versions failed: {e}"),
+        }
     }
 }
