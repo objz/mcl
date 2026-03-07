@@ -2,6 +2,7 @@ pub mod fabric;
 pub mod forge;
 pub mod mojang;
 pub mod neoforge;
+pub mod modrinth;
 pub mod quilt;
 
 use reqwest::Client;
