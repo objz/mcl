@@ -9,10 +9,10 @@ use crate::tui::widgets::search::SearchState;
 use crossterm::event::{KeyCode, KeyEvent};
 use once_cell::sync::Lazy;
 use ratatui::{
-    layout::{Constraint, Rect},
-    style::Style,
-    text::Line,
-    widgets::{Paragraph, Widget},
+    layout::{Constraint, Direction, Layout, Rect},
+    style::{Modifier, Style},
+    text::{Line, Span},
+    widgets::{List, ListItem, ListState, Paragraph, StatefulWidget, Widget, Wrap},
     Frame,
 };
 use std::sync::{Arc, Mutex};
@@ -98,37 +98,18 @@ pub fn render(frame: &mut Frame, area: Rect, _focused: FocusedArea) {
         keybinds: Some(keybinds),
         search_line,
         content: Box::new(move |popup_area, buf| {
-            // Placeholder rendering -- Task 6 will implement full rendering
-            let text = match snapshot.step {
-                ImportStep::Source => "Select source: Modrinth".to_string(),
-                ImportStep::Input => {
-                    let mut s = format!("Enter URL or path: {}", snapshot.input);
-                    if let Some(ref err) = snapshot.error {
-                        s.push_str(&format!("\nError: {}", err));
-                    }
-                    s
-                }
-                ImportStep::Fetching => "Fetching...".to_string(),
-                ImportStep::Version => match &snapshot.versions {
-                    LoadState::Loaded(v) => format!("Select version ({} available)", v.len()),
-                    LoadState::Loading => "Loading versions...".to_string(),
-                    LoadState::Error(e) => format!("Error: {}", e),
-                    LoadState::Idle => "Idle".to_string(),
-                },
-                ImportStep::Confirm => {
-                    if let Some(ref summary) = snapshot.summary {
-                        format!(
-                            "Import '{}' v{} (MC {} {})?",
-                            summary.name, summary.pack_version, summary.game_version, summary.loader
-                        )
-                    } else {
-                        "Confirm import".to_string()
-                    }
-                }
-            };
-            Paragraph::new(text)
-                .style(Style::default().fg(THEME.popup_new_instance.text_fg))
-                .render(popup_area, buf);
+            let chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([Constraint::Min(1)])
+                .split(popup_area);
+
+            match snapshot.step {
+                ImportStep::Source => render_source_step(&snapshot, chunks[0], buf),
+                ImportStep::Input => render_input_step(&snapshot, chunks[0], buf),
+                ImportStep::Fetching => render_fetching_step(chunks[0], buf),
+                ImportStep::Version => render_version_step(&snapshot, chunks[0], buf),
+                ImportStep::Confirm => render_confirm_step(&snapshot, chunks[0], buf),
+            }
         }),
     };
 
@@ -144,11 +125,15 @@ pub fn popup_rect(frame_area: Rect) -> Rect {
 
     match step {
         ImportStep::Source => {
-            let h = 6u16.min(frame_area.height.saturating_sub(4));
+            let h = 5u16.min(frame_area.height.saturating_sub(4));
             frame_area.centered(w, Constraint::Length(h))
         }
-        ImportStep::Input | ImportStep::Fetching => {
+        ImportStep::Input => {
             let h = 8u16.min(frame_area.height.saturating_sub(4));
+            frame_area.centered(w, Constraint::Length(h))
+        }
+        ImportStep::Fetching => {
+            let h = 5u16.min(frame_area.height.saturating_sub(4));
             frame_area.centered(w, Constraint::Length(h))
         }
         ImportStep::Version => {
@@ -568,6 +553,195 @@ fn start_version_download(state: &mut ImportWizardState) {
             }
         }
     });
+}
+
+// --- Render helpers ---
+
+fn render_source_step(
+    state: &ImportWizardState,
+    area: Rect,
+    buf: &mut ratatui::buffer::Buffer,
+) {
+    let items: Vec<ListItem> = vec![ListItem::new(Line::from(Span::styled(
+        "Modrinth",
+        Style::default().fg(THEME.popup_new_instance.text_fg),
+    )))];
+
+    let list = List::new(items)
+        .highlight_style(
+            Style::default()
+                .fg(THEME.popup_new_instance.accent_fg)
+                .add_modifier(Modifier::BOLD),
+        )
+        .highlight_symbol("\u{25b6} ");
+
+    let mut list_state = ListState::default().with_selected(Some(state.source_idx));
+    StatefulWidget::render(list, area, buf, &mut list_state);
+}
+
+fn render_input_step(
+    state: &ImportWizardState,
+    area: Rect,
+    buf: &mut ratatui::buffer::Buffer,
+) {
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(1), // input line
+            Constraint::Length(1), // error or hint
+            Constraint::Min(0),   // remaining space
+        ])
+        .split(area);
+
+    // Input line with blinking cursor
+    let input_line = if state.input.is_empty() {
+        Line::from(vec![
+            Span::styled(
+                "URL, slug, or .mrpack path...",
+                Style::default().fg(THEME.popup_new_instance.field_inactive_border_fg),
+            ),
+            Span::styled(
+                "\u{2588}",
+                Style::default()
+                    .fg(THEME.popup_new_instance.border_fg)
+                    .add_modifier(Modifier::SLOW_BLINK),
+            ),
+        ])
+    } else {
+        Line::from(vec![
+            Span::styled(
+                state.input.clone(),
+                Style::default().fg(THEME.popup_new_instance.text_fg),
+            ),
+            Span::styled(
+                "\u{2588}",
+                Style::default()
+                    .fg(THEME.popup_new_instance.border_fg)
+                    .add_modifier(Modifier::SLOW_BLINK),
+            ),
+        ])
+    };
+    Paragraph::new(input_line).render(chunks[0], buf);
+
+    // Error or hint
+    if let Some(ref err) = state.error {
+        Paragraph::new(Span::styled(
+            err.as_str(),
+            Style::default().fg(THEME.popup_new_instance.error_fg),
+        ))
+        .wrap(Wrap { trim: true })
+        .render(chunks[1], buf);
+    } else {
+        Paragraph::new(Span::styled(
+            "URL, slug, or local .mrpack path",
+            Style::default().fg(THEME.popup_new_instance.field_inactive_border_fg),
+        ))
+        .render(chunks[1], buf);
+    }
+}
+
+fn render_fetching_step(area: Rect, buf: &mut ratatui::buffer::Buffer) {
+    Paragraph::new("Fetching modpack info...")
+        .style(Style::default().fg(THEME.popup_new_instance.field_inactive_border_fg))
+        .render(area, buf);
+}
+
+fn render_version_step(
+    state: &ImportWizardState,
+    area: Rect,
+    buf: &mut ratatui::buffer::Buffer,
+) {
+    match &state.versions {
+        LoadState::Idle | LoadState::Loading => {
+            Paragraph::new("Loading versions...")
+                .style(Style::default().fg(THEME.popup_new_instance.field_inactive_border_fg))
+                .render(area, buf);
+        }
+        LoadState::Error(message) => {
+            Paragraph::new(message.as_str())
+                .wrap(Wrap { trim: true })
+                .style(Style::default().fg(THEME.popup_new_instance.error_fg))
+                .render(area, buf);
+        }
+        LoadState::Loaded(_) => {
+            let items: Vec<ListItem> = visible_versions(state)
+                .into_iter()
+                .map(|version| {
+                    let game_ver = version.game_versions.first().cloned().unwrap_or_default();
+                    let loader = version.loaders.first().cloned().unwrap_or_default();
+                    ListItem::new(Line::from(Span::styled(
+                        format!("{}  {}  {}", version.version_number, game_ver, loader),
+                        Style::default().fg(THEME.popup_new_instance.text_fg),
+                    )))
+                })
+                .collect();
+
+            let list = List::new(items)
+                .highlight_style(
+                    Style::default()
+                        .fg(THEME.popup_new_instance.accent_fg)
+                        .add_modifier(Modifier::BOLD),
+                )
+                .highlight_symbol("\u{25b6} ");
+
+            let mut list_state = ListState::default().with_selected(Some(state.version_idx));
+            StatefulWidget::render(list, area, buf, &mut list_state);
+        }
+    }
+}
+
+fn render_confirm_step(
+    state: &ImportWizardState,
+    area: Rect,
+    buf: &mut ratatui::buffer::Buffer,
+) {
+    let summary = match &state.summary {
+        Some(s) => s,
+        None => {
+            Paragraph::new("No summary available")
+                .style(Style::default().fg(THEME.popup_new_instance.field_inactive_border_fg))
+                .render(area, buf);
+            return;
+        }
+    };
+
+    let label_style = Style::default().fg(THEME.popup_new_instance.border_fg);
+
+    let loader_display = if let Some(ref lv) = summary.loader_version {
+        format!("{} {}", summary.loader, lv)
+    } else {
+        summary.loader.to_string()
+    };
+
+    Paragraph::new(vec![
+        Line::from(vec![
+            Span::styled("Name: ", label_style),
+            Span::raw(summary.name.clone()),
+        ]),
+        Line::from(vec![
+            Span::styled("Pack Version: ", label_style),
+            Span::raw(summary.pack_version.clone()),
+        ]),
+        Line::from(vec![
+            Span::styled("MC Version: ", label_style),
+            Span::raw(summary.game_version.clone()),
+        ]),
+        Line::from(vec![
+            Span::styled("Loader: ", label_style),
+            Span::raw(loader_display),
+        ]),
+        Line::from(vec![
+            Span::styled("Mods: ", label_style),
+            Span::raw(format!("{} files", summary.mod_count)),
+        ]),
+        Line::from(vec![
+            Span::styled("Overrides: ", label_style),
+            Span::raw(format!("{} files", summary.override_count)),
+        ]),
+    ])
+    .style(Style::default().fg(THEME.popup_new_instance.text_fg))
+    .wrap(Wrap { trim: true })
+    .render(area, buf);
 }
 
 // --- Helpers ---
