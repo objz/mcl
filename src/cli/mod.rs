@@ -3,6 +3,7 @@ mod content;
 mod instance;
 mod log;
 mod output;
+mod import;
 mod version;
 
 use clap::{Arg, ArgAction, ArgGroup, Command};
@@ -26,6 +27,7 @@ pub async fn init() {
         Some(("account", sub_matches)) => account::handle_account(sub_matches).await,
         Some(("log", sub_matches)) => log::handle_log(sub_matches).await,
         Some(("version", sub_matches)) => version::handle_version(sub_matches).await,
+        Some(("import", sub_matches)) => import::handle_import(sub_matches).await,
         _ => Ok(()),
     };
 
@@ -171,6 +173,17 @@ fn build_command() -> Command {
                                 .action(ArgAction::SetTrue),
                         ),
                 ),
+        )
+        .subcommand(
+            Command::new("import")
+                .about("Import a modpack")
+                .arg_required_else_help(true)
+                .arg(Arg::new("source").required(true).action(ArgAction::Set)
+                    .help("Modrinth URL, project slug, or local .mrpack file path"))
+                .arg(Arg::new("version").long("version").action(ArgAction::Set)
+                    .help("Modpack version to import (default: latest)"))
+                .arg(Arg::new("name").long("name").action(ArgAction::Set)
+                    .help("Override instance name")),
         )
 }
 
