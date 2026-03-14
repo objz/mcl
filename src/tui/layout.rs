@@ -1,3 +1,4 @@
+use super::widgets::popups::import_modpack;
 use super::widgets::popups::new_instance;
 use super::{
     widgets::{self, profiles, WidgetKey},
@@ -66,6 +67,7 @@ pub enum FocusedArea {
     Overview,
     OverviewExpanded,
     Popup,
+    ImportPopup,
     ErrorPopup,
     ConfirmDelete,
 }
@@ -129,6 +131,10 @@ impl App {
         while !self.exit {
             if let Some(params) = new_instance::take_result() {
                 self.spawn_create(params);
+            }
+
+            if let Some(result) = import_modpack::take_result() {
+                self.spawn_import(result);
             }
 
             self.dismiss_expired_errors();
@@ -251,6 +257,11 @@ impl App {
         if self.profiles_state.show_popup {
             let area = new_instance::popup_rect(frame.area());
             new_instance::render(frame, area, self.focused);
+        }
+
+        if self.profiles_state.show_import_popup {
+            let area = import_modpack::popup_rect(frame.area());
+            import_modpack::render(frame, area, self.focused);
         }
 
         if self.focused == FocusedArea::ConfirmDelete {
@@ -416,6 +427,9 @@ impl App {
             FocusedArea::Popup => {
                 new_instance::handle_key(&key_event, &mut self.profiles_state);
             }
+            FocusedArea::ImportPopup => {
+                import_modpack::handle_key(&key_event, &mut self.profiles_state);
+            }
             _ => {
                 if self.focused == FocusedArea::Profiles && self.profiles_state.renaming.is_some() {
                     match key_event.code {
@@ -567,6 +581,12 @@ impl App {
             self.focused = FocusedArea::Profiles;
         }
 
+        if self.profiles_state.wants_import_popup() {
+            self.focused = FocusedArea::ImportPopup;
+        } else if self.focused == FocusedArea::ImportPopup {
+            self.focused = FocusedArea::Profiles;
+        }
+
         Ok(())
     }
 
@@ -599,6 +619,30 @@ impl App {
                 },
                 Err(_e) => {
                     progress::clear();
+                }
+            }
+        });
+    }
+
+    fn spawn_import(&self, result: import_modpack::ImportResult) {
+        let instances_dir = self.instance_manager.instances_dir.clone();
+        let meta_dir = crate::config::SETTINGS.paths.resolve_meta_dir();
+        let pending_instances = PENDING_INSTANCES.clone();
+
+        tokio::spawn(async move {
+            let manager = InstanceManager::new(instances_dir, meta_dir);
+            match crate::instance::import::execute_import(&result.summary, &manager).await {
+                Ok(config) => match pending_instances.lock() {
+                    Ok(mut pending) => {
+                        pending.push(config);
+                    }
+                    Err(e) => {
+                        tracing::error!("Pending instance queue lock poisoned: {}", e);
+                    }
+                },
+                Err(e) => {
+                    tracing::error!("Import failed: {}", e);
+                    crate::tui::progress::clear();
                 }
             }
         });
