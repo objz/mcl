@@ -8,6 +8,7 @@ pub mod resource_packs;
 pub mod screenshots;
 pub mod shaders;
 pub mod worlds;
+pub mod import;
 
 pub use launch::LaunchError;
 pub use loader::{get_installer, GameVersion, ModLoaderInstaller, VanillaInstaller};
