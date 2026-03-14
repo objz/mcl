@@ -50,6 +50,7 @@ pub struct State {
     pub list_state: TuiListState,
     pub scrollbar_state: ScrollbarState,
     pub show_popup: bool,
+    pub show_import_popup: bool,
     pub search: SearchState,
     pub renaming: Option<String>,
 }
@@ -62,6 +63,7 @@ impl State {
             list_state: TuiListState::default(),
             scrollbar_state: ScrollbarState::default(),
             show_popup: false,
+            show_import_popup: false,
             search: SearchState::default(),
             renaming: None,
         };
@@ -135,6 +137,10 @@ impl State {
         self.show_popup
     }
 
+    pub fn wants_import_popup(&self) -> bool {
+        self.show_import_popup
+    }
+
     pub fn remove_instance(&mut self, name: &str) {
         let before = self.instances.len();
         self.instances.retain(|i| i.name != name);
@@ -183,6 +189,9 @@ impl WidgetKey for State {
             KeyCode::Char('a') => {
                 self.show_popup = true;
                 self.update_scrollbar();
+            }
+            KeyCode::Char('i') => {
+                self.show_import_popup = true;
             }
             KeyCode::Char('d') => {}
             KeyCode::Char('j') | KeyCode::Down => self.next(),

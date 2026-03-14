@@ -1,6 +1,7 @@
 pub mod base;
 pub mod confirm;
 pub mod error;
+pub mod import_modpack;
 pub mod new_instance;
 
 use ratatui::layout::Rect;
