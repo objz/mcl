@@ -208,8 +208,15 @@ pub fn render(frame: &mut Frame, area: Rect, focused: FocusedArea, state: &mut S
         THEME.profiles.border_unfocused_fg
     };
 
+    let keybind_line = super::popups::keybind_line(&[
+        ("a", " new"),
+        ("i", " import"),
+        ("d", " del"),
+    ]);
+
     let mut block = Block::default()
         .title(styled_title("Profiles", true))
+        .title_bottom(keybind_line.right_aligned())
         .borders(Borders::ALL)
         .border_type(THEME.general.border_type.to_border_type())
         .border_style(Style::default().fg(color));

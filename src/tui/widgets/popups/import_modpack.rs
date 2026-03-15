@@ -30,7 +30,6 @@ pub struct ImportResult {
 #[derive(Debug, Default, Clone, PartialEq)]
 pub enum ImportStep {
     #[default]
-    Source,
     Input,
     Fetching,
     Version,
@@ -40,7 +39,6 @@ pub enum ImportStep {
 #[derive(Debug, Clone)]
 pub struct ImportWizardState {
     pub step: ImportStep,
-    pub source_idx: usize,
     pub input: String,
     pub error: Option<String>,
     pub project_title: Option<String>,
@@ -53,8 +51,7 @@ pub struct ImportWizardState {
 impl Default for ImportWizardState {
     fn default() -> Self {
         Self {
-            step: ImportStep::Source,
-            source_idx: 0,
+            step: ImportStep::Input,
             input: String::new(),
             error: None,
             project_title: None,
@@ -104,7 +101,6 @@ pub fn render(frame: &mut Frame, area: Rect, _focused: FocusedArea) {
                 .split(popup_area);
 
             match snapshot.step {
-                ImportStep::Source => render_source_step(&snapshot, chunks[0], buf),
                 ImportStep::Input => render_input_step(&snapshot, chunks[0], buf),
                 ImportStep::Fetching => render_fetching_step(chunks[0], buf),
                 ImportStep::Version => render_version_step(&snapshot, chunks[0], buf),
@@ -120,14 +116,10 @@ pub fn popup_rect(frame_area: Rect) -> Rect {
     let w = Constraint::Percentage(50);
     let step = match IMPORT_STATE.lock() {
         Ok(s) => s.step.clone(),
-        Err(_) => ImportStep::Source,
+        Err(_) => ImportStep::Input,
     };
 
     match step {
-        ImportStep::Source => {
-            let h = 5u16.min(frame_area.height.saturating_sub(4));
-            frame_area.centered(w, Constraint::Length(h))
-        }
         ImportStep::Input => {
             let h = 8u16.min(frame_area.height.saturating_sub(4));
             frame_area.centered(w, Constraint::Length(h))
@@ -160,7 +152,6 @@ pub fn handle_key(key_event: &KeyEvent, profiles_state: &mut profiles::State) {
     };
 
     match state.step {
-        ImportStep::Source => handle_source_key(&mut state, key_event, profiles_state),
         ImportStep::Input => handle_input_key(&mut state, key_event, profiles_state),
         ImportStep::Fetching => handle_fetching_key(&mut state, key_event, profiles_state),
         ImportStep::Version => handle_version_key(&mut state, key_event, profiles_state),
@@ -177,28 +168,6 @@ pub fn take_result() -> Option<ImportResult> {
 
 // --- Step handlers ---
 
-fn handle_source_key(
-    state: &mut ImportWizardState,
-    key_event: &KeyEvent,
-    profiles_state: &mut profiles::State,
-) {
-    // Only one source for now (Modrinth), so j/k navigate but stay at 0
-    match key_event.code {
-        KeyCode::Esc => close_popup(state, profiles_state),
-        KeyCode::Char('j') | KeyCode::Down => {
-            // Only 1 source for now
-            state.source_idx = 0;
-        }
-        KeyCode::Char('k') | KeyCode::Up => {
-            state.source_idx = 0;
-        }
-        KeyCode::Enter => {
-            state.step = ImportStep::Input;
-        }
-        _ => {}
-    }
-}
-
 fn handle_input_key(
     state: &mut ImportWizardState,
     key_event: &KeyEvent,
@@ -206,10 +175,6 @@ fn handle_input_key(
 ) {
     match key_event.code {
         KeyCode::Esc => close_popup(state, profiles_state),
-        KeyCode::Left | KeyCode::Char('h') if state.input.is_empty() => {
-            state.step = ImportStep::Source;
-            state.error = None;
-        }
         KeyCode::Backspace => {
             state.input.pop();
         }
@@ -557,28 +522,6 @@ fn start_version_download(state: &mut ImportWizardState) {
 
 // --- Render helpers ---
 
-fn render_source_step(
-    state: &ImportWizardState,
-    area: Rect,
-    buf: &mut ratatui::buffer::Buffer,
-) {
-    let items: Vec<ListItem> = vec![ListItem::new(Line::from(Span::styled(
-        "Modrinth",
-        Style::default().fg(THEME.popup_new_instance.text_fg),
-    )))];
-
-    let list = List::new(items)
-        .highlight_style(
-            Style::default()
-                .fg(THEME.popup_new_instance.accent_fg)
-                .add_modifier(Modifier::BOLD),
-        )
-        .highlight_symbol("\u{25b6} ");
-
-    let mut list_state = ListState::default().with_selected(Some(state.source_idx));
-    StatefulWidget::render(list, area, buf, &mut list_state);
-}
-
 fn render_input_step(
     state: &ImportWizardState,
     area: Rect,
@@ -759,8 +702,7 @@ fn wizard_title(_state: &ImportWizardState) -> Line<'static> {
 fn step_keybinds(state: &ImportWizardState) -> Line<'static> {
     use super::keybind_line;
     match state.step {
-        ImportStep::Source => keybind_line(&[("Enter", " select")]),
-        ImportStep::Input => keybind_line(&[("h", " back"), ("Enter", " submit")]),
+        ImportStep::Input => keybind_line(&[("Enter", " fetch")]),
         ImportStep::Fetching => keybind_line(&[("Esc", " cancel")]),
         ImportStep::Version => keybind_line(&[
             ("/", " search"),
