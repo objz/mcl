@@ -531,7 +531,7 @@ fn render_input_step(
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(1), // input line
-            Constraint::Length(1), // error or hint
+            Constraint::Length(1), // error (only shown if present)
             Constraint::Min(0),   // remaining space
         ])
         .split(area);
@@ -566,19 +566,13 @@ fn render_input_step(
     };
     Paragraph::new(input_line).render(chunks[0], buf);
 
-    // Error or hint
+    // Error only
     if let Some(ref err) = state.error {
         Paragraph::new(Span::styled(
             err.as_str(),
             Style::default().fg(THEME.popup_new_instance.error_fg),
         ))
         .wrap(Wrap { trim: true })
-        .render(chunks[1], buf);
-    } else {
-        Paragraph::new(Span::styled(
-            "URL, slug, or local .mrpack path",
-            Style::default().fg(THEME.popup_new_instance.field_inactive_border_fg),
-        ))
         .render(chunks[1], buf);
     }
 }
