@@ -16,6 +16,8 @@ use ratatui::{
     Frame,
 };
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
+use tracing::Level;
 
 static IMPORT_STATE: Lazy<Arc<Mutex<ImportWizardState>>> =
     Lazy::new(|| Arc::new(Mutex::new(ImportWizardState::default())));
@@ -40,7 +42,6 @@ pub enum ImportStep {
 pub struct ImportWizardState {
     pub step: ImportStep,
     pub input: String,
-    pub error: Option<String>,
     pub project_title: Option<String>,
     pub versions: LoadState<Vec<VersionInfo>>,
     pub version_idx: usize,
@@ -53,7 +54,6 @@ impl Default for ImportWizardState {
         Self {
             step: ImportStep::Input,
             input: String::new(),
-            error: None,
             project_title: None,
             versions: LoadState::Idle,
             version_idx: 0,
@@ -312,7 +312,7 @@ fn handle_confirm_key(
 fn start_resolve(state: &mut ImportWizardState) {
     let input_text = state.input.clone();
     state.step = ImportStep::Fetching;
-    state.error = None;
+
     let state_arc = IMPORT_STATE.clone();
 
     tokio::spawn(async move {
@@ -354,14 +354,14 @@ async fn resolve_project_slug(
             }
             Err(e) => {
                 if let Ok(mut s) = state_arc.lock() {
-                    s.error = Some(format!("Failed to fetch versions: {}", e));
+                    push_import_error(format!("Failed to fetch versions: {}", e));
                     s.step = ImportStep::Input;
                 }
             }
         },
         Err(e) => {
             if let Ok(mut s) = state_arc.lock() {
-                s.error = Some(format!("Failed to fetch project: {}", e));
+                push_import_error(format!("Failed to fetch project: {}", e));
                 s.step = ImportStep::Input;
             }
         }
@@ -379,7 +379,7 @@ async fn resolve_version_id(
             let tmp_dir = meta_dir.join("tmp");
             if let Err(e) = tokio::fs::create_dir_all(&tmp_dir).await {
                 if let Ok(mut s) = state_arc.lock() {
-                    s.error = Some(format!("Failed to create tmp dir: {}", e));
+                    push_import_error(format!("Failed to create tmp dir: {}", e));
                     s.step = ImportStep::Input;
                 }
                 return;
@@ -397,7 +397,7 @@ async fn resolve_version_id(
                             }
                             Err(e) => {
                                 if let Ok(mut s) = state_arc.lock() {
-                                    s.error = Some(format!("Failed to build summary: {}", e));
+                                    push_import_error(format!("Failed to build summary: {}", e));
                                     s.step = ImportStep::Input;
                                 }
                             }
@@ -405,14 +405,14 @@ async fn resolve_version_id(
                     }
                     Err(e) => {
                         if let Ok(mut s) = state_arc.lock() {
-                            s.error = Some(format!("Failed to parse mrpack: {}", e));
+                            push_import_error(format!("Failed to parse mrpack: {}", e));
                             s.step = ImportStep::Input;
                         }
                     }
                 },
                 Err(e) => {
                     if let Ok(mut s) = state_arc.lock() {
-                        s.error = Some(format!("Failed to download mrpack: {}", e));
+                        push_import_error(format!("Failed to download mrpack: {}", e));
                         s.step = ImportStep::Input;
                     }
                 }
@@ -420,7 +420,7 @@ async fn resolve_version_id(
         }
         Err(e) => {
             if let Ok(mut s) = state_arc.lock() {
-                s.error = Some(format!("Failed to fetch version: {}", e));
+                push_import_error(format!("Failed to fetch version: {}", e));
                 s.step = ImportStep::Input;
             }
         }
@@ -448,7 +448,7 @@ fn resolve_local_file(state_arc: Arc<Mutex<ImportWizardState>>, path: &str) {
                 }
                 Err(e) => {
                     if let Ok(mut s) = state_arc.lock() {
-                        s.error = Some(format!("Failed to build summary: {}", e));
+                        push_import_error(format!("Failed to build summary: {}", e));
                         s.step = ImportStep::Input;
                     }
                 }
@@ -456,7 +456,7 @@ fn resolve_local_file(state_arc: Arc<Mutex<ImportWizardState>>, path: &str) {
         }
         Err(e) => {
             if let Ok(mut s) = state_arc.lock() {
-                s.error = Some(format!("Failed to parse mrpack: {}", e));
+                push_import_error(format!("Failed to parse mrpack: {}", e));
                 s.step = ImportStep::Input;
             }
         }
@@ -470,7 +470,7 @@ fn start_version_download(state: &mut ImportWizardState) {
     };
 
     state.step = ImportStep::Fetching;
-    state.error = None;
+
     let state_arc = IMPORT_STATE.clone();
 
     tokio::spawn(async move {
@@ -479,7 +479,7 @@ fn start_version_download(state: &mut ImportWizardState) {
         let tmp_dir = meta_dir.join("tmp");
         if let Err(e) = tokio::fs::create_dir_all(&tmp_dir).await {
             if let Ok(mut s) = state_arc.lock() {
-                s.error = Some(format!("Failed to create tmp dir: {}", e));
+                push_import_error(format!("Failed to create tmp dir: {}", e));
                 s.step = ImportStep::Version;
             }
             return;
@@ -497,7 +497,7 @@ fn start_version_download(state: &mut ImportWizardState) {
                         }
                         Err(e) => {
                             if let Ok(mut s) = state_arc.lock() {
-                                s.error = Some(format!("Failed to build summary: {}", e));
+                                push_import_error(format!("Failed to build summary: {}", e));
                                 s.step = ImportStep::Version;
                             }
                         }
@@ -505,14 +505,14 @@ fn start_version_download(state: &mut ImportWizardState) {
                 }
                 Err(e) => {
                     if let Ok(mut s) = state_arc.lock() {
-                        s.error = Some(format!("Failed to parse mrpack: {}", e));
+                        push_import_error(format!("Failed to parse mrpack: {}", e));
                         s.step = ImportStep::Version;
                     }
                 }
             },
             Err(e) => {
                 if let Ok(mut s) = state_arc.lock() {
-                    s.error = Some(format!("Failed to download mrpack: {}", e));
+                    push_import_error(format!("Failed to download mrpack: {}", e));
                     s.step = ImportStep::Version;
                 }
             }
@@ -565,16 +565,6 @@ fn render_input_step(
         ])
     };
     Paragraph::new(input_line).render(chunks[0], buf);
-
-    // Error only
-    if let Some(ref err) = state.error {
-        Paragraph::new(Span::styled(
-            err.as_str(),
-            Style::default().fg(THEME.popup_new_instance.error_fg),
-        ))
-        .wrap(Wrap { trim: true })
-        .render(chunks[1], buf);
-    }
 }
 
 fn render_fetching_step(area: Rect, buf: &mut ratatui::buffer::Buffer) {
@@ -686,6 +676,15 @@ fn render_confirm_step(
 fn close_popup(state: &mut ImportWizardState, profiles_state: &mut profiles::State) {
     state.reset();
     profiles_state.show_import_popup = false;
+}
+
+fn push_import_error(msg: String) {
+    crate::tui::error_buffer::push_error(crate::tui::error_buffer::ErrorEvent {
+        id: 0,
+        level: Level::ERROR,
+        message: msg,
+        pushed_at: Instant::now(),
+    });
 }
 
 fn wizard_title(_state: &ImportWizardState) -> Line<'static> {
