@@ -127,7 +127,6 @@ async fn download_mod_files(
                 .unwrap_or(&file.path)
                 .to_string();
             let completed = completed.clone();
-            let total = total;
             tasks.spawn(async move {
                 if let Some(parent) = dest.parent() {
                     let _ = tokio::fs::create_dir_all(parent).await;
@@ -157,7 +156,6 @@ async fn download_mod_files(
             .unwrap_or(&file.path)
             .to_string();
         let completed = completed.clone();
-        let total = total;
         tasks.spawn(async move {
             if let Some(parent) = dest.parent() {
                 let _ = tokio::fs::create_dir_all(parent).await;
