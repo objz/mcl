@@ -186,6 +186,7 @@ pub fn render(
             ("Shift+⏎", " open dir"),
             ("Esc", " kill"),
             ("a", " add"),
+            ("i", " import"),
             ("d", " delete"),
             ("r", " rename"),
             ("/", " search"),
