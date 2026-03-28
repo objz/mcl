@@ -524,12 +524,12 @@ fn render_input_step(
         Line::from(vec![
             Span::styled(
                 "URL, slug, or .mrpack path...",
-                Style::default().fg(THEME.popup_import.placeholder_fg),
+                Style::default().fg(THEME.popup_import.field_inactive_border_fg),
             ),
             Span::styled(
                 "\u{2588}",
                 Style::default()
-                    .fg(THEME.popup_import.cursor_fg)
+                    .fg(THEME.popup_import.border_fg)
                     .add_modifier(Modifier::SLOW_BLINK),
             ),
         ])
@@ -542,7 +542,7 @@ fn render_input_step(
             Span::styled(
                 "\u{2588}",
                 Style::default()
-                    .fg(THEME.popup_import.cursor_fg)
+                    .fg(THEME.popup_import.border_fg)
                     .add_modifier(Modifier::SLOW_BLINK),
             ),
         ])
@@ -552,7 +552,7 @@ fn render_input_step(
 
 fn render_fetching_step(area: Rect, buf: &mut ratatui::buffer::Buffer) {
     Paragraph::new("Fetching modpack info...")
-        .style(Style::default().fg(THEME.popup_import.placeholder_fg))
+        .style(Style::default().fg(THEME.popup_import.field_inactive_border_fg))
         .render(area, buf);
 }
 
@@ -564,7 +564,7 @@ fn render_version_step(
     match &state.versions {
         LoadState::Idle | LoadState::Loading => {
             Paragraph::new("Loading versions...")
-                .style(Style::default().fg(THEME.popup_import.placeholder_fg))
+                .style(Style::default().fg(THEME.popup_import.field_inactive_border_fg))
                 .render(area, buf);
         }
         LoadState::Error(message) => {
@@ -609,13 +609,13 @@ fn render_confirm_step(
         Some(s) => s,
         None => {
             Paragraph::new("No summary available")
-                .style(Style::default().fg(THEME.popup_import.placeholder_fg))
+                .style(Style::default().fg(THEME.popup_import.field_inactive_border_fg))
                 .render(area, buf);
             return;
         }
     };
 
-    let label_style = Style::default().fg(THEME.popup_import.label_fg);
+    let label_style = Style::default().fg(THEME.popup_import.border_fg);
 
     let loader_display = if let Some(ref lv) = summary.loader_version {
         format!("{} {}", summary.loader, lv)
