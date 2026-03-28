@@ -252,6 +252,14 @@ color_default!(default_popup_new_instance_text_fg, Color::White);
 color_default!(default_popup_new_instance_error_fg, Color::Red);
 color_default!(default_popup_new_instance_accent_fg, Color::Yellow);
 
+color_default!(default_popup_import_bg, Color::Rgb(0x1e, 0x1e, 0x1e));
+color_default!(default_popup_import_border_fg, Color::Rgb(0x71, 0xa5, 0xde));
+color_default!(default_popup_import_text_fg, Color::White);
+color_default!(default_popup_import_label_fg, Color::DarkGray);
+color_default!(default_popup_import_accent_fg, Color::Rgb(0x71, 0xa5, 0xde));
+color_default!(default_popup_import_cursor_fg, Color::Rgb(0x71, 0xa5, 0xde));
+color_default!(default_popup_import_placeholder_fg, Color::DarkGray);
+
 fn default_general_border_type() -> BorderStyle {
     BorderStyle::Rounded
 }
@@ -745,6 +753,38 @@ impl Default for PopupNewInstanceTheme {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PopupImportTheme {
+    #[serde(default = "default_popup_import_bg")]
+    pub bg: Color,
+    #[serde(default = "default_popup_import_border_fg")]
+    pub border_fg: Color,
+    #[serde(default = "default_popup_import_text_fg")]
+    pub text_fg: Color,
+    #[serde(default = "default_popup_import_label_fg")]
+    pub label_fg: Color,
+    #[serde(default = "default_popup_import_accent_fg")]
+    pub accent_fg: Color,
+    #[serde(default = "default_popup_import_cursor_fg")]
+    pub cursor_fg: Color,
+    #[serde(default = "default_popup_import_placeholder_fg")]
+    pub placeholder_fg: Color,
+}
+
+impl Default for PopupImportTheme {
+    fn default() -> Self {
+        Self {
+            bg: default_popup_import_bg(),
+            border_fg: default_popup_import_border_fg(),
+            text_fg: default_popup_import_text_fg(),
+            label_fg: default_popup_import_label_fg(),
+            accent_fg: default_popup_import_accent_fg(),
+            cursor_fg: default_popup_import_cursor_fg(),
+            placeholder_fg: default_popup_import_placeholder_fg(),
+        }
+    }
+}
+
 #[derive(Debug, Deserialize, Default)]
 struct RawGeneralTheme {
     border_type: Option<String>,
@@ -914,6 +954,17 @@ struct RawPopupNewInstanceTheme {
 }
 
 #[derive(Debug, Deserialize, Default)]
+struct RawPopupImportTheme {
+    bg: Option<String>,
+    border_fg: Option<String>,
+    text_fg: Option<String>,
+    label_fg: Option<String>,
+    accent_fg: Option<String>,
+    cursor_fg: Option<String>,
+    placeholder_fg: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Default)]
 struct RawTheme {
     #[serde(default)]
     palette: HashMap<String, String>,
@@ -947,6 +998,8 @@ struct RawTheme {
     popup_error: RawPopupErrorTheme,
     #[serde(default)]
     popup_new_instance: RawPopupNewInstanceTheme,
+    #[serde(default)]
+    popup_import: RawPopupImportTheme,
 }
 
 fn resolve_theme(raw: RawTheme) -> Theme {
@@ -1248,6 +1301,18 @@ fn resolve_theme(raw: RawTheme) -> Theme {
                 defaults.popup_new_instance.accent_fg,
             ),
         },
+        popup_import: PopupImportTheme {
+            bg: rc(&raw.popup_import.bg, defaults.popup_import.bg),
+            border_fg: rc(&raw.popup_import.border_fg, defaults.popup_import.border_fg),
+            text_fg: rc(&raw.popup_import.text_fg, defaults.popup_import.text_fg),
+            label_fg: rc(&raw.popup_import.label_fg, defaults.popup_import.label_fg),
+            accent_fg: rc(&raw.popup_import.accent_fg, defaults.popup_import.accent_fg),
+            cursor_fg: rc(&raw.popup_import.cursor_fg, defaults.popup_import.cursor_fg),
+            placeholder_fg: rc(
+                &raw.popup_import.placeholder_fg,
+                defaults.popup_import.placeholder_fg,
+            ),
+        },
     }
 }
 
@@ -1311,6 +1376,10 @@ fn default_theme_popup_new_instance() -> PopupNewInstanceTheme {
     PopupNewInstanceTheme::default()
 }
 
+fn default_theme_popup_import() -> PopupImportTheme {
+    PopupImportTheme::default()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Theme {
     #[serde(default = "default_theme_general")]
@@ -1343,6 +1412,8 @@ pub struct Theme {
     pub popup_error: PopupErrorTheme,
     #[serde(default = "default_theme_popup_new_instance")]
     pub popup_new_instance: PopupNewInstanceTheme,
+    #[serde(default = "default_theme_popup_import")]
+    pub popup_import: PopupImportTheme,
 }
 
 impl Default for Theme {
@@ -1363,6 +1434,7 @@ impl Default for Theme {
             popup_confirm: default_theme_popup_confirm(),
             popup_error: default_theme_popup_error(),
             popup_new_instance: default_theme_popup_new_instance(),
+            popup_import: default_theme_popup_import(),
         }
     }
 }

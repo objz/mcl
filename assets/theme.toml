@@ -146,3 +146,12 @@ field_inactive_border_fg = "muted"
 text_fg = "fg"
 error_fg = "error"
 accent_fg = "accent"
+
+[popup_import]
+bg = "bg"
+border_fg = "#71a5de"
+text_fg = "fg"
+label_fg = "muted"
+accent_fg = "#71a5de"
+cursor_fg = "#71a5de"
+placeholder_fg = "muted"

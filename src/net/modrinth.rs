@@ -1,8 +1,6 @@
 use serde::Deserialize;
 use std::collections::HashMap;
 
-// --- Modrinth API response types ---
-
 #[derive(Debug, Clone, Deserialize)]
 pub struct ProjectInfo {
     pub id: String,
@@ -28,8 +26,6 @@ pub struct VersionFile {
     pub primary: bool,
 }
 
-// --- .mrpack manifest types ---
-
 #[derive(Debug, Clone, Deserialize)]
 pub struct MrpackIndex {
     #[serde(rename = "formatVersion")]
@@ -51,8 +47,6 @@ pub struct MrpackFile {
     #[serde(rename = "fileSize")]
     pub file_size: u64,
 }
-
-// --- URL parsing ---
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ModrinthInput {
@@ -89,8 +83,6 @@ pub fn parse_input(input: &str) -> ModrinthInput {
     ModrinthInput::ProjectSlug(input.to_string())
 }
 
-// --- Dependency key → ModLoader mapping ---
-
 use crate::instance::models::ModLoader;
 
 pub fn loader_from_dependencies(deps: &HashMap<String, String>) -> (Option<ModLoader>, Option<String>) {
@@ -111,8 +103,6 @@ pub fn loader_from_dependencies(deps: &HashMap<String, String>) -> (Option<ModLo
 pub fn game_version_from_dependencies(deps: &HashMap<String, String>) -> Option<String> {
     deps.get("minecraft").cloned()
 }
-
-// --- API client functions ---
 
 const API_BASE: &str = "https://api.modrinth.com/v2";
 

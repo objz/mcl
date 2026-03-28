@@ -69,8 +69,6 @@ impl ImportWizardState {
     }
 }
 
-// --- Public API ---
-
 pub fn render(frame: &mut Frame, area: Rect, _focused: FocusedArea) {
     let snapshot = match IMPORT_STATE.lock() {
         Ok(state) => state.clone(),
@@ -90,8 +88,8 @@ pub fn render(frame: &mut Frame, area: Rect, _focused: FocusedArea) {
 
     let popup = PopupFrame {
         title: wizard_title(&snapshot),
-        border_color: THEME.popup_new_instance.border_fg,
-        bg: Some(THEME.popup_new_instance.bg),
+        border_color: THEME.popup_import.border_fg,
+        bg: Some(THEME.popup_import.bg),
         keybinds: Some(keybinds),
         search_line,
         content: Box::new(move |popup_area, buf| {
@@ -166,8 +164,6 @@ pub fn take_result() -> Option<ImportResult> {
     }
 }
 
-// --- Step handlers ---
-
 fn handle_input_key(
     state: &mut ImportWizardState,
     key_event: &KeyEvent,
@@ -206,7 +202,6 @@ fn handle_version_key(
     key_event: &KeyEvent,
     profiles_state: &mut profiles::State,
 ) {
-    // Search mode: route char input to search query
     if state.version_search.active {
         match key_event.code {
             KeyCode::Esc => {
@@ -219,12 +214,8 @@ fn handle_version_key(
                 clamp_version_index(state);
                 return;
             }
-            KeyCode::Char('j') | KeyCode::Down => {
-                // fall through to navigation below
-            }
-            KeyCode::Char('k') | KeyCode::Up => {
-                // fall through to navigation below
-            }
+            KeyCode::Char('j') | KeyCode::Down => {}
+            KeyCode::Char('k') | KeyCode::Up => {}
             KeyCode::Enter => {
                 state.version_search.active = false;
                 return;
@@ -279,7 +270,6 @@ fn handle_confirm_key(
     match key_event.code {
         KeyCode::Esc => close_popup(state, profiles_state),
         KeyCode::Left | KeyCode::Char('h') => {
-            // Go back -- if we had versions, go to Version; otherwise go to Input
             if matches!(state.versions, LoadState::Loaded(_)) {
                 state.step = ImportStep::Version;
             } else {
@@ -307,7 +297,12 @@ fn handle_confirm_key(
     }
 }
 
-// --- Async resolution ---
+fn set_error_and_back(state_arc: &Arc<Mutex<ImportWizardState>>, msg: String, step: ImportStep) {
+    push_import_error(msg);
+    if let Ok(mut s) = state_arc.lock() {
+        s.step = step;
+    }
+}
 
 fn start_resolve(state: &mut ImportWizardState) {
     let input_text = state.input.clone();
@@ -352,19 +347,17 @@ async fn resolve_project_slug(
                     s.step = ImportStep::Version;
                 }
             }
-            Err(e) => {
-                if let Ok(mut s) = state_arc.lock() {
-                    push_import_error(format!("Failed to fetch versions: {}", e));
-                    s.step = ImportStep::Input;
-                }
-            }
+            Err(e) => set_error_and_back(
+                &state_arc,
+                format!("Failed to fetch versions: {}", e),
+                ImportStep::Input,
+            ),
         },
-        Err(e) => {
-            if let Ok(mut s) = state_arc.lock() {
-                push_import_error(format!("Failed to fetch project: {}", e));
-                s.step = ImportStep::Input;
-            }
-        }
+        Err(e) => set_error_and_back(
+            &state_arc,
+            format!("Failed to fetch project: {}", e),
+            ImportStep::Input,
+        ),
     }
 }
 
@@ -378,10 +371,11 @@ async fn resolve_version_id(
             let meta_dir = crate::config::SETTINGS.paths.resolve_meta_dir();
             let tmp_dir = meta_dir.join("tmp");
             if let Err(e) = tokio::fs::create_dir_all(&tmp_dir).await {
-                if let Ok(mut s) = state_arc.lock() {
-                    push_import_error(format!("Failed to create tmp dir: {}", e));
-                    s.step = ImportStep::Input;
-                }
+                set_error_and_back(
+                    &state_arc,
+                    format!("Failed to create tmp dir: {}", e),
+                    ImportStep::Input,
+                );
                 return;
             }
 
@@ -395,35 +389,31 @@ async fn resolve_version_id(
                                     s.step = ImportStep::Confirm;
                                 }
                             }
-                            Err(e) => {
-                                if let Ok(mut s) = state_arc.lock() {
-                                    push_import_error(format!("Failed to build summary: {}", e));
-                                    s.step = ImportStep::Input;
-                                }
-                            }
+                            Err(e) => set_error_and_back(
+                                &state_arc,
+                                format!("Failed to build summary: {}", e),
+                                ImportStep::Input,
+                            ),
                         }
                     }
-                    Err(e) => {
-                        if let Ok(mut s) = state_arc.lock() {
-                            push_import_error(format!("Failed to parse mrpack: {}", e));
-                            s.step = ImportStep::Input;
-                        }
-                    }
+                    Err(e) => set_error_and_back(
+                        &state_arc,
+                        format!("Failed to parse mrpack: {}", e),
+                        ImportStep::Input,
+                    ),
                 },
-                Err(e) => {
-                    if let Ok(mut s) = state_arc.lock() {
-                        push_import_error(format!("Failed to download mrpack: {}", e));
-                        s.step = ImportStep::Input;
-                    }
-                }
+                Err(e) => set_error_and_back(
+                    &state_arc,
+                    format!("Failed to download mrpack: {}", e),
+                    ImportStep::Input,
+                ),
             }
         }
-        Err(e) => {
-            if let Ok(mut s) = state_arc.lock() {
-                push_import_error(format!("Failed to fetch version: {}", e));
-                s.step = ImportStep::Input;
-            }
-        }
+        Err(e) => set_error_and_back(
+            &state_arc,
+            format!("Failed to fetch version: {}", e),
+            ImportStep::Input,
+        ),
     }
 }
 
@@ -446,20 +436,18 @@ fn resolve_local_file(state_arc: Arc<Mutex<ImportWizardState>>, path: &str) {
                         s.step = ImportStep::Confirm;
                     }
                 }
-                Err(e) => {
-                    if let Ok(mut s) = state_arc.lock() {
-                        push_import_error(format!("Failed to build summary: {}", e));
-                        s.step = ImportStep::Input;
-                    }
-                }
+                Err(e) => set_error_and_back(
+                    &state_arc,
+                    format!("Failed to build summary: {}", e),
+                    ImportStep::Input,
+                ),
             }
         }
-        Err(e) => {
-            if let Ok(mut s) = state_arc.lock() {
-                push_import_error(format!("Failed to parse mrpack: {}", e));
-                s.step = ImportStep::Input;
-            }
-        }
+        Err(e) => set_error_and_back(
+            &state_arc,
+            format!("Failed to parse mrpack: {}", e),
+            ImportStep::Input,
+        ),
     }
 }
 
@@ -478,10 +466,11 @@ fn start_version_download(state: &mut ImportWizardState) {
         let meta_dir = crate::config::SETTINGS.paths.resolve_meta_dir();
         let tmp_dir = meta_dir.join("tmp");
         if let Err(e) = tokio::fs::create_dir_all(&tmp_dir).await {
-            if let Ok(mut s) = state_arc.lock() {
-                push_import_error(format!("Failed to create tmp dir: {}", e));
-                s.step = ImportStep::Version;
-            }
+            set_error_and_back(
+                &state_arc,
+                format!("Failed to create tmp dir: {}", e),
+                ImportStep::Version,
+            );
             return;
         }
 
@@ -495,32 +484,27 @@ fn start_version_download(state: &mut ImportWizardState) {
                                 s.step = ImportStep::Confirm;
                             }
                         }
-                        Err(e) => {
-                            if let Ok(mut s) = state_arc.lock() {
-                                push_import_error(format!("Failed to build summary: {}", e));
-                                s.step = ImportStep::Version;
-                            }
-                        }
+                        Err(e) => set_error_and_back(
+                            &state_arc,
+                            format!("Failed to build summary: {}", e),
+                            ImportStep::Version,
+                        ),
                     }
                 }
-                Err(e) => {
-                    if let Ok(mut s) = state_arc.lock() {
-                        push_import_error(format!("Failed to parse mrpack: {}", e));
-                        s.step = ImportStep::Version;
-                    }
-                }
+                Err(e) => set_error_and_back(
+                    &state_arc,
+                    format!("Failed to parse mrpack: {}", e),
+                    ImportStep::Version,
+                ),
             },
-            Err(e) => {
-                if let Ok(mut s) = state_arc.lock() {
-                    push_import_error(format!("Failed to download mrpack: {}", e));
-                    s.step = ImportStep::Version;
-                }
-            }
+            Err(e) => set_error_and_back(
+                &state_arc,
+                format!("Failed to download mrpack: {}", e),
+                ImportStep::Version,
+            ),
         }
     });
 }
-
-// --- Render helpers ---
 
 fn render_input_step(
     state: &ImportWizardState,
@@ -530,23 +514,22 @@ fn render_input_step(
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(1), // input line
-            Constraint::Length(1), // error (only shown if present)
-            Constraint::Min(0),   // remaining space
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Min(0),
         ])
         .split(area);
 
-    // Input line with blinking cursor
     let input_line = if state.input.is_empty() {
         Line::from(vec![
             Span::styled(
                 "URL, slug, or .mrpack path...",
-                Style::default().fg(THEME.popup_new_instance.field_inactive_border_fg),
+                Style::default().fg(THEME.popup_import.placeholder_fg),
             ),
             Span::styled(
                 "\u{2588}",
                 Style::default()
-                    .fg(THEME.popup_new_instance.border_fg)
+                    .fg(THEME.popup_import.cursor_fg)
                     .add_modifier(Modifier::SLOW_BLINK),
             ),
         ])
@@ -554,12 +537,12 @@ fn render_input_step(
         Line::from(vec![
             Span::styled(
                 state.input.clone(),
-                Style::default().fg(THEME.popup_new_instance.text_fg),
+                Style::default().fg(THEME.popup_import.text_fg),
             ),
             Span::styled(
                 "\u{2588}",
                 Style::default()
-                    .fg(THEME.popup_new_instance.border_fg)
+                    .fg(THEME.popup_import.cursor_fg)
                     .add_modifier(Modifier::SLOW_BLINK),
             ),
         ])
@@ -569,7 +552,7 @@ fn render_input_step(
 
 fn render_fetching_step(area: Rect, buf: &mut ratatui::buffer::Buffer) {
     Paragraph::new("Fetching modpack info...")
-        .style(Style::default().fg(THEME.popup_new_instance.field_inactive_border_fg))
+        .style(Style::default().fg(THEME.popup_import.placeholder_fg))
         .render(area, buf);
 }
 
@@ -581,13 +564,13 @@ fn render_version_step(
     match &state.versions {
         LoadState::Idle | LoadState::Loading => {
             Paragraph::new("Loading versions...")
-                .style(Style::default().fg(THEME.popup_new_instance.field_inactive_border_fg))
+                .style(Style::default().fg(THEME.popup_import.placeholder_fg))
                 .render(area, buf);
         }
         LoadState::Error(message) => {
             Paragraph::new(message.as_str())
                 .wrap(Wrap { trim: true })
-                .style(Style::default().fg(THEME.popup_new_instance.error_fg))
+                .style(Style::default().fg(THEME.general.error))
                 .render(area, buf);
         }
         LoadState::Loaded(_) => {
@@ -598,7 +581,7 @@ fn render_version_step(
                     let loader = version.loaders.first().cloned().unwrap_or_default();
                     ListItem::new(Line::from(Span::styled(
                         format!("{}  {}  {}", version.version_number, game_ver, loader),
-                        Style::default().fg(THEME.popup_new_instance.text_fg),
+                        Style::default().fg(THEME.popup_import.text_fg),
                     )))
                 })
                 .collect();
@@ -606,7 +589,7 @@ fn render_version_step(
             let list = List::new(items)
                 .highlight_style(
                     Style::default()
-                        .fg(THEME.popup_new_instance.accent_fg)
+                        .fg(THEME.popup_import.accent_fg)
                         .add_modifier(Modifier::BOLD),
                 )
                 .highlight_symbol("\u{25b6} ");
@@ -626,13 +609,13 @@ fn render_confirm_step(
         Some(s) => s,
         None => {
             Paragraph::new("No summary available")
-                .style(Style::default().fg(THEME.popup_new_instance.field_inactive_border_fg))
+                .style(Style::default().fg(THEME.popup_import.placeholder_fg))
                 .render(area, buf);
             return;
         }
     };
 
-    let label_style = Style::default().fg(THEME.popup_new_instance.border_fg);
+    let label_style = Style::default().fg(THEME.popup_import.label_fg);
 
     let loader_display = if let Some(ref lv) = summary.loader_version {
         format!("{} {}", summary.loader, lv)
@@ -666,12 +649,10 @@ fn render_confirm_step(
             Span::raw(format!("{} files", summary.override_count)),
         ]),
     ])
-    .style(Style::default().fg(THEME.popup_new_instance.text_fg))
+    .style(Style::default().fg(THEME.popup_import.text_fg))
     .wrap(Wrap { trim: true })
     .render(area, buf);
 }
-
-// --- Helpers ---
 
 fn close_popup(state: &mut ImportWizardState, profiles_state: &mut profiles::State) {
     state.reset();
