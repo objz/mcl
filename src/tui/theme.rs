@@ -178,6 +178,7 @@ bool_default!(default_logs_selected_bold, true);
 color_default!(default_logs_row_alt_bg, Color::Rgb(0x24, 0x24, 0x24));
 color_default!(default_logs_running_fg, Color::Green);
 color_default!(default_logs_text_fg, Color::White);
+color_default!(default_logs_label_fg, Color::DarkGray);
 
 color_default!(default_log_overlay_bg, Color::Rgb(0x1e, 0x1e, 0x1e));
 color_default!(default_log_overlay_border_fg, Color::White);
@@ -473,6 +474,8 @@ pub struct LogsTheme {
     pub running_fg: Color,
     #[serde(default = "default_logs_text_fg")]
     pub text_fg: Color,
+    #[serde(default = "default_logs_label_fg")]
+    pub label_fg: Color,
 }
 
 impl Default for LogsTheme {
@@ -491,6 +494,7 @@ impl Default for LogsTheme {
             row_alt_bg: default_logs_row_alt_bg(),
             running_fg: default_logs_running_fg(),
             text_fg: default_logs_text_fg(),
+            label_fg: default_logs_label_fg(),
         }
     }
 }
@@ -866,6 +870,7 @@ struct RawLogsTheme {
     row_alt_bg: Option<String>,
     running_fg: Option<String>,
     text_fg: Option<String>,
+    label_fg: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -1152,6 +1157,7 @@ fn resolve_theme(raw: RawTheme) -> Theme {
             row_alt_bg: rc(&raw.logs.row_alt_bg, defaults.logs.row_alt_bg),
             running_fg: rc(&raw.logs.running_fg, defaults.logs.running_fg),
             text_fg: rc(&raw.logs.text_fg, defaults.logs.text_fg),
+            label_fg: rc(&raw.logs.label_fg, defaults.logs.label_fg),
         },
         log_overlay: LogOverlayTheme {
             bg: rc(&raw.log_overlay.bg, defaults.log_overlay.bg),
