@@ -73,6 +73,7 @@ selected_bold = true
 row_alt_bg = "surface"
 running_fg = "success"
 text_fg = "fg"
+label_fg = "muted"
 
 [log_overlay]
 bg = "bg"

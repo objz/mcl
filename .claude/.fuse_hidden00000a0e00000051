@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find /mnt/storage/code/rust/mcl -maxdepth 2 -name README* -o -name CLAUDE.md -o -name *.md)",
+      "Bash(cargo test:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(cargo clippy:*)",
+      "Bash(/home/consti/.claude/plugins/cache/claude-plugins-official/superpowers/5.0.6/scripts/start-server.sh --project-dir /mnt/storage/code/rust/mcl 2>&1)",
+      "Bash(/home/consti/.claude/plugins/cache/claude-plugins-official/superpowers/5.0.6/skills/brainstorming/scripts/start-server.sh --project-dir /mnt/storage/code/rust/mcl 2>&1)",
+      "Bash(cargo build:*)"
+    ]
+  }
+}

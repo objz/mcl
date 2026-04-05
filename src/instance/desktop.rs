@@ -2,6 +2,8 @@ use std::path::{Path, PathBuf};
 
 use crate::instance::models::InstanceConfig;
 
+const ICON_BYTES: &[u8] = include_bytes!("../../assets/icon.png");
+
 pub fn desktop_path(name: &str) -> Option<PathBuf> {
     dirs_next::data_dir().map(|d| {
         d.join("applications")
@@ -11,6 +13,23 @@ pub fn desktop_path(name: &str) -> Option<PathBuf> {
 
 pub fn icon_path() -> Option<PathBuf> {
     dirs_next::data_dir().map(|d| d.join("mcl").join("icon.png"))
+}
+
+fn ensure_icon() -> Option<PathBuf> {
+    let path = icon_path()?;
+    if path.exists() {
+        return Some(path);
+    }
+    let parent = path.parent()?;
+    if let Err(e) = std::fs::create_dir_all(parent) {
+        tracing::warn!("Failed to create icon directory: {}", e);
+        return None;
+    }
+    if let Err(e) = std::fs::write(&path, ICON_BYTES) {
+        tracing::warn!("Failed to write bundled icon: {}", e);
+        return None;
+    }
+    Some(path)
 }
 
 pub fn exists(name: &str) -> bool {
@@ -25,7 +44,7 @@ pub fn create(config: &InstanceConfig) -> std::io::Result<PathBuf> {
         std::fs::create_dir_all(parent)?;
     }
 
-    let icon = icon_path().filter(|p| p.exists());
+    let icon = ensure_icon();
     let content = build_content(&config.name, icon.as_deref());
     std::fs::write(&path, content)?;
     Ok(path)

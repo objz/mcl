@@ -36,7 +36,7 @@ pub fn render(
             &[
                 ("e", " edit instance"),
                 ("g", " edit global"),
-                ("d", " desktop shortcut"),
+                ("d", " desktop"),
             ],
             area.width.saturating_sub(2),
         );

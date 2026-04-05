@@ -421,8 +421,27 @@ impl App {
                 }
                 widgets::details::SettingsAction::ToggleDesktop => {
                     if let Some(inst) = self.profiles_state.selected_instance() {
-                        if let Err(e) = crate::instance::desktop::toggle(inst) {
-                            tracing::error!("Failed to toggle desktop shortcut: {}", e);
+                        let name = inst.name.clone();
+                        match crate::instance::desktop::toggle(inst) {
+                            Ok(true) => {
+                                error_buffer::push_error(error_buffer::ErrorEvent {
+                                    id: 0,
+                                    level: tracing::Level::INFO,
+                                    message: format!("Desktop shortcut created for '{name}'"),
+                                    pushed_at: std::time::Instant::now(),
+                                });
+                            }
+                            Ok(false) => {
+                                error_buffer::push_error(error_buffer::ErrorEvent {
+                                    id: 0,
+                                    level: tracing::Level::INFO,
+                                    message: format!("Desktop shortcut removed for '{name}'"),
+                                    pushed_at: std::time::Instant::now(),
+                                });
+                            }
+                            Err(e) => {
+                                tracing::error!("Failed to toggle desktop shortcut: {}", e);
+                            }
                         }
                     }
                     return Ok(());
