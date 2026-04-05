@@ -33,7 +33,11 @@ pub fn render(
 
     if focused == FocusedArea::Settings {
         let lines = super::popups::keybind_lines_wrapped(
-            &[("e", " edit instance"), ("g", " edit global")],
+            &[
+                ("e", " edit instance"),
+                ("g", " edit global"),
+                ("d", " desktop shortcut"),
+            ],
             area.width.saturating_sub(2),
         );
         for line in lines {
@@ -98,6 +102,7 @@ pub enum SettingsAction {
     None,
     EditInstance(std::path::PathBuf),
     EditGlobal(std::path::PathBuf),
+    ToggleDesktop,
 }
 
 pub fn handle_key(
@@ -118,6 +123,7 @@ pub fn handle_key(
             let path = crate::config::get_config_path().join("config.toml");
             SettingsAction::EditGlobal(path)
         }
+        crossterm::event::KeyCode::Char('d') => SettingsAction::ToggleDesktop,
         _ => SettingsAction::None,
     }
 }

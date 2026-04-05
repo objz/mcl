@@ -98,6 +98,12 @@ fn build_command() -> Command {
                         .arg_required_else_help(true)
                         .arg(Arg::new("name").required(true).action(ArgAction::Set))
                         .arg(Arg::new("set").long("set").action(ArgAction::Set)),
+                )
+                .subcommand(
+                    Command::new("desktop")
+                        .about("Toggle desktop shortcut for an instance")
+                        .arg_required_else_help(true)
+                        .arg(Arg::new("name").required(true).action(ArgAction::Set)),
                 ),
         )
         .subcommand(build_content_command("mod", "mods"))

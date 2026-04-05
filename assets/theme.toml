@@ -149,9 +149,9 @@ accent_fg = "accent"
 
 [popup_import]
 bg = "bg"
-border_fg = "#71a5de"
-field_active_border_fg = "#71a5de"
+border_fg = "fg"
+field_active_border_fg = "fg"
 field_inactive_border_fg = "muted"
 text_fg = "fg"
 error_fg = "error"
-accent_fg = "#71a5de"
+accent_fg = "accent"

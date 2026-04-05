@@ -419,6 +419,14 @@ impl App {
                     self.pending_editor = Some(path);
                     return Ok(());
                 }
+                widgets::details::SettingsAction::ToggleDesktop => {
+                    if let Some(inst) = self.profiles_state.selected_instance() {
+                        if let Err(e) = crate::instance::desktop::toggle(inst) {
+                            tracing::error!("Failed to toggle desktop shortcut: {}", e);
+                        }
+                    }
+                    return Ok(());
+                }
                 widgets::details::SettingsAction::None => {}
             }
         }

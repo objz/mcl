@@ -1,5 +1,6 @@
 pub mod launch;
 pub mod loader;
+pub mod desktop;
 pub mod log_files;
 pub mod manager;
 pub mod models;

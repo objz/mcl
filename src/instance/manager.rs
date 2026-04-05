@@ -272,7 +272,12 @@ impl InstanceManager {
             return Err(InstanceError::NotFound(name.to_string()));
         }
         match std::fs::remove_dir_all(&instance_dir) {
-            Ok(_) => Ok(()),
+            Ok(_) => {
+                if let Err(e) = crate::instance::desktop::remove(name) {
+                    tracing::warn!("Failed to remove desktop shortcut for '{}': {}", name, e);
+                }
+                Ok(())
+            }
             Err(e) => {
                 tracing::error!("Failed to delete instance '{}': {}", name, e);
                 Err(InstanceError::Io(e))
@@ -306,6 +311,9 @@ impl InstanceManager {
                 config.name = new_name.to_string();
                 if let Ok(json) = serde_json::to_string_pretty(&config) {
                     let _ = std::fs::write(&config_path, json);
+                }
+                if let Err(e) = crate::instance::desktop::rename(old_name, &config) {
+                    tracing::warn!("Failed to rename desktop shortcut: {}", e);
                 }
             }
         }

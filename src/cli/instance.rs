@@ -17,6 +17,7 @@ pub async fn handle_instance(matches: &ArgMatches) -> CliResult {
         Some(("rename", sub_matches)) => rename_instance(sub_matches),
         Some(("launch", sub_matches)) => launch_instance(sub_matches).await,
         Some(("config", sub_matches)) => config_instance(sub_matches),
+        Some(("desktop", sub_matches)) => desktop_instance(sub_matches),
         _ => Ok(()),
     }
 }
@@ -150,6 +151,18 @@ async fn launch_instance(matches: &ArgMatches) -> CliResult {
         }
     }
 
+    Ok(())
+}
+
+fn desktop_instance(matches: &ArgMatches) -> CliResult {
+    let name = required_arg(matches, "name")?;
+    let config = manager().load_one(name)?;
+    let enabled = crate::instance::desktop::toggle(&config)?;
+    if enabled {
+        println!("Desktop shortcut created for '{}'.", name);
+    } else {
+        println!("Desktop shortcut removed for '{}'.", name);
+    }
     Ok(())
 }
 
