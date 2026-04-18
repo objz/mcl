@@ -1,14 +1,23 @@
 [paths]
+# where instances are stored
 instances_dir = "~/.local/share/mcl/instances"
+
+# metadata, cache, whatever else ends up there
 meta_dir = "~/.local/share/mcl/meta"
+
+# optional java override (empty = uses JAVA_HOME)
 java_path = ""
 
 [defaults]
+# default heap settings
 memory_min = "512M"
 memory_max = "2G"
 
 [ui]
+# error popup timing (in ms)
 error_auto_dismiss_ms = 5000
 error_slide_start_ms = 3500
 error_fly_out_ms = 300
+
+# don’t let this blow up endlessly
 max_error_events = 50
