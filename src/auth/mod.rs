@@ -1,3 +1,4 @@
+// auth module: account storage (offline + microsoft) and the oauth device code flow
 mod accounts;
 mod oauth;
 

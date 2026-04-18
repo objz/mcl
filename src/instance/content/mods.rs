@@ -1,10 +1,14 @@
+// mod scanning, metadata extraction, and icon rendering for the content list.
+// jar files are just zips, so it cracks them open looking for fabric.mod.json to get
+// names, descriptions, and icons. if that fails, just the filename is used. it's fine.
+
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 
-/// A single icon cell representing two vertically stacked pixels using the "▄" half-block.
-/// `bg_*` = top pixel (background color), `fg_*` = bottom pixel (foreground color).
+// a single "pixel" in the terminal icon. uses the unicode half-block trick
+// where each character cell shows two vertical pixels (fg = top, bg = bottom)
 #[derive(Debug, Clone, Copy)]
 pub struct IconCell {
     pub bg_r: u8,
@@ -37,6 +41,8 @@ struct FabricModJson {
 }
 
 impl FabricModJson {
+    // fabric's icon field can be a string path or a map of resolution -> path.
+    // if it's a map, just grab the first one. good enough.
     fn icon_path(&self) -> String {
         match &self.icon {
             serde_json::Value::String(s) => s.clone(),
@@ -80,7 +86,11 @@ pub fn scan_mods(instances_dir: &Path, instance_name: &str) -> Vec<ContentEntry>
             .and_then(|bytes| make_icon_pixels(bytes, 6, 3))
             .or_else(|| Some(fallback_icon()));
 
-        let display_name = if name.is_empty() { file_stem.clone() } else { name };
+        let display_name = if name.is_empty() {
+            file_stem.clone()
+        } else {
+            name
+        };
         entries.push(ContentEntry {
             file_stem,
             name: display_name,
@@ -96,6 +106,8 @@ pub fn scan_mods(instances_dir: &Path, instance_name: &str) -> Vec<ContentEntry>
     entries
 }
 
+// tries fabric.mod.json first for rich metadata. if that's missing (forge/other mods),
+// still attempts to grab pack.png as a last resort for an icon
 fn read_mod_metadata(jar_path: &Path) -> (String, String, Option<Vec<u8>>) {
     let file = match std::fs::File::open(jar_path) {
         Ok(file) => file,
@@ -126,14 +138,15 @@ fn read_fabric_meta(
     let mut entry = archive.by_name("fabric.mod.json").ok()?;
     let mut raw = String::new();
     entry.read_to_string(&mut raw).ok()?;
-    // Some mods have literal newlines in JSON strings — sanitize them
     let sanitized = sanitize_json_strings(&raw);
     let data: FabricModJson = serde_json::from_str(&sanitized).ok()?;
     let icon = data.icon_path();
     Some((data.name, data.description, icon))
 }
 
-/// Replace literal control characters inside JSON string values with escaped versions.
+// some mod authors put raw newlines/tabs inside json string values which is
+// technically invalid json. walks through character by character, tracking
+// whether it's inside a string, and escapes the offending characters.
 fn sanitize_json_strings(input: &str) -> String {
     let mut result = String::with_capacity(input.len());
     let mut in_string = false;
@@ -175,6 +188,8 @@ fn read_zip_bytes(archive: &mut zip::ZipArchive<std::fs::File>, path: &str) -> O
     Some(bytes)
 }
 
+// downscales an icon to terminal resolution. resizes to height*2 because each
+// terminal cell renders two vertical pixels using half-block characters (▀)
 pub(crate) fn make_icon_pixels(
     bytes: &[u8],
     width: u16,
@@ -196,7 +211,14 @@ pub(crate) fn make_icon_pixels(
             let bottom_y = (u32::from(row) * 2 + 1).min(rgb.height().saturating_sub(1));
             let [tr, tg, tb] = rgb.get_pixel(u32::from(col), top_y).0;
             let [br, bg, bb] = rgb.get_pixel(u32::from(col), bottom_y).0;
-            cols.push(IconCell { bg_r: br, bg_g: bg, bg_b: bb, fg_r: tr, fg_g: tg, fg_b: tb });
+            cols.push(IconCell {
+                bg_r: br,
+                bg_g: bg,
+                bg_b: bb,
+                fg_r: tr,
+                fg_g: tg,
+                fg_b: tb,
+            });
         }
         rows.push(cols);
     }
@@ -206,9 +228,30 @@ pub(crate) fn make_icon_pixels(
 
 /// 6x3 fallback icon showing a "?" pattern for mods without icons.
 fn fallback_icon() -> Vec<Vec<IconCell>> {
-    let b = IconCell { bg_r: 50, bg_g: 50, bg_b: 50, fg_r: 50, fg_g: 50, fg_b: 50 };
-    let tb = IconCell { bg_r: 50, bg_g: 50, bg_b: 50, fg_r: 130, fg_g: 130, fg_b: 130 };
-    let bt = IconCell { bg_r: 130, bg_g: 130, bg_b: 130, fg_r: 50, fg_g: 50, fg_b: 50 };
+    let b = IconCell {
+        bg_r: 50,
+        bg_g: 50,
+        bg_b: 50,
+        fg_r: 50,
+        fg_g: 50,
+        fg_b: 50,
+    };
+    let tb = IconCell {
+        bg_r: 50,
+        bg_g: 50,
+        bg_b: 50,
+        fg_r: 130,
+        fg_g: 130,
+        fg_b: 130,
+    };
+    let bt = IconCell {
+        bg_r: 130,
+        bg_g: 130,
+        bg_b: 130,
+        fg_r: 50,
+        fg_g: 50,
+        fg_b: 50,
+    };
     vec![
         vec![b, tb, tb, tb, tb, b],
         vec![b, b, b, bt, bt, b],
@@ -216,6 +259,8 @@ fn fallback_icon() -> Vec<Vec<IconCell>> {
     ]
 }
 
+// enable/disable by renaming the file with/without ".disabled" suffix.
+// the minecraft way, apparently.
 pub fn toggle_entry(entry: &ContentEntry) -> Result<(), std::io::Error> {
     let file_name = match entry.path.file_name().and_then(|name| name.to_str()) {
         Some(name) => name,

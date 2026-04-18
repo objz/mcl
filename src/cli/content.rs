@@ -1,3 +1,6 @@
+// unified content management for mods, resource packs, and shaders.
+// all three content types share the same list/enable/disable workflow,
+// just with different scanner functions plugged in.
 use std::io;
 use std::path::Path;
 
@@ -51,6 +54,7 @@ fn handle_content(matches: &ArgMatches, kind: &str, scan: Scanner) -> CliResult 
     }
 }
 
+// match by filename stem (no extension) so users don't have to type ".jar"
 pub(crate) fn find_entry_by_stem<'a>(
     entries: &'a [ContentEntry],
     target: &str,

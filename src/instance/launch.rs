@@ -1,3 +1,6 @@
+// builds the full java command line and spawns minecraft as a child process.
+// handles classpath assembly, auth token injection, and log capture.
+
 use std::path::{Path, PathBuf};
 
 use thiserror::Error;
@@ -18,6 +21,7 @@ pub enum LaunchError {
     Auth(String),
 }
 
+// subset of mojang's version meta json, only the bits relevant to launching
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct MetaJson {
@@ -70,6 +74,9 @@ struct LoaderLibrary {
     name: String,
 }
 
+// mojang's library rules are a fun little state machine: each rule can allow
+// or disallow based on OS. if no rule matches the current OS, the library is
+// included only if no rule "dominated" (matched at all). yes, it's weird.
 fn lib_allowed(lib: &MetaLibrary) -> bool {
     let Some(rules) = &lib.rules else {
         return true;
@@ -139,6 +146,8 @@ pub async fn launch(
         ModLoader::NeoForge => Some(format!("neoforge-{}.json", lv)),
     };
 
+    // if there's a mod loader, read its profile to get the real main class
+    // and extra libraries it needs on the classpath
     let main_class = if let Some(filename) = profile_filename {
         let profile_path = meta_dir.join("loader-profiles").join(&filename);
         if !profile_path.exists() {
@@ -149,6 +158,8 @@ pub async fn launch(
         let profile: LoaderProfileJson =
             serde_json::from_slice(&tokio::fs::read(&profile_path).await?)?;
 
+        // forge/neoforge install some libs locally in the instance dir, so
+        // both locations need to be checked
         let has_local_libs = matches!(config.loader, ModLoader::Forge | ModLoader::NeoForge);
         let local_lib_dir = minecraft_dir.join("libraries");
 
@@ -186,6 +197,7 @@ pub async fn launch(
         .collect::<Vec<_>>()
         .join(sep);
 
+    // java resolution: instance override > global setting > auto-detect
     let java = config
         .java_path
         .clone()
@@ -203,6 +215,8 @@ pub async fn launch(
     ];
     jvm.extend(config.jvm_args.clone());
 
+    // resolve auth credentials, refreshing the microsoft token if needed.
+    // falls back to a generic offline player if no account is configured.
     let mut account_store = crate::auth::AccountStore::load();
     let (mc_username, mc_uuid, mc_token, mc_user_type) = match account_store
         .active_account()
@@ -303,6 +317,8 @@ pub async fn launch(
     let instances_dir_owned = instances_dir.to_path_buf();
     let meta_dir_owned = meta_dir.to_path_buf();
 
+    // spawn a background task to babysit the child process: capture stdout/stderr
+    // into both the TUI log viewer and a timestamped log file on disk
     tokio::spawn(async move {
         use std::io::Write;
         use std::sync::{Arc, Mutex};
@@ -344,6 +360,7 @@ pub async fn launch(
             });
         }
 
+        // wait for either the process to exit naturally or a kill signal from the TUI
         let code = tokio::select! {
             _ = kill_rx => {
                 tracing::info!("[{}] Kill requested, terminating process", name_for_task);

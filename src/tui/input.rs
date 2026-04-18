@@ -1,3 +1,8 @@
+// keybindings and input dispatch.
+// the general pattern: check which area is focused, give it first crack at the
+// keypress, and fall through to global bindings if nobody claimed it.
+// vim-style navigation (j/k/g/G) where it makes sense.
+
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use super::app::{App, FocusedArea};
@@ -6,6 +11,7 @@ use crate::tui::error_buffer;
 
 impl App {
     pub(super) fn handle_key_event(&mut self, key_event: KeyEvent) -> color_eyre::Result<()> {
+        // log overlay eats all input when open, including its own search sub-mode
         if self.focused == FocusedArea::OverviewExpanded {
             if self.log_overlay_search.active {
                 match key_event.code {
@@ -85,6 +91,8 @@ impl App {
             }
         }
 
+        // content area delegates to whichever tab is active.
+        // worlds get handle_key_no_toggle because you can't "disable" a world like you can a mod
         if self.focused == FocusedArea::Content {
             if self.content_tab == widgets::content::ContentTab::Logs {
                 if widgets::logs_viewer::handle_key(&key_event, &mut self.logs_state) {
@@ -216,6 +224,7 @@ impl App {
                     return Ok(());
                 }
 
+                // global keybindings (uppercase = area switch, lowercase = action)
                 match key_event.code {
                     KeyCode::Char('q') => self.exit = true,
                     KeyCode::Char('I') => self.focused = FocusedArea::Instances,
@@ -246,6 +255,7 @@ impl App {
                             self.focused = FocusedArea::ConfirmDelete;
                         }
                     }
+                    // shift+enter = open .minecraft folder in file manager
                     KeyCode::Enter
                         if self.focused == FocusedArea::Instances
                             && !self.instances_state.search.active
@@ -262,12 +272,15 @@ impl App {
                             }
                         }
                     }
+                    // plain enter = focus the content area for the selected instance
                     KeyCode::Enter
                         if self.focused == FocusedArea::Instances
                             && !self.instances_state.search.active =>
                     {
                         self.focused = FocusedArea::Content;
                     }
+                    // only allow launching if instance isn't already running.
+                    // crashed instances can be relaunched (clears old state first)
                     KeyCode::Char('l')
                         if self.focused == FocusedArea::Instances
                             && !self.instances_state.search.active =>
@@ -292,6 +305,7 @@ impl App {
                             self.instances_state.renaming = Some(inst.name.clone());
                         }
                     }
+                    // esc = kill running instance. brutal but effective
                     KeyCode::Esc
                         if self.focused == FocusedArea::Instances
                             && !self.instances_state.search.active =>

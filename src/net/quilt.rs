@@ -1,9 +1,12 @@
+// quilt mod loader: fabric fork with a nearly identical metadata API.
+// if you're getting deja vu reading this after fabric.rs, that's why.
+
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
 use crate::instance::loader::GameVersion;
-use crate::net::{download_file, HttpClient, NetError};
+use crate::net::{HttpClient, NetError, download_file};
 use crate::tui::progress::set_sub_action;
 
 const QUILT_META_BASE: &str = "https://meta.quiltmc.org/v3";
@@ -140,5 +143,4 @@ mod tests {
             Err(e) => panic!("fetch_quilt_game_versions failed: {}", e),
         }
     }
-
 }

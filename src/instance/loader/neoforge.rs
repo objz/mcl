@@ -1,3 +1,6 @@
+// neoforge installation. same java installer dance as forge (they forked from it,
+// after all), just with different URLs and version naming.
+
 use std::path::Path;
 
 use async_trait::async_trait;

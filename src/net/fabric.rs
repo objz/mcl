@@ -1,3 +1,6 @@
+// fabric mod loader: fetches loader metadata and downloads libraries
+// from fabric's maven. structurally very similar to quilt (they forked).
+
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
@@ -74,6 +77,8 @@ pub async fn fetch_fabric_profile(
     client.get_json(&url).await
 }
 
+// each fabric library entry has a maven coordinate and a base url.
+// the coordinate gets resolved to a path and combined with the url to download.
 pub async fn download_fabric_libraries(
     client: &HttpClient,
     profile: &FabricProfile,

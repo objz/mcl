@@ -1,3 +1,7 @@
+// the instance list on the left side of the UI.
+// handles search/filter, scrollbar sync, and inline renaming.
+// each row shows instance name + "last played" or current run state.
+
 use crate::config::theme::{THEME, BORDER_STYLE};
 use crossterm::event::KeyCode;
 use ratatui::{
@@ -15,6 +19,8 @@ use crate::tui::app::FocusedArea;
 
 use super::{search::SearchState, styled_title, WidgetKey};
 
+// rough human-friendly time delta. not trying to be precise here,
+// "2 months ago" is close enough when months are ~30 days
 fn format_last_played(last_played: Option<chrono::DateTime<chrono::Utc>>) -> String {
     let Some(dt) = last_played else {
         return "Never played".to_string();

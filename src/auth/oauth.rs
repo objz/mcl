@@ -1,3 +1,7 @@
+// microsoft oauth device code flow for minecraft authentication.
+// the flow goes: MSA device code -> MSA token -> xbox/mc token exchange -> mc profile fetch.
+// device code auth is used because it works without a redirect URI, which is nice for a TUI.
+
 use std::sync::{Arc, LazyLock, Mutex};
 
 use minecraft_msa_auth::MinecraftAuthorizationFlow;
@@ -28,6 +32,7 @@ struct McProfile {
     name: String,
 }
 
+// shared slot so the TUI can poll for the device code to show the user
 pub static DEVICE_CODE_DISPLAY: LazyLock<Arc<Mutex<Option<DeviceCodeInfo>>>> =
     LazyLock::new(|| Arc::new(Mutex::new(None)));
 
@@ -68,6 +73,8 @@ async fn run_full_oauth_flow() -> Result<(String, Option<String>), String> {
     Ok((ms_access_token, ms_refresh_token))
 }
 
+// kicks off auth on a background task, returns a mutex the caller can poll for the result.
+// the TUI checks DEVICE_CODE_DISPLAY for the code to show, and this mutex for completion.
 pub fn start_microsoft_auth() -> Arc<Mutex<Option<AuthResult>>> {
     let result: Arc<Mutex<Option<AuthResult>>> = Arc::new(Mutex::new(None));
     let result_clone = result.clone();
@@ -124,6 +131,7 @@ async fn exchange_and_build_account(
         Err(e) => return AuthResult::Error(format!("Profile parse failed: {e}")),
     };
 
+    // mojang returns uuids without dashes because of course they do
     let uuid = if profile.id.len() == 32 {
         format!(
             "{}-{}-{}-{}-{}",
@@ -146,6 +154,8 @@ async fn exchange_and_build_account(
     })
 }
 
+// returns (mc_access_token, new_refresh_token). for offline accounts it just
+// hands back a dummy token since the server doesn't care.
 pub async fn refresh_and_get_token(account: &Account) -> Result<(String, Option<String>), String> {
     match account.account_type {
         AccountType::Offline => Ok(("0".to_owned(), None)),

@@ -1,3 +1,7 @@
+// theme resolution: loads theme.toml, picks a base theme (builtin or custom file),
+// then layers user color overrides on top. supports loading .toml themes from the
+// config/theme/ directory or by absolute path.
+
 use std::path::Path;
 use std::sync::LazyLock;
 
@@ -92,6 +96,7 @@ fn ensure_theme_exists(path: &Path) {
     let _ = std::fs::write(path, include_str!("../../assets/theme.toml"));
 }
 
+// start from a base theme, then override individual colors if the user specified any
 fn resolve_app_theme(config: &ThemeConfig) -> Box<dyn Theme> {
     let base = load_base_theme(&config.theme);
 
@@ -112,21 +117,23 @@ fn resolve_app_theme(config: &ThemeConfig) -> Box<dyn Theme> {
         warning: overrides.warning.unwrap_or_else(|| base.warning()),
         info: overrides.info.unwrap_or_else(|| base.info()),
         diff_added: overrides.diff_added.unwrap_or_else(|| base.diff_added()),
-        diff_removed: overrides.diff_removed.unwrap_or_else(|| base.diff_removed()),
-        diff_context: overrides.diff_context.unwrap_or_else(|| base.diff_context()),
+        diff_removed: overrides
+            .diff_removed
+            .unwrap_or_else(|| base.diff_removed()),
+        diff_context: overrides
+            .diff_context
+            .unwrap_or_else(|| base.diff_context()),
         border: overrides.border.unwrap_or_else(|| base.border()),
         surface: overrides.surface.unwrap_or_else(|| base.surface()),
         background: overrides.background.unwrap_or_else(|| base.background()),
     })
 }
 
-/// Load a base theme by built-in name or file path.
+// tries to find the theme: absolute path > config/theme/<name> > config/theme/<name>.toml > builtin
 fn load_base_theme(name: &str) -> Box<dyn Theme> {
-    // Try as a file path first (absolute or relative to config dir)
     let path = if Path::new(name).is_absolute() {
         Some(std::path::PathBuf::from(name))
     } else {
-        // Check in the mcl config theme directory
         let theme_dir = super::get_config_path().join("theme");
         let candidate = theme_dir.join(name);
         if candidate.exists() {
@@ -142,15 +149,15 @@ fn load_base_theme(name: &str) -> Box<dyn Theme> {
     };
 
     if let Some(path) = path
-        && let Ok(content) = std::fs::read_to_string(&path) {
-            if let Ok(custom) = toml::from_str::<CustomTheme>(&content) {
-                return Box::new(custom);
-            } else {
-                tracing::warn!("Failed to parse theme file: {}", path.display());
-            }
+        && let Ok(content) = std::fs::read_to_string(&path)
+    {
+        if let Ok(custom) = toml::from_str::<CustomTheme>(&content) {
+            return Box::new(custom);
+        } else {
+            tracing::warn!("Failed to parse theme file: {}", path.display());
         }
+    }
 
-    // Fall back to built-in theme by name
     resolve_theme(name)
 }
 
@@ -218,7 +225,6 @@ accent = "Red"
         };
         let theme = resolve_app_theme(&config);
         assert_eq!(theme.accent(), Color::Red);
-        // Other colors should come from dracula base
         let base = resolve_theme("dracula");
         assert_eq!(theme.text(), base.text());
         assert_eq!(theme.error(), base.error());

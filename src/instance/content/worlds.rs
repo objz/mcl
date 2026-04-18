@@ -1,3 +1,7 @@
+// world save scanning. worlds are always directories (never zips) and store
+// their icon as icon.png. also computes an approximate size from top-level
+// files + region data so the user gets some sense of how chonky their world is.
+
 use std::path::Path;
 
 use super::mods::{make_icon_pixels, ContentEntry};
@@ -88,6 +92,8 @@ fn world_description(world_dir: &Path) -> String {
     lines.join("\n")
 }
 
+// only counts top-level files + region/ contents, not a full recursive walk.
+// good enough for a quick size estimate without blocking the UI on huge worlds.
 fn dir_size_approx(path: &Path) -> u64 {
     let mut total = 0u64;
     if let Ok(rd) = std::fs::read_dir(path) {

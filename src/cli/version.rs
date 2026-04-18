@@ -1,3 +1,6 @@
+// lists available game versions, optionally filtered by mod loader support.
+// fetches the mojang manifest and cross-references with loader APIs
+// to show only versions that actually work with a given loader.
 use std::collections::HashSet;
 use std::io;
 
@@ -27,6 +30,8 @@ async fn list_versions(matches: &ArgMatches) -> CliResult {
         .map(|value| parse_loader(value).map_err(io::Error::other))
         .transpose()?;
 
+    // vanilla supports everything by definition, so only fetch loader-specific
+    // version lists when the user actually asked for a modded loader
     let supported = match loader {
         Some(ModLoader::Vanilla) | None => None,
         Some(loader) => Some(fetch_supported_versions(&client, loader).await?),

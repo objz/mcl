@@ -1,3 +1,7 @@
+// vanilla "installer". doesn't actually install anything since the launch
+// process already handles downloading vanilla assets/libraries. this just
+// exists so vanilla fits the same ModLoaderInstaller trait as everyone else.
+
 use std::path::Path;
 
 use async_trait::async_trait;

@@ -1,3 +1,6 @@
+// all the config structs that map to sections in config.toml.
+// everything has sane defaults so a blank file (or no file) still works.
+
 use std::path::PathBuf;
 
 use serde::Deserialize;
@@ -43,6 +46,7 @@ impl Default for Paths {
     }
 }
 
+// expand ~ in paths since toml doesn't do that for us
 pub fn resolve_path(raw: &str) -> PathBuf {
     if let Some(stripped) = raw.strip_prefix("~/") {
         if let Some(home) = dirs_next::home_dir() {
@@ -94,6 +98,8 @@ impl Default for Defaults {
 }
 
 #[derive(Debug, Deserialize)]
+// timing knobs for the error toast animation: show for 5s, start sliding at 3.5s,
+// fly off screen over 300ms. tweak these if the toasts feel too fast or slow.
 pub struct Ui {
     #[serde(default = "default_error_auto_dismiss_ms")]
     pub error_auto_dismiss_ms: u64,

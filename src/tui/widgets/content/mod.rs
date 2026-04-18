@@ -1,3 +1,5 @@
+// the tabbed content area: mods, resource packs, shaders, screenshots, worlds, logs
+
 pub mod list;
 pub mod tabs;
 

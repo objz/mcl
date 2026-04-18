@@ -1,3 +1,6 @@
+// rendering for the modpack import wizard. same pattern as new_instance:
+// snapshot the state, pick the right step renderer, done.
+
 use super::super::base::PopupFrame;
 use super::super::new_instance::LoadState;
 use super::state::{ImportStep, ImportWizardState, IMPORT_STATE};

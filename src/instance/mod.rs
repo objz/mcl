@@ -1,3 +1,5 @@
+// instance management: creation, launching, importing modpacks, and all the
+// bookkeeping that comes with pretending to be a real launcher
 pub mod content;
 pub mod desktop;
 pub mod import;

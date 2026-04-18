@@ -1,3 +1,8 @@
+// state machine for the modpack import wizard.
+// accepts modrinth URLs, project slugs, version IDs, or local .mrpack paths.
+// for remote packs, it fetches project info then lets the user pick a version.
+// local files skip straight to the confirm step.
+
 use super::super::new_instance::LoadState;
 use crate::instance::import::ImportSummary;
 use crate::net::modrinth::{self, ModrinthInput, VersionInfo};
@@ -189,6 +194,7 @@ fn handle_confirm_key(
 ) {
     match key_event.code {
         KeyCode::Esc => close_popup(state, instances_state),
+        // if it came from a local file, there's no version list to go back to
         KeyCode::Left | KeyCode::Char('h') => {
             if matches!(state.versions, LoadState::Loaded(_)) {
                 state.step = ImportStep::Version;
@@ -217,6 +223,7 @@ fn handle_confirm_key(
     }
 }
 
+// pushes an error toast and rewinds the wizard to a previous step
 fn set_error_and_back(state_arc: &Arc<Mutex<ImportWizardState>>, msg: String, step: ImportStep) {
     push_import_error(msg);
     if let Ok(mut s) = state_arc.lock() {
@@ -224,6 +231,8 @@ fn set_error_and_back(state_arc: &Arc<Mutex<ImportWizardState>>, msg: String, st
     }
 }
 
+// parses user input to figure out what they gave us, then dispatches
+// to the appropriate resolve path (slug lookup, direct version, or local file)
 fn start_resolve(state: &mut ImportWizardState) {
     let input_text = state.input.clone();
     state.step = ImportStep::Fetching;
@@ -364,6 +373,8 @@ fn resolve_local_file(state_arc: Arc<Mutex<ImportWizardState>>, path: &str) {
     }
 }
 
+// user picked a version from the list. download the .mrpack, parse it,
+// build a summary, and move to confirm.
 fn start_version_download(state: &mut ImportWizardState) {
     let version = match selected_version(state) {
         Some(v) => v.clone(),

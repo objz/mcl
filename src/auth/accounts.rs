@@ -1,3 +1,5 @@
+// account management: persistence, switching active accounts, and offline uuid generation
+
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
@@ -41,10 +43,11 @@ impl AccountStore {
 
     pub fn save(&self) {
         if let Some(parent) = self.path.parent()
-            && let Err(e) = std::fs::create_dir_all(parent) {
-                tracing::error!("Failed to create accounts directory: {}", e);
-                return;
-            }
+            && let Err(e) = std::fs::create_dir_all(parent)
+        {
+            tracing::error!("Failed to create accounts directory: {}", e);
+            return;
+        }
         match serde_json::to_string_pretty(&self.accounts) {
             Ok(json) => {
                 if let Err(e) = std::fs::write(&self.path, json) {
@@ -66,6 +69,8 @@ impl AccountStore {
         self.save();
     }
 
+    // if an account with the same uuid already exists, replace it.
+    // first account added auto-becomes active so there's always a selection.
     pub fn add(&mut self, account: Account) {
         let uuid = &account.uuid;
         self.accounts.retain(|a| a.uuid != *uuid);
@@ -93,7 +98,9 @@ pub fn account_store_path() -> PathBuf {
     crate::config::get_config_path().join("accounts.json")
 }
 
-/// Generate a deterministic offline-mode UUID for a username.
+// deterministic fake uuid from a username, formatted as uuid v3 with the proper
+// version and variant bits set. not cryptographically meaningful, just needs to
+// be consistent so the same offline name always maps to the same uuid.
 pub fn offline_uuid(username: &str) -> String {
     use std::hash::{DefaultHasher, Hash, Hasher};
     let mut hasher = DefaultHasher::new();

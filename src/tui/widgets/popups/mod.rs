@@ -1,3 +1,6 @@
+// shared utilities for popup widgets: layout helpers, word wrapping, keybind rendering.
+// individual popup types live in their own submodules.
+
 pub mod base;
 pub mod confirm;
 pub mod error;
@@ -6,14 +9,8 @@ pub mod new_instance;
 
 use ratatui::layout::Rect;
 
-/// Calculates the minimum inner dimensions needed to display `text` with word-boundary wrapping
-/// inside a box of `max_inner_width` columns.
-///
-/// Returns `(actual_inner_width, line_count)` where:
-/// - `actual_inner_width` is the width of the widest wrapped line (never exceeds `max_inner_width`)
-/// - `line_count` is how many lines are needed
-///
-/// Add 2 to each dimension for borders: popup_w = actual_inner_width + 2, popup_h = line_count + 2.
+// figures out the (width, height) a text block will need after word wrapping.
+// used to size popups before rendering so they fit their content snugly.
 pub fn word_wrap_size(text: &str, max_inner_width: usize) -> (usize, usize) {
     if text.is_empty() || max_inner_width == 0 {
         return (0, 1);
@@ -62,7 +59,9 @@ pub fn keybind_line(binds: &[(&str, &str)]) -> ratatui::text::Line<'static> {
         text::{Line, Span},
     };
     let theme = THEME.as_ref();
-    let key_style = Style::default().fg(theme.accent()).add_modifier(Modifier::BOLD);
+    let key_style = Style::default()
+        .fg(theme.accent())
+        .add_modifier(Modifier::BOLD);
     let label_style = Style::default().fg(theme.text());
 
     let mut spans: Vec<Span<'static>> = Vec::new();
@@ -78,6 +77,8 @@ pub fn keybind_line(binds: &[(&str, &str)]) -> ratatui::text::Line<'static> {
     Line::from(spans)
 }
 
+// same as keybind_line but wraps to multiple rows when the popup is too narrow
+// to fit everything on one line
 pub fn keybind_lines_wrapped(
     binds: &[(&str, &str)],
     max_width: u16,
@@ -88,7 +89,9 @@ pub fn keybind_lines_wrapped(
         text::{Line, Span},
     };
     let theme = THEME.as_ref();
-    let key_style = Style::default().fg(theme.accent()).add_modifier(Modifier::BOLD);
+    let key_style = Style::default()
+        .fg(theme.accent())
+        .add_modifier(Modifier::BOLD);
     let label_style = Style::default().fg(theme.text());
 
     let mut rows: Vec<Line<'static>> = Vec::new();

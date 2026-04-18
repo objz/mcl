@@ -1,3 +1,5 @@
+// instance lifecycle: create, delete, rename, launch, config, desktop shortcuts.
+// the heaviest handler in the CLI since instances are the core concept.
 use std::io;
 use std::time::Duration;
 
@@ -137,6 +139,8 @@ async fn launch_instance(matches: &ArgMatches) -> CliResult {
         .await
         .map_err(|error| io::Error::other(format!("Launch failed: {}", error)))?;
 
+    // poll until the game process exits. in CLI mode this blocks here
+    // so the user gets a proper exit code at the end.
     loop {
         match crate::running::get(name) {
             Some(RunState::Crashed(Some(code))) => {
@@ -237,6 +241,7 @@ fn config_instance(matches: &ArgMatches) -> CliResult {
     Ok(())
 }
 
+// maps --set key=value pairs to config fields. empty value = clear the field.
 fn apply_config_update(
     config: &mut crate::instance::InstanceConfig,
     key: &str,

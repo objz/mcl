@@ -1,5 +1,9 @@
+// state machine and input handling for the new instance wizard.
+// flow: Name -> Loader -> Version -> LoaderVersion -> Confirm
+// version lists are fetched lazily from the network when you reach that step.
+
 use crate::instance::{
-    loader::{get_installer, GameVersion},
+    loader::{GameVersion, get_installer},
     models::ModLoader,
 };
 use crate::tui::widgets::instances;
@@ -10,6 +14,7 @@ use tui_prompts::{FocusState, State as PromptState, TextState};
 
 pub(crate) static WIZARD_STATE: LazyLock<Arc<Mutex<WizardState>>> =
     LazyLock::new(|| Arc::new(Mutex::new(WizardState::default())));
+// populated on confirm, consumed by the main event loop to actually create the instance
 pub(crate) static WIZARD_RESULT: LazyLock<Arc<Mutex<Option<WizardParams>>>> =
     LazyLock::new(|| Arc::new(Mutex::new(None)));
 
@@ -31,8 +36,7 @@ pub enum WizardStep {
     Confirm,
 }
 
-#[derive(Debug, Clone)]
-#[derive(Default)]
+#[derive(Debug, Clone, Default)]
 pub enum LoadState<T> {
     #[default]
     Idle,
@@ -386,6 +390,8 @@ pub(crate) fn clamp_loader_version_index(state: &mut WizardState) {
     }
 }
 
+// only fires on the Idle -> Loading transition to avoid spamming requests.
+// the spawned task writes results back into WIZARD_STATE when done.
 pub(crate) fn ensure_versions_loaded(state: &mut WizardState) {
     if !matches!(state.versions, LoadState::Idle) {
         return;
@@ -420,7 +426,11 @@ pub(crate) fn ensure_versions_loaded(state: &mut WizardState) {
     });
 }
 
-pub(crate) fn ensure_loader_versions_loaded(state: &mut WizardState, loader: ModLoader, game_version: String) {
+pub(crate) fn ensure_loader_versions_loaded(
+    state: &mut WizardState,
+    loader: ModLoader,
+    game_version: String,
+) {
     if !matches!(state.loader_versions, LoadState::Idle) {
         return;
     }
@@ -452,6 +462,8 @@ pub(crate) fn ensure_loader_versions_loaded(state: &mut WizardState, loader: Mod
     });
 }
 
+// quick and dirty semver compare. doesn't handle pre-release tags or anything
+// fancy, just splits on dots and compares numerically. good enough for mc versions.
 fn compare_semver(a: &str, b: &str) -> std::cmp::Ordering {
     let parse_parts = |s: &str| -> Vec<u64> {
         s.split('.')
@@ -470,6 +482,5 @@ fn compare_semver(a: &str, b: &str) -> std::cmp::Ordering {
 }
 
 fn sort_versions_semver(versions: &mut [GameVersion]) {
-    // Sort newest first (descending), so compare b vs a
     versions.sort_by(|a, b| compare_semver(&b.id, &a.id));
 }

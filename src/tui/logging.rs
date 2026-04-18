@@ -1,3 +1,7 @@
+// sets up the tracing subscriber stack: file logging, tui-logger widget, and
+// our custom StatusLayer that feeds WARN/ERROR events into the error toast system.
+// also keeps an in-memory ring buffer of log lines for the log overlay viewer.
+
 use std::fmt;
 use std::sync::{Arc, Mutex};
 
@@ -12,6 +16,7 @@ use std::sync::LazyLock;
 
 use crate::tui::error_buffer::{self, ErrorEvent};
 
+// capped at 5000 lines so it doesn't eat all the ram if something goes haywire
 static APP_LOG_LINES: LazyLock<Arc<Mutex<Vec<String>>>> =
     LazyLock::new(|| Arc::new(Mutex::new(Vec::new())));
 
@@ -29,6 +34,10 @@ fn push_app_log(line: String) {
     }
 }
 
+    // returns a WorkerGuard that must be held alive for the duration of the
+    // program, otherwise the file logging thread gets dropped immediately.
+    // yes, you will spend 30 minutes debugging "why aren't my logs writing"
+    // before you remember this. ask me how i know.
 pub fn init() -> WorkerGuard {
     let log_dir = match dirs_next::cache_dir() {
         Some(d) => d.join("mcl"),
@@ -81,6 +90,9 @@ pub fn init() -> WorkerGuard {
     guard
 }
 
+// custom tracing layer that intercepts all log events:
+// - everything gets appended to the in-memory log buffer for the overlay viewer
+// - WARN and ERROR additionally get pushed as error toasts
 struct StatusLayer;
 
 impl StatusLayer {
@@ -132,6 +144,8 @@ impl Visit for MessageVisitor {
 
     fn record_debug(&mut self, field: &Field, value: &dyn fmt::Debug) {
         if field.name() == "message" {
+            // Debug format wraps strings in quotes, strip them so the toast
+            // doesn't show "\"something went wrong\""
             let formatted = format!("{:?}", value);
             self.message = formatted
                 .strip_prefix('"')

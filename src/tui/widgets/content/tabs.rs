@@ -1,3 +1,7 @@
+// the outer frame for the content area: tab bar, keybind footer,
+// and dispatching render calls to the active tab's widget.
+// also renders the instance name/version header with run state indicators.
+
 use ratatui::{
     layout::{Alignment, Constraint, Layout, Rect},
     style::{Modifier, Style},
@@ -137,6 +141,8 @@ pub fn render(
         block = block.title_top(sl);
     }
 
+    // keybinds change depending on which tab is active and whether
+    // the content panel or instances panel has focus
     let kb: Option<&[(&str, &str)]> = if is_focused {
         Some(match tab {
             ContentTab::Mods | ContentTab::ResourcePacks | ContentTab::Shaders => &[
@@ -203,6 +209,7 @@ pub fn render(
     let content_area = block.inner(area);
     frame.render_widget(block, area);
 
+    // lazy-load: only scan when switching to an instance that hasn't been loaded yet
     match tab {
         ContentTab::Mods => {
             if let Some(instance) = instance {
@@ -339,6 +346,8 @@ pub fn render(
     }
 }
 
+// the header bar above the content tabs, showing instance name, loader info,
+// and a spinner/error indicator when the instance is running or crashed
 pub fn title(
     frame: &mut Frame,
     area: Rect,

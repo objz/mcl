@@ -1,3 +1,6 @@
+// rendering for the new instance wizard. each step gets its own render fn
+// and the popup resizes itself based on which step is active.
+
 use super::state::{
     clamp_loader_version_index, clamp_version_index, ensure_loader_versions_loaded,
     ensure_versions_loaded, visible_versions, LoadState, WizardState, WizardStep, WIZARD_STATE,
@@ -16,6 +19,9 @@ use ratatui::{
 };
 
 pub fn render(frame: &mut Frame, area: Rect, _focused: FocusedArea) {
+    // grab the lock, kick off any lazy-loading, then clone and release.
+    // data fetching happens here (in render) because the wizard is purely
+    // reactive: version lists only load when you navigate to that step.
     let snapshot = match WIZARD_STATE.lock() {
         Ok(mut state) => {
             if state.step == WizardStep::Version {
@@ -23,6 +29,7 @@ pub fn render(frame: &mut Frame, area: Rect, _focused: FocusedArea) {
                 clamp_version_index(&mut state);
             }
 
+            // vanilla has no loader version, so skip straight to confirm
             if state.step == WizardStep::LoaderVersion {
                 if state.selected_loader() == ModLoader::Vanilla {
                     state.step = WizardStep::Confirm;
@@ -130,6 +137,7 @@ fn step_keybinds(state: &WizardState) -> ratatui::text::Line<'static> {
 fn render_name_step(state: &WizardState, area: Rect, buf: &mut ratatui::buffer::Buffer) {
     let theme = THEME.as_ref();
     let value = state.name_state.value();
+    // \u{2588} is the full block char used as a fake blinking cursor
     let line = if value.is_empty() {
         Line::from(vec![
             Span::styled(

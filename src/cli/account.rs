@@ -1,3 +1,4 @@
+// cli handlers for account management (microsoft oauth + offline accounts)
 use std::io;
 use std::time::Duration;
 
@@ -18,6 +19,7 @@ pub async fn handle_account(matches: &ArgMatches) -> CliResult {
     }
 }
 
+// trait indirection so a mock store can be swapped in for tests
 trait AccountStoreLike {
     fn accounts(&self) -> &[Account];
     fn add_account(&mut self, account: Account);
@@ -65,6 +67,10 @@ async fn add_account(matches: &ArgMatches) -> CliResult {
     Ok(())
 }
 
+// microsoft auth runs on a background thread via device code flow.
+// polls two shared slots: one for the device code to display,
+// then one for the final auth result. not the prettiest pattern
+// but it keeps the oauth complexity out of the CLI layer.
 async fn add_microsoft_account() -> CliResult {
     if let Ok(mut slot) = crate::auth::DEVICE_CODE_DISPLAY.lock() {
         *slot = None;
@@ -72,6 +78,7 @@ async fn add_microsoft_account() -> CliResult {
 
     let result_arc = crate::auth::start_microsoft_auth();
 
+    // wait for the device code to become available before showing it
     loop {
         if let Ok(slot) = crate::auth::DEVICE_CODE_DISPLAY.lock()
             && let Some(info) = slot.as_ref() {
@@ -82,6 +89,7 @@ async fn add_microsoft_account() -> CliResult {
         tokio::time::sleep(Duration::from_millis(200)).await;
     }
 
+    // now wait for the user to complete auth in their browser
     loop {
         if let Ok(slot) = result_arc.lock()
             && let Some(result) = slot.as_ref() {

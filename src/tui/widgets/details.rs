@@ -1,3 +1,6 @@
+// settings panel: shows instance config (memory, java, jvm args, resolution)
+// and provides keybinds to open config files in $EDITOR
+
 use ratatui::{
     layout::Rect,
     style::{Modifier, Style},

@@ -1,16 +1,20 @@
+// handles all downloads from mojang's servers: version manifests,
+// client jars, libraries, and asset objects. this is the core of
+// getting vanilla minecraft onto disk.
+
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
     sync::{
-        atomic::{AtomicU64, Ordering},
         Arc,
+        atomic::{AtomicU64, Ordering},
     },
 };
 
 use serde::{Deserialize, Serialize};
 use tokio::task::JoinSet;
 
-use super::{download_file, HttpClient, NetError};
+use super::{HttpClient, NetError, download_file};
 use crate::tui::progress::{clear, set_action, set_progress, set_sub_action};
 
 const MANIFEST_URL: &str = "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json";
@@ -239,11 +243,16 @@ pub async fn download_assets(
         }
     }
 
+    // assets are stored by hash with the first 2 chars as a directory prefix,
+    // e.g. "ab/ab1234..." - same layout mojang uses on their CDN
     let mut downloads = Vec::new();
     for object in asset_index.objects.values() {
         if object.hash.len() < 2 {
             clear();
-            return Err(NetError::Parse(format!("Invalid asset hash: {}", object.hash)));
+            return Err(NetError::Parse(format!(
+                "Invalid asset hash: {}",
+                object.hash
+            )));
         }
 
         let prefix = &object.hash[..2];
@@ -272,6 +281,9 @@ pub async fn download_assets(
     result
 }
 
+// mojang's rule system is a bit quirky: no rules means "allow everywhere",
+// and rules are evaluated in order where the last matching rule wins.
+// a "disallow" for the current OS is an immediate reject though.
 fn library_allowed_for_current_os(library: &Library) -> bool {
     let rules = match &library.rules {
         Some(rules) => rules,
@@ -306,6 +318,7 @@ fn library_allowed_for_current_os(library: &Library) -> bool {
     allowed
 }
 
+// mojang calls macOS "osx" because apparently it's still 2012
 fn mojang_os_name() -> &'static str {
     match std::env::consts::OS {
         "macos" => "osx",
@@ -313,6 +326,9 @@ fn mojang_os_name() -> &'static str {
     }
 }
 
+// bounded parallel downloader. spawns up to MAX_CONCURRENT_DOWNLOADS tasks
+// and feeds new ones in as each completes. collects errors but keeps going
+// so it downloads as much as possible before reporting the first failure.
 async fn run_parallel_downloads(
     client: &HttpClient,
     downloads: Vec<(String, PathBuf, String)>,

@@ -1,19 +1,25 @@
+// generic scrollable list for content items (mods, resource packs, shaders, worlds).
+// supports toggling items on/off by renaming files with .disabled suffix,
+// search filtering, per-instance caching, and directory change detection.
+// also handles minecraft's formatting codes for colored mod names/descriptions
+// because apparently mojang thought terminal UIs would need that. thanks guys
+
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
+    Frame,
     layout::Rect,
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
     widgets::{Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState},
-    Frame,
 };
 use tui_widget_list::{ListBuilder, ListState as TuiListState, ListView};
 
-use crate::instance::content::mods::{ContentEntry, IconCell};
 use crate::config::theme::THEME;
+use crate::instance::content::mods::{ContentEntry, IconCell};
 
 type PendingContent = Arc<Mutex<Option<(String, Vec<ContentEntry>)>>>;
 type SnapshotRow = (String, String, bool, Option<Vec<Vec<IconCell>>>);
@@ -56,11 +62,11 @@ impl Default for ContentListState {
 }
 
 impl ContentListState {
-    /// Check if the content directory changed (files added/removed).
-    /// Only triggers a rescan when the directory's modification time differs.
+    // poll the content directory for changes every ~120 ticks.
+    // if the dir's mtime changed, invalidate the cache to pick up
+    // mods/packs the user dropped in from outside the launcher
     pub fn try_rescan(&mut self) {
         self.check_counter = self.check_counter.wrapping_add(1);
-        // Check every ~2 seconds (120 ticks at 16ms)
         if !self.check_counter.is_multiple_of(120) {
             return;
         }
@@ -69,13 +75,10 @@ impl ContentListState {
             return;
         };
 
-        let current_mtime = std::fs::metadata(dir)
-            .ok()
-            .and_then(|m| m.modified().ok());
+        let current_mtime = std::fs::metadata(dir).ok().and_then(|m| m.modified().ok());
 
         if current_mtime != self.last_dir_mtime {
             self.last_dir_mtime = current_mtime;
-            // Directory changed — invalidate so next render triggers start_load
             if let Some(name) = &self.loaded_for {
                 self.cache.remove(name);
                 self.loaded_for = None;
@@ -83,7 +86,6 @@ impl ContentListState {
         }
     }
 
-    /// Set the directory to watch for changes. Call after start_load.
     pub fn watch_dir(&mut self, dir: std::path::PathBuf) {
         self.last_dir_mtime = std::fs::metadata(&dir).ok().and_then(|m| m.modified().ok());
         self.watched_dir = Some(dir);
@@ -100,20 +102,23 @@ impl ContentListState {
 }
 
 impl ContentListState {
+    // saves current entries to cache before loading new ones, and restores
+    // from cache if this instance was seen before (avoids re-scanning)
     pub fn start_load<F>(&mut self, instances_dir: &Path, instance_name: &str, scan_fn: F)
     where
         F: FnOnce(&Path, &str) -> Vec<ContentEntry> + Send + 'static,
     {
         if let Some(prev) = self.loaded_for.take()
-            && !self.entries.is_empty() {
-                self.cache.insert(
-                    prev,
-                    CachedList {
-                        entries: std::mem::take(&mut self.entries),
-                        selected: self.list_state.selected,
-                    },
-                );
-            }
+            && !self.entries.is_empty()
+        {
+            self.cache.insert(
+                prev,
+                CachedList {
+                    entries: std::mem::take(&mut self.entries),
+                    selected: self.list_state.selected,
+                },
+            );
+        }
 
         if let Some(cached) = self.cache.remove(instance_name) {
             self.entries = cached.entries;
@@ -146,35 +151,35 @@ impl ContentListState {
     }
 
     pub fn drain_pending(&mut self) {
-        let taken = match self.pending.lock() { Ok(mut slot) => {
-            slot.take()
-        } _ => {
-            None
-        }};
+        let taken = match self.pending.lock() {
+            Ok(mut slot) => slot.take(),
+            _ => None,
+        };
 
         if let Some((instance_name, entries)) = taken
-            && (self.loaded_for.as_deref() == Some(&instance_name) || instance_name.is_empty()) {
-                let selected_name = self
-                    .list_state
-                    .selected
-                    .and_then(|i| self.entries.get(i))
-                    .map(|e| e.name.clone());
+            && (self.loaded_for.as_deref() == Some(&instance_name) || instance_name.is_empty())
+        {
+            let selected_name = self
+                .list_state
+                .selected
+                .and_then(|i| self.entries.get(i))
+                .map(|e| e.name.clone());
 
-                self.entries = entries;
-                self.loading = false;
+            self.entries = entries;
+            self.loading = false;
 
-                if !self.entries.is_empty() {
-                    let new_index = selected_name
-                        .and_then(|name| self.entries.iter().position(|e| e.name == name))
-                        .or(self.list_state.selected)
-                        .map(|i| i.min(self.entries.len().saturating_sub(1)))
-                        .unwrap_or(0);
-                    self.list_state.selected = Some(new_index);
-                } else {
-                    self.list_state.selected = None;
-                }
-                self.update_scrollbar();
+            if !self.entries.is_empty() {
+                let new_index = selected_name
+                    .and_then(|name| self.entries.iter().position(|e| e.name == name))
+                    .or(self.list_state.selected)
+                    .map(|i| i.min(self.entries.len().saturating_sub(1)))
+                    .unwrap_or(0);
+                self.list_state.selected = Some(new_index);
+            } else {
+                self.list_state.selected = None;
             }
+            self.update_scrollbar();
+        }
     }
 
     fn update_scrollbar(&mut self) {
@@ -184,6 +189,8 @@ impl ContentListState {
         self.scrollbar_state = ScrollbarState::new(max).position(pos);
     }
 
+    // enable/disable by renaming the file with/without .disabled extension.
+    // this is how most minecraft launchers handle it
     pub fn toggle_selected(&mut self) {
         let Some(index) = self.list_state.selected else {
             return;
@@ -279,16 +286,16 @@ pub fn handle_key_no_toggle(key_event: &KeyEvent, state: &mut ContentListState) 
         KeyCode::Enter if key_event.modifiers.contains(KeyModifiers::SHIFT) => {
             if let Some(&real_idx) = state.list_state.selected.and_then(|i| filtered.get(i))
                 && let Some(dir) = state.entries[real_idx].path.parent()
-                    && let Err(e) = open::that(dir) {
-                        tracing::error!("Failed to open directory: {}", e);
-                    }
+                && let Err(e) = open::that(dir)
+            {
+                tracing::error!("Failed to open directory: {}", e);
+            }
             true
         }
         _ => false,
     }
 }
 
-/// Returns `true` if the key was consumed.
 pub fn handle_key(key_event: &KeyEvent, state: &mut ContentListState) -> bool {
     if handle_search_keys(key_event, state) {
         return true;
@@ -314,9 +321,10 @@ pub fn handle_key(key_event: &KeyEvent, state: &mut ContentListState) -> bool {
         KeyCode::Enter if key_event.modifiers.contains(KeyModifiers::SHIFT) => {
             if let Some(&real_idx) = state.list_state.selected.and_then(|i| filtered.get(i))
                 && let Some(dir) = state.entries[real_idx].path.parent()
-                    && let Err(e) = open::that(dir) {
-                        tracing::error!("Failed to open directory: {}", e);
-                    }
+                && let Err(e) = open::that(dir)
+            {
+                tracing::error!("Failed to open directory: {}", e);
+            }
             true
         }
         KeyCode::Enter => {
@@ -343,8 +351,7 @@ pub fn render(
     let theme = THEME.as_ref();
     if state.loading {
         frame.render_widget(
-            Paragraph::new(loading_text)
-                .style(Style::default().fg(theme.text_dim())),
+            Paragraph::new(loading_text).style(Style::default().fg(theme.text_dim())),
             area,
         );
         return;
@@ -354,8 +361,7 @@ pub fn render(
 
     if filtered.is_empty() {
         frame.render_widget(
-            Paragraph::new(empty_text)
-                .style(Style::default().fg(theme.text_dim())),
+            Paragraph::new(empty_text).style(Style::default().fg(theme.text_dim())),
             area,
         );
         return;
@@ -390,7 +396,9 @@ pub fn render(
 
         let (name_style, description_style, background) = match (*enabled, show_selected) {
             (true, true) => (
-                Style::default().fg(theme.accent()).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(theme.accent())
+                    .add_modifier(Modifier::BOLD),
                 Style::default().fg(theme.text_dim()),
                 stripe_bg,
             ),
@@ -402,12 +410,16 @@ pub fn render(
                 stripe_bg,
             ),
             (false, true) => (
-                Style::default().fg(theme.accent()).add_modifier(Modifier::CROSSED_OUT),
+                Style::default()
+                    .fg(theme.accent())
+                    .add_modifier(Modifier::CROSSED_OUT),
                 Style::default().fg(theme.text_dim()),
                 stripe_bg,
             ),
             (false, false) => (
-                Style::default().fg(theme.text_dim()).add_modifier(Modifier::CROSSED_OUT),
+                Style::default()
+                    .fg(theme.text_dim())
+                    .add_modifier(Modifier::CROSSED_OUT),
                 Style::default().fg(theme.text_dim()),
                 stripe_bg,
             ),
@@ -530,6 +542,8 @@ pub fn render(
     );
 }
 
+// minecraft's 16-color palette, keyed by the formatting code character.
+// these exact RGB values come from the minecraft wiki
 fn mc_color(code: char) -> Option<Color> {
     match code {
         '0' => Some(Color::Rgb(0x00, 0x00, 0x00)),
@@ -552,6 +566,8 @@ fn mc_color(code: char) -> Option<Color> {
     }
 }
 
+// parses minecraft's section-sign (U+00A7) formatting codes into styled spans.
+// handles colors (0-f), bold (l), strikethrough (m), underline (n), italic (o), reset (r)
 fn parse_mc_text(text: &str, base_style: Style) -> Vec<Span<'static>> {
     let mut spans = Vec::new();
     let mut current_style = base_style;
@@ -560,37 +576,38 @@ fn parse_mc_text(text: &str, base_style: Style) -> Vec<Span<'static>> {
 
     while let Some(ch) = chars.next() {
         if ch == '\u{00A7}'
-            && let Some(&code) = chars.peek() {
-                if !current_text.is_empty() {
-                    spans.push(Span::styled(current_text.clone(), current_style));
-                    current_text.clear();
-                }
-                chars.next();
-
-                if let Some(color) = mc_color(code) {
-                    current_style = base_style.fg(color);
-                } else {
-                    match code {
-                        'l' | 'L' => {
-                            current_style = current_style.add_modifier(Modifier::BOLD);
-                        }
-                        'm' | 'M' => {
-                            current_style = current_style.add_modifier(Modifier::CROSSED_OUT);
-                        }
-                        'n' | 'N' => {
-                            current_style = current_style.add_modifier(Modifier::UNDERLINED);
-                        }
-                        'o' | 'O' => {
-                            current_style = current_style.add_modifier(Modifier::ITALIC);
-                        }
-                        'r' | 'R' => {
-                            current_style = base_style;
-                        }
-                        _ => {}
-                    }
-                }
-                continue;
+            && let Some(&code) = chars.peek()
+        {
+            if !current_text.is_empty() {
+                spans.push(Span::styled(current_text.clone(), current_style));
+                current_text.clear();
             }
+            chars.next();
+
+            if let Some(color) = mc_color(code) {
+                current_style = base_style.fg(color);
+            } else {
+                match code {
+                    'l' | 'L' => {
+                        current_style = current_style.add_modifier(Modifier::BOLD);
+                    }
+                    'm' | 'M' => {
+                        current_style = current_style.add_modifier(Modifier::CROSSED_OUT);
+                    }
+                    'n' | 'N' => {
+                        current_style = current_style.add_modifier(Modifier::UNDERLINED);
+                    }
+                    'o' | 'O' => {
+                        current_style = current_style.add_modifier(Modifier::ITALIC);
+                    }
+                    'r' | 'R' => {
+                        current_style = base_style;
+                    }
+                    _ => {}
+                }
+            }
+            continue;
+        }
         current_text.push(ch);
     }
 
@@ -614,6 +631,9 @@ fn strip_mc_codes(text: &str) -> String {
     result
 }
 
+// renders one row of a mod icon using half-block characters (U+2584).
+// each cell packs two vertical pixels via fg/bg colors, giving
+// double the vertical resolution out of the terminal
 fn icon_spans(icon_pixels: Option<&Vec<Vec<IconCell>>>, row: usize) -> Vec<Span<'static>> {
     match icon_pixels.and_then(|rows| rows.get(row)) {
         Some(cols) => cols

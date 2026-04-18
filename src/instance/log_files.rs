@@ -1,3 +1,7 @@
+// per-launch log files stored under .minecraft/logs/launches/
+// each launch gets its own timestamped file so you can go back and see what
+// crashed last tuesday at 3am
+
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone)]

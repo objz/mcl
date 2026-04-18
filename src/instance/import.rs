@@ -1,3 +1,6 @@
+// importing modrinth .mrpack modpacks: parse the manifest, create the instance,
+// download all the mods, and extract config/resource overrides from the zip
+
 use std::path::{Path, PathBuf};
 
 use crate::instance::manager::InstanceManager;
@@ -39,6 +42,7 @@ pub fn build_summary(index: &MrpackIndex, mrpack_path: PathBuf) -> Result<Import
     })
 }
 
+// peek into the zip to count files under overrides/ and client-overrides/
 fn count_overrides(mrpack_path: &Path) -> Result<usize, String> {
     let file = std::fs::File::open(mrpack_path).map_err(|e| e.to_string())?;
     let archive = zip::ZipArchive::new(file).map_err(|e| e.to_string())?;
@@ -98,6 +102,8 @@ pub async fn execute_import(
     Ok(config)
 }
 
+// downloads all mod files listed in the mrpack index, capped at 10 concurrent
+// downloads to avoid getting rate-limited into oblivion
 async fn download_mod_files(
     index: &MrpackIndex,
     minecraft_dir: &Path,
@@ -111,6 +117,8 @@ async fn download_mod_files(
 
     progress::set_action(format!("Downloading mods... 0/{total}"));
 
+    // bounded concurrency via manual JoinSet draining: seed with max_concurrent
+    // tasks, then spawn a new one each time one finishes
     let mut tasks = tokio::task::JoinSet::new();
     let max_concurrent = 10;
     let mut file_iter = index.files.iter();

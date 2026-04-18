@@ -1,13 +1,13 @@
+// global progress state shared between background tasks and the status bar widget.
+// background tasks set the action/progress, the render loop reads it every frame.
+
 use std::sync::LazyLock;
 use std::sync::{Arc, Mutex};
 
 #[derive(Debug, Default, Clone)]
 pub struct ProgressState {
-    /// Current main action text, e.g. "Downloading 1.20.1..."
     pub current_action: Option<String>,
-    /// (bytes_downloaded, total_bytes). total = 0 means unknown size.
     pub progress: Option<(u64, u64)>,
-    /// Detail text shown below main action, e.g. "libraries/net/minecraft/client.jar"
     pub sub_action: Option<String>,
 }
 

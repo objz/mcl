@@ -1,3 +1,6 @@
+// the "overview" panel showing download/install progress.
+// shows a gauge when the total is known, or a spinner when it's not.
+
 use ratatui::{
     layout::{Constraint, Layout, Rect},
     style::{Modifier, Style},

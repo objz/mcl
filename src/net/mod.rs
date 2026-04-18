@@ -1,8 +1,11 @@
+// networking layer: http client, file downloads, and shared utilities
+// for fetching game assets from mojang, mod loaders, and modrinth.
+
 pub mod fabric;
 pub mod forge;
+pub mod modrinth;
 pub mod mojang;
 pub mod neoforge;
-pub mod modrinth;
 pub mod quilt;
 
 use reqwest::Client;
@@ -40,7 +43,10 @@ impl Default for HttpClient {
 impl HttpClient {
     pub fn new() -> Self {
         let client = Client::builder()
-            .user_agent(format!("mcl/{} (Minecraft Launcher)", env!("CARGO_PKG_VERSION")))
+            .user_agent(format!(
+                "mcl/{} (Minecraft Launcher)",
+                env!("CARGO_PKG_VERSION")
+            ))
             .timeout(std::time::Duration::from_secs(30))
             .build()
             .unwrap_or_else(|_| Client::new());
@@ -67,8 +73,9 @@ impl HttpClient {
     }
 }
 
-/// Download a file from `url` to `dest`, calling `progress_cb(bytes_downloaded, total_bytes)` as chunks arrive.
-/// `total_bytes` is 0 if Content-Length is unknown.
+// streams a file to disk in chunks, calling progress_cb(downloaded, total) along the way.
+// total will be 0 if the server doesn't send content-length, so callers
+// should handle that gracefully.
 pub async fn download_file(
     client: &HttpClient,
     url: &str,
@@ -97,6 +104,7 @@ pub async fn download_file(
     Ok(())
 }
 
+// tries JAVA_HOME first, then PATH, then just yolos "java" and hopes for the best
 #[must_use]
 pub fn detect_java_path() -> String {
     if let Ok(java_home) = std::env::var("JAVA_HOME") {
@@ -111,6 +119,9 @@ pub fn detect_java_path() -> String {
         .unwrap_or_else(|_| "java".to_string())
 }
 
+// converts maven coordinates like "org.example:artifact:1.0" into a
+// filesystem path like "org/example/artifact/1.0/artifact-1.0.jar".
+// supports optional classifier as a 4th component.
 #[must_use]
 pub fn maven_coord_to_path(coord: &str) -> Option<String> {
     let parts: Vec<&str> = coord.split(':').collect();

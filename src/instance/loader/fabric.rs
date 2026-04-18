@@ -1,3 +1,6 @@
+// fabric installation. the nice one: just fetch a profile json and download
+// the libraries. no java installer nonsense required.
+
 use std::path::Path;
 
 use async_trait::async_trait;

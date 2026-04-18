@@ -1,3 +1,6 @@
+// reusable incremental search state used across multiple widgets.
+// handles case-insensitive filtering and inline match highlighting.
+
 use ratatui::{
     style::{Modifier, Style},
     text::{Line, Span},
@@ -40,6 +43,8 @@ impl SearchState {
         text.to_lowercase().contains(&self.query.to_lowercase())
     }
 
+    // splits a line into spans, bolding+underlining the parts that match
+    // the query so they pop out visually
     pub fn highlight_line<'a>(&self, text: &'a str, base_style: Style) -> Line<'a> {
         if self.query.is_empty() {
             return Line::from(Span::styled(text, base_style));
@@ -72,6 +77,7 @@ impl SearchState {
         }
     }
 
+    // renders the "/ query█" indicator in the block title bar
     pub fn title_line(&self) -> Option<Line<'static>> {
         if !self.active && self.query.is_empty() {
             return None;

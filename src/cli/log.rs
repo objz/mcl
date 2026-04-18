@@ -1,3 +1,4 @@
+// viewing minecraft log files from the CLI, with optional `--follow` for tailing
 use std::io;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -46,6 +47,8 @@ async fn show_log(matches: &ArgMatches) -> CliResult {
         println!("{}", line);
     }
 
+    // ghetto tail -f: re-read the whole file and print new lines.
+    // not efficient, but log files are small and this is simple.
     if follow {
         let mut last_len = lines.len();
         loop {
@@ -61,6 +64,7 @@ async fn show_log(matches: &ArgMatches) -> CliResult {
     Ok(())
 }
 
+// if no file is specified, grab the most recent log (first from the sorted scan)
 pub(crate) fn resolve_log_path(
     instances_dir: &Path,
     instance: &str,

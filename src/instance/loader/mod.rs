@@ -1,8 +1,13 @@
-mod vanilla;
+// mod loader installation. each loader (fabric, forge, neoforge, quilt, vanilla)
+// implements the same trait so the UI can treat them uniformly: pick game version,
+// pick loader version, install. the actual installation strategies differ wildly
+// though (fabric/quilt just download jars, forge/neoforge run a whole java installer).
+
 mod fabric;
 mod forge;
 mod neoforge;
 mod quilt;
+mod vanilla;
 
 use std::path::Path;
 
@@ -41,7 +46,6 @@ pub trait ModLoaderInstaller: Send + Sync {
     ) -> Result<(), NetError>;
 }
 
-/// Save a serializable loader profile JSON to `meta_dir/loader-profiles/<filename>`.
 pub(crate) fn save_profile_json(
     meta_dir: &Path,
     filename: &str,
@@ -56,8 +60,9 @@ pub(crate) fn save_profile_json(
     Ok(())
 }
 
-/// Read a Forge/NeoForge version JSON installed by the Java installer, extract
-/// mainClass + libraries, and save a simplified profile to `meta_dir/loader-profiles/`.
+// used by forge/neoforge. their java installer drops a version json into
+// .minecraft/versions/. parses that to extract the main class and library
+// list, then saves a stripped-down profile for use at launch time.
 pub(crate) fn save_installer_profile(
     instance_dir: &Path,
     meta_dir: &Path,
@@ -90,8 +95,12 @@ pub(crate) fn save_installer_profile(
     }
 
     let raw = std::fs::read(&ver_json_path)?;
-    let ver: InstallerVersionJson = serde_json::from_slice(&raw)
-        .map_err(|e| NetError::Parse(format!("Invalid version JSON at {}: {e}", ver_json_path.display())))?;
+    let ver: InstallerVersionJson = serde_json::from_slice(&raw).map_err(|e| {
+        NetError::Parse(format!(
+            "Invalid version JSON at {}: {e}",
+            ver_json_path.display()
+        ))
+    })?;
 
     let libs: Vec<serde_json::Value> = ver
         .libraries

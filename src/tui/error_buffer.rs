@@ -1,3 +1,10 @@
+// thread-safe FIFO queue for error/warning toasts displayed in the UI.
+// also (ab)used for INFO toasts like "desktop shortcut created" because
+// why build a separate notification system when this one works fine.
+//
+// callers pass id: 0 and push_error assigns a real unique id. the id is
+// used by the render layer to track per-toast animation state.
+
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -60,8 +67,8 @@ pub fn peek_error() -> Option<ErrorEvent> {
     }
 }
 
-/// Returns all queued error events, newest first (for top-to-bottom stacking).
 #[must_use]
+// returned in reverse order (newest first) so they stack top-down in the UI
 pub fn peek_all_errors() -> Vec<ErrorEvent> {
     match ERROR_EVENTS.lock() {
         Ok(events) => events.iter().rev().cloned().collect(),

@@ -1,10 +1,14 @@
+// forge mod loader: version discovery via promotions API, then download
+// and run the installer jar. forge doesn't have a nice metadata API like
+// fabric/quilt, so it shells out to java to run their installer.
+
 use std::collections::HashMap;
 use std::path::Path;
 
 use serde::Deserialize;
 
 use crate::instance::loader::GameVersion;
-use crate::net::{download_file, HttpClient, NetError};
+use crate::net::{HttpClient, NetError, download_file};
 use crate::tui::progress::set_action;
 
 const FORGE_PROMOTIONS_URL: &str =
@@ -16,10 +20,8 @@ struct ForgePromotions {
     promos: HashMap<String, String>,
 }
 
-/// Fetch available Forge loader versions for a given Minecraft game version.
-///
-/// Queries the Forge promotions JSON and returns unique Forge version strings
-/// matching the requested game version (e.g. `"47.2.20"` for game version `"1.20.1"`).
+// forge promotions use keys like "1.20.1-recommended", "1.20.1-latest"
+// so this filters by game version prefix and extracts the forge version values
 pub async fn fetch_forge_versions(
     client: &HttpClient,
     game_version: &str,
@@ -39,6 +41,8 @@ pub async fn fetch_forge_versions(
     Ok(versions)
 }
 
+// extracts unique game versions from the promotion keys by splitting off
+// the "-recommended"/"-latest" suffix
 pub async fn fetch_forge_game_versions(client: &HttpClient) -> Result<Vec<GameVersion>, NetError> {
     let promos: ForgePromotions = client.get_json(FORGE_PROMOTIONS_URL).await?;
 
@@ -60,9 +64,6 @@ pub async fn fetch_forge_game_versions(client: &HttpClient) -> Result<Vec<GameVe
         .collect())
 }
 
-/// Download the Forge installer JAR for the given game + forge version combo.
-///
-/// The installer JAR is saved to `dest`. Progress is reported via the TUI progress system.
 pub async fn download_forge_installer(
     client: &HttpClient,
     game_version: &str,
@@ -87,10 +88,6 @@ pub async fn download_forge_installer(
     .await
 }
 
-/// Run the Forge installer JAR to install Forge into the instance directory.
-///
-/// Requires a Java runtime. The installer is invoked with `--installClient` from
-/// the instance directory.
 pub async fn run_forge_installer(
     installer_path: &Path,
     instance_dir: &Path,

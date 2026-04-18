@@ -1,3 +1,6 @@
+// quilt installation. same clean approach as fabric (profile json + library
+// downloads). they're basically fabric's cooler sibling.
+
 use std::path::Path;
 
 use async_trait::async_trait;

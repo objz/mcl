@@ -11,8 +11,10 @@ use crate::tui::error_buffer;
 use crate::tui::progress;
 
 impl App {
+    /// main loop: drain async results, render, handle input, repeat at ~60fps
     pub async fn run(&mut self, terminal: &mut Tui) -> color_eyre::Result<()> {
         while !self.exit {
+            // check if any popup wizard finished and wants to create/import
             if let Some(params) = new_instance::take_result() {
                 self.spawn_create(params);
             }
@@ -23,6 +25,9 @@ impl App {
 
             self.dismiss_expired_errors();
 
+            // drain all the channels from background tasks.
+            // every content type has its own pending queue because they each
+            // get scanned/loaded on separate tokio tasks
             self.drain_pending_instances();
             self.drain_pending_last_played();
             self.mods_state.drain_pending();
@@ -40,6 +45,7 @@ impl App {
             self.screenshots_state.drain_pending_entries();
             self.screenshots_state.request_visible_loads();
             self.create_screenshot_protocols();
+            // only advance the spinner every 8 ticks to keep it readable
             self.throbber_tick = self.throbber_tick.wrapping_add(1);
             if self.throbber_tick.is_multiple_of(8) {
                 self.throbber_state.calc_next();
@@ -55,6 +61,8 @@ impl App {
         Ok(())
     }
 
+    // polls for input with a 16ms timeout (~60fps). only key presses are handled,
+    // releases and repeats are ignored thanks to the enhanced keyboard protocol
     fn handle_events(&mut self) -> color_eyre::Result<()> {
         match crossterm::event::poll(Duration::from_millis(16)) {
             Ok(true) => match event::read() {
@@ -138,6 +146,9 @@ impl App {
         });
     }
 
+    // spawns $EDITOR/$VISUAL to edit a file. for terminal editors (vim, nano, etc)
+    // gotta leave the alternate screen and restore it after, otherwise the
+    // editor fights with ratatui for the terminal. GUI editors just get spawned detached.
     fn run_editor(terminal: &mut ratatui::DefaultTerminal, path: &std::path::Path) {
         use ratatui::crossterm::{
             terminal::{
@@ -215,6 +226,8 @@ impl App {
         });
     }
 
+    // pops errors from the front of the queue once they've been visible long enough.
+    // loops because multiple errors could expire in the same frame
     fn dismiss_expired_errors(&self) {
         use crate::config::SETTINGS;
         loop {

@@ -1,3 +1,7 @@
+// forge installation. unlike fabric/quilt, forge ships a java-based installer
+// that has to be downloaded and executed. yes, a jvm is needed just to install
+// the thing that runs on a jvm. the installer jar gets cleaned up afterward.
+
 use std::path::Path;
 
 use async_trait::async_trait;
@@ -39,6 +43,7 @@ impl ModLoaderInstaller for ForgeInstaller {
         forge_api::download_forge_installer(client, game_version, loader_version, &installer_jar)
             .await?;
 
+        // use configured java or try to find one on PATH
         let java_path = crate::config::SETTINGS
             .paths
             .effective_java_path()
@@ -47,6 +52,7 @@ impl ModLoaderInstaller for ForgeInstaller {
         if let Err(e) =
             forge_api::run_forge_installer(&installer_jar, instance_dir, &java_path).await
         {
+            // still clean up even if installation failed
             let _ = tokio::fs::remove_file(&installer_jar).await;
             return Err(e);
         }
@@ -55,6 +61,7 @@ impl ModLoaderInstaller for ForgeInstaller {
             tracing::warn!("Failed to remove Forge installer JAR: {}", e);
         }
 
+        // extract the profile from what the installer just wrote to disk
         save_forge_profile(instance_dir, meta_dir, game_version, loader_version)?;
 
         Ok(())

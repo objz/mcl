@@ -1,3 +1,7 @@
+// global tracking for running minecraft instances. everything is behind
+// Arc<Mutex<>> because the launch/monitor tasks live on separate tokio threads
+// and the TUI render loop needs to read state every frame.
+
 use chrono::{DateTime, Utc};
 use std::collections::HashMap;
 use std::sync::LazyLock;
@@ -14,10 +18,14 @@ pub enum RunState {
 pub static RUNNING: LazyLock<Arc<Mutex<HashMap<String, RunState>>>> =
     LazyLock::new(|| Arc::new(Mutex::new(HashMap::new())));
 
+// queued up so the TUI event loop can flush these to disk in batch,
+// the child process monitor shouldn't be writing config files directly
 type PendingLastPlayed = Arc<Mutex<Vec<(String, DateTime<Utc>)>>>;
 pub static PENDING_LAST_PLAYED: LazyLock<PendingLastPlayed> =
     LazyLock::new(|| Arc::new(Mutex::new(Vec::new())));
 
+// oneshot channels to signal a running instance to stop.
+// send_kill fires the channel, the launch task receives it and kills the child process.
 type KillSenders = Arc<Mutex<HashMap<String, tokio::sync::oneshot::Sender<()>>>>;
 pub static KILL_SENDERS: LazyLock<KillSenders> =
     LazyLock::new(|| Arc::new(Mutex::new(HashMap::new())));

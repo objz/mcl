@@ -1,3 +1,6 @@
+// modrinth modpack support: parses URLs/slugs, fetches project metadata,
+// downloads .mrpack files, and extracts loader info from pack manifests.
+
 use serde::Deserialize;
 use std::collections::HashMap;
 
@@ -55,6 +58,9 @@ pub enum ModrinthInput {
     LocalFile(String),
 }
 
+// figures out what the user gave us: a modrinth URL, a local .mrpack file,
+// or just a project slug. accepts a pretty wide range of inputs so users
+// don't have to think about it.
 pub fn parse_input(input: &str) -> ModrinthInput {
     let input = input.trim();
 
@@ -85,6 +91,8 @@ pub fn parse_input(input: &str) -> ModrinthInput {
 
 use crate::instance::models::ModLoader;
 
+// mrpack dependencies use keys like "fabric-loader", "forge", etc.
+// checks in priority order and returns the first match.
 pub fn loader_from_dependencies(deps: &HashMap<String, String>) -> (Option<ModLoader>, Option<String>) {
     let loaders = [
         ("fabric-loader", ModLoader::Fabric),
@@ -106,6 +114,8 @@ pub fn game_version_from_dependencies(deps: &HashMap<String, String>) -> Option<
 
 const API_BASE: &str = "https://api.modrinth.com/v2";
 
+// hand-rolled percent encoding because pulling in a crate for RFC 3986
+// unreserved chars felt like overkill
 fn url_encode(s: &str) -> String {
     use std::fmt::Write;
     let mut encoded = String::with_capacity(s.len());
@@ -149,6 +159,8 @@ pub async fn fetch_version(
     client.get_json(&url).await
 }
 
+// grabs the primary file from a version, falling back to the first file
+// if none is marked primary (some projects are sloppy about that)
 pub async fn download_mrpack(
     client: &crate::net::HttpClient,
     version: &VersionInfo,
@@ -166,6 +178,7 @@ pub async fn download_mrpack(
     Ok(mrpack_path)
 }
 
+// .mrpack is just a zip with modrinth.index.json at the root
 pub fn parse_mrpack(path: &std::path::Path) -> Result<MrpackIndex, String> {
     let file = std::fs::File::open(path).map_err(|e| format!("Cannot open .mrpack: {e}"))?;
     let mut archive = zip::ZipArchive::new(file).map_err(|e| format!("Invalid ZIP: {e}"))?;

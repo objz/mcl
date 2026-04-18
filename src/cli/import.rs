@@ -1,3 +1,5 @@
+// modpack importing from modrinth (remote slug/url) or local .mrpack files.
+// resolves the input, downloads if needed, then hands off to the import engine.
 use clap::ArgMatches;
 
 use crate::instance::InstanceManager;
@@ -15,6 +17,7 @@ pub async fn handle_import(matches: &ArgMatches) -> CliResult {
     let manager = InstanceManager::new(instances_dir, meta_dir);
     let client = crate::net::HttpClient::new();
 
+    // figure out what the user gave us: a local file, a project slug, or a versioned URL
     let parsed = modrinth::parse_input(input);
 
     let mrpack_path = match parsed {

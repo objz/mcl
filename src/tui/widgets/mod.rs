@@ -1,3 +1,5 @@
+// shared widget utilities and the trait all key-handling widgets implement
+
 use crate::config::theme::THEME;
 use crossterm::event::KeyEvent;
 use ratatui::{
@@ -15,6 +17,8 @@ pub mod screenshots_grid;
 pub mod search;
 pub mod status;
 
+// highlight the first character of a title with the accent color,
+// gives the UI that "keyboard shortcut hint" look
 pub fn styled_title(title: &str, highlight: bool) -> Line<'_> {
     let theme = THEME.as_ref();
     if !highlight || title.is_empty() {

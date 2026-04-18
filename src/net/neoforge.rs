@@ -1,9 +1,14 @@
+// neoforge: the forge fork that broke away after 1.20.1.
+// uses a different versioning scheme where neoforge versions map to
+// minecraft versions by dropping the "1." prefix (e.g. MC 1.21 = NF 21.x).
+// like forge, installation requires running their installer jar.
+
 use std::path::Path;
 
 use serde::Deserialize;
 
 use crate::instance::loader::GameVersion;
-use crate::net::{download_file, HttpClient, NetError};
+use crate::net::{HttpClient, NetError, download_file};
 use crate::tui::progress::set_action;
 
 const NEOFORGE_MAVEN_BASE: &str = "https://maven.neoforged.net/releases/net/neoforged/neoforge";
@@ -15,10 +20,8 @@ struct NeoForgeMavenVersions {
     versions: Vec<String>,
 }
 
-/// Map a Minecraft game version like "1.21" or "1.20.4" to the NeoForge version
-/// prefix (e.g. "21.0." or "20.4."). NeoForge versions encode the MC version as
-/// `MAJOR.MINOR.` where MAJOR is the MC major-minor (20 for 1.20.x, 21 for 1.21.x)
-/// and MINOR is the MC patch (0 if absent, e.g. "1.21" → "21.0.").
+// neoforge dropped the "1." from minecraft versions in their scheme,
+// so "1.20.4" becomes prefix "20.4." and "1.21" becomes "21.0."
 fn game_version_to_neoforge_prefix(game_version: &str) -> Option<String> {
     let parts: Vec<&str> = game_version.split('.').collect();
     match parts.as_slice() {
@@ -55,6 +58,8 @@ pub async fn fetch_neoforge_versions(
     Ok(versions)
 }
 
+// reverse-engineers minecraft versions from neoforge version numbers.
+// e.g. neoforge "21.0.x" means MC 1.21, "20.4.x" means MC 1.20.4
 pub async fn fetch_neoforge_game_versions(
     client: &HttpClient,
 ) -> Result<Vec<GameVersion>, NetError> {
@@ -64,17 +69,18 @@ pub async fn fetch_neoforge_game_versions(
     for version in &maven.versions {
         let parts: Vec<&str> = version.split('.').collect();
         if parts.len() >= 2
-            && let (Ok(major), Ok(minor)) = (parts[0].parse::<u32>(), parts[1].parse::<u32>()) {
-                let mc_version = if minor == 0 {
-                    format!("1.{}", major)
-                } else {
-                    format!("1.{}.{}", major, minor)
-                };
+            && let (Ok(major), Ok(minor)) = (parts[0].parse::<u32>(), parts[1].parse::<u32>())
+        {
+            let mc_version = if minor == 0 {
+                format!("1.{}", major)
+            } else {
+                format!("1.{}.{}", major, minor)
+            };
 
-                if !game_versions.contains(&mc_version) {
-                    game_versions.push(mc_version);
-                }
+            if !game_versions.contains(&mc_version) {
+                game_versions.push(mc_version);
             }
+        }
     }
     game_versions.reverse();
 

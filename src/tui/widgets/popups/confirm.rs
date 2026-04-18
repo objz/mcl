@@ -1,3 +1,6 @@
+// "are you sure?" popup for instance deletion. uses global state so the
+// confirmation target persists across render frames.
+
 use std::sync::LazyLock;
 use std::sync::Mutex;
 

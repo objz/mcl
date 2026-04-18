@@ -1,3 +1,7 @@
+// base frame that all popups render inside. handles the border, title bar,
+// keybind footer, and optional search indicator. content is injected via closure
+// so each popup type only worries about its inner area.
+
 use ratatui::{
     buffer::Buffer,
     layout::{Alignment, Rect},
@@ -21,6 +25,7 @@ pub struct PopupFrame<'a> {
 
 impl<'a> Widget for PopupFrame<'a> {
     fn render(self, area: Rect, buf: &mut Buffer) {
+        // clear first so the popup doesn't layer on top of whatever was underneath
         Clear.render(area, buf);
 
         if let Some(bg) = self.bg {

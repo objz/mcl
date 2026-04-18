@@ -1,3 +1,8 @@
+// split-pane log viewer: file list on the left, log content on the right.
+// supports live log tailing when the instance is running, plus search
+// filtering in both the file list and the viewer pane.
+// log scanning runs on a background thread to avoid blocking the UI.
+
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
@@ -114,6 +119,8 @@ impl LogsState {
             }
     }
 
+    // periodically re-scan log files in case new ones appeared while playing.
+    // only triggers every 120 ticks to avoid hammering the filesystem
     pub fn try_rescan(&mut self) {
         self.rescan_counter = self.rescan_counter.wrapping_add(1);
         if !self.rescan_counter.is_multiple_of(120) {
@@ -142,6 +149,7 @@ impl LogsState {
         });
     }
 
+    // when an instance is running, a synthetic "Live" entry is injected at index 0
     fn has_live(&self) -> bool {
         let name = self.loaded_for.as_deref().unwrap_or("");
         matches!(
@@ -487,6 +495,8 @@ fn render_viewer(
         .collect();
 
     let visible_height = area.height as usize;
+    // auto-scroll: if the user was already at the bottom, keep following
+    // new lines as they come in (like `tail -f` behavior)
     let was_at_bottom = state.viewer_scroll >= state.viewer_max_scroll.saturating_sub(1);
     state.update_viewer_scrollbar(visible_height, lines.len());
 
@@ -533,6 +543,8 @@ fn render_viewer(
     );
 }
 
+// color-code log lines by severity so errors actually stand out
+// instead of drowning in a wall of white text
 fn line_level_style(line: &str) -> Style {
     let theme = THEME.as_ref();
     let upper = line.to_uppercase();

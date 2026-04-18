@@ -1,3 +1,6 @@
+// CRUD for instances: create, delete, rename, load, save.
+// creation is the heavy one since it downloads the game, assets, and libraries.
+
 use std::path::PathBuf;
 
 use chrono::Utc;
@@ -23,6 +26,7 @@ pub enum InstanceError {
 
 pub struct InstanceManager {
     pub instances_dir: PathBuf,
+    /// shared across all instances: versions, libraries, assets
     pub meta_dir: PathBuf,
     client: crate::net::HttpClient,
 }
@@ -52,6 +56,7 @@ impl InstanceManager {
             return Err(InstanceError::AlreadyExists(name.to_string()));
         }
 
+        // leftover directory without config = botched previous creation, nuke it
         if instance_dir.exists() && !instance_json.exists() {
             std::fs::remove_dir_all(&instance_dir)?;
         }
@@ -62,6 +67,7 @@ impl InstanceManager {
             .create_inner(name, game_version, loader, loader_version, &instance_dir)
             .await;
 
+        // clean up on failure so there's no half-baked instance left around
         if result.is_err() {
             let _ = std::fs::remove_dir_all(&instance_dir);
         }
@@ -82,6 +88,7 @@ impl InstanceManager {
             std::fs::create_dir_all(minecraft_dir.join(subdir))?;
         }
 
+        // forge insists on this file existing, even if it's empty json. thanks forge.
         let launcher_profiles_path = minecraft_dir.join("launcher_profiles.json");
         if !launcher_profiles_path.exists() {
             std::fs::write(&launcher_profiles_path, "{}")?;
@@ -288,6 +295,7 @@ impl InstanceManager {
     }
 }
 
+// guard against path traversal and other filesystem shenanigans
 fn validate_name(name: &str) -> Result<(), InstanceError> {
     if name.is_empty() || name.len() > 64 {
         return Err(InstanceError::InvalidName(format!(

@@ -1,3 +1,6 @@
+// shader pack scanning. structurally almost identical to resource packs
+// (zip or dir, pack.mcmeta for metadata, pack.png for icon)
+
 use std::path::Path;
 
 use super::mods::{make_icon_pixels, ContentEntry};

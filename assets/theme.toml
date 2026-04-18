@@ -5,7 +5,7 @@
 # custom themes: 
 #   theme = "my-theme"        (loads ~/.config/mcl/theme/my-theme.toml)
 #   theme = "/path/to/file"   (loads from absolute path)
-theme = "catppuccin"
+theme = "terminal"
 
 # rounded, plain, double, thick
 border_style = "rounded"

@@ -1,3 +1,6 @@
+// creates OS-native shortcuts for launching instances directly:
+// .desktop files on linux, .bat on windows, .command on macos
+
 use std::path::{Path, PathBuf};
 
 use crate::instance::models::InstanceConfig;
@@ -36,6 +39,7 @@ pub fn icon_path() -> Option<PathBuf> {
     dirs_next::data_dir().map(|d| d.join("mcl").join("icon.svg"))
 }
 
+// lazily writes the bundled svg icon to disk the first time a shortcut needs it
 fn ensure_icon() -> Option<PathBuf> {
     let path = icon_path()?;
     if path.exists() {
@@ -169,6 +173,7 @@ fn build_macos_command(name: &str) -> String {
     out
 }
 
+// replaces anything that isn't alphanumeric, dash, or underscore with _
 fn sanitize(name: &str) -> String {
     name.chars()
         .map(|c| {
@@ -199,7 +204,6 @@ mod tests {
     #[test]
     fn desktop_path_returns_some() {
         let path = desktop_path("TestPack");
-        // On CI or minimal environments this may be None, but on most systems it should work
         if let Some(p) = path {
             let name = p.file_name().unwrap().to_str().unwrap();
             assert!(name.contains("TestPack"));

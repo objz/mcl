@@ -1,3 +1,7 @@
+// resource pack scanning. packs can be either .zip files or plain directories,
+// and metadata lives in pack.mcmeta (which mojang decided should have like 3
+// different ways to encode a description, because why not)
+
 use std::path::Path;
 
 use serde::Deserialize;
@@ -16,6 +20,8 @@ pub(crate) struct PackInfo {
     pub description: serde_json::Value,
 }
 
+// description can be a plain string, a chat component object with "text",
+// or an array mixing both. thanks mojang, very cool.
 pub(crate) fn extract_description(value: &serde_json::Value) -> String {
     match value {
         serde_json::Value::String(s) => s.clone(),

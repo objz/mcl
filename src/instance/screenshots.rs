@@ -1,5 +1,8 @@
 use std::path::{Path, PathBuf};
 
+// width/height are read from the actual image file so the TUI can show
+// dimensions. falls back to 1920x1080 if the file is corrupt or unreadable
+// because honestly, what else are you gonna pick
 #[derive(Debug, Clone)]
 pub struct ScreenshotEntry {
     pub name: String,
@@ -38,6 +41,7 @@ pub fn scan_screenshots(instances_dir: &Path, instance_name: &str) -> Vec<Screen
         })
         .collect();
 
+    // sorted newest-first since minecraft names them with timestamps
     entries.sort_by(|a, b| b.name.cmp(&a.name));
     entries
 }
