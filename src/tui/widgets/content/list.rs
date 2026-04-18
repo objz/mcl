@@ -12,27 +12,29 @@ use ratatui::{
 };
 use tui_widget_list::{ListBuilder, ListState as TuiListState, ListView};
 
-use crate::instance::mods::ModEntry;
-use crate::tui::theme::THEME;
+use crate::instance::content::mods::{ContentEntry, IconCell};
+use crate::config::theme::THEME;
 
-type IconCell = (u8, u8, u8, u8, u8, u8);
-type PendingContent = Arc<Mutex<Option<(String, Vec<ModEntry>)>>>;
+type PendingContent = Arc<Mutex<Option<(String, Vec<ContentEntry>)>>>;
 type SnapshotRow = (String, String, bool, Option<Vec<Vec<IconCell>>>);
 
 struct CachedList {
-    entries: Vec<ModEntry>,
+    entries: Vec<ContentEntry>,
     selected: Option<usize>,
 }
 
 pub struct ContentListState {
-    pub entries: Vec<ModEntry>,
+    pub entries: Vec<ContentEntry>,
     pub list_state: TuiListState,
     pub scrollbar_state: ScrollbarState,
     pub loaded_for: Option<String>,
     pub loading: bool,
-    pub search: super::search::SearchState,
+    pub search: crate::tui::widgets::search::SearchState,
     cache: HashMap<String, CachedList>,
     pending: PendingContent,
+    check_counter: u16,
+    watched_dir: Option<std::path::PathBuf>,
+    last_dir_mtime: Option<std::time::SystemTime>,
 }
 
 impl Default for ContentListState {
@@ -43,14 +45,50 @@ impl Default for ContentListState {
             scrollbar_state: ScrollbarState::default(),
             loaded_for: None,
             loading: false,
-            search: super::search::SearchState::default(),
+            search: crate::tui::widgets::search::SearchState::default(),
             cache: HashMap::new(),
             pending: Arc::new(Mutex::new(None)),
+            check_counter: 0,
+            watched_dir: None,
+            last_dir_mtime: None,
         }
     }
 }
 
 impl ContentListState {
+    /// Check if the content directory changed (files added/removed).
+    /// Only triggers a rescan when the directory's modification time differs.
+    pub fn try_rescan(&mut self) {
+        self.check_counter = self.check_counter.wrapping_add(1);
+        // Check every ~2 seconds (120 ticks at 16ms)
+        if !self.check_counter.is_multiple_of(120) {
+            return;
+        }
+
+        let Some(dir) = &self.watched_dir else {
+            return;
+        };
+
+        let current_mtime = std::fs::metadata(dir)
+            .ok()
+            .and_then(|m| m.modified().ok());
+
+        if current_mtime != self.last_dir_mtime {
+            self.last_dir_mtime = current_mtime;
+            // Directory changed — invalidate so next render triggers start_load
+            if let Some(name) = &self.loaded_for {
+                self.cache.remove(name);
+                self.loaded_for = None;
+            }
+        }
+    }
+
+    /// Set the directory to watch for changes. Call after start_load.
+    pub fn watch_dir(&mut self, dir: std::path::PathBuf) {
+        self.last_dir_mtime = std::fs::metadata(&dir).ok().and_then(|m| m.modified().ok());
+        self.watched_dir = Some(dir);
+    }
+
     pub fn filtered_indices(&self) -> Vec<usize> {
         self.entries
             .iter()
@@ -64,7 +102,7 @@ impl ContentListState {
 impl ContentListState {
     pub fn start_load<F>(&mut self, instances_dir: &Path, instance_name: &str, scan_fn: F)
     where
-        F: FnOnce(&Path, &str) -> Vec<ModEntry> + Send + 'static,
+        F: FnOnce(&Path, &str) -> Vec<ContentEntry> + Send + 'static,
     {
         if let Some(prev) = self.loaded_for.take() {
             if !self.entries.is_empty() {
@@ -243,12 +281,7 @@ pub fn handle_key_no_toggle(key_event: &KeyEvent, state: &mut ContentListState) 
         KeyCode::Enter if key_event.modifiers.contains(KeyModifiers::SHIFT) => {
             if let Some(&real_idx) = state.list_state.selected.and_then(|i| filtered.get(i)) {
                 if let Some(dir) = state.entries[real_idx].path.parent() {
-                    if let Err(e) = std::process::Command::new("xdg-open")
-                        .arg(dir)
-                        .stdout(std::process::Stdio::null())
-                        .stderr(std::process::Stdio::null())
-                        .spawn()
-                    {
+                    if let Err(e) = open::that(dir) {
                         tracing::error!("Failed to open directory: {}", e);
                     }
                 }
@@ -285,12 +318,7 @@ pub fn handle_key(key_event: &KeyEvent, state: &mut ContentListState) -> bool {
         KeyCode::Enter if key_event.modifiers.contains(KeyModifiers::SHIFT) => {
             if let Some(&real_idx) = state.list_state.selected.and_then(|i| filtered.get(i)) {
                 if let Some(dir) = state.entries[real_idx].path.parent() {
-                    if let Err(e) = std::process::Command::new("xdg-open")
-                        .arg(dir)
-                        .stdout(std::process::Stdio::null())
-                        .stderr(std::process::Stdio::null())
-                        .spawn()
-                    {
+                    if let Err(e) = open::that(dir) {
                         tracing::error!("Failed to open directory: {}", e);
                     }
                 }
@@ -318,10 +346,11 @@ pub fn render(
     loading_text: &str,
     empty_text: &str,
 ) {
+    let theme = THEME.as_ref();
     if state.loading {
         frame.render_widget(
             Paragraph::new(loading_text)
-                .style(Style::default().fg(THEME.content_list.text_secondary_fg)),
+                .style(Style::default().fg(theme.text_dim())),
             area,
         );
         return;
@@ -332,7 +361,7 @@ pub fn render(
     if filtered.is_empty() {
         frame.render_widget(
             Paragraph::new(empty_text)
-                .style(Style::default().fg(THEME.content_list.text_secondary_fg)),
+                .style(Style::default().fg(theme.text_dim())),
             area,
         );
         return;
@@ -354,67 +383,57 @@ pub fn render(
         .collect();
 
     let builder = ListBuilder::new(move |context| {
+        let theme = THEME.as_ref();
         let (name, description, enabled, icon_pixels) = &snapshot[context.index];
         let show_selected = is_focused && context.is_selected;
-        let use_mc_colors = *enabled && !show_selected;
+        let use_mc_colors = *enabled;
 
         let stripe_bg = if context.index % 2 == 0 {
-            Color::Reset
+            theme.background()
         } else {
-            THEME.content_list.row_alt_bg
+            theme.stripe()
         };
 
         let (name_style, description_style, background) = match (*enabled, show_selected) {
-            (true, true) => {
-                let mut ns = Style::default().fg(THEME.content_list.selected_fg);
-                if THEME.content_list.selected_bold {
-                    ns = ns.add_modifier(Modifier::BOLD);
-                }
-                (
-                    ns,
-                    Style::default().fg(THEME.content_list.selected_fg),
-                    THEME.content_list.selected_bg,
-                )
-            }
-            (true, false) => (
-                Style::default()
-                    .fg(THEME.content_list.text_fg)
-                    .add_modifier(Modifier::BOLD),
-                Style::default().fg(THEME.content_list.text_secondary_fg),
+            (true, true) => (
+                Style::default().fg(theme.accent()).add_modifier(Modifier::BOLD),
+                Style::default().fg(theme.text_dim()),
                 stripe_bg,
             ),
-            (false, true) => {
-                let mut ns = Style::default().fg(THEME.content_list.selected_fg);
-                if THEME.content_list.disabled_crossed_out {
-                    ns = ns.add_modifier(Modifier::CROSSED_OUT);
-                }
-                (
-                    ns,
-                    Style::default().fg(THEME.content_list.selected_fg),
-                    THEME.content_list.selected_bg,
-                )
-            }
-            (false, false) => {
-                let mut ns = Style::default().fg(THEME.content_list.text_secondary_fg);
-                if THEME.content_list.disabled_crossed_out {
-                    ns = ns.add_modifier(Modifier::CROSSED_OUT);
-                }
-                (
-                    ns,
-                    Style::default().fg(THEME.content_list.text_secondary_fg),
-                    stripe_bg,
-                )
-            }
+            (true, false) => (
+                Style::default()
+                    .fg(theme.text())
+                    .add_modifier(Modifier::BOLD),
+                Style::default().fg(theme.text_dim()),
+                stripe_bg,
+            ),
+            (false, true) => (
+                Style::default().fg(theme.accent()).add_modifier(Modifier::CROSSED_OUT),
+                Style::default().fg(theme.text_dim()),
+                stripe_bg,
+            ),
+            (false, false) => (
+                Style::default().fg(theme.text_dim()).add_modifier(Modifier::CROSSED_OUT),
+                Style::default().fg(theme.text_dim()),
+                stripe_bg,
+            ),
         };
 
         let has_icon = icon_pixels.is_some();
-        let stripped_desc = strip_mc_codes(description);
-        let has_description = !stripped_desc.trim().is_empty();
+        let full_desc = strip_mc_codes(description);
+        let stripped_desc = full_desc.lines().next().unwrap_or("").trim().to_string();
+        let has_description = !stripped_desc.is_empty();
         let compact = !has_icon && !has_description;
+
+        let selector = if show_selected {
+            Span::styled("\u{258c}", Style::default().fg(theme.accent()))
+        } else {
+            Span::raw(" ")
+        };
 
         if compact {
             let mut line = Vec::new();
-            line.push(Span::raw(" "));
+            line.push(selector.clone());
             if use_mc_colors {
                 line.extend(parse_mc_text(name, name_style));
             } else {
@@ -425,9 +444,17 @@ pub fn render(
             (item, 1)
         } else if has_icon {
             let icon_row_count = icon_pixels.as_ref().map(|r| r.len()).unwrap_or(0);
-            let height = icon_row_count.max(2) as u16;
+            let text_rows = if has_description { 2 } else { 1 }; // name + optional description
+            let height = icon_row_count.max(text_rows) as u16;
 
-            let mut line_0 = icon_spans(icon_pixels.as_ref(), 0);
+            let pad = if show_selected {
+                Span::styled("\u{258c}", Style::default().fg(theme.accent()))
+            } else {
+                Span::raw(" ")
+            };
+
+            let mut line_0 = vec![selector.clone()];
+            line_0.extend(icon_spans(icon_pixels.as_ref(), 0));
             line_0.push(Span::raw(" "));
             if use_mc_colors {
                 line_0.extend(parse_mc_text(name, name_style));
@@ -435,41 +462,51 @@ pub fn render(
                 line_0.push(Span::styled(strip_mc_codes(name), name_style));
             }
 
-            let mut line_1 = icon_spans(icon_pixels.as_ref(), 1);
-            line_1.push(Span::raw(" "));
-            if use_mc_colors {
-                line_1.extend(parse_mc_text(description, description_style));
-            } else {
-                line_1.push(Span::styled(stripped_desc, description_style));
+            let mut lines = vec![Line::from(line_0)];
+
+            if has_description {
+                let mut row = vec![pad.clone()];
+                row.extend(icon_spans(icon_pixels.as_ref(), 1));
+                row.push(Span::raw(" "));
+                row.push(Span::styled(stripped_desc.clone(), description_style));
+                lines.push(Line::from(row));
             }
 
-            let mut lines = vec![Line::from(line_0), Line::from(line_1)];
-            for r in 2..icon_row_count {
-                lines.push(Line::from(icon_spans(icon_pixels.as_ref(), r)));
+            let desc_rows = if has_description { 1 } else { 0 };
+            for r in (1 + desc_rows)..icon_row_count {
+                let mut row = vec![pad.clone()];
+                row.extend(icon_spans(icon_pixels.as_ref(), r));
+                lines.push(Line::from(row));
             }
 
             let item = Text::from(lines).style(Style::default().bg(background));
             (item, height)
         } else {
             let mut line_0 = Vec::new();
-            line_0.push(Span::raw(" "));
+            line_0.push(selector.clone());
             if use_mc_colors {
                 line_0.extend(parse_mc_text(name, name_style));
             } else {
                 line_0.push(Span::styled(strip_mc_codes(name), name_style));
             }
 
-            let mut line_1 = Vec::new();
-            line_1.push(Span::raw(" "));
-            if use_mc_colors {
-                line_1.extend(parse_mc_text(description, description_style));
-            } else {
-                line_1.push(Span::styled(stripped_desc, description_style));
+            let mut lines = vec![Line::from(line_0)];
+
+            if has_description {
+                let pad = if show_selected {
+                    Span::styled("\u{258c}", Style::default().fg(theme.accent()))
+                } else {
+                    Span::raw(" ")
+                };
+                lines.push(Line::from(vec![
+                    pad,
+                    Span::styled(stripped_desc.clone(), description_style),
+                ]));
             }
 
-            let item = Text::from(vec![Line::from(line_0), Line::from(line_1)])
-                .style(Style::default().bg(background));
-            (item, 2)
+            let height = lines.len() as u16;
+            let item = Text::from(lines).style(Style::default().bg(background));
+            (item, height)
         }
     });
 
@@ -488,7 +525,7 @@ pub fn render(
             .begin_symbol(Some("\u{25b2}"))
             .style(
                 Style::default()
-                    .fg(THEME.content_list.border_focused_fg)
+                    .fg(theme.text_dim())
                     .add_modifier(Modifier::BOLD),
             )
             .thumb_symbol("\u{2551}")
@@ -588,18 +625,21 @@ fn icon_spans(icon_pixels: Option<&Vec<Vec<IconCell>>>, row: usize) -> Vec<Span<
     match icon_pixels.and_then(|rows| rows.get(row)) {
         Some(cols) => cols
             .iter()
-            .map(|&(fg_r, fg_g, fg_b, bg_r, bg_g, bg_b)| {
+            .map(|cell| {
                 Span::styled(
                     "\u{2584}",
                     Style::default()
-                        .fg(Color::Rgb(fg_r, fg_g, fg_b))
-                        .bg(Color::Rgb(bg_r, bg_g, bg_b)),
+                        .fg(Color::Rgb(cell.fg_r, cell.fg_g, cell.fg_b))
+                        .bg(Color::Rgb(cell.bg_r, cell.bg_g, cell.bg_b)),
                 )
             })
             .collect(),
-        None => vec![Span::styled(
-            "      ",
-            Style::default().fg(THEME.content_list.text_secondary_fg),
-        )],
+        None => {
+            let theme = THEME.as_ref();
+            vec![Span::styled(
+                "      ",
+                Style::default().fg(theme.text_dim()),
+            )]
+        }
     }
 }

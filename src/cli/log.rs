@@ -16,20 +16,15 @@ pub async fn handle_log(matches: &ArgMatches) -> CliResult {
     }
 }
 
-fn require_instance(instances_dir: &Path, name: &str) -> Result<(), io::Error> {
-    if !instances_dir.join(name).join("instance.json").exists() {
-        return Err(io::Error::other(format!("Instance '{}' not found", name)));
-    }
-    Ok(())
-}
-
 fn list_logs(instance: &str) -> CliResult {
     let instances_dir = crate::config::SETTINGS.paths.resolve_instances_dir();
     require_instance(&instances_dir, instance)?;
     let rows = crate::instance::log_files::scan_log_files(&instances_dir, instance)
         .into_iter()
         .map(|entry| {
-            let size = std::fs::metadata(&entry.path).map(|meta| meta.len()).unwrap_or(0);
+            let size = std::fs::metadata(&entry.path)
+                .map(|meta| meta.len())
+                .unwrap_or(0);
             vec![entry.name, size.to_string()]
         })
         .collect::<Vec<_>>();
@@ -86,12 +81,7 @@ pub(crate) fn resolve_log_path(
         .ok_or_else(|| io::Error::other(format!("no log files found for '{}'", instance)))
 }
 
-fn required_arg<'a>(matches: &'a ArgMatches, name: &str) -> Result<&'a str, io::Error> {
-    matches
-        .get_one::<String>(name)
-        .map(String::as_str)
-        .ok_or_else(|| io::Error::other(format!("missing required argument '{}'", name)))
-}
+use super::utils::{require_instance, required_arg};
 
 #[cfg(test)]
 mod tests {
@@ -131,9 +121,12 @@ mod tests {
         std::fs::create_dir_all(&dir).expect("log directory should exist");
         std::fs::write(dir.join("latest.log"), "hello").expect("write named log");
 
-        let path = resolve_log_path(&root, "demo", Some("latest.log"))
-            .expect("named log should resolve");
-        assert_eq!(path.file_name().and_then(|name| name.to_str()), Some("latest.log"));
+        let path =
+            resolve_log_path(&root, "demo", Some("latest.log")).expect("named log should resolve");
+        assert_eq!(
+            path.file_name().and_then(|name| name.to_str()),
+            Some("latest.log")
+        );
 
         let _ = std::fs::remove_dir_all(&root);
     }

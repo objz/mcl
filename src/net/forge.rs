@@ -24,30 +24,7 @@ pub async fn fetch_forge_versions(
     client: &HttpClient,
     game_version: &str,
 ) -> Result<Vec<String>, NetError> {
-    let response = match client.inner().get(FORGE_PROMOTIONS_URL).send().await {
-        Ok(r) => r,
-        Err(e) => {
-            tracing::error!("GET {} failed: {}", FORGE_PROMOTIONS_URL, e);
-            return Err(NetError::Http(e));
-        }
-    };
-
-    if !response.status().is_success() {
-        let status = response.status().as_u16();
-        tracing::error!("HTTP {} for {}", status, FORGE_PROMOTIONS_URL);
-        return Err(NetError::StatusError {
-            status,
-            url: FORGE_PROMOTIONS_URL.to_string(),
-        });
-    }
-
-    let promotions: ForgePromotions = match response.json().await {
-        Ok(p) => p,
-        Err(e) => {
-            tracing::error!("Failed to parse Forge promotions JSON: {}", e);
-            return Err(NetError::Http(e));
-        }
-    };
+    let promotions: ForgePromotions = client.get_json(FORGE_PROMOTIONS_URL).await?;
 
     let prefix = format!("{}-", game_version);
     let mut versions: Vec<String> = promotions
@@ -63,30 +40,7 @@ pub async fn fetch_forge_versions(
 }
 
 pub async fn fetch_forge_game_versions(client: &HttpClient) -> Result<Vec<GameVersion>, NetError> {
-    let response = match client.inner().get(FORGE_PROMOTIONS_URL).send().await {
-        Ok(r) => r,
-        Err(e) => {
-            tracing::error!("GET {} failed: {}", FORGE_PROMOTIONS_URL, e);
-            return Err(NetError::Http(e));
-        }
-    };
-
-    if !response.status().is_success() {
-        let status = response.status().as_u16();
-        tracing::error!("HTTP {} for {}", status, FORGE_PROMOTIONS_URL);
-        return Err(NetError::StatusError {
-            status,
-            url: FORGE_PROMOTIONS_URL.to_string(),
-        });
-    }
-
-    let promos: ForgePromotions = match response.json().await {
-        Ok(p) => p,
-        Err(e) => {
-            tracing::error!("Failed to parse Forge promotions: {}", e);
-            return Err(NetError::Http(e));
-        }
-    };
+    let promos: ForgePromotions = client.get_json(FORGE_PROMOTIONS_URL).await?;
 
     let mut game_versions: Vec<String> = promos
         .promos
@@ -127,17 +81,10 @@ pub async fn download_forge_installer(
         game_version, forge_version
     ));
 
-    match download_file(client, &url, dest, |downloaded, total| {
+    download_file(client, &url, dest, |downloaded, total| {
         crate::tui::progress::set_progress(downloaded, total);
     })
     .await
-    {
-        Ok(()) => Ok(()),
-        Err(e) => {
-            tracing::error!("Failed to download Forge installer from {}: {}", url, e);
-            Err(e)
-        }
-    }
 }
 
 /// Run the Forge installer JAR to install Forge into the instance directory.
@@ -163,21 +110,12 @@ pub async fn run_forge_installer(
     {
         Ok(o) => o,
         Err(e) => {
-            tracing::error!("Failed to launch Forge installer: {}", e);
             return Err(NetError::Io(e));
         }
     };
 
     if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        tracing::error!(
-            "Forge installer failed (exit {:?}): {} {}",
-            output.status.code(),
-            stderr,
-            stdout
-        );
-        return Err(NetError::Parse(format!(
+        return Err(NetError::InstallerFailed(format!(
             "Forge installer exited with {:?}",
             output.status.code()
         )));
@@ -192,6 +130,7 @@ mod tests {
     use crate::net::HttpClient;
 
     #[tokio::test]
+    #[ignore = "hits live Forge API"]
     async fn test_fetch_versions() {
         let client = HttpClient::new();
         match fetch_forge_versions(&client, "1.20.1").await {
@@ -206,6 +145,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "hits live Forge API"]
     async fn test_fetch_game_versions() {
         let client = HttpClient::new();
         match fetch_forge_game_versions(&client).await {

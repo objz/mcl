@@ -19,13 +19,7 @@ pub async fn handle_import(matches: &ArgMatches) -> CliResult {
 
     let mrpack_path = match parsed {
         modrinth::ModrinthInput::LocalFile(ref path) => {
-            let resolved = if let Some(stripped) = path.strip_prefix("~/") {
-                dirs_next::home_dir()
-                    .map(|h| h.join(stripped))
-                    .unwrap_or_else(|| std::path::PathBuf::from(path))
-            } else {
-                std::path::PathBuf::from(path)
-            };
+            let resolved = crate::config::settings::resolve_path(path);
             if !resolved.exists() {
                 return Err(format!("File not found: {}", resolved.display()).into());
             }
@@ -33,11 +27,13 @@ pub async fn handle_import(matches: &ArgMatches) -> CliResult {
         }
         modrinth::ModrinthInput::ProjectSlug(ref slug) => {
             println!("Fetching project '{slug}'...");
-            let project = modrinth::fetch_project(&client, slug).await
+            let project = modrinth::fetch_project(&client, slug)
+                .await
                 .map_err(|e| format!("Failed to fetch project: {e}"))?;
             println!("Found: {}", project.title);
 
-            let versions = modrinth::fetch_versions(&client, slug).await
+            let versions = modrinth::fetch_versions(&client, slug)
+                .await
                 .map_err(|e| format!("Failed to fetch versions: {e}"))?;
 
             if versions.is_empty() {
@@ -61,13 +57,17 @@ pub async fn handle_import(matches: &ArgMatches) -> CliResult {
 
             let tmp_dir = manager.meta_dir.join("tmp");
             std::fs::create_dir_all(&tmp_dir)?;
-            modrinth::download_mrpack(&client, version, &tmp_dir).await
+            modrinth::download_mrpack(&client, version, &tmp_dir)
+                .await
                 .map_err(|e| format!("Failed to download .mrpack: {e}"))?
         }
-        modrinth::ModrinthInput::VersionId { ref slug, ref version_id } => {
+        modrinth::ModrinthInput::VersionId {
+            slug: _,
+            ref version_id,
+        } => {
             println!("Fetching version '{version_id}'...");
-            let _slug = slug;
-            let version = modrinth::fetch_version(&client, version_id).await
+            let version = modrinth::fetch_version(&client, version_id)
+                .await
                 .map_err(|e| format!("Failed to fetch version: {e}"))?;
 
             println!(
@@ -78,7 +78,8 @@ pub async fn handle_import(matches: &ArgMatches) -> CliResult {
 
             let tmp_dir = manager.meta_dir.join("tmp");
             std::fs::create_dir_all(&tmp_dir)?;
-            modrinth::download_mrpack(&client, &version, &tmp_dir).await
+            modrinth::download_mrpack(&client, &version, &tmp_dir)
+                .await
                 .map_err(|e| format!("Failed to download .mrpack: {e}"))?
         }
     };
@@ -102,7 +103,8 @@ pub async fn handle_import(matches: &ArgMatches) -> CliResult {
         summary.override_count
     );
 
-    let config = crate::instance::import::execute_import(&summary, &manager).await
+    let config = crate::instance::import::execute_import(&summary, &manager)
+        .await
         .map_err(|e| format!("Import failed: {e}"))?;
 
     println!("Instance '{}' created successfully.", config.name);

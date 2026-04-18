@@ -1,8 +1,8 @@
 use std::path::Path;
 
-use super::mods::{make_icon_pixels, ModEntry};
+use super::mods::{make_icon_pixels, ContentEntry};
 
-pub fn scan_worlds(instances_dir: &Path, instance_name: &str) -> Vec<ModEntry> {
+pub fn scan_worlds(instances_dir: &Path, instance_name: &str) -> Vec<ContentEntry> {
     let saves_dir = instances_dir
         .join(instance_name)
         .join(".minecraft")
@@ -26,21 +26,19 @@ pub fn scan_worlds(instances_dir: &Path, instance_name: &str) -> Vec<ModEntry> {
             None => continue,
         };
 
-        let (enabled, file_stem) = if file_name.ends_with(".disabled") {
-            (false, file_name.trim_end_matches(".disabled").to_string())
-        } else {
-            (true, file_name.clone())
-        };
+        let (enabled, file_stem) = super::parse_enabled_stem_dir(&file_name);
 
         let icon_bytes = std::fs::read(path.join("icon.png")).ok();
         let icon_lines = icon_bytes
             .as_ref()
             .and_then(|bytes| make_icon_pixels(bytes, 12, 6));
 
-        entries.push(ModEntry {
-            file_stem: file_stem.clone(),
-            name: file_stem,
-            description: String::new(),
+        let description = world_description(&path);
+
+        entries.push(ContentEntry {
+            name: file_stem.clone(),
+            file_stem,
+            description,
             enabled,
             icon_bytes,
             path,
@@ -48,8 +46,83 @@ pub fn scan_worlds(instances_dir: &Path, instance_name: &str) -> Vec<ModEntry> {
         });
     }
 
-    entries.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    entries.sort_by_cached_key(|e| e.name.to_lowercase());
     entries
+}
+
+fn world_description(world_dir: &Path) -> String {
+    let level_dat = world_dir.join("level.dat");
+
+    let created = world_dir
+        .metadata()
+        .ok()
+        .and_then(|m| m.created().ok().or_else(|| m.modified().ok()))
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_secs());
+
+    let modified = level_dat
+        .metadata()
+        .ok()
+        .and_then(|m| m.modified().ok())
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_secs());
+
+    let dir_size = dir_size_approx(world_dir);
+
+    let mut lines = Vec::new();
+
+    if let Some(secs) = created {
+        if let Some(dt) = chrono::DateTime::from_timestamp(secs as i64, 0) {
+            lines.push(format!("Created:  {}", dt.format("%Y-%m-%d %H:%M")));
+        }
+    }
+
+    if let Some(secs) = modified {
+        if let Some(dt) = chrono::DateTime::from_timestamp(secs as i64, 0) {
+            lines.push(format!("Played:   {}", dt.format("%Y-%m-%d %H:%M")));
+        }
+    }
+
+    if dir_size > 0 {
+        lines.push(format!("Size:     {}", format_size(dir_size)));
+    }
+
+    lines.join("\n")
+}
+
+fn dir_size_approx(path: &Path) -> u64 {
+    let mut total = 0u64;
+    if let Ok(rd) = std::fs::read_dir(path) {
+        for entry in rd.flatten() {
+            if let Ok(meta) = entry.metadata() {
+                if meta.is_file() {
+                    total += meta.len();
+                }
+            }
+        }
+    }
+    // Check region folder too (main chunk data)
+    let region = path.join("region");
+    if let Ok(rd) = std::fs::read_dir(region) {
+        for entry in rd.flatten() {
+            if let Ok(meta) = entry.metadata() {
+                total += meta.len();
+            }
+        }
+    }
+    total
+}
+
+fn format_size(bytes: u64) -> String {
+    if bytes < 1024 {
+        format!("{} B", bytes)
+    } else if bytes < 1024 * 1024 {
+        format!("{:.1} KB", bytes as f64 / 1024.0)
+    } else if bytes < 1024 * 1024 * 1024 {
+        format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0))
+    } else {
+        format!("{:.2} GB", bytes as f64 / (1024.0 * 1024.0 * 1024.0))
+    }
 }
 
 #[cfg(test)]

@@ -1,6 +1,3 @@
-[general]
-debug = false
-
 [paths]
 instances_dir = "~/.local/share/mcl/instances"
 meta_dir = "~/.local/share/mcl/meta"

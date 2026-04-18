@@ -8,12 +8,12 @@ use tracing_subscriber::layer::Context;
 use tracing_subscriber::prelude::*;
 use tracing_subscriber::{EnvFilter, Layer};
 
-use once_cell::sync::Lazy;
+use std::sync::LazyLock;
 
 use crate::tui::error_buffer::{self, ErrorEvent};
 
-static APP_LOG_LINES: Lazy<Arc<Mutex<Vec<String>>>> =
-    Lazy::new(|| Arc::new(Mutex::new(Vec::new())));
+static APP_LOG_LINES: LazyLock<Arc<Mutex<Vec<String>>>> =
+    LazyLock::new(|| Arc::new(Mutex::new(Vec::new())));
 
 pub fn get_app_logs() -> Vec<String> {
     APP_LOG_LINES.lock().map(|l| l.clone()).unwrap_or_default()

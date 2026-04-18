@@ -43,59 +43,27 @@ impl InstanceManager {
         loader: ModLoader,
         loader_version: Option<&str>,
     ) -> Result<InstanceConfig, InstanceError> {
-        match validate_name(name) {
-            Ok(_) => {}
-            Err(e) => {
-                tracing::error!("Invalid instance name '{}': {}", name, e);
-                return Err(e);
-            }
-        }
+        validate_name(name)?;
 
         let instance_dir = self.instances_dir.join(name);
         let instance_json = instance_dir.join("instance.json");
 
         if instance_json.exists() {
-            tracing::error!("Instance '{}' already exists", name);
             return Err(InstanceError::AlreadyExists(name.to_string()));
         }
 
         if instance_dir.exists() && !instance_json.exists() {
-            match std::fs::remove_dir_all(&instance_dir) {
-                Ok(_) => {}
-                Err(e) => {
-                    tracing::error!(
-                        "Failed to remove partial instance directory '{}': {}",
-                        instance_dir.display(),
-                        e
-                    );
-                    return Err(InstanceError::Io(e));
-                }
-            }
+            std::fs::remove_dir_all(&instance_dir)?;
         }
 
-        match std::fs::create_dir_all(&instance_dir) {
-            Ok(_) => {}
-            Err(e) => {
-                tracing::error!("Failed to create instance directory: {}", e);
-                return Err(InstanceError::Io(e));
-            }
-        }
+        std::fs::create_dir_all(&instance_dir)?;
 
         let result = self
             .create_inner(name, game_version, loader, loader_version, &instance_dir)
             .await;
 
         if result.is_err() {
-            match std::fs::remove_dir_all(&instance_dir) {
-                Ok(_) => {}
-                Err(e) => {
-                    tracing::warn!(
-                        "Failed to clean up partial instance directory '{}': {}",
-                        instance_dir.display(),
-                        e
-                    );
-                }
-            }
+            let _ = std::fs::remove_dir_all(&instance_dir);
         }
 
         result
@@ -111,24 +79,12 @@ impl InstanceManager {
     ) -> Result<InstanceConfig, InstanceError> {
         let minecraft_dir = instance_dir.join(".minecraft");
         for subdir in &["mods", "config", "resourcepacks", "shaderpacks", "saves"] {
-            match std::fs::create_dir_all(minecraft_dir.join(subdir)) {
-                Ok(_) => {}
-                Err(e) => {
-                    tracing::error!("Failed to create directory: {}", e);
-                    return Err(InstanceError::Io(e));
-                }
-            }
+            std::fs::create_dir_all(minecraft_dir.join(subdir))?;
         }
 
         let launcher_profiles_path = minecraft_dir.join("launcher_profiles.json");
         if !launcher_profiles_path.exists() {
-            match std::fs::write(&launcher_profiles_path, "{}") {
-                Ok(_) => {}
-                Err(e) => {
-                    tracing::error!("Failed to create launcher_profiles.json: {}", e);
-                    return Err(InstanceError::Io(e));
-                }
-            }
+            std::fs::write(&launcher_profiles_path, "{}")?;
         }
 
         for meta_subdir in &[
@@ -137,47 +93,26 @@ impl InstanceManager {
             self.meta_dir.join("assets").join("objects"),
             self.meta_dir.join("assets").join("indexes"),
         ] {
-            match std::fs::create_dir_all(meta_subdir) {
-                Ok(_) => {}
-                Err(e) => {
-                    tracing::error!("Failed to create meta directory: {}", e);
-                    return Err(InstanceError::Io(e));
-                }
-            }
+            std::fs::create_dir_all(meta_subdir)?;
         }
 
-        let manifest = match crate::net::mojang::fetch_version_manifest(&self.client).await {
-            Ok(m) => m,
-            Err(e) => {
-                return Err(InstanceError::Download(e));
-            }
-        };
+        let manifest = crate::net::mojang::fetch_version_manifest(&self.client).await?;
 
         let version_entry = match manifest.versions.iter().find(|v| v.id == game_version) {
             Some(v) => v,
             None => {
-                let msg = format!("Minecraft version '{}' not found in manifest", game_version);
-                tracing::error!("{}", msg);
-                return Err(InstanceError::InvalidName(msg));
+                return Err(InstanceError::InvalidName(format!(
+                    "Minecraft version '{}' not found in manifest",
+                    game_version
+                )));
             }
         };
 
         let version_meta =
-            match crate::net::mojang::fetch_version_meta(&self.client, version_entry).await {
-                Ok(m) => m,
-                Err(e) => {
-                    return Err(InstanceError::Download(e));
-                }
-            };
+            crate::net::mojang::fetch_version_meta(&self.client, version_entry).await?;
 
-        match crate::net::mojang::download_client_jar(&self.client, &version_meta, &self.meta_dir)
-            .await
-        {
-            Ok(_) => {}
-            Err(e) => {
-                return Err(InstanceError::Download(e));
-            }
-        }
+        crate::net::mojang::download_client_jar(&self.client, &version_meta, &self.meta_dir)
+            .await?;
 
         let meta_json_path = self
             .meta_dir
@@ -195,36 +130,23 @@ impl InstanceManager {
             }
         }
 
-        match crate::net::mojang::download_libraries(&self.client, &version_meta, &self.meta_dir)
-            .await
-        {
-            Ok(_) => {}
-            Err(e) => {
-                return Err(InstanceError::Download(e));
-            }
-        }
+        crate::net::mojang::download_libraries(&self.client, &version_meta, &self.meta_dir)
+            .await?;
 
-        match crate::net::mojang::download_assets(&self.client, &version_meta, &self.meta_dir).await
-        {
-            Ok(_) => {}
-            Err(e) => {
-                return Err(InstanceError::Download(e));
-            }
-        }
+        crate::net::mojang::download_assets(&self.client, &version_meta, &self.meta_dir).await?;
 
         let installer = crate::instance::loader::get_installer(loader);
         let effective_loader_version = match loader_version {
             Some(v) => v,
             None if loader == ModLoader::Vanilla => "vanilla",
             None => {
-                tracing::error!("No loader version provided for {} loader", loader);
                 return Err(InstanceError::InvalidName(format!(
                     "A loader version is required for {}",
                     loader
                 )));
             }
         };
-        match installer
+        installer
             .install(
                 &self.client,
                 game_version,
@@ -232,13 +154,7 @@ impl InstanceManager {
                 instance_dir,
                 &self.meta_dir,
             )
-            .await
-        {
-            Ok(_) => {}
-            Err(e) => {
-                return Err(InstanceError::Download(e));
-            }
-        }
+            .await?;
 
         let config = InstanceConfig {
             name: name.to_string(),
@@ -254,13 +170,7 @@ impl InstanceManager {
             resolution: None,
         };
 
-        match self.save(&config) {
-            Ok(_) => {}
-            Err(e) => {
-                tracing::error!("Failed to save instance config: {}", e);
-                return Err(e);
-            }
-        }
+        self.save(&config)?;
 
         crate::tui::progress::clear();
         Ok(config)
@@ -271,18 +181,11 @@ impl InstanceManager {
         if !instance_dir.exists() {
             return Err(InstanceError::NotFound(name.to_string()));
         }
-        match std::fs::remove_dir_all(&instance_dir) {
-            Ok(_) => {
-                if let Err(e) = crate::instance::desktop::remove(name) {
-                    tracing::warn!("Failed to remove desktop shortcut for '{}': {}", name, e);
-                }
-                Ok(())
-            }
-            Err(e) => {
-                tracing::error!("Failed to delete instance '{}': {}", name, e);
-                Err(InstanceError::Io(e))
-            }
+        std::fs::remove_dir_all(&instance_dir)?;
+        if let Err(e) = crate::instance::desktop::remove(name) {
+            tracing::warn!("Failed to remove desktop shortcut for '{}': {}", name, e);
         }
+        Ok(())
     }
 
     pub fn rename(&self, old_name: &str, new_name: &str) -> Result<(), InstanceError> {
@@ -360,58 +263,23 @@ impl InstanceManager {
     }
 
     pub fn load_one(&self, name: &str) -> Result<InstanceConfig, InstanceError> {
-        match validate_name(name) {
-            Ok(_) => {}
-            Err(e) => {
-                tracing::error!("Invalid instance name '{}': {}", name, e);
-                return Err(e);
-            }
-        }
+        validate_name(name)?;
 
         let config_path = self.instances_dir.join(name).join("instance.json");
         if !config_path.exists() {
-            tracing::error!("Instance '{}' not found", name);
             return Err(InstanceError::NotFound(name.to_string()));
         }
 
-        let contents = match std::fs::read_to_string(&config_path) {
-            Ok(c) => c,
-            Err(e) => {
-                tracing::error!("Failed to read {}: {}", config_path.display(), e);
-                return Err(InstanceError::Io(e));
-            }
-        };
-
-        match serde_json::from_str::<InstanceConfig>(&contents) {
-            Ok(config) => Ok(config),
-            Err(e) => {
-                tracing::error!("Failed to parse {}: {}", config_path.display(), e);
-                Err(InstanceError::Json(e))
-            }
-        }
+        let contents = std::fs::read_to_string(&config_path)?;
+        Ok(serde_json::from_str::<InstanceConfig>(&contents)?)
     }
 
     pub fn save(&self, instance: &InstanceConfig) -> Result<(), InstanceError> {
         let instance_dir = self.instances_dir.join(&instance.name);
         let config_path = instance_dir.join("instance.json");
-        let json = match serde_json::to_string_pretty(instance) {
-            Ok(j) => j,
-            Err(e) => {
-                tracing::error!("Failed to serialize instance config: {}", e);
-                return Err(InstanceError::Json(e));
-            }
-        };
-        match std::fs::write(&config_path, &json) {
-            Ok(_) => Ok(()),
-            Err(e) => {
-                tracing::error!(
-                    "Failed to write instance config to {}: {}",
-                    config_path.display(),
-                    e
-                );
-                Err(InstanceError::Io(e))
-            }
-        }
+        let json = serde_json::to_string_pretty(instance)?;
+        std::fs::write(&config_path, &json)?;
+        Ok(())
     }
 
     pub fn touch_last_played(&self, name: &str) -> Result<(), InstanceError> {
@@ -428,7 +296,7 @@ fn validate_name(name: &str) -> Result<(), InstanceError> {
             name
         )));
     }
-    if name.contains('/') || name.contains('\\') || name.contains('.') {
+    if name.contains('/') || name.contains('\\') || name.starts_with('.') {
         return Err(InstanceError::InvalidName(format!(
             "Name contains invalid characters: {:?}",
             name
@@ -502,10 +370,7 @@ mod tests {
             resolution: None,
         };
 
-        match manager.save(&config) {
-            Ok(_) => {}
-            Err(e) => panic!("save failed: {}", e),
-        }
+        manager.save(&config).expect("save failed");
 
         let all = manager.load_all();
         assert_eq!(all.len(), 1);

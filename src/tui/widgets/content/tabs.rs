@@ -7,10 +7,10 @@ use ratatui::{
 };
 use throbber_widgets_tui::{Throbber, ThrobberState};
 
-use crate::tui::layout::FocusedArea;
-use crate::tui::theme::THEME;
+use crate::tui::app::FocusedArea;
+use crate::config::theme::{THEME, BORDER_STYLE};
 
-use super::styled_title;
+use crate::tui::widgets::styled_title;
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub enum ContentTab {
@@ -69,20 +69,21 @@ pub fn render(
     focused: FocusedArea,
     tab: ContentTab,
     instance: Option<&crate::instance::InstanceConfig>,
-    mods_state: &mut super::content_list::ContentListState,
-    resource_packs_state: &mut super::content_list::ContentListState,
-    shaders_state: &mut super::content_list::ContentListState,
-    worlds_state: &mut super::content_list::ContentListState,
-    screenshots_state: &mut super::screenshots_grid::ScreenshotsState,
-    logs_state: &mut super::logs_viewer::LogsState,
+    mods_state: &mut super::list::ContentListState,
+    resource_packs_state: &mut super::list::ContentListState,
+    shaders_state: &mut super::list::ContentListState,
+    worlds_state: &mut super::list::ContentListState,
+    screenshots_state: &mut crate::tui::widgets::screenshots_grid::ScreenshotsState,
+    logs_state: &mut crate::tui::widgets::logs_viewer::LogsState,
     instances_dir: &std::path::Path,
 ) {
+    let theme = THEME.as_ref();
     let is_focused = focused == FocusedArea::Content;
 
     let border_color = if is_focused {
-        THEME.content.border_focused_fg
+        theme.accent()
     } else {
-        THEME.content.border_unfocused_fg
+        theme.border()
     };
 
     let tab_titles: Vec<Span> = ContentTab::ALL
@@ -93,21 +94,18 @@ pub fn render(
             if i > 0 {
                 spans.push(Span::styled(
                     "\u{2022}",
-                    Style::default().fg(THEME.content.border_unfocused_fg),
+                    Style::default().fg(theme.text_dim()),
                 ));
             }
             if i == tab.index() {
-                let mut style = Style::default()
-                    .fg(THEME.content.tab_active_fg)
-                    .bg(THEME.content.selected_bg);
-                if THEME.content.tab_active_bold {
-                    style = style.add_modifier(Modifier::BOLD);
-                }
+                let style = Style::default()
+                    .fg(theme.accent())
+                    .add_modifier(Modifier::BOLD);
                 spans.push(Span::styled(format!(" {} ", t.label()), style));
             } else {
                 spans.push(Span::styled(
                     format!(" {} ", t.label()),
-                    Style::default().fg(THEME.content.text_fg),
+                    Style::default().fg(theme.text()),
                 ));
             }
             spans
@@ -132,7 +130,7 @@ pub fn render(
     let mut block = Block::default()
         .title_top(Line::from(tab_titles))
         .borders(Borders::ALL)
-        .border_type(THEME.general.border_type.to_border_type())
+        .border_type(BORDER_STYLE.to_border_type())
         .border_style(Style::default().fg(border_color));
 
     if let Some(sl) = search_line {
@@ -179,7 +177,7 @@ pub fn render(
                 }
             }
         })
-    } else if focused == FocusedArea::Profiles {
+    } else if focused == FocusedArea::Instances {
         Some(&[
             ("l", " launch"),
             ("⏎", " content"),
@@ -196,7 +194,7 @@ pub fn render(
     };
 
     if let Some(kb) = kb {
-        let lines = super::popups::keybind_lines_wrapped(kb, area.width.saturating_sub(2));
+        let lines = crate::tui::widgets::popups::keybind_lines_wrapped(kb, area.width.saturating_sub(2));
         for line in lines {
             block = block.title_bottom(line);
         }
@@ -214,8 +212,9 @@ pub fn render(
                         &instance.name,
                         crate::instance::scan_mods,
                     );
+                    mods_state.watch_dir(instances_dir.join(&instance.name).join(".minecraft").join("mods"));
                 }
-                super::content_list::render(
+                super::list::render(
                     frame,
                     content_area,
                     mods_state,
@@ -226,7 +225,7 @@ pub fn render(
             } else {
                 frame.render_widget(
                     Paragraph::new("No instance selected.")
-                        .style(Style::default().fg(THEME.content.tab_inactive_fg)),
+                        .style(Style::default().fg(theme.text_dim())),
                     content_area,
                 );
             }
@@ -239,8 +238,9 @@ pub fn render(
                         &instance.name,
                         crate::instance::scan_resource_packs,
                     );
+                    resource_packs_state.watch_dir(instances_dir.join(&instance.name).join(".minecraft").join("resourcepacks"));
                 }
-                super::content_list::render(
+                super::list::render(
                     frame,
                     content_area,
                     resource_packs_state,
@@ -251,7 +251,7 @@ pub fn render(
             } else {
                 frame.render_widget(
                     Paragraph::new("No instance selected.")
-                        .style(Style::default().fg(THEME.content.tab_inactive_fg)),
+                        .style(Style::default().fg(theme.text_dim())),
                     content_area,
                 );
             }
@@ -264,8 +264,9 @@ pub fn render(
                         &instance.name,
                         crate::instance::scan_shaders,
                     );
+                    shaders_state.watch_dir(instances_dir.join(&instance.name).join(".minecraft").join("shaderpacks"));
                 }
-                super::content_list::render(
+                super::list::render(
                     frame,
                     content_area,
                     shaders_state,
@@ -276,7 +277,7 @@ pub fn render(
             } else {
                 frame.render_widget(
                     Paragraph::new("No instance selected.")
-                        .style(Style::default().fg(THEME.content.tab_inactive_fg)),
+                        .style(Style::default().fg(theme.text_dim())),
                     content_area,
                 );
             }
@@ -286,11 +287,11 @@ pub fn render(
                 if logs_state.loaded_for.as_deref() != Some(instance.name.as_str()) {
                     logs_state.start_load(instances_dir, &instance.name);
                 }
-                super::logs_viewer::render(frame, content_area, logs_state, is_focused);
+                crate::tui::widgets::logs_viewer::render(frame, content_area, logs_state, is_focused);
             } else {
                 frame.render_widget(
                     Paragraph::new("No instance selected.")
-                        .style(Style::default().fg(THEME.content.tab_inactive_fg)),
+                        .style(Style::default().fg(theme.text_dim())),
                     content_area,
                 );
             }
@@ -300,11 +301,11 @@ pub fn render(
                 if screenshots_state.loaded_for.as_deref() != Some(instance.name.as_str()) {
                     screenshots_state.start_load(instances_dir, &instance.name);
                 }
-                super::screenshots_grid::render(frame, content_area, screenshots_state, is_focused);
+                crate::tui::widgets::screenshots_grid::render(frame, content_area, screenshots_state, is_focused);
             } else {
                 frame.render_widget(
                     Paragraph::new("No instance selected.")
-                        .style(Style::default().fg(THEME.content.tab_inactive_fg)),
+                        .style(Style::default().fg(theme.text_dim())),
                     content_area,
                 );
             }
@@ -317,8 +318,9 @@ pub fn render(
                         &instance.name,
                         crate::instance::scan_worlds,
                     );
+                    worlds_state.watch_dir(instances_dir.join(&instance.name).join(".minecraft").join("saves"));
                 }
-                super::content_list::render(
+                super::list::render(
                     frame,
                     content_area,
                     worlds_state,
@@ -329,7 +331,7 @@ pub fn render(
             } else {
                 frame.render_widget(
                     Paragraph::new("No instance selected.")
-                        .style(Style::default().fg(THEME.content.tab_inactive_fg)),
+                        .style(Style::default().fg(theme.text_dim())),
                     content_area,
                 );
             }
@@ -344,16 +346,17 @@ pub fn title(
     instance: Option<&crate::instance::InstanceConfig>,
     throbber_state: &mut ThrobberState,
 ) {
+    let theme = THEME.as_ref();
     let color = if focused == FocusedArea::Content {
-        THEME.content.border_focused_fg
+        theme.accent()
     } else {
-        THEME.content.border_unfocused_fg
+        theme.border()
     };
 
     let block = Block::default()
         .title(styled_title("Content", true))
         .borders(Borders::ALL)
-        .border_type(THEME.general.border_type.to_border_type())
+        .border_type(BORDER_STYLE.to_border_type())
         .border_style(Style::default().fg(color));
 
     let inner = block.inner(area);
@@ -363,7 +366,7 @@ pub fn title(
         None => {
             frame.render_widget(
                 Paragraph::new("No instance selected")
-                    .style(Style::default().fg(THEME.content.tab_inactive_fg)),
+                    .style(Style::default().fg(theme.text_dim())),
                 inner,
             );
         }
@@ -382,12 +385,12 @@ pub fn title(
                         .label(inst.name.as_str())
                         .style(
                             Style::default()
-                                .fg(THEME.content.text_fg)
+                                .fg(theme.text())
                                 .add_modifier(Modifier::BOLD),
                         )
                         .throbber_style(
                             Style::default()
-                                .fg(THEME.general.success)
+                                .fg(theme.success())
                                 .add_modifier(Modifier::BOLD),
                         )
                         .throbber_set(throbber_widgets_tui::BRAILLE_EIGHT_DOUBLE)
@@ -400,13 +403,13 @@ pub fn title(
                             Span::styled(
                                 "\u{2717} ",
                                 Style::default()
-                                    .fg(THEME.general.error)
+                                    .fg(theme.error())
                                     .add_modifier(Modifier::BOLD),
                             ),
                             Span::styled(
                                 inst.name.as_str(),
                                 Style::default()
-                                    .fg(THEME.content.text_fg)
+                                    .fg(theme.text())
                                     .add_modifier(Modifier::BOLD),
                             ),
                         ])),
@@ -418,7 +421,7 @@ pub fn title(
                         Paragraph::new(Span::styled(
                             inst.name.as_str(),
                             Style::default()
-                                .fg(THEME.content.text_fg)
+                                .fg(theme.text())
                                 .add_modifier(Modifier::BOLD),
                         )),
                         left_area,
@@ -432,7 +435,7 @@ pub fn title(
             };
             frame.render_widget(
                 Paragraph::new(loader_str)
-                    .style(Style::default().fg(THEME.content.border_focused_fg))
+                    .style(Style::default().fg(theme.text_dim()))
                     .alignment(Alignment::Right),
                 right_area,
             );

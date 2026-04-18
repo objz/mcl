@@ -1,99 +1,49 @@
 use config::{Config as ConfigLoader, ConfigError, File};
-use dirs_next::config_dir;
-use once_cell::sync::Lazy;
 use std::fs;
 use std::path::PathBuf;
-use types::Config;
+use std::sync::LazyLock;
 
-pub mod types;
+pub mod settings;
+pub mod theme;
 
+pub use settings::Config;
+
+#[must_use]
 pub fn get_config_path() -> PathBuf {
-    match config_dir() {
-        Some(base_dir) => base_dir.join("mcl/"),
-        None => {
-            tracing::error!("Could not determine config directory, falling back to ./config/");
-            PathBuf::from("./config/")
-        }
-    }
+    dirs_next::config_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join("mcl")
 }
 
-fn ensure_config_exists(default_path: &str) -> PathBuf {
+fn ensure_config_exists() -> PathBuf {
     let config_path = get_config_path().join("config.toml");
-
     if !config_path.exists() {
-        if let Some(parent_dir) = config_path.parent() {
-            match fs::create_dir_all(parent_dir) {
-                Ok(_) => {}
-                Err(e) => {
-                    tracing::error!("Failed to create configuration directory: {}", e);
-                }
-            }
+        if let Some(parent) = config_path.parent() {
+            let _ = fs::create_dir_all(parent);
         }
-
-        match fs::copy(default_path, &config_path) {
-            Ok(_) => {
-                tracing::debug!(
-                    "Default configuration copied to '{}'",
-                    config_path.display()
-                );
-            }
-            Err(e) => {
-                tracing::error!(
-                    "Failed to copy default config from '{}' to '{}': {}",
-                    default_path,
-                    config_path.display(),
-                    e
-                );
-            }
-        }
+        let _ = fs::write(&config_path, include_str!("../../assets/config.toml"));
     }
-
     config_path
 }
 
 pub fn load_config(config_path: &std::path::Path) -> Result<Config, ConfigError> {
-    let built = match ConfigLoader::builder()
+    ConfigLoader::builder()
         .add_source(File::from(config_path).required(false))
-        .build()
-    {
-        Ok(c) => c,
-        Err(e) => {
-            tracing::error!(
-                "Failed to build config from '{}': {}",
-                config_path.display(),
-                e
-            );
-            return Err(e);
-        }
-    };
-
-    match built.try_deserialize() {
-        Ok(config) => Ok(config),
-        Err(e) => {
-            tracing::error!(
-                "Failed to deserialize config from '{}': {}",
-                config_path.display(),
-                e
-            );
-            Err(e)
-        }
-    }
+        .build()?
+        .try_deserialize()
 }
 
-pub static SETTINGS: Lazy<Config> = Lazy::new(|| {
-    let path: PathBuf = ensure_config_exists("assets/config.toml");
-    match load_config(&path) {
-        Ok(config) => config,
-        Err(e) => {
-            tracing::error!("Config load failed, using defaults: {}", e);
-            Config {
-                general: types::General::default(),
-                paths: types::Paths::default(),
-                defaults: types::Defaults::default(),
-                ui: types::Ui::default(),
-            }
+pub static SETTINGS: LazyLock<Config> = LazyLock::new(|| {
+    let path = ensure_config_exists();
+    load_config(&path).unwrap_or_else(|e| {
+        tracing::error!("Config load failed, using defaults: {}", e);
+        Config {
+            general: settings::General::default(),
+            paths: settings::Paths::default(),
+            defaults: settings::Defaults::default(),
+            ui: settings::Ui::default(),
         }
-    }
+    })
 });
 
 #[cfg(test)]
@@ -107,16 +57,12 @@ mod tests {
         std::fs::write(
             &path,
             r#"
-[general]
-debug = true
-
-[defaults]
-memory_max = "4G"
-"#,
+            [defaults]
+            memory_max = "4G"
+            "#,
         )
         .unwrap();
         let config = load_config(&path).unwrap();
-        assert!(config.general.debug);
         assert_eq!(config.defaults.memory_max, "4G");
         assert_eq!(config.defaults.memory_min, "512M");
     }
@@ -127,7 +73,6 @@ memory_max = "4G"
         let path = tmp.path().join("config.toml");
         std::fs::write(&path, "").unwrap();
         let config = load_config(&path).unwrap();
-        assert!(!config.general.debug);
         assert_eq!(config.defaults.memory_max, "2G");
     }
 
@@ -135,8 +80,7 @@ memory_max = "4G"
     fn load_config_missing_file_uses_defaults() {
         let tmp = tempfile::tempdir().unwrap();
         let path = tmp.path().join("nonexistent.toml");
-        let config = load_config(&path).unwrap();
-        assert!(!config.general.debug);
+        load_config(&path).unwrap();
     }
 
     #[test]
@@ -146,9 +90,9 @@ memory_max = "4G"
         std::fs::write(
             &path,
             r#"
-[paths]
-instances_dir = "/custom/path"
-"#,
+            [paths]
+            instances_dir = "/custom/path"
+            "#,
         )
         .unwrap();
         let config = load_config(&path).unwrap();

@@ -1,11 +1,9 @@
-use dirs_next;
+use std::path::PathBuf;
+
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize, Default)]
-pub struct General {
-    #[serde(default)]
-    pub debug: bool,
-}
+pub struct General {}
 
 #[derive(Debug, Deserialize)]
 pub struct Paths {
@@ -18,16 +16,26 @@ pub struct Paths {
 }
 
 fn default_instances_dir() -> String {
-    "~/.local/share/mcl/instances".to_string()
+    dirs_next::data_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join("mcl")
+        .join("instances")
+        .to_string_lossy()
+        .into_owned()
 }
 
 fn default_meta_dir() -> String {
-    "~/.local/share/mcl/meta".to_string()
+    dirs_next::data_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join("mcl")
+        .join("meta")
+        .to_string_lossy()
+        .into_owned()
 }
 
 impl Default for Paths {
     fn default() -> Self {
-        Paths {
+        Self {
             instances_dir: default_instances_dir(),
             meta_dir: default_meta_dir(),
             java_path: None,
@@ -35,43 +43,30 @@ impl Default for Paths {
     }
 }
 
+pub fn resolve_path(raw: &str) -> PathBuf {
+    if let Some(stripped) = raw.strip_prefix("~/") {
+        if let Some(home) = dirs_next::home_dir() {
+            return home.join(stripped);
+        }
+    } else if raw == "~" {
+        if let Some(home) = dirs_next::home_dir() {
+            return home;
+        }
+    }
+    PathBuf::from(raw)
+}
+
 impl Paths {
     pub fn effective_java_path(&self) -> Option<&str> {
         self.java_path.as_deref().filter(|s| !s.is_empty())
     }
 
-    pub fn resolve_instances_dir(&self) -> std::path::PathBuf {
-        let raw = &self.instances_dir;
-        if let Some(stripped) = raw.strip_prefix("~/") {
-            return match dirs_next::home_dir() {
-                Some(home) => home.join(stripped),
-                None => std::path::PathBuf::from(raw),
-            };
-        }
-        if raw == "~" {
-            return match dirs_next::home_dir() {
-                Some(home) => home,
-                None => std::path::PathBuf::from(raw),
-            };
-        }
-        std::path::PathBuf::from(raw)
+    pub fn resolve_instances_dir(&self) -> PathBuf {
+        resolve_path(&self.instances_dir)
     }
 
-    pub fn resolve_meta_dir(&self) -> std::path::PathBuf {
-        let raw = &self.meta_dir;
-        if let Some(stripped) = raw.strip_prefix("~/") {
-            return match dirs_next::home_dir() {
-                Some(home) => home.join(stripped),
-                None => std::path::PathBuf::from(raw),
-            };
-        }
-        if raw == "~" {
-            return match dirs_next::home_dir() {
-                Some(home) => home,
-                None => std::path::PathBuf::from(raw),
-            };
-        }
-        std::path::PathBuf::from(raw)
+    pub fn resolve_meta_dir(&self) -> PathBuf {
+        resolve_path(&self.meta_dir)
     }
 }
 
@@ -84,16 +79,15 @@ pub struct Defaults {
 }
 
 fn default_memory_min() -> String {
-    "512M".to_string()
+    "512M".to_owned()
 }
-
 fn default_memory_max() -> String {
-    "2G".to_string()
+    "2G".to_owned()
 }
 
 impl Default for Defaults {
     fn default() -> Self {
-        Defaults {
+        Self {
             memory_min: default_memory_min(),
             memory_max: default_memory_max(),
         }
@@ -115,22 +109,19 @@ pub struct Ui {
 fn default_error_auto_dismiss_ms() -> u64 {
     5000
 }
-
 fn default_error_slide_start_ms() -> u64 {
     3500
 }
-
 fn default_error_fly_out_ms() -> u64 {
     300
 }
-
 fn default_max_error_events() -> usize {
     50
 }
 
 impl Default for Ui {
     fn default() -> Self {
-        Ui {
+        Self {
             error_auto_dismiss_ms: default_error_auto_dismiss_ms(),
             error_slide_start_ms: default_error_slide_start_ms(),
             error_fly_out_ms: default_error_fly_out_ms(),
@@ -176,66 +167,49 @@ mod tests {
     #[test]
     fn effective_java_path_some_when_set() {
         let paths = Paths {
-            java_path: Some("/usr/bin/java".to_string()),
+            java_path: Some("/usr/bin/java".to_owned()),
             ..Paths::default()
         };
         assert_eq!(paths.effective_java_path(), Some("/usr/bin/java"));
     }
 
     #[test]
-    fn resolve_instances_dir_absolute_path() {
-        let paths = Paths {
-            instances_dir: "/opt/mcl/instances".to_string(),
-            ..Paths::default()
-        };
-        assert_eq!(
-            paths.resolve_instances_dir(),
-            std::path::PathBuf::from("/opt/mcl/instances")
-        );
+    fn resolve_path_absolute() {
+        assert_eq!(resolve_path("/opt/mcl"), PathBuf::from("/opt/mcl"));
     }
 
     #[test]
-    fn resolve_instances_dir_tilde_prefix() {
-        let paths = Paths {
-            instances_dir: "~/games/mcl".to_string(),
-            ..Paths::default()
-        };
-        let resolved = paths.resolve_instances_dir();
+    fn resolve_path_tilde_prefix() {
+        let resolved = resolve_path("~/games/mcl");
         assert!(!resolved.to_string_lossy().starts_with('~'));
         assert!(resolved.to_string_lossy().ends_with("games/mcl"));
     }
 
     #[test]
-    fn resolve_instances_dir_bare_tilde() {
-        let paths = Paths {
-            instances_dir: "~".to_string(),
-            ..Paths::default()
-        };
-        let resolved = paths.resolve_instances_dir();
+    fn resolve_path_bare_tilde() {
+        let resolved = resolve_path("~");
         assert!(!resolved.to_string_lossy().starts_with('~'));
     }
 
     #[test]
-    fn resolve_meta_dir_absolute_path() {
+    fn resolve_instances_dir_absolute() {
         let paths = Paths {
-            meta_dir: "/opt/mcl/meta".to_string(),
+            instances_dir: "/opt/mcl/instances".to_owned(),
             ..Paths::default()
         };
         assert_eq!(
-            paths.resolve_meta_dir(),
-            std::path::PathBuf::from("/opt/mcl/meta")
+            paths.resolve_instances_dir(),
+            PathBuf::from("/opt/mcl/instances")
         );
     }
 
     #[test]
-    fn resolve_meta_dir_tilde_prefix() {
+    fn resolve_meta_dir_absolute() {
         let paths = Paths {
-            meta_dir: "~/mcl/meta".to_string(),
+            meta_dir: "/opt/mcl/meta".to_owned(),
             ..Paths::default()
         };
-        let resolved = paths.resolve_meta_dir();
-        assert!(!resolved.to_string_lossy().starts_with('~'));
-        assert!(resolved.to_string_lossy().ends_with("mcl/meta"));
+        assert_eq!(paths.resolve_meta_dir(), PathBuf::from("/opt/mcl/meta"));
     }
 
     #[test]
@@ -257,7 +231,6 @@ mod tests {
     #[test]
     fn config_deserializes_from_empty_toml() {
         let config: Config = toml::from_str("").unwrap();
-        assert!(!config.general.debug);
         assert_eq!(config.defaults.memory_max, "2G");
     }
 
@@ -271,7 +244,6 @@ debug = true
 memory_max = "8G"
 "#;
         let config: Config = toml::from_str(toml_str).unwrap();
-        assert!(config.general.debug);
         assert_eq!(config.defaults.memory_max, "8G");
         assert_eq!(config.defaults.memory_min, "512M");
     }

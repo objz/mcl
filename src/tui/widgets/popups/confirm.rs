@@ -1,4 +1,4 @@
-use once_cell::sync::Lazy;
+use std::sync::LazyLock;
 use std::sync::Mutex;
 
 use ratatui::{
@@ -9,9 +9,9 @@ use ratatui::{
     widgets::{Paragraph, Widget},
 };
 
-use crate::tui::theme::THEME;
+use crate::config::theme::THEME;
 
-static CONFIRM_STATE: Lazy<Mutex<ConfirmState>> = Lazy::new(|| Mutex::new(ConfirmState::default()));
+static CONFIRM_STATE: LazyLock<Mutex<ConfirmState>> = LazyLock::new(|| Mutex::new(ConfirmState::default()));
 
 #[derive(Debug, Default)]
 struct ConfirmState {
@@ -63,23 +63,27 @@ impl Widget for ConfirmPopup {
     fn render(self, area: Rect, buf: &mut Buffer) {
         use super::{base::PopupFrame, keybind_line};
 
+        let theme = THEME.as_ref();
         let title = Line::from(vec![Span::styled(
             format!(" Delete '{}' ", self.instance_name),
             Style::default()
-                .fg(THEME.popup_confirm.border_fg)
+                .fg(theme.text_dim())
                 .add_modifier(Modifier::BOLD),
         )]);
         let kb = keybind_line(&[("Enter", " confirm")]);
 
+        let border_color = theme.text_dim();
+        let bg_color = theme.surface();
+        let text_color = theme.text();
         let popup = PopupFrame {
             title,
-            border_color: THEME.popup_confirm.border_fg,
-            bg: Some(THEME.popup_confirm.highlight_bg),
+            border_color,
+            bg: Some(bg_color),
             keybinds: Some(kb),
             search_line: None,
-            content: Box::new(|inner, buf| {
+            content: Box::new(move |inner, buf| {
                 Paragraph::new("This will permanently remove the instance")
-                    .style(Style::default().fg(THEME.popup_confirm.text_fg))
+                    .style(Style::default().fg(text_color))
                     .render(inner, buf);
             }),
         };

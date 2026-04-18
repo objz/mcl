@@ -1,9 +1,10 @@
 mod account;
 mod content;
+mod import;
 mod instance;
 mod log;
 mod output;
-mod import;
+mod utils;
 mod version;
 
 use clap::{Arg, ArgAction, ArgGroup, Command};
@@ -12,7 +13,7 @@ pub async fn init() {
     let matches = build_command().get_matches();
 
     if matches.subcommand().is_none() {
-        let _ = &*crate::tui::theme::THEME;
+        let _ = &*crate::config::theme::THEME;
         if let Err(e) = crate::tui::show().await {
             tracing::error!("TUI error: {}", e);
         }
@@ -21,9 +22,9 @@ pub async fn init() {
 
     let result = match matches.subcommand() {
         Some(("instance", sub_matches)) => instance::handle_instance(sub_matches).await,
-        Some(("mod", sub_matches)) => content::handle_mod(sub_matches).await,
-        Some(("pack", sub_matches)) => content::handle_pack(sub_matches).await,
-        Some(("shader", sub_matches)) => content::handle_shader(sub_matches).await,
+        Some(("mod", sub_matches)) => content::handle_mod(sub_matches),
+        Some(("pack", sub_matches)) => content::handle_pack(sub_matches),
+        Some(("shader", sub_matches)) => content::handle_shader(sub_matches),
         Some(("account", sub_matches)) => account::handle_account(sub_matches).await,
         Some(("log", sub_matches)) => log::handle_log(sub_matches).await,
         Some(("version", sub_matches)) => version::handle_version(sub_matches).await,
@@ -40,7 +41,7 @@ pub async fn init() {
 fn build_command() -> Command {
     Command::new("mcl")
         .about("Minecraft CLI Launcher")
-        .version("1.0.0")
+        .version(env!("CARGO_PKG_VERSION"))
         .subcommand_required(false)
         .arg_required_else_help(false)
         .subcommand(
@@ -184,12 +185,24 @@ fn build_command() -> Command {
             Command::new("import")
                 .about("Import a modpack")
                 .arg_required_else_help(true)
-                .arg(Arg::new("source").required(true).action(ArgAction::Set)
-                    .help("Modrinth URL, project slug, or local .mrpack file path"))
-                .arg(Arg::new("version").long("version").action(ArgAction::Set)
-                    .help("Modpack version to import (default: latest)"))
-                .arg(Arg::new("name").long("name").action(ArgAction::Set)
-                    .help("Override instance name")),
+                .arg(
+                    Arg::new("source")
+                        .required(true)
+                        .action(ArgAction::Set)
+                        .help("Modrinth URL, project slug, or local .mrpack file path"),
+                )
+                .arg(
+                    Arg::new("version")
+                        .long("version")
+                        .action(ArgAction::Set)
+                        .help("Modpack version to import (default: latest)"),
+                )
+                .arg(
+                    Arg::new("name")
+                        .long("name")
+                        .action(ArgAction::Set)
+                        .help("Override instance name"),
+                ),
         )
 }
 

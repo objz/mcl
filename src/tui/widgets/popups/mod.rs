@@ -56,26 +56,23 @@ pub fn top_right_rect(frame: Rect, inner_w: usize, inner_h: usize) -> Rect {
 }
 
 pub fn keybind_line(binds: &[(&str, &str)]) -> ratatui::text::Line<'static> {
-    use crate::tui::theme::THEME;
+    use crate::config::theme::THEME;
     use ratatui::{
         style::{Modifier, Style},
         text::{Line, Span},
     };
-
-    let mut key_style = Style::default().fg(THEME.popup.keybind_active_fg);
-    if THEME.popup.keybind_active_bold {
-        key_style = key_style.add_modifier(Modifier::BOLD);
-    }
-    let dim_style = Style::default().fg(THEME.popup.keybind_inactive_fg);
+    let theme = THEME.as_ref();
+    let key_style = Style::default().fg(theme.accent()).add_modifier(Modifier::BOLD);
+    let label_style = Style::default().fg(theme.text());
 
     let mut spans: Vec<Span<'static>> = Vec::new();
     for (i, (key, label)) in binds.iter().enumerate() {
         if i > 0 {
-            spans.push(Span::styled("  ", dim_style));
+            spans.push(Span::styled("  ", label_style));
         }
         spans.push(Span::styled(format!("[{}]", key), key_style));
         if !label.is_empty() {
-            spans.push(Span::styled(label.to_string(), dim_style));
+            spans.push(Span::styled(label.to_string(), label_style));
         }
     }
     Line::from(spans)
@@ -85,17 +82,14 @@ pub fn keybind_lines_wrapped(
     binds: &[(&str, &str)],
     max_width: u16,
 ) -> Vec<ratatui::text::Line<'static>> {
-    use crate::tui::theme::THEME;
+    use crate::config::theme::THEME;
     use ratatui::{
         style::{Modifier, Style},
         text::{Line, Span},
     };
-
-    let mut key_style = Style::default().fg(THEME.popup.keybind_active_fg);
-    if THEME.popup.keybind_active_bold {
-        key_style = key_style.add_modifier(Modifier::BOLD);
-    }
-    let dim_style = Style::default().fg(THEME.popup.keybind_inactive_fg);
+    let theme = THEME.as_ref();
+    let key_style = Style::default().fg(theme.accent()).add_modifier(Modifier::BOLD);
+    let label_style = Style::default().fg(theme.text());
 
     let mut rows: Vec<Line<'static>> = Vec::new();
     let mut current_spans: Vec<Span<'static>> = Vec::new();
@@ -117,13 +111,13 @@ pub fn keybind_lines_wrapped(
         }
 
         if !current_spans.is_empty() {
-            current_spans.push(Span::styled("  ", dim_style));
+            current_spans.push(Span::styled("  ", label_style));
             current_width += 2;
         }
 
         current_spans.push(Span::styled(format!("[{}]", key), key_style));
         if !label.is_empty() {
-            current_spans.push(Span::styled(label.to_string(), dim_style));
+            current_spans.push(Span::styled(label.to_string(), label_style));
         }
         current_width += item_w;
     }

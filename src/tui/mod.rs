@@ -1,8 +1,10 @@
+pub mod app;
 pub mod error_buffer;
-pub mod layout;
+mod event;
+mod input;
 pub mod logging;
 pub mod progress;
-pub mod theme;
+mod render;
 pub mod widgets;
 
 pub type Tui = ratatui::DefaultTerminal;
@@ -21,7 +23,7 @@ pub async fn show() -> color_eyre::Result<()> {
     let picker = ratatui_image::picker::Picker::from_query_stdio()
         .unwrap_or_else(|_| ratatui_image::picker::Picker::halfblocks());
 
-    let result = layout::App::new(picker).run(&mut terminal).await;
+    let result = app::App::new(picker).run(&mut terminal).await;
 
     let _ = crossterm::execute!(
         std::io::stdout(),

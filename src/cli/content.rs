@@ -3,22 +3,31 @@ use std::path::Path;
 
 use clap::ArgMatches;
 
+use super::utils::{require_instance, required_arg};
 use crate::cli::output::print_table;
-use crate::instance::ModEntry;
+use crate::instance::ContentEntry;
 
 type CliResult = Result<(), Box<dyn std::error::Error>>;
-type Scanner = fn(&Path, &str) -> Vec<ModEntry>;
+type Scanner = fn(&Path, &str) -> Vec<ContentEntry>;
 
-pub async fn handle_mod(matches: &ArgMatches) -> CliResult {
-    handle_content(matches, "mod", crate::instance::mods::scan_mods)
+pub fn handle_mod(matches: &ArgMatches) -> CliResult {
+    handle_content(matches, "mod", crate::instance::content::mods::scan_mods)
 }
 
-pub async fn handle_pack(matches: &ArgMatches) -> CliResult {
-    handle_content(matches, "pack", crate::instance::resource_packs::scan_resource_packs)
+pub fn handle_pack(matches: &ArgMatches) -> CliResult {
+    handle_content(
+        matches,
+        "pack",
+        crate::instance::content::resource_packs::scan_resource_packs,
+    )
 }
 
-pub async fn handle_shader(matches: &ArgMatches) -> CliResult {
-    handle_content(matches, "shader", crate::instance::shaders::scan_shaders)
+pub fn handle_shader(matches: &ArgMatches) -> CliResult {
+    handle_content(
+        matches,
+        "shader",
+        crate::instance::content::shaders::scan_shaders,
+    )
 }
 
 fn handle_content(matches: &ArgMatches, kind: &str, scan: Scanner) -> CliResult {
@@ -42,17 +51,13 @@ fn handle_content(matches: &ArgMatches, kind: &str, scan: Scanner) -> CliResult 
     }
 }
 
-pub(crate) fn find_entry_by_stem<'a>(entries: &'a [ModEntry], target: &str) -> Option<&'a ModEntry> {
+pub(crate) fn find_entry_by_stem<'a>(
+    entries: &'a [ContentEntry],
+    target: &str,
+) -> Option<&'a ContentEntry> {
     entries
         .iter()
         .find(|entry| entry.file_stem.eq_ignore_ascii_case(target))
-}
-
-fn require_instance(instances_dir: &Path, name: &str) -> Result<(), io::Error> {
-    if !instances_dir.join(name).join("instance.json").exists() {
-        return Err(io::Error::other(format!("Instance '{}' not found", name)));
-    }
-    Ok(())
 }
 
 fn list_entries(instance: &str, scan: Scanner) -> CliResult {
@@ -86,9 +91,8 @@ fn toggle_entry(
     let instances_dir = crate::config::SETTINGS.paths.resolve_instances_dir();
     require_instance(&instances_dir, instance)?;
     let entries = scan(&instances_dir, instance);
-    let entry = find_entry_by_stem(&entries, target).ok_or_else(|| {
-        io::Error::other(format!("{} '{}' not found", kind, target))
-    })?;
+    let entry = find_entry_by_stem(&entries, target)
+        .ok_or_else(|| io::Error::other(format!("{} '{}' not found", kind, target)))?;
 
     if entry.enabled == should_enable {
         println!(
@@ -98,7 +102,7 @@ fn toggle_entry(
         return Ok(());
     }
 
-    crate::instance::mods::toggle_mod(entry)?;
+    crate::instance::content::mods::toggle_entry(entry)?;
     println!(
         "{}d '{}'.",
         if should_enable { "Enable" } else { "Disable" },
@@ -107,21 +111,14 @@ fn toggle_entry(
     Ok(())
 }
 
-fn required_arg<'a>(matches: &'a ArgMatches, name: &str) -> Result<&'a str, io::Error> {
-    matches
-        .get_one::<String>(name)
-        .map(String::as_str)
-        .ok_or_else(|| io::Error::other(format!("missing required argument '{}'", name)))
-}
-
 #[cfg(test)]
 mod tests {
     use super::find_entry_by_stem;
-    use crate::instance::ModEntry;
+    use crate::instance::ContentEntry;
     use std::path::PathBuf;
 
-    fn entry(file_stem: &str) -> ModEntry {
-        ModEntry {
+    fn entry(file_stem: &str) -> ContentEntry {
+        ContentEntry {
             file_stem: file_stem.to_string(),
             name: file_stem.to_string(),
             description: String::new(),

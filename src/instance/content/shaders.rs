@@ -1,10 +1,9 @@
-use std::io::Read;
 use std::path::Path;
 
-use super::mods::{make_icon_pixels, ModEntry};
+use super::mods::{make_icon_pixels, ContentEntry};
 use super::resource_packs::{extract_description, PackMcMeta};
 
-pub fn scan_shaders(instances_dir: &Path, instance_name: &str) -> Vec<ModEntry> {
+pub fn scan_shaders(instances_dir: &Path, instance_name: &str) -> Vec<ContentEntry> {
     let shaders_dir = instances_dir
         .join(instance_name)
         .join(".minecraft")
@@ -26,18 +25,9 @@ pub fn scan_shaders(instances_dir: &Path, instance_name: &str) -> Vec<ModEntry> 
 
         let is_dir = path.is_dir();
         let (enabled, file_stem) = if is_dir {
-            if file_name.ends_with(".disabled") {
-                (false, file_name.trim_end_matches(".disabled").to_string())
-            } else {
-                (true, file_name.clone())
-            }
-        } else if file_name.ends_with(".zip") {
-            (true, file_name.trim_end_matches(".zip").to_string())
-        } else if file_name.ends_with(".zip.disabled") {
-            (
-                false,
-                file_name.trim_end_matches(".zip.disabled").to_string(),
-            )
+            super::parse_enabled_stem_dir(&file_name)
+        } else if let Some(pair) = super::parse_enabled_stem(&file_name, ".zip") {
+            pair
         } else {
             continue;
         };
@@ -52,9 +42,9 @@ pub fn scan_shaders(instances_dir: &Path, instance_name: &str) -> Vec<ModEntry> 
             .as_ref()
             .and_then(|bytes| make_icon_pixels(bytes, 6, 3));
 
-        entries.push(ModEntry {
-            file_stem: file_stem.clone(),
-            name: file_stem,
+        entries.push(ContentEntry {
+            name: file_stem.clone(),
+            file_stem,
             description,
             enabled,
             icon_bytes,
@@ -63,54 +53,30 @@ pub fn scan_shaders(instances_dir: &Path, instance_name: &str) -> Vec<ModEntry> 
         });
     }
 
-    entries.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    entries.sort_by_cached_key(|e| e.name.to_lowercase());
     entries
 }
 
 fn read_shader_metadata_from_zip(zip_path: &Path) -> (String, Option<Vec<u8>>) {
-    let file = match std::fs::File::open(zip_path) {
-        Ok(f) => f,
-        Err(_) => return (String::new(), None),
+    let Some(mut archive) = super::open_zip(zip_path) else {
+        return (String::new(), None);
     };
-
-    let mut archive = match zip::ZipArchive::new(file) {
-        Ok(a) => a,
-        Err(_) => return (String::new(), None),
-    };
-
-    let description = match archive.by_name("pack.mcmeta") {
-        Ok(entry) => match serde_json::from_reader::<_, PackMcMeta>(entry) {
-            Ok(meta) => extract_description(&meta.pack.description),
-            Err(_) => String::new(),
-        },
-        Err(_) => String::new(),
-    };
-
-    let icon_bytes = {
-        let mut buf = Vec::new();
-        match archive.by_name("pack.png") {
-            Ok(mut entry) => {
-                if entry.read_to_end(&mut buf).is_ok() {
-                    Some(buf)
-                } else {
-                    None
-                }
-            }
-            Err(_) => None,
-        }
-    };
-
+    let description = archive
+        .by_name("pack.mcmeta")
+        .ok()
+        .and_then(|entry| serde_json::from_reader::<_, PackMcMeta>(entry).ok())
+        .map(|meta| extract_description(&meta.pack.description))
+        .unwrap_or_default();
+    let icon_bytes = super::read_icon_from_zip(&mut archive);
     (description, icon_bytes)
 }
 
 fn read_shader_metadata_from_dir(dir: &Path) -> (String, Option<Vec<u8>>) {
-    let description = match std::fs::read_to_string(dir.join("pack.mcmeta")) {
-        Ok(content) => match serde_json::from_str::<PackMcMeta>(&content) {
-            Ok(meta) => extract_description(&meta.pack.description),
-            Err(_) => String::new(),
-        },
-        Err(_) => String::new(),
-    };
+    let description = std::fs::read_to_string(dir.join("pack.mcmeta"))
+        .ok()
+        .and_then(|content| serde_json::from_str::<PackMcMeta>(&content).ok())
+        .map(|meta| extract_description(&meta.pack.description))
+        .unwrap_or_default();
 
     let icon_bytes = std::fs::read(dir.join("pack.png")).ok();
 

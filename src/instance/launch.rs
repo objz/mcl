@@ -71,31 +71,31 @@ struct LoaderLibrary {
 }
 
 fn lib_allowed(lib: &MetaLibrary) -> bool {
-    let rules = match &lib.rules {
-        Some(r) => r,
-        None => return true,
+    let Some(rules) = &lib.rules else {
+        return true;
     };
     let current_os = match std::env::consts::OS {
         "macos" => "osx",
         other => other,
     };
-    let mut allowed = false;
+    let mut dominated = false;
     for rule in rules {
-        let matches = match &rule.os {
-            Some(os) => os.name.as_deref().map(|n| n == current_os).unwrap_or(true),
-            None => true,
-        };
-        if !matches {
+        let matches_os = rule
+            .os
+            .as_ref()
+            .and_then(|os| os.name.as_deref())
+            .is_none_or(|n| n == current_os);
+        if !matches_os {
             continue;
         }
-        if rule.action == "disallow" {
-            return false;
-        }
-        if rule.action == "allow" {
-            allowed = true;
+        dominated = true;
+        match rule.action.as_str() {
+            "disallow" => return false,
+            "allow" => return true,
+            _ => {}
         }
     }
-    allowed
+    !dominated
 }
 
 pub async fn launch(
@@ -114,7 +114,7 @@ pub async fn launch(
     if !meta_path.exists() {
         return Err(LaunchError::MetaNotFound(meta_path.display().to_string()));
     }
-    let meta: MetaJson = serde_json::from_slice(&std::fs::read(&meta_path)?)?;
+    let meta: MetaJson = serde_json::from_slice(&tokio::fs::read(&meta_path).await?)?;
 
     let lib_dir = meta_dir.join("libraries");
     let mut classpath: Vec<PathBuf> = meta
@@ -130,98 +130,46 @@ pub async fn launch(
         })
         .collect();
 
-    let main_class = match config.loader {
-        ModLoader::Vanilla => meta.main_class.clone(),
-        ModLoader::Fabric => {
-            let lv = config.loader_version.as_deref().unwrap_or("unknown");
-            let profile_path = meta_dir
-                .join("loader-profiles")
-                .join(format!("fabric-{}-{}.json", config.game_version, lv));
-            if !profile_path.exists() {
-                return Err(LaunchError::MetaNotFound(
-                    profile_path.display().to_string(),
-                ));
-            }
-            let profile: LoaderProfileJson =
-                serde_json::from_slice(&std::fs::read(&profile_path)?)?;
-            for lib in &profile.libraries {
-                if let Some(p) = crate::net::maven_coord_to_path(&lib.name) {
+    let lv = config.loader_version.as_deref().unwrap_or("unknown");
+    let profile_filename = match config.loader {
+        ModLoader::Vanilla => None,
+        ModLoader::Fabric => Some(format!("fabric-{}-{}.json", config.game_version, lv)),
+        ModLoader::Quilt => Some(format!("quilt-{}-{}.json", config.game_version, lv)),
+        ModLoader::Forge => Some(format!("forge-{}-{}.json", config.game_version, lv)),
+        ModLoader::NeoForge => Some(format!("neoforge-{}.json", lv)),
+    };
+
+    let main_class = if let Some(filename) = profile_filename {
+        let profile_path = meta_dir.join("loader-profiles").join(&filename);
+        if !profile_path.exists() {
+            return Err(LaunchError::MetaNotFound(
+                profile_path.display().to_string(),
+            ));
+        }
+        let profile: LoaderProfileJson =
+            serde_json::from_slice(&tokio::fs::read(&profile_path).await?)?;
+
+        let has_local_libs = matches!(config.loader, ModLoader::Forge | ModLoader::NeoForge);
+        let local_lib_dir = minecraft_dir.join("libraries");
+
+        for lib in &profile.libraries {
+            if let Some(p) = crate::net::maven_coord_to_path(&lib.name) {
+                if has_local_libs {
+                    let in_meta = lib_dir.join(&p);
+                    let in_local = local_lib_dir.join(&p);
+                    if in_meta.exists() {
+                        classpath.push(in_meta);
+                    } else if in_local.exists() {
+                        classpath.push(in_local);
+                    }
+                } else {
                     classpath.push(lib_dir.join(p));
                 }
             }
-            profile.main_class
         }
-        ModLoader::Quilt => {
-            let lv = config.loader_version.as_deref().unwrap_or("unknown");
-            let profile_path = meta_dir
-                .join("loader-profiles")
-                .join(format!("quilt-{}-{}.json", config.game_version, lv));
-            if !profile_path.exists() {
-                return Err(LaunchError::MetaNotFound(
-                    profile_path.display().to_string(),
-                ));
-            }
-            let profile: LoaderProfileJson =
-                serde_json::from_slice(&std::fs::read(&profile_path)?)?;
-            for lib in &profile.libraries {
-                if let Some(p) = crate::net::maven_coord_to_path(&lib.name) {
-                    classpath.push(lib_dir.join(p));
-                }
-            }
-            profile.main_class
-        }
-        ModLoader::Forge => {
-            let lv = config.loader_version.as_deref().unwrap_or("unknown");
-            let profile_path = meta_dir
-                .join("loader-profiles")
-                .join(format!("forge-{}-{}.json", config.game_version, lv));
-            if !profile_path.exists() {
-                return Err(LaunchError::MetaNotFound(
-                    profile_path.display().to_string(),
-                ));
-            }
-            let profile: LoaderProfileJson =
-                serde_json::from_slice(&std::fs::read(&profile_path)?)?;
-            let forge_lib_dir = minecraft_dir.join("libraries");
-            for lib in &profile.libraries {
-                if let Some(p) = crate::net::maven_coord_to_path(&lib.name) {
-                    let in_meta = lib_dir.join(&p);
-                    let in_forge = forge_lib_dir.join(&p);
-                    if in_meta.exists() {
-                        classpath.push(in_meta);
-                    } else if in_forge.exists() {
-                        classpath.push(in_forge);
-                    }
-                }
-            }
-            profile.main_class
-        }
-        ModLoader::NeoForge => {
-            let lv = config.loader_version.as_deref().unwrap_or("unknown");
-            let profile_path = meta_dir
-                .join("loader-profiles")
-                .join(format!("neoforge-{}.json", lv));
-            if !profile_path.exists() {
-                return Err(LaunchError::MetaNotFound(
-                    profile_path.display().to_string(),
-                ));
-            }
-            let profile: LoaderProfileJson =
-                serde_json::from_slice(&std::fs::read(&profile_path)?)?;
-            let neo_lib_dir = minecraft_dir.join("libraries");
-            for lib in &profile.libraries {
-                if let Some(p) = crate::net::maven_coord_to_path(&lib.name) {
-                    let in_meta = lib_dir.join(&p);
-                    let in_neo = neo_lib_dir.join(&p);
-                    if in_meta.exists() {
-                        classpath.push(in_meta);
-                    } else if in_neo.exists() {
-                        classpath.push(in_neo);
-                    }
-                }
-            }
-            profile.main_class
-        }
+        profile.main_class
+    } else {
+        meta.main_class.clone()
     };
 
     classpath.push(

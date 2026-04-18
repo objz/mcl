@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     layout::Rect,
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph, Widget},
     Frame,
@@ -11,8 +11,8 @@ use ratatui::{
 use tui_widget_list::{ListBuilder, ListState as TuiListState, ListView};
 
 use crate::auth::{self, AccountStore, AccountType, AuthResult, DeviceCodeInfo};
-use crate::tui::layout::FocusedArea;
-use crate::tui::theme::THEME;
+use crate::tui::app::FocusedArea;
+use crate::config::theme::{THEME, BORDER_STYLE};
 
 use super::styled_title;
 
@@ -213,16 +213,17 @@ pub fn drain_device_code(state: &mut AccountState) {
 }
 
 pub fn render(frame: &mut Frame, area: Rect, focused: FocusedArea, state: &mut AccountState) {
+    let theme = THEME.as_ref();
     let color = if focused == FocusedArea::Account {
-        THEME.account.border_focused_fg
+        theme.accent()
     } else {
-        THEME.account.border_unfocused_fg
+        theme.border()
     };
 
     let mut block = Block::default()
         .title(styled_title("Accounts", true))
         .borders(Borders::ALL)
-        .border_type(THEME.general.border_type.to_border_type())
+        .border_type(BORDER_STYLE.to_border_type())
         .border_style(Style::default().fg(color));
 
     if focused == FocusedArea::Account {
@@ -241,7 +242,7 @@ pub fn render(frame: &mut Frame, area: Rect, focused: FocusedArea, state: &mut A
     if state.store.accounts.is_empty() {
         frame.render_widget(
             Paragraph::new("No accounts.")
-                .style(Style::default().fg(THEME.account.text_secondary_fg)),
+                .style(Style::default().fg(theme.text_dim())),
             inner,
         );
     } else {
@@ -282,47 +283,36 @@ fn render_account_list(
     let count = accounts.len();
 
     let builder = ListBuilder::new(move |context| {
+        let theme = THEME.as_ref();
         let (username, acc_type, is_active) = &accounts[context.index];
         let show_selected = is_focused && context.is_selected;
 
-        let stripe_bg = Color::Reset;
+        let stripe_bg = theme.background();
 
-        let bg = if show_selected {
-            THEME.account.selected_bg
-        } else {
-            stripe_bg
-        };
+        let bg = stripe_bg;
 
         let active_marker = if *is_active { "\u{25b8} " } else { "  " };
 
         let style = if show_selected {
-            let mut s = Style::default().fg(THEME.account.selected_fg);
-            if THEME.account.selected_bold {
-                s = s.add_modifier(Modifier::BOLD);
-            }
-            s
+            Style::default().fg(theme.accent()).add_modifier(Modifier::BOLD)
         } else if *is_active {
             Style::default()
-                .fg(THEME.account.text_fg)
+                .fg(theme.text())
                 .add_modifier(Modifier::BOLD)
         } else {
-            Style::default().fg(THEME.account.text_fg)
+            Style::default().fg(theme.text())
         };
 
         let mut spans = vec![
-            Span::styled(active_marker, Style::default().fg(THEME.account.active_fg)),
+            Span::styled(active_marker, Style::default().fg(theme.success())),
             Span::styled(username.clone(), style),
         ];
 
         if *acc_type == AccountType::Offline {
             let offline_style = if show_selected {
-                let mut s = Style::default().fg(THEME.account.selected_fg);
-                if THEME.account.selected_bold {
-                    s = s.add_modifier(Modifier::BOLD);
-                }
-                s
+                Style::default().fg(theme.accent()).add_modifier(Modifier::BOLD)
             } else {
-                Style::default().fg(THEME.account.text_secondary_fg)
+                Style::default().fg(theme.text_dim())
             };
             spans.push(Span::styled(" (Offline)", offline_style));
         }
@@ -349,42 +339,48 @@ fn popup_area(frame: &Frame, width: u16, height: u16) -> Rect {
 
 fn render_choose_popup(frame: &mut Frame) {
     use super::popups::base::PopupFrame;
+    let theme = THEME.as_ref();
     let area = popup_area(frame, 40, 7);
+
+    let border_color = theme.text_dim();
+    let dim_color = theme.text_dim();
+    let accent_color = theme.success();
+    let text_color = theme.text();
 
     PopupFrame {
         title: Line::from(" Add Account ").centered(),
-        border_color: THEME.account.border_focused_fg,
+        border_color,
         bg: None,
         keybinds: Some(Line::from(Span::styled(
             " Esc: cancel ",
-            Style::default().fg(THEME.account.text_secondary_fg),
+            Style::default().fg(dim_color),
         ))),
         search_line: None,
-        content: Box::new(|inner, buf| {
+        content: Box::new(move |inner, buf| {
             let text = vec![
                 Line::from(""),
                 Line::from(vec![
                     Span::styled(
                         " [m] ",
                         Style::default()
-                            .fg(THEME.account.active_fg)
+                            .fg(accent_color)
                             .add_modifier(Modifier::BOLD),
                     ),
                     Span::styled(
                         "Microsoft Account",
-                        Style::default().fg(THEME.account.text_fg),
+                        Style::default().fg(text_color),
                     ),
                 ]),
                 Line::from(vec![
                     Span::styled(
                         " [o] ",
                         Style::default()
-                            .fg(THEME.account.active_fg)
+                            .fg(accent_color)
                             .add_modifier(Modifier::BOLD),
                     ),
                     Span::styled(
                         "Offline Account",
-                        Style::default().fg(THEME.account.text_fg),
+                        Style::default().fg(text_color),
                     ),
                 ]),
             ];
@@ -396,19 +392,25 @@ fn render_choose_popup(frame: &mut Frame) {
 
 fn render_offline_popup(frame: &mut Frame, name: &str) {
     use super::popups::{base::PopupFrame, keybind_line};
+    let theme = THEME.as_ref();
     let area = popup_area(frame, 40, 5);
     let name = name.to_string();
+
+    let border_color = theme.text_dim();
+    let bg_color = theme.surface();
+    let dim_color = theme.text_dim();
+    let text_color = theme.text();
 
     PopupFrame {
         title: Line::from(Span::styled(
             " Offline Account ",
             Style::default()
-                .fg(THEME.account.border_focused_fg)
+                .fg(border_color)
                 .add_modifier(Modifier::BOLD),
         ))
         .centered(),
-        border_color: THEME.account.border_focused_fg,
-        bg: Some(THEME.account.popup_bg),
+        border_color,
+        bg: Some(bg_color),
         keybinds: Some(keybind_line(&[("Enter", " confirm"), ("Esc", " cancel")])),
         search_line: None,
         content: Box::new(move |inner, buf| {
@@ -416,22 +418,22 @@ fn render_offline_popup(frame: &mut Frame, name: &str) {
                 Line::from(vec![
                     Span::styled(
                         "Username...",
-                        Style::default().fg(THEME.account.border_unfocused_fg),
+                        Style::default().fg(dim_color),
                     ),
                     Span::styled(
                         "\u{2588}",
                         Style::default()
-                            .fg(THEME.account.border_focused_fg)
+                            .fg(border_color)
                             .add_modifier(Modifier::SLOW_BLINK),
                     ),
                 ])
             } else {
                 Line::from(vec![
-                    Span::styled(name.as_str(), Style::default().fg(THEME.account.text_fg)),
+                    Span::styled(name.as_str(), Style::default().fg(text_color)),
                     Span::styled(
                         "\u{2588}",
                         Style::default()
-                            .fg(THEME.account.border_focused_fg)
+                            .fg(border_color)
                             .add_modifier(Modifier::SLOW_BLINK),
                     ),
                 ])
@@ -444,6 +446,7 @@ fn render_offline_popup(frame: &mut Frame, name: &str) {
 
 fn render_confirm_delete(frame: &mut Frame, state: &AccountState, idx: usize) {
     use super::popups::{base::PopupFrame, keybind_line};
+    let theme = THEME.as_ref();
     let username = state
         .store
         .accounts
@@ -451,10 +454,11 @@ fn render_confirm_delete(frame: &mut Frame, state: &AccountState, idx: usize) {
         .map(|a| a.username.as_str())
         .unwrap_or("?");
 
+    let border_color = theme.text_dim();
     let title = Line::from(Span::styled(
         format!(" Delete '{}' ", username),
         Style::default()
-            .fg(THEME.account.border_focused_fg)
+            .fg(border_color)
             .add_modifier(Modifier::BOLD),
     ));
 
@@ -462,15 +466,18 @@ fn render_confirm_delete(frame: &mut Frame, state: &AccountState, idx: usize) {
     let popup_w = (username.len() + 14).max(body.len() + 2).min(48) as u16 + 2;
     let area = popup_area(frame, popup_w, 3);
 
+    let bg_color = theme.surface();
+    let text_color = theme.text();
+
     PopupFrame {
         title,
-        border_color: THEME.account.border_focused_fg,
-        bg: Some(THEME.account.popup_bg),
+        border_color,
+        bg: Some(bg_color),
         keybinds: Some(keybind_line(&[("Enter", " confirm")])),
         search_line: None,
-        content: Box::new(|inner, buf| {
+        content: Box::new(move |inner, buf| {
             Paragraph::new("This will permanently remove this account")
-                .style(Style::default().fg(THEME.account.text_fg))
+                .style(Style::default().fg(text_color))
                 .render(inner, buf);
         }),
     }
@@ -479,57 +486,63 @@ fn render_confirm_delete(frame: &mut Frame, state: &AccountState, idx: usize) {
 
 fn render_device_code_popup(frame: &mut Frame, info: &DeviceCodeInfo) {
     use super::popups::{base::PopupFrame, keybind_line};
+    let theme = THEME.as_ref();
     let area = popup_area(frame, 50, 8);
     let uri = info.verification_uri.clone();
     let code = info.user_code.clone();
+
+    let border_color = theme.text_dim();
+    let bg_color = theme.surface();
+    let dim_color = theme.text_dim();
+    let accent_color = theme.success();
 
     PopupFrame {
         title: Line::from(Span::styled(
             " Microsoft Login ",
             Style::default()
-                .fg(THEME.account.border_focused_fg)
+                .fg(border_color)
                 .add_modifier(Modifier::BOLD),
         ))
         .centered(),
-        border_color: THEME.account.border_focused_fg,
-        bg: Some(THEME.account.popup_bg),
+        border_color,
+        bg: Some(bg_color),
         keybinds: Some(keybind_line(&[("Esc", " cancel")])),
         search_line: None,
         content: Box::new(move |inner, buf| {
             let text = if code.is_empty() {
                 vec![Line::from(Span::styled(
                     "Connecting to Microsoft...",
-                    Style::default().fg(THEME.account.text_secondary_fg),
+                    Style::default().fg(dim_color),
                 ))]
             } else {
                 vec![
                     Line::from(Span::styled(
                         "Open this URL in your browser:",
-                        Style::default().fg(THEME.account.text_secondary_fg),
+                        Style::default().fg(dim_color),
                     )),
                     Line::from(Span::styled(
                         uri.as_str(),
                         Style::default()
-                            .fg(THEME.account.active_fg)
+                            .fg(accent_color)
                             .add_modifier(Modifier::BOLD),
                     )),
                     Line::from(""),
                     Line::from(vec![
                         Span::styled(
                             "Enter code: ",
-                            Style::default().fg(THEME.account.text_secondary_fg),
+                            Style::default().fg(dim_color),
                         ),
                         Span::styled(
                             code.as_str(),
                             Style::default()
-                                .fg(THEME.account.active_fg)
+                                .fg(accent_color)
                                 .add_modifier(Modifier::BOLD),
                         ),
                     ]),
                     Line::from(""),
                     Line::from(Span::styled(
                         "Waiting for authentication...",
-                        Style::default().fg(THEME.account.text_secondary_fg),
+                        Style::default().fg(dim_color),
                     )),
                 ]
             };

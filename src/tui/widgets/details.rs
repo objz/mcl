@@ -7,8 +7,8 @@ use ratatui::{
 };
 
 use crate::instance::models::InstanceConfig;
-use crate::tui::layout::FocusedArea;
-use crate::tui::theme::THEME;
+use crate::tui::app::FocusedArea;
+use crate::config::theme::{THEME, BORDER_STYLE};
 
 use super::styled_title;
 
@@ -19,16 +19,17 @@ pub fn render(
     instance: Option<&InstanceConfig>,
     _instances_dir: &std::path::Path,
 ) {
+    let theme = THEME.as_ref();
     let color = if focused == FocusedArea::Settings {
-        THEME.details.border_focused_fg
+        theme.accent()
     } else {
-        THEME.details.border_unfocused_fg
+        theme.border()
     };
 
     let mut block = Block::default()
         .title(styled_title("Settings", true))
         .borders(Borders::ALL)
-        .border_type(THEME.general.border_type.to_border_type())
+        .border_type(BORDER_STYLE.to_border_type())
         .border_style(Style::default().fg(color));
 
     if focused == FocusedArea::Settings {
@@ -51,17 +52,17 @@ pub fn render(
     let Some(inst) = instance else {
         frame.render_widget(
             Paragraph::new("No instance selected.")
-                .style(Style::default().fg(THEME.details.label_fg)),
+                .style(Style::default().fg(theme.text_dim())),
             inner,
         );
         return;
     };
 
-    let label_style = Style::default().fg(THEME.details.label_fg);
+    let label_style = Style::default().fg(theme.text_dim());
     let value_style = Style::default()
-        .fg(THEME.details.value_fg)
+        .fg(theme.text())
         .add_modifier(Modifier::BOLD);
-    let dim_style = Style::default().fg(THEME.details.border_unfocused_fg);
+    let dim_style = Style::default().fg(theme.text_dim());
 
     let memory_min = inst.memory_min.as_deref().unwrap_or("512M");
     let memory_max = inst.memory_max.as_deref().unwrap_or("2G");

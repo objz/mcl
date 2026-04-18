@@ -6,7 +6,7 @@ use ratatui::{
     widgets::{Block, Clear, Widget},
 };
 
-use crate::tui::theme::THEME;
+use crate::config::theme::BORDER_STYLE;
 
 type ContentFn<'a> = Box<dyn Fn(Rect, &mut Buffer) + 'a>;
 
@@ -29,7 +29,7 @@ impl<'a> Widget for PopupFrame<'a> {
 
         let mut block = Block::bordered()
             .title_top(self.title)
-            .border_type(THEME.general.border_type.to_border_type())
+            .border_type(BORDER_STYLE.to_border_type())
             .border_style(Style::default().fg(self.border_color));
 
         if let Some(sl) = self.search_line {

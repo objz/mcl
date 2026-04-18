@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
-use once_cell::sync::Lazy;
 use std::collections::HashMap;
+use std::sync::LazyLock;
 use std::sync::{Arc, Mutex};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -11,15 +11,16 @@ pub enum RunState {
     Crashed(Option<i32>),
 }
 
-pub static RUNNING: Lazy<Arc<Mutex<HashMap<String, RunState>>>> =
-    Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
+pub static RUNNING: LazyLock<Arc<Mutex<HashMap<String, RunState>>>> =
+    LazyLock::new(|| Arc::new(Mutex::new(HashMap::new())));
 
 type PendingLastPlayed = Arc<Mutex<Vec<(String, DateTime<Utc>)>>>;
-pub static PENDING_LAST_PLAYED: Lazy<PendingLastPlayed> =
-    Lazy::new(|| Arc::new(Mutex::new(Vec::new())));
+pub static PENDING_LAST_PLAYED: LazyLock<PendingLastPlayed> =
+    LazyLock::new(|| Arc::new(Mutex::new(Vec::new())));
 
 type KillSenders = Arc<Mutex<HashMap<String, tokio::sync::oneshot::Sender<()>>>>;
-pub static KILL_SENDERS: Lazy<KillSenders> = Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
+pub static KILL_SENDERS: LazyLock<KillSenders> =
+    LazyLock::new(|| Arc::new(Mutex::new(HashMap::new())));
 
 pub fn set_state(name: &str, state: RunState) {
     if let Ok(mut map) = RUNNING.lock() {
@@ -33,10 +34,12 @@ pub fn remove(name: &str) {
     }
 }
 
+#[must_use]
 pub fn get(name: &str) -> Option<RunState> {
     RUNNING.lock().ok().and_then(|map| map.get(name).cloned())
 }
 
+#[must_use]
 pub fn all() -> Vec<(String, RunState)> {
     RUNNING
         .lock()
@@ -135,7 +138,7 @@ mod tests {
     fn drain_empty_returns_empty() {
         let _ = drain_last_played();
         let drained = drain_last_played();
-        assert!(drained.len() <= drained.len());
+        assert!(drained.is_empty());
     }
 
     #[test]

@@ -1,4 +1,4 @@
-use crate::tui::theme::THEME;
+use crate::config::theme::{THEME, BORDER_STYLE};
 use crossterm::event::KeyCode;
 use ratatui::{
     layout::Rect,
@@ -11,7 +11,7 @@ use tui_widget_list::{ListBuilder, ListState as TuiListState, ListView};
 
 use crate::instance::models::InstanceConfig;
 use crate::running::{get as get_run_state, RunState};
-use crate::tui::layout::FocusedArea;
+use crate::tui::app::FocusedArea;
 
 use super::{search::SearchState, styled_title, WidgetKey};
 
@@ -30,17 +30,6 @@ fn format_last_played(last_played: Option<chrono::DateTime<chrono::Utc>>) -> Str
         86400..=2591999 => format!("{} days ago", secs / 86400),
         2592000..=31535999 => format!("{} months ago", secs / 2592000),
         _ => "Over a year ago".to_string(),
-    }
-}
-
-fn loader_color(loader: crate::instance::models::ModLoader) -> ratatui::style::Color {
-    use crate::instance::models::ModLoader;
-    match loader {
-        ModLoader::Vanilla => THEME.profiles.loader_vanilla,
-        ModLoader::Fabric => THEME.profiles.loader_fabric,
-        ModLoader::Forge => THEME.profiles.loader_forge,
-        ModLoader::NeoForge => THEME.profiles.loader_neoforge,
-        ModLoader::Quilt => THEME.profiles.loader_quilt,
     }
 }
 
@@ -202,16 +191,17 @@ impl WidgetKey for State {
 }
 
 pub fn render(frame: &mut Frame, area: Rect, focused: FocusedArea, state: &mut State) {
-    let color = if focused == FocusedArea::Profiles {
-        THEME.profiles.border_focused_fg
+    let theme = THEME.as_ref();
+    let color = if focused == FocusedArea::Instances {
+        theme.accent()
     } else {
-        THEME.profiles.border_unfocused_fg
+        theme.border()
     };
 
     let mut block = Block::default()
-        .title(styled_title("Profiles", true))
+        .title(styled_title("Instances", true))
         .borders(Borders::ALL)
-        .border_type(THEME.general.border_type.to_border_type())
+        .border_type(BORDER_STYLE.to_border_type())
         .border_style(Style::default().fg(color));
 
     if let Some(search_line) = state.search.title_line() {
@@ -229,56 +219,54 @@ pub fn render(frame: &mut Frame, area: Rect, focused: FocusedArea, state: &mut S
     let count = filtered.len();
 
     let builder = ListBuilder::new(|context| {
+        let theme = THEME.as_ref();
         let idx = filtered[context.index];
         let instance = &state.instances[idx];
 
         let stripe_bg = if context.index % 2 == 0 {
-            THEME.general.bg
+            theme.background()
         } else {
-            THEME.profiles.row_alt_bg
+            theme.stripe()
         };
 
         let (name_style, meta_style, bg) = if context.is_selected {
-            let mut style = Style::default().fg(THEME.profiles.selected_fg);
-            if THEME.profiles.selected_bold {
-                style = style.add_modifier(Modifier::BOLD);
-            }
             (
-                style,
-                Style::default().fg(THEME.profiles.selected_fg),
-                THEME.profiles.selected_bg,
+                Style::default().fg(theme.accent()).add_modifier(Modifier::BOLD),
+                Style::default().fg(theme.text_dim()),
+                stripe_bg,
             )
         } else {
             (
                 Style::default()
-                    .fg(THEME.profiles.border_focused_fg)
+                    .fg(theme.text())
                     .add_modifier(Modifier::BOLD),
-                Style::default().fg(THEME.profiles.border_unfocused_fg),
+                Style::default().fg(theme.text_dim()),
                 stripe_bg,
             )
         };
 
-        let stripe = Span::styled(
-            "\u{258c} ",
-            Style::default().fg(loader_color(instance.loader)),
-        );
+        let selector = if context.is_selected {
+            Span::styled("\u{258c} ", Style::default().fg(theme.accent()))
+        } else {
+            Span::raw("  ")
+        };
 
         let is_renaming = context.is_selected && state.renaming.is_some();
         let name_line = if is_renaming {
             let rename_val = state.renaming.as_deref().unwrap_or("");
             Line::from(vec![
-                stripe.clone(),
-                Span::styled(rename_val, Style::default().fg(THEME.profiles.text_fg)),
+                selector.clone(),
+                Span::styled(rename_val, Style::default().fg(theme.text())),
                 Span::styled(
                     "\u{2588}",
                     Style::default()
-                        .fg(THEME.profiles.border_focused_fg)
+                        .fg(theme.text_dim())
                         .add_modifier(Modifier::SLOW_BLINK),
                 ),
             ])
         } else {
             Line::from(vec![
-                stripe.clone(),
+                selector.clone(),
                 Span::styled(instance.name.as_str(), name_style),
             ])
         };
@@ -286,16 +274,16 @@ pub fn render(frame: &mut Frame, area: Rect, focused: FocusedArea, state: &mut S
         let (meta_text, meta_text_style) = match get_run_state(&instance.name) {
             Some(RunState::Authenticating) => (
                 "Authenticating".to_string(),
-                Style::default().fg(THEME.profiles.running_fg),
+                Style::default().fg(theme.success()),
             ),
             Some(RunState::Running) | Some(RunState::Starting) => (
                 "Playing".to_string(),
-                Style::default().fg(THEME.profiles.running_fg),
+                Style::default().fg(theme.success()),
             ),
             _ => (format_last_played(instance.last_played), meta_style),
         };
 
-        let meta_line = Line::from(vec![stripe, Span::styled(meta_text, meta_text_style)]);
+        let meta_line = Line::from(vec![selector.clone(), Span::styled(meta_text, meta_text_style)]);
 
         let item = Text::from(vec![name_line, meta_line]).style(Style::default().bg(bg));
         (item, 2)
@@ -311,7 +299,7 @@ pub fn render(frame: &mut Frame, area: Rect, focused: FocusedArea, state: &mut S
             .begin_symbol(Some("\u{25b2}"))
             .style(
                 Style::default()
-                    .fg(THEME.profiles.border_focused_fg)
+                    .fg(theme.text_dim())
                     .add_modifier(Modifier::BOLD),
             )
             .thumb_symbol("\u{2551}")

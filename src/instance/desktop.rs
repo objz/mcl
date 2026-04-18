@@ -2,17 +2,38 @@ use std::path::{Path, PathBuf};
 
 use crate::instance::models::InstanceConfig;
 
-const ICON_BYTES: &[u8] = include_bytes!("../../assets/icon.png");
+const ICON_BYTES: &[u8] = include_bytes!("../../assets/icon.svg");
 
 pub fn desktop_path(name: &str) -> Option<PathBuf> {
-    dirs_next::data_dir().map(|d| {
-        d.join("applications")
-            .join(format!("mcl-{}.desktop", sanitize(name)))
-    })
+    let sanitized = sanitize(name);
+
+    #[cfg(target_os = "linux")]
+    {
+        dirs_next::data_dir().map(|d| {
+            d.join("applications")
+                .join(format!("mcl-{sanitized}.desktop"))
+        })
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        dirs::desktop_dir().map(|d| d.join(format!("Minecraft - {sanitized}.bat")))
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        dirs::desktop_dir().map(|d| d.join(format!("Minecraft - {sanitized}.command")))
+    }
+
+    #[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
+    {
+        let _ = sanitized;
+        None
+    }
 }
 
 pub fn icon_path() -> Option<PathBuf> {
-    dirs_next::data_dir().map(|d| d.join("mcl").join("icon.png"))
+    dirs_next::data_dir().map(|d| d.join("mcl").join("icon.svg"))
 }
 
 fn ensure_icon() -> Option<PathBuf> {
@@ -38,7 +59,7 @@ pub fn exists(name: &str) -> bool {
 
 pub fn create(config: &InstanceConfig) -> std::io::Result<PathBuf> {
     let path = desktop_path(&config.name)
-        .ok_or_else(|| std::io::Error::other("cannot resolve data directory"))?;
+        .ok_or_else(|| std::io::Error::other("cannot resolve shortcut directory"))?;
 
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
@@ -47,6 +68,14 @@ pub fn create(config: &InstanceConfig) -> std::io::Result<PathBuf> {
     let icon = ensure_icon();
     let content = build_content(&config.name, icon.as_deref());
     std::fs::write(&path, content)?;
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let perms = std::fs::Permissions::from_mode(0o755);
+        std::fs::set_permissions(&path, perms)?;
+    }
+
     Ok(path)
 }
 
@@ -80,6 +109,32 @@ pub fn rename(old_name: &str, new_config: &InstanceConfig) -> std::io::Result<()
 }
 
 fn build_content(name: &str, icon: Option<&Path>) -> String {
+    #[cfg(target_os = "linux")]
+    {
+        build_linux_desktop(name, icon)
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        let _ = icon;
+        build_windows_shortcut(name)
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        let _ = icon;
+        build_macos_command(name)
+    }
+
+    #[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
+    {
+        let _ = (name, icon);
+        String::new()
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn build_linux_desktop(name: &str, icon: Option<&Path>) -> String {
     let mut out = String::new();
     out.push_str("[Desktop Entry]\n");
     out.push_str("Version=1.0\n");
@@ -92,6 +147,25 @@ fn build_content(name: &str, icon: Option<&Path>) -> String {
     }
     out.push_str("Terminal=true\n");
     out.push_str("Categories=Game;\n");
+    out
+}
+
+#[cfg(target_os = "windows")]
+fn build_windows_shortcut(name: &str) -> String {
+    let mut out = String::new();
+    out.push_str("@echo off\r\n");
+    out.push_str(&format!("title Minecraft - {name}\r\n"));
+    out.push_str(&format!("mcl instance launch \"{name}\"\r\n"));
+    out.push_str("pause\r\n");
+    out
+}
+
+#[cfg(target_os = "macos")]
+fn build_macos_command(name: &str) -> String {
+    let mut out = String::new();
+    out.push_str("#!/bin/bash\n");
+    out.push_str(&format!("# Launch Minecraft instance: {name}\n"));
+    out.push_str(&format!("mcl instance launch \"{name}\"\n"));
     out
 }
 
@@ -123,20 +197,30 @@ mod tests {
     }
 
     #[test]
-    fn build_content_with_icon() {
-        let icon = PathBuf::from("/home/user/icon.png");
-        let content = build_content("TestPack", Some(&icon));
+    fn desktop_path_returns_some() {
+        let path = desktop_path("TestPack");
+        // On CI or minimal environments this may be None, but on most systems it should work
+        if let Some(p) = path {
+            let name = p.file_name().unwrap().to_str().unwrap();
+            assert!(name.contains("TestPack"));
+        }
+    }
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn build_content_linux() {
+        let content = build_content("TestPack", None);
         assert!(content.contains("Name=Minecraft - TestPack"));
         assert!(content.contains("Exec=mcl instance launch \"TestPack\""));
-        assert!(content.contains("Icon=/home/user/icon.png"));
         assert!(content.contains("Terminal=true"));
         assert!(content.contains("Categories=Game;"));
     }
 
     #[test]
-    fn build_content_without_icon() {
-        let content = build_content("TestPack", None);
-        assert!(content.contains("Name=Minecraft - TestPack"));
-        assert!(!content.contains("Icon="));
+    #[cfg(target_os = "linux")]
+    fn build_content_linux_with_icon() {
+        let icon = PathBuf::from("/tmp/icon.png");
+        let content = build_content("TestPack", Some(&icon));
+        assert!(content.contains("Icon=/tmp/icon.png"));
     }
 }

@@ -1,0 +1,1759 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Generator: Adobe Illustrator 26.2.1, SVG Export Plug-In . SVG Version: 6.00 Build 0)  -->
+<svg version="1.1" id="Layer_1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" x="0px" y="0px"
+	 viewBox="0 0 133.2 144.10001" style="enable-background:new 0 0 133.2 144.10001;" xml:space="preserve">
+<style type="text/css">
+	.st0{fill:#89703F;}
+	.st1{fill:#190D00;}
+	.st2{fill:#9F633E;}
+	.st3{fill:#491D0B;}
+	.st4{fill:#451B09;}
+	.st5{fill:#A58252;}
+	.st6{fill:#A68253;}
+	.st7{fill:#A58253;}
+	.st8{fill:#9F7C4B;}
+	.st9{fill:#614C2C;}
+	.st10{fill:#9F7B4B;}
+	.st11{fill:#0F0800;}
+	.st12{fill:#451A09;}
+	.st13{fill:#694726;}
+	.st14{fill:#150B00;}
+	.st15{fill:#604C2C;}
+	.st16{fill:#574326;}
+	.st17{fill:#392C15;}
+	.st18{fill:#392C14;}
+	.st19{fill:#332610;}
+	.st20{fill:#120500;}
+	.st21{fill:#604B2C;}
+	.st22{fill:#5C482A;}
+	.st23{fill:#9F7B4A;}
+	.st24{fill:#85572F;}
+	.st25{fill:#524324;}
+	.st26{fill:#120600;}
+	.st27{fill:#A58152;}
+	.st28{fill:#8A713F;}
+	.st29{fill:#BEBBBA;}
+	.st30{fill:#9E9C9B;}
+	.st31{fill:#624D2E;}
+	.st32{fill:#DCD8D7;}
+	.st33{fill:#9C9A99;}
+	.st34{fill:#362A14;}
+	.st35{fill:#9E9C9C;}
+	.st36{fill:#5E4A2C;}
+	.st37{fill:#BDBABA;}
+	.st38{fill:#624D2F;}
+	.st39{fill:#BEBBBB;}
+	.st40{fill:#856C3D;}
+	.st41{fill:#9D9C9B;}
+	.st42{fill:#534325;}
+	.st43{fill:#5D492A;}
+	.st44{fill:#5D482A;}
+	.st45{fill:#020000;}
+	.st46{fill:#876F3F;}
+	.st47{fill:#5C492A;}
+	.st48{fill:#564326;}
+	.st49{fill:#2F240D;}
+	.st50{fill:#30240D;}
+	.st51{fill:#574426;}
+	.st52{fill:#120900;}
+	.st53{fill:#8F6133;}
+	.st54{fill:#876F3E;}
+	.st55{fill:#85562E;}
+	.st56{fill:#DDDAD8;}
+	.st57{fill:#624E2F;}
+	.st58{fill:#9E7B4B;}
+	.st59{fill:#524224;}
+	.st60{fill:#A68352;}
+	.st61{fill:#685130;}
+	.st62{fill:#685230;}
+	.st63{fill:#3B2D18;}
+	.st64{fill:#604B26;}
+	.st65{fill:#753E23;}
+	.st66{fill:#270100;}
+	.st67{fill:#240100;}
+	.st68{fill:#723D25;}
+	.st69{fill:#775932;}
+	.st70{fill:#72542C;}
+	.st71{fill:#3C2E18;}
+	.st72{fill:#72542D;}
+	.st73{fill:#5F4B26;}
+	.st74{fill:#442715;}
+	.st75{fill:#5F4A26;}
+	.st76{fill:#352510;}
+	.st77{fill:#170800;}
+	.st78{fill:#3B2D17;}
+	.st79{fill:#0E0000;}
+	.st80{fill:#452815;}
+	.st81{fill:#452615;}
+	.st82{fill:#614B26;}
+	.st83{fill:#72532C;}
+	.st84{fill:#5B341D;}
+	.st85{fill:#775A32;}
+	.st86{fill:#3D2D18;}
+	.st87{fill:#8A8483;}
+	.st88{fill:#342510;}
+	.st89{fill:#3B2E17;}
+	.st90{fill:#785932;}
+	.st91{fill:#8A8583;}
+	.st92{fill:#3E2D18;}
+	.st93{fill:#8A8684;}
+	.st94{fill:#2F240F;}
+	.st95{fill:#716F6C;}
+	.st96{fill:#2F230F;}
+	.st97{fill:#716E6C;}
+	.st98{fill:#392915;}
+	.st99{fill:#3C2D18;}
+	.st100{fill:#604B25;}
+	.st101{fill:#71542C;}
+	.st102{fill:#614C27;}
+	.st103{fill:#633C21;}
+	.st104{fill:#7A5B33;}
+	.st105{fill:#452715;}
+	.st106{fill:#3A2D18;}
+	.st107{fill:#44301A;}
+	.st108{fill:#433018;}
+	.st109{fill:#3B2E18;}
+	.st110{fill:#190A00;}
+	.st111{fill:#413C36;}
+	.st112{fill:#393634;}
+	.st113{fill:#453D36;}
+	.st114{fill:#403B35;}
+	.st115{fill:#423B35;}
+	.st116{fill:#483F37;}
+	.st117{fill:#423C36;}
+	.st118{fill:#47423A;}
+	.st119{fill:#403B36;}
+	.st120{fill:#433D36;}
+	.st121{fill:#EDC78B;}
+	.st122{fill:#53493B;}
+	.st123{fill:#EEA975;}
+	.st124{fill:#EDA875;}
+	.st125{fill:#554A3C;}
+	.st126{fill:#EEC78B;}
+	.st127{fill:#423A35;}
+	.st128{fill:#E3A36F;}
+	.st129{fill:#E7A571;}
+	.st130{fill:#DD9E69;}
+	.st131{fill:#E5A471;}
+	.st132{fill:#E2A16E;}
+	.st133{fill:#EAAA75;}
+	.st134{fill:#E7A671;}
+	.st135{fill:#E8A571;}
+	.st136{fill:#413E36;}
+	.st137{fill:#E8A773;}
+	.st138{fill:#87644C;}
+	.st139{fill:#79543F;}
+	.st140{fill:#84624A;}
+	.st141{fill:#7A553F;}
+	.st142{fill:#85634A;}
+	.st143{fill:#816049;}
+	.st144{fill:#826049;}
+	.st145{fill:#3A3835;}
+	.st146{fill:#393734;}
+	.st147{fill:#EDA775;}
+	.st148{fill:#E5A26F;}
+	.st149{fill:#83624A;}
+	.st150{fill:#DE8D5F;}
+	.st151{fill:#E69362;}
+	.st152{fill:#EEA976;}
+	.st153{fill:#DF8E60;}
+	.st154{fill:#EDAA79;}
+	.st155{fill:#413C35;}
+	.st156{fill:#EDA876;}
+	.st157{fill:#E5A571;}
+	.st158{fill:#6E4E3C;}
+	.st159{fill:#D1885B;}
+	.st160{fill:#795A42;}
+	.st161{fill:#CB8257;}
+	.st162{fill:#DE8E60;}
+	.st163{fill:#3F3A34;}
+	.st164{fill:#84634A;}
+	.st165{fill:#7A5A42;}
+	.st166{fill:#84614A;}
+	.st167{fill:#7B5640;}
+	.st168{fill:#76513D;}
+	.st169{fill:#E6A571;}
+	.st170{fill:#3B3633;}
+	.st171{fill:#8B6751;}
+	.st172{fill:#ECA876;}
+	.st173{fill:#EBA472;}
+	.st174{fill:#403B34;}
+	.st175{fill:#D78F61;}
+	.st176{fill:#86644B;}
+	.st177{fill:#EDA976;}
+	.st178{fill:#E1A16D;}
+	.st179{fill:#C97F56;}
+	.st180{fill:#79553F;}
+	.st181{fill:#815F47;}
+	.st182{fill:#755842;}
+	.st183{fill:#E9A874;}
+	.st184{fill:#484037;}
+	.st185{fill:#76523D;}
+	.st186{fill:#6B4B3B;}
+	.st187{fill:#E4A370;}
+	.st188{fill:#F0AC78;}
+	.st189{fill:#85624A;}
+	.st190{fill:#E08E5F;}
+	.st191{fill:#85634C;}
+	.st192{fill:#E08F61;}
+	.st193{fill:#413B36;}
+	.st194{fill:#51473A;}
+	.st195{fill:#52483A;}
+	.st196{fill:#383634;}
+	.st197{fill:#ECC78A;}
+	.st198{fill:#E2A06C;}
+	.st199{fill:#E8A572;}
+	.st200{fill:#E7A674;}
+	.st201{fill:#EECA8B;}
+	.st202{fill:#3C3936;}
+	.st203{fill:#3B3835;}
+	.st204{fill:#EDA773;}
+	.st205{fill:#EBA471;}
+	.st206{fill:#443F36;}
+	.st207{fill:#383533;}
+	.st208{fill:#7E4D3C;}
+	.st209{fill:#754739;}
+	.st210{fill:#7E4E3C;}
+	.st211{fill:#7F4D3C;}
+	.st212{fill:#7C4B3B;}
+	.st213{fill:#3E3A35;}
+</style>
+<path d="M0,30.40384v5.01105v5.01538v5.01971v5.02399v5.02838v5.03271v5.03711v5.04138v5.04584v5.05011v5.05457v5.0589v5.06329
+	v5.06775v5.07208v5.07648l4.15344,1.93408l4.15594,1.9353l4.15857,1.93646l4.16113,1.93774l4.1637,1.93884l4.16632,1.94012
+	l4.16882,1.94128l4.17145,1.9425l4.17407,1.94366l4.17664,1.94489l4.1792,1.94611l4.18182,1.94733l4.18439,1.94855l4.18701,1.94971
+	l4.18958,1.95099l4.1922,1.95215 M66.76428,142.19229l4.17615-1.9397l4.17291-1.93817l4.16968-1.93677l4.1665-1.93518
+	l4.16333-1.93378l4.16016-1.93225l4.15698-1.93079l4.15375-1.92932l4.15063-1.92786l4.1474-1.92639l4.14429-1.92487l4.14111-1.92346
+	l4.13794-1.92194l4.13477-1.92053l4.13165-1.91901l4.12848-1.91754v-5.03204v-5.03625v-5.04059v-5.0448v-5.04913v-5.05334v-5.05774
+	v-5.06195v-5.06628v-5.07062V55.7471v-5.07922v-5.08356v-5.08783v-5.09222v-5.09656l-4.22504-1.89874l-4.21899-1.89612
+	l-4.21307-1.89337l-4.20715-1.89075l-4.20123-1.88812l-4.19531-1.88538l-4.18939-1.88281l-4.18353-1.88013l-4.17767-1.87744
+	l-4.17181-1.87488l-4.16595-1.87225l-4.1601-1.86957l-4.1543-1.867l-4.14844-1.86438l-4.1427-1.86176l-4.1369-1.85913
+	L62.1734,2.12656l-4.13629,1.88123L53.8996,5.88956l-4.13873,1.88232l-4.13995,1.88293l-4.14117,1.88348l-4.1424,1.88403
+	l-4.14368,1.88458l-4.1449,1.88513l-4.14612,1.88574L20.75531,20.964l-4.14862,1.88684l-4.14978,1.88739l-4.15106,1.888
+	l-4.15228,1.88849L0,30.40384"/>
+<g>
+	<polygon id="_x31_-1" shape-rendering="crispEdges" points="0,30.40384 4.14323,32.2951 4.14323,37.34115 0,35.44751 	"/>
+	<polygon id="_x32_-1" shape-rendering="crispEdges" class="st0" points="4.14323,32.2951 8.29037,34.18815 8.29037,39.23658 
+		4.14323,37.34115 	"/>
+	<polygon id="_x33_-1" shape-rendering="crispEdges" class="st0" points="8.29037,34.18815 12.44143,36.08298 12.44143,41.1338 
+		8.29037,39.23658 	"/>
+	<polygon id="_x34_-1" shape-rendering="crispEdges" class="st0" points="12.44143,36.08298 16.59641,37.97961 16.59641,43.03282 
+		12.44143,41.1338 	"/>
+	<polygon id="_x35_-1" shape-rendering="crispEdges" class="st0" points="16.59641,37.97961 20.75532,39.87804 20.75532,44.93363 
+		16.59641,43.03282 	"/>
+	<polygon id="_x36_-1" shape-rendering="crispEdges" class="st1" points="20.75532,39.87804 24.91817,41.77825 24.91817,46.83624 
+		20.75532,44.93363 	"/>
+	<polygon id="_x37_-1" shape-rendering="crispEdges" class="st2" points="24.91817,41.77825 29.08495,43.68027 29.08495,48.74065 
+		24.91817,46.83624 	"/>
+	<polygon id="_x38_-1" shape-rendering="crispEdges" class="st3" points="29.08495,43.68027 33.25568,45.58409 33.25568,50.64687 
+		29.08495,48.74065 	"/>
+	<polygon id="_x39_-1" shape-rendering="crispEdges" class="st4" points="33.25568,45.58409 37.43037,47.48971 37.43037,52.55489 
+		33.25568,50.64687 	"/>
+	<polygon id="_x31_0-1" shape-rendering="crispEdges" class="st2" points="37.43037,47.48971 41.60901,49.39714 41.60901,54.46471 
+		37.43037,52.55489 	"/>
+	<polygon id="_x31_1-1" shape-rendering="crispEdges" class="st1" points="41.60901,49.39714 45.79161,51.30637 45.79161,56.37635 
+		41.60901,54.46471 	"/>
+	<polygon id="_x31_2-1" shape-rendering="crispEdges" class="st5" points="45.79161,51.30637 49.97819,53.21742 49.97819,58.28981 
+		45.79161,56.37635 	"/>
+	<polygon id="_x31_3-1" shape-rendering="crispEdges" class="st5" points="49.97819,53.21742 54.16874,55.13028 54.16874,60.20508 
+		49.97819,58.28981 	"/>
+	<polygon id="_x31_4-1" shape-rendering="crispEdges" class="st5" points="54.16874,55.13028 58.36327,57.04496 58.36327,62.12217 
+		54.16874,60.20508 	"/>
+	<polygon id="_x31_5-1" shape-rendering="crispEdges" class="st6" points="58.36327,57.04496 62.56178,58.96146 62.56178,64.04108 
+		58.36327,62.12217 	"/>
+	<polygon id="_x31_6-1" shape-rendering="crispEdges" points="62.56178,58.96146 66.76428,60.87978 66.76428,65.96181 
+		62.56178,64.04108 	"/>
+	<polygon id="_x31_-2" shape-rendering="crispEdges" points="0,35.44751 4.14323,37.34115 4.14323,42.3872 0,40.49118 	"/>
+	<polygon id="_x32_-2" shape-rendering="crispEdges" class="st7" points="4.14323,37.34115 8.29037,39.23658 8.29037,44.28502 
+		4.14323,42.3872 	"/>
+	<polygon id="_x33_-2" shape-rendering="crispEdges" class="st8" points="8.29037,39.23658 12.44143,41.1338 12.44143,46.18462 
+		8.29037,44.28502 	"/>
+	<polygon id="_x34_-2" shape-rendering="crispEdges" class="st9" points="12.44143,41.1338 16.59641,43.03282 16.59641,48.08603 
+		12.44143,46.18462 	"/>
+	<polygon id="_x35_-2" shape-rendering="crispEdges" class="st10" points="16.59641,43.03282 20.75532,44.93363 20.75532,49.98923 
+		16.59641,48.08603 	"/>
+	<polygon id="_x36_-2" shape-rendering="crispEdges" class="st8" points="20.75532,44.93363 24.91817,46.83624 24.91817,51.89423 
+		20.75532,49.98923 	"/>
+	<polygon id="_x37_-2" shape-rendering="crispEdges" class="st11" points="24.91817,46.83624 29.08495,48.74065 29.08495,53.80103 
+		24.91817,51.89423 	"/>
+	<polygon id="_x38_-2" shape-rendering="crispEdges" class="st12" points="29.08495,48.74065 33.25568,50.64687 33.25568,55.70964 
+		29.08495,53.80103 	"/>
+	<polygon id="_x39_-2" shape-rendering="crispEdges" class="st4" points="33.25568,50.64687 37.43037,52.55489 37.43037,57.62006 
+		33.25568,55.70964 	"/>
+	<polygon id="_x31_0-2" shape-rendering="crispEdges" class="st11" points="37.43037,52.55489 41.60901,54.46471 41.60901,59.53229 
+		37.43037,57.62006 	"/>
+	<polygon id="_x31_1-2" shape-rendering="crispEdges" class="st0" points="41.60901,54.46471 45.79161,56.37635 45.79161,61.44633 
+		41.60901,59.53229 	"/>
+	<polygon id="_x31_2-2" shape-rendering="crispEdges" class="st8" points="45.79161,56.37635 49.97819,58.28981 49.97819,63.36219 
+		45.79161,61.44633 	"/>
+	<polygon id="_x31_3-2" shape-rendering="crispEdges" class="st0" points="49.97819,58.28981 54.16874,60.20508 54.16874,65.27987 
+		49.97819,63.36219 	"/>
+	<polygon id="_x31_4-2" shape-rendering="crispEdges" class="st10" points="54.16874,60.20508 58.36327,62.12217 58.36327,67.19937 
+		54.16874,65.27987 	"/>
+	<polygon id="_x31_5-2" shape-rendering="crispEdges" class="st7" points="58.36327,62.12217 62.56178,64.04108 62.56178,69.12069 
+		58.36327,67.19937 	"/>
+	<polygon id="_x31_6-2" shape-rendering="crispEdges" points="62.56178,64.04108 66.76428,65.96181 66.76428,71.04384 
+		62.56178,69.12069 	"/>
+	<polygon id="_x31_-3" shape-rendering="crispEdges" points="0,40.49118 4.14323,42.3872 4.14323,47.43326 0,45.53485 	"/>
+	<polygon id="_x32_-3" shape-rendering="crispEdges" class="st5" points="4.14323,42.3872 8.29037,44.28502 8.29037,49.33345 
+		4.14323,47.43326 	"/>
+	<polygon id="_x33_-3" shape-rendering="crispEdges" class="st0" points="8.29037,44.28502 12.44143,46.18462 12.44143,51.23544 
+		8.29037,49.33345 	"/>
+	<polygon id="_x34_-3" shape-rendering="crispEdges" class="st0" points="12.44143,46.18462 16.59641,48.08603 16.59641,53.13923 
+		12.44143,51.23544 	"/>
+	<polygon id="_x35_-3" shape-rendering="crispEdges" class="st13" points="16.59641,48.08603 20.75532,49.98923 20.75532,55.04482 
+		16.59641,53.13923 	"/>
+	<polygon id="_x36_-3" shape-rendering="crispEdges" class="st0" points="20.75532,49.98923 24.91817,51.89423 24.91817,56.95221 
+		20.75532,55.04482 	"/>
+	<polygon id="_x37_-3" shape-rendering="crispEdges" class="st10" points="24.91817,51.89423 29.08495,53.80103 29.08495,58.86141 
+		24.91817,56.95221 	"/>
+	<polygon id="_x38_-3" shape-rendering="crispEdges" class="st14" points="29.08495,53.80103 33.25568,55.70964 33.25568,60.77242 
+		29.08495,58.86141 	"/>
+	<polygon id="_x39_-3" shape-rendering="crispEdges" class="st1" points="33.25568,55.70964 37.43037,57.62006 37.43037,62.68524 
+		33.25568,60.77242 	"/>
+	<polygon id="_x31_0-3" shape-rendering="crispEdges" class="st5" points="37.43037,57.62006 41.60901,59.53229 41.60901,64.59987 
+		37.43037,62.68524 	"/>
+	<polygon id="_x31_1-3" shape-rendering="crispEdges" class="st6" points="41.60901,59.53229 45.79161,61.44633 45.79161,66.51631 
+		41.60901,64.59987 	"/>
+	<polygon id="_x31_2-3" shape-rendering="crispEdges" class="st10" points="45.79161,61.44633 49.97819,63.36219 49.97819,68.43458 
+		45.79161,66.51631 	"/>
+	<polygon id="_x31_3-3" shape-rendering="crispEdges" class="st15" points="49.97819,63.36219 54.16874,65.27987 54.16874,70.35466 
+		49.97819,68.43458 	"/>
+	<polygon id="_x31_4-3" shape-rendering="crispEdges" class="st5" points="54.16874,65.27987 58.36327,67.19937 58.36327,72.27657 
+		54.16874,70.35466 	"/>
+	<polygon id="_x31_5-3" shape-rendering="crispEdges" class="st7" points="58.36327,67.19937 62.56178,69.12069 62.56178,74.20031 
+		58.36327,72.27657 	"/>
+	<polygon id="_x31_6-3" shape-rendering="crispEdges" points="62.56178,69.12069 66.76428,71.04384 66.76428,76.12587 
+		62.56178,74.20031 	"/>
+	<polygon id="_x31_-4" shape-rendering="crispEdges" points="0,45.53485 4.14323,47.43326 4.14323,52.47931 0,50.57853 	"/>
+	<polygon id="_x32_-4" shape-rendering="crispEdges" class="st16" points="4.14323,47.43326 8.29037,49.33345 8.29037,54.38189 
+		4.14323,52.47931 	"/>
+	<polygon id="_x33_-4" shape-rendering="crispEdges" class="st16" points="8.29037,49.33345 12.44143,51.23544 12.44143,56.28626 
+		8.29037,54.38189 	"/>
+	<polygon id="_x34_-4" shape-rendering="crispEdges" class="st17" points="12.44143,51.23544 16.59641,53.13923 16.59641,58.19244 
+		12.44143,56.28626 	"/>
+	<polygon id="_x35_-4" shape-rendering="crispEdges" class="st18" points="16.59641,53.13923 20.75532,55.04482 20.75532,60.10042 
+		16.59641,58.19244 	"/>
+	<polygon id="_x36_-4" shape-rendering="crispEdges" class="st15" points="20.75532,55.04482 24.91817,56.95221 24.91817,62.0102 
+		20.75532,60.10042 	"/>
+	<polygon id="_x37_-4" shape-rendering="crispEdges" class="st15" points="24.91817,56.95221 29.08495,58.86141 29.08495,63.92179 
+		24.91817,62.0102 	"/>
+	<polygon id="_x38_-4" shape-rendering="crispEdges" points="29.08495,58.86141 33.25568,60.77242 33.25568,65.8352 
+		29.08495,63.92179 	"/>
+	<polygon id="_x39_-4" shape-rendering="crispEdges" points="33.25568,60.77242 37.43037,62.68524 37.43037,67.75041 
+		33.25568,65.8352 	"/>
+	<polygon id="_x31_0-4" shape-rendering="crispEdges" class="st9" points="37.43037,62.68524 41.60901,64.59987 41.60901,69.66744 
+		37.43037,67.75041 	"/>
+	<polygon id="_x31_1-4" shape-rendering="crispEdges" class="st19" points="41.60901,64.59987 45.79161,66.51631 45.79161,71.58629 
+		41.60901,69.66744 	"/>
+	<polygon id="_x31_2-4" shape-rendering="crispEdges" class="st20" points="45.79161,66.51631 49.97819,68.43458 49.97819,73.50697 
+		45.79161,71.58629 	"/>
+	<polygon id="_x31_3-4" shape-rendering="crispEdges" class="st20" points="49.97819,68.43458 54.16874,70.35466 54.16874,75.42946 
+		49.97819,73.50697 	"/>
+	<polygon id="_x31_4-4" shape-rendering="crispEdges" class="st20" points="54.16874,70.35466 58.36327,72.27657 58.36327,77.35378 
+		54.16874,75.42946 	"/>
+	<polygon id="_x31_5-4" shape-rendering="crispEdges" class="st21" points="58.36327,72.27657 62.56178,74.20031 62.56178,79.27992 
+		58.36327,77.35378 	"/>
+	<polygon id="_x31_6-4" shape-rendering="crispEdges" points="62.56178,74.20031 66.76428,76.12587 66.76428,81.2079 
+		62.56178,79.27992 	"/>
+	<polygon id="_x31_-5" shape-rendering="crispEdges" points="0,50.57853 4.14323,52.47931 4.14323,57.52536 0,55.6222 	"/>
+	<polygon id="_x32_-5" shape-rendering="crispEdges" class="st0" points="4.14323,52.47931 8.29037,54.38189 8.29037,59.43032 
+		4.14323,57.52536 	"/>
+	<polygon id="_x33_-5" shape-rendering="crispEdges" class="st0" points="8.29037,54.38189 12.44143,56.28626 12.44143,61.33708 
+		8.29037,59.43032 	"/>
+	<polygon id="_x34_-5" shape-rendering="crispEdges" class="st13" points="12.44143,56.28626 16.59641,58.19244 16.59641,63.24564 
+		12.44143,61.33708 	"/>
+	<polygon id="_x35_-5" shape-rendering="crispEdges" class="st0" points="16.59641,58.19244 20.75532,60.10042 20.75532,65.15601 
+		16.59641,63.24564 	"/>
+	<polygon id="_x36_-5" shape-rendering="crispEdges" class="st5" points="20.75532,60.10042 24.91817,62.0102 24.91817,67.06819 
+		20.75532,65.15601 	"/>
+	<polygon id="_x37_-5" shape-rendering="crispEdges" class="st5" points="24.91817,62.0102 29.08495,63.92179 29.08495,68.98218 
+		24.91817,67.06819 	"/>
+	<polygon id="_x38_-5" shape-rendering="crispEdges" class="st11" points="29.08495,63.92179 33.25568,65.8352 33.25568,70.89797 
+		29.08495,68.98218 	"/>
+	<polygon id="_x39_-5" shape-rendering="crispEdges" class="st1" points="33.25568,65.8352 37.43037,67.75041 37.43037,72.81559 
+		33.25568,70.89797 	"/>
+	<polygon id="_x31_0-5" shape-rendering="crispEdges" class="st0" points="37.43037,67.75041 41.60901,69.66744 41.60901,74.73502 
+		37.43037,72.81559 	"/>
+	<polygon id="_x31_1-5" shape-rendering="crispEdges" class="st13" points="41.60901,69.66744 45.79161,71.58629 45.79161,76.65627 
+		41.60901,74.73502 	"/>
+	<polygon id="_x31_2-5" shape-rendering="crispEdges" class="st20" points="45.79161,71.58629 49.97819,73.50697 49.97819,78.57935 
+		45.79161,76.65627 	"/>
+	<polygon id="_x31_3-5" shape-rendering="crispEdges" class="st22" points="49.97819,73.50697 54.16874,75.42946 54.16874,80.50425 
+		49.97819,78.57935 	"/>
+	<polygon id="_x31_4-5" shape-rendering="crispEdges" class="st20" points="54.16874,75.42946 58.36327,77.35378 58.36327,82.43098 
+		54.16874,80.50425 	"/>
+	<polygon id="_x31_5-5" shape-rendering="crispEdges" class="st22" points="58.36327,77.35378 62.56178,79.27992 62.56178,84.35954 
+		58.36327,82.43098 	"/>
+	<polygon id="_x31_6-5" shape-rendering="crispEdges" points="62.56178,79.27992 66.76428,81.2079 66.76428,86.28993 
+		62.56178,84.35954 	"/>
+	<polygon id="_x31_-6" shape-rendering="crispEdges" points="0,55.6222 4.14323,57.52536 4.14323,62.57141 0,60.66587 	"/>
+	<polygon id="_x32_-6" shape-rendering="crispEdges" class="st0" points="4.14323,57.52536 8.29037,59.43032 8.29037,64.47875 
+		4.14323,62.57141 	"/>
+	<polygon id="_x33_-6" shape-rendering="crispEdges" class="st15" points="8.29037,59.43032 12.44143,61.33708 12.44143,66.3879 
+		8.29037,64.47875 	"/>
+	<polygon id="_x34_-6" shape-rendering="crispEdges" class="st20" points="12.44143,61.33708 16.59641,63.24564 16.59641,68.29885 
+		12.44143,66.3879 	"/>
+	<polygon id="_x35_-6" shape-rendering="crispEdges" class="st23" points="16.59641,63.24564 20.75532,65.15601 20.75532,70.21161 
+		16.59641,68.29885 	"/>
+	<polygon id="_x36_-6" shape-rendering="crispEdges" class="st10" points="20.75532,65.15601 24.91817,67.06819 24.91817,72.12617 
+		20.75532,70.21161 	"/>
+	<polygon id="_x37_-6" shape-rendering="crispEdges" class="st5" points="24.91817,67.06819 29.08495,68.98218 29.08495,74.04256 
+		24.91817,72.12617 	"/>
+	<polygon id="_x38_-6" shape-rendering="crispEdges" class="st11" points="29.08495,68.98218 33.25568,70.89797 33.25568,75.96075 
+		29.08495,74.04256 	"/>
+	<polygon id="_x39_-6" shape-rendering="crispEdges" class="st14" points="33.25568,70.89797 37.43037,72.81559 37.43037,77.88077 
+		33.25568,75.96075 	"/>
+	<polygon id="_x31_0-6" shape-rendering="crispEdges" class="st10" points="37.43037,72.81559 41.60901,74.73502 41.60901,79.8026 
+		37.43037,77.88077 	"/>
+	<polygon id="_x31_1-6" shape-rendering="crispEdges" class="st24" points="41.60901,74.73502 45.79161,76.65627 45.79161,81.72625 
+		41.60901,79.8026 	"/>
+	<polygon id="_x31_2-6" shape-rendering="crispEdges" class="st20" points="45.79161,76.65627 49.97819,78.57935 49.97819,83.65173 
+		45.79161,81.72625 	"/>
+	<polygon id="_x31_3-6" shape-rendering="crispEdges" class="st20" points="49.97819,78.57935 54.16874,80.50425 54.16874,85.57904 
+		49.97819,83.65173 	"/>
+	<polygon id="_x31_4-6" shape-rendering="crispEdges" class="st20" points="54.16874,80.50425 58.36327,82.43098 58.36327,87.50818 
+		54.16874,85.57904 	"/>
+	<polygon id="_x31_5-6" shape-rendering="crispEdges" class="st25" points="58.36327,82.43098 62.56178,84.35954 62.56178,89.43915 
+		58.36327,87.50818 	"/>
+	<polygon id="_x31_6-6" shape-rendering="crispEdges" points="62.56178,84.35954 66.76428,86.28993 66.76428,91.37196 
+		62.56178,89.43915 	"/>
+	<polygon id="_x31_-7" shape-rendering="crispEdges" points="0,60.66587 4.14323,62.57141 4.14323,67.61746 0,65.70953 	"/>
+	<polygon id="_x32_-7" shape-rendering="crispEdges" class="st7" points="4.14323,62.57141 8.29037,64.47875 8.29037,69.52719 
+		4.14323,67.61746 	"/>
+	<polygon id="_x33_-7" shape-rendering="crispEdges" class="st5" points="8.29037,64.47875 12.44143,66.3879 12.44143,71.43872 
+		8.29037,69.52719 	"/>
+	<polygon id="_x34_-7" shape-rendering="crispEdges" class="st26" points="12.44143,66.3879 16.59641,68.29885 16.59641,73.35206 
+		12.44143,71.43872 	"/>
+	<polygon id="_x35_-7" shape-rendering="crispEdges" class="st27" points="16.59641,68.29885 20.75532,70.21161 20.75532,75.2672 
+		16.59641,73.35206 	"/>
+	<polygon id="_x36_-7" shape-rendering="crispEdges" class="st27" points="20.75532,70.21161 24.91817,72.12617 24.91817,77.18417 
+		20.75532,75.2672 	"/>
+	<polygon id="_x37_-7" shape-rendering="crispEdges" class="st7" points="24.91817,72.12617 29.08495,74.04256 29.08495,79.10294 
+		24.91817,77.18417 	"/>
+	<polygon id="_x38_-7" shape-rendering="crispEdges" class="st11" points="29.08495,74.04256 33.25568,75.96075 33.25568,81.02353 
+		29.08495,79.10294 	"/>
+	<polygon id="_x39_-7" shape-rendering="crispEdges" class="st11" points="33.25568,75.96075 37.43037,77.88077 37.43037,82.94594 
+		33.25568,81.02353 	"/>
+	<polygon id="_x31_0-7" shape-rendering="crispEdges" class="st28" points="37.43037,77.88077 41.60901,79.8026 41.60901,84.87017 
+		37.43037,82.94594 	"/>
+	<polygon id="_x31_1-7" shape-rendering="crispEdges" class="st17" points="41.60901,79.8026 45.79161,81.72625 45.79161,86.79623 
+		41.60901,84.87017 	"/>
+	<polygon id="_x31_2-7" shape-rendering="crispEdges" class="st29" points="45.79161,81.72625 49.97819,83.65173 49.97819,88.72412 
+		45.79161,86.79623 	"/>
+	<polygon id="_x31_3-7" shape-rendering="crispEdges" class="st29" points="49.97819,83.65173 54.16874,85.57904 54.16874,90.65383 
+		49.97819,88.72412 	"/>
+	<polygon id="_x31_4-7" shape-rendering="crispEdges" class="st30" points="54.16874,85.57904 58.36327,87.50818 58.36327,92.58538 
+		54.16874,90.65383 	"/>
+	<polygon id="_x31_5-7" shape-rendering="crispEdges" class="st31" points="58.36327,87.50818 62.56178,89.43915 62.56178,94.51877 
+		58.36327,92.58538 	"/>
+	<polygon id="_x31_6-7" shape-rendering="crispEdges" points="62.56178,89.43915 66.76428,91.37196 66.76428,96.45399 
+		62.56178,94.51877 	"/>
+	<polygon id="_x31_-8" shape-rendering="crispEdges" points="0,65.70953 4.14323,67.61746 4.14323,72.66351 0,70.75321 	"/>
+	<polygon id="_x32_-8" shape-rendering="crispEdges" class="st15" points="4.14323,67.61746 8.29037,69.52719 8.29037,74.57562 
+		4.14323,72.66351 	"/>
+	<polygon id="_x33_-8" shape-rendering="crispEdges" class="st16" points="8.29037,69.52719 12.44143,71.43872 12.44143,76.48954 
+		8.29037,74.57562 	"/>
+	<polygon id="_x34_-8" shape-rendering="crispEdges" class="st20" points="12.44143,71.43872 16.59641,73.35206 16.59641,78.40527 
+		12.44143,76.48954 	"/>
+	<polygon id="_x35_-8" shape-rendering="crispEdges" class="st16" points="16.59641,73.35206 20.75532,75.2672 20.75532,80.3228 
+		16.59641,78.40527 	"/>
+	<polygon id="_x36_-8" shape-rendering="crispEdges" class="st16" points="20.75532,75.2672 24.91817,77.18417 24.91817,82.24215 
+		20.75532,80.3228 	"/>
+	<polygon id="_x37_-8" shape-rendering="crispEdges" class="st16" points="24.91817,77.18417 29.08495,79.10294 29.08495,84.16332 
+		24.91817,82.24215 	"/>
+	<polygon id="_x38_-8" shape-rendering="crispEdges" points="29.08495,79.10294 33.25568,81.02353 33.25568,86.0863 
+		29.08495,84.16332 	"/>
+	<polygon id="_x39_-8" shape-rendering="crispEdges" points="33.25568,81.02353 37.43037,82.94594 37.43037,88.01112 
+		33.25568,86.0863 	"/>
+	<polygon id="_x31_0-8" shape-rendering="crispEdges" class="st15" points="37.43037,82.94594 41.60901,84.87017 41.60901,89.93775 
+		37.43037,88.01112 	"/>
+	<polygon id="_x31_1-8" shape-rendering="crispEdges" class="st16" points="41.60901,84.87017 45.79161,86.79623 45.79161,91.86621 
+		41.60901,89.93775 	"/>
+	<polygon id="_x31_2-8" shape-rendering="crispEdges" class="st32" points="45.79161,86.79623 49.97819,88.72412 49.97819,93.7965 
+		45.79161,91.86621 	"/>
+	<polygon id="_x31_3-8" shape-rendering="crispEdges" class="st29" points="49.97819,88.72412 54.16874,90.65383 54.16874,95.72862 
+		49.97819,93.7965 	"/>
+	<polygon id="_x31_4-8" shape-rendering="crispEdges" class="st33" points="54.16874,90.65383 58.36327,92.58538 58.36327,97.66258 
+		54.16874,95.72862 	"/>
+	<polygon id="_x31_5-8" shape-rendering="crispEdges" class="st34" points="58.36327,92.58538 62.56178,94.51877 62.56178,99.59838 
+		58.36327,97.66258 	"/>
+	<polygon id="_x31_6-8" shape-rendering="crispEdges" points="62.56178,94.51877 66.76428,96.45399 66.76428,101.53602 
+		62.56178,99.59838 	"/>
+	<polygon id="_x31_-9" shape-rendering="crispEdges" points="0,70.75321 4.14323,72.66351 4.14323,77.70956 0,75.79688 	"/>
+	<polygon id="_x32_-9" shape-rendering="crispEdges" class="st7" points="4.14323,72.66351 8.29037,74.57562 8.29037,79.62405 
+		4.14323,77.70956 	"/>
+	<polygon id="_x33_-9" shape-rendering="crispEdges" class="st5" points="8.29037,74.57562 12.44143,76.48954 12.44143,81.54036 
+		8.29037,79.62405 	"/>
+	<polygon id="_x34_-9" shape-rendering="crispEdges" class="st26" points="12.44143,76.48954 16.59641,78.40527 16.59641,83.45847 
+		12.44143,81.54036 	"/>
+	<polygon id="_x35_-9" shape-rendering="crispEdges" class="st35" points="16.59641,78.40527 20.75532,80.3228 20.75532,85.3784 
+		16.59641,83.45847 	"/>
+	<polygon id="_x36_-9" shape-rendering="crispEdges" class="st9" points="20.75532,80.3228 24.91817,82.24215 24.91817,87.30014 
+		20.75532,85.3784 	"/>
+	<polygon id="_x37_-9" shape-rendering="crispEdges" class="st0" points="24.91817,82.24215 29.08495,84.16332 29.08495,89.2237 
+		24.91817,87.30014 	"/>
+	<polygon id="_x38_-9" shape-rendering="crispEdges" class="st1" points="29.08495,84.16332 33.25568,86.0863 33.25568,91.14909 
+		29.08495,89.2237 	"/>
+	<polygon id="_x39_-9" shape-rendering="crispEdges" class="st1" points="33.25568,86.0863 37.43037,88.01112 37.43037,93.07629 
+		33.25568,91.14909 	"/>
+	<polygon id="_x31_0-9" shape-rendering="crispEdges" class="st10" points="37.43037,88.01112 41.60901,89.93775 41.60901,95.00533 
+		37.43037,93.07629 	"/>
+	<polygon id="_x31_1-9" shape-rendering="crispEdges" class="st10" points="41.60901,89.93775 45.79161,91.86621 45.79161,96.93619 
+		41.60901,95.00533 	"/>
+	<polygon id="_x31_2-9" shape-rendering="crispEdges" class="st36" points="45.79161,91.86621 49.97819,93.7965 49.97819,98.86889 
+		45.79161,96.93619 	"/>
+	<polygon id="_x31_3-9" shape-rendering="crispEdges" class="st37" points="49.97819,93.7965 54.16874,95.72862 54.16874,100.80342 
+		49.97819,98.86889 	"/>
+	<polygon id="_x31_4-9" shape-rendering="crispEdges" class="st30" points="54.16874,95.72862 58.36327,97.66258 
+		58.36327,102.73978 54.16874,100.80342 	"/>
+	<polygon id="_x31_5-9" shape-rendering="crispEdges" class="st38" points="58.36327,97.66258 62.56178,99.59838 
+		62.56178,104.67799 58.36327,102.73978 	"/>
+	<polygon id="_x31_6-9" shape-rendering="crispEdges" points="62.56178,99.59838 66.76428,101.53602 66.76428,106.61805 
+		62.56178,104.67799 	"/>
+	<polygon id="_x31_-10" shape-rendering="crispEdges" points="0,75.79688 4.14323,77.70956 4.14323,82.75562 0,80.84055 	"/>
+	<polygon id="_x32_-10" shape-rendering="crispEdges" class="st0" points="4.14323,77.70956 8.29037,79.62405 8.29037,84.67249 
+		4.14323,82.75562 	"/>
+	<polygon id="_x33_-10" shape-rendering="crispEdges" class="st30" points="8.29037,79.62405 12.44143,81.54036 12.44143,86.59118 
+		8.29037,84.67249 	"/>
+	<polygon id="_x34_-10" shape-rendering="crispEdges" class="st39" points="12.44143,81.54036 16.59641,83.45847 16.59641,88.51167 
+		12.44143,86.59118 	"/>
+	<polygon id="_x35_-10" shape-rendering="crispEdges" class="st30" points="16.59641,83.45847 20.75532,85.3784 20.75532,90.43399 
+		16.59641,88.51167 	"/>
+	<polygon id="_x36_-10" shape-rendering="crispEdges" class="st31" points="20.75532,85.3784 24.91817,87.30014 24.91817,92.35812 
+		20.75532,90.43399 	"/>
+	<polygon id="_x37_-10" shape-rendering="crispEdges" class="st10" points="24.91817,87.30014 29.08495,89.2237 29.08495,94.28408 
+		24.91817,92.35812 	"/>
+	<polygon id="_x38_-10" shape-rendering="crispEdges" class="st14" points="29.08495,89.2237 33.25568,91.14909 33.25568,96.21186 
+		29.08495,94.28408 	"/>
+	<polygon id="_x39_-10" shape-rendering="crispEdges" class="st11" points="33.25568,91.14909 37.43037,93.07629 37.43037,98.14147 
+		33.25568,96.21186 	"/>
+	<polygon id="_x31_0-10" shape-rendering="crispEdges" class="st40" points="37.43037,93.07629 41.60901,95.00533 
+		41.60901,100.07291 37.43037,98.14147 	"/>
+	<polygon id="_x31_1-10" shape-rendering="crispEdges" class="st0" points="41.60901,95.00533 45.79161,96.93619 
+		45.79161,102.00617 41.60901,100.07291 	"/>
+	<polygon id="_x31_2-10" shape-rendering="crispEdges" class="st15" points="45.79161,96.93619 49.97819,98.86889 
+		49.97819,103.94128 45.79161,102.00617 	"/>
+	<polygon id="_x31_3-10" shape-rendering="crispEdges" class="st32" points="49.97819,98.86889 54.16874,100.80342 
+		54.16874,105.87821 49.97819,103.94128 	"/>
+	<polygon id="_x31_4-10" shape-rendering="crispEdges" class="st41" points="54.16874,100.80342 58.36327,102.73978 
+		58.36327,107.81699 54.16874,105.87821 	"/>
+	<polygon id="_x31_5-10" shape-rendering="crispEdges" class="st42" points="58.36327,102.73978 62.56178,104.67799 
+		62.56178,109.75761 58.36327,107.81699 	"/>
+	<polygon id="_x31_6-10" shape-rendering="crispEdges" points="62.56178,104.67799 66.76428,106.61805 66.76428,111.70007 
+		62.56178,109.75761 	"/>
+	<polygon id="_x31_-11" shape-rendering="crispEdges" points="0,80.84055 4.14323,82.75562 4.14323,87.80167 0,85.88422 	"/>
+	<polygon id="_x32_-11" shape-rendering="crispEdges" class="st10" points="4.14323,82.75562 8.29037,84.67249 8.29037,89.72092 
+		4.14323,87.80167 	"/>
+	<polygon id="_x33_-11" shape-rendering="crispEdges" class="st43" points="8.29037,84.67249 12.44143,86.59118 12.44143,91.642 
+		8.29037,89.72092 	"/>
+	<polygon id="_x34_-11" shape-rendering="crispEdges" class="st44" points="12.44143,86.59118 16.59641,88.51167 16.59641,93.56488 
+		12.44143,91.642 	"/>
+	<polygon id="_x35_-11" shape-rendering="crispEdges" class="st35" points="16.59641,88.51167 20.75532,90.43399 20.75532,95.48959 
+		16.59641,93.56488 	"/>
+	<polygon id="_x36_-11" shape-rendering="crispEdges" class="st31" points="20.75532,90.43399 24.91817,92.35812 24.91817,97.41611 
+		20.75532,95.48959 	"/>
+	<polygon id="_x37_-11" shape-rendering="crispEdges" class="st0" points="24.91817,92.35812 29.08495,94.28408 29.08495,99.34446 
+		24.91817,97.41611 	"/>
+	<polygon id="_x38_-11" shape-rendering="crispEdges" class="st45" points="29.08495,94.28408 33.25568,96.21186 
+		33.25568,101.27464 29.08495,99.34446 	"/>
+	<polygon id="_x39_-11" shape-rendering="crispEdges" class="st11" points="33.25568,96.21186 37.43037,98.14147 
+		37.43037,103.20664 33.25568,101.27464 	"/>
+	<polygon id="_x31_0-11" shape-rendering="crispEdges" class="st46" points="37.43037,98.14147 41.60901,100.07291 
+		41.60901,105.14048 37.43037,103.20664 	"/>
+	<polygon id="_x31_1-11" shape-rendering="crispEdges" class="st10" points="41.60901,100.07291 45.79161,102.00617 
+		45.79161,107.07615 41.60901,105.14048 	"/>
+	<polygon id="_x31_2-11" shape-rendering="crispEdges" class="st8" points="45.79161,102.00617 49.97819,103.94128 
+		49.97819,109.01366 45.79161,107.07615 	"/>
+	<polygon id="_x31_3-11" shape-rendering="crispEdges" class="st29" points="49.97819,103.94128 54.16874,105.87821 
+		54.16874,110.953 49.97819,109.01366 	"/>
+	<polygon id="_x31_4-11" shape-rendering="crispEdges" class="st30" points="54.16874,105.87821 58.36327,107.81699 
+		58.36327,112.8942 54.16874,110.953 	"/>
+	<polygon id="_x31_5-11" shape-rendering="crispEdges" class="st47" points="58.36327,107.81699 62.56178,109.75761 
+		62.56178,114.83723 58.36327,112.8942 	"/>
+	<polygon id="_x31_6-11" shape-rendering="crispEdges" points="62.56178,109.75761 66.76428,111.70007 66.76428,116.7821 
+		62.56178,114.83723 	"/>
+	<polygon id="_x31_-12" shape-rendering="crispEdges" points="0,85.88422 4.14323,87.80167 4.14323,92.84772 0,90.92789 	"/>
+	<polygon id="_x32_-12" shape-rendering="crispEdges" class="st48" points="4.14323,87.80167 8.29037,89.72092 8.29037,94.76936 
+		4.14323,92.84772 	"/>
+	<polygon id="_x33_-12" shape-rendering="crispEdges" class="st15" points="8.29037,89.72092 12.44143,91.642 12.44143,96.69282 
+		8.29037,94.76936 	"/>
+	<polygon id="_x34_-12" shape-rendering="crispEdges" class="st15" points="12.44143,91.642 16.59641,93.56488 16.59641,98.61809 
+		12.44143,96.69282 	"/>
+	<polygon id="_x35_-12" shape-rendering="crispEdges" class="st49" points="16.59641,93.56488 20.75532,95.48959 
+		20.75532,100.54518 16.59641,98.61809 	"/>
+	<polygon id="_x36_-12" shape-rendering="crispEdges" class="st50" points="20.75532,95.48959 24.91817,97.41611 24.91817,102.4741 
+		20.75532,100.54518 	"/>
+	<polygon id="_x37_-12" shape-rendering="crispEdges" class="st51" points="24.91817,97.41611 29.08495,99.34446 
+		29.08495,104.40485 24.91817,102.4741 	"/>
+	<polygon id="_x38_-12" shape-rendering="crispEdges" points="29.08495,99.34446 33.25568,101.27464 33.25568,106.33742 
+		29.08495,104.40485 	"/>
+	<polygon id="_x39_-12" shape-rendering="crispEdges" points="33.25568,101.27464 37.43037,103.20664 37.43037,108.27182 
+		33.25568,106.33742 	"/>
+	<polygon id="_x31_0-12" shape-rendering="crispEdges" class="st15" points="37.43037,103.20664 41.60901,105.14048 
+		41.60901,110.20805 37.43037,108.27182 	"/>
+	<polygon id="_x31_1-12" shape-rendering="crispEdges" class="st15" points="41.60901,105.14048 45.79161,107.07615 
+		45.79161,112.14613 41.60901,110.20805 	"/>
+	<polygon id="_x31_2-12" shape-rendering="crispEdges" class="st15" points="45.79161,107.07615 49.97819,109.01366 
+		49.97819,114.08604 45.79161,112.14613 	"/>
+	<polygon id="_x31_3-12" shape-rendering="crispEdges" class="st52" points="49.97819,109.01366 54.16874,110.953 
+		54.16874,116.02779 49.97819,114.08604 	"/>
+	<polygon id="_x31_4-12" shape-rendering="crispEdges" class="st30" points="54.16874,110.953 58.36327,112.8942 58.36327,117.9714 
+		54.16874,116.02779 	"/>
+	<polygon id="_x31_5-12" shape-rendering="crispEdges" class="st50" points="58.36327,112.8942 62.56178,114.83723 
+		62.56178,119.91684 58.36327,117.9714 	"/>
+	<polygon id="_x31_6-12" shape-rendering="crispEdges" points="62.56178,114.83723 66.76428,116.7821 66.76428,121.86414 
+		62.56178,119.91684 	"/>
+	<polygon id="_x31_-13" shape-rendering="crispEdges" points="0,90.92789 4.14323,92.84772 4.14323,97.89377 0,95.97157 	"/>
+	<polygon id="_x32_-13" shape-rendering="crispEdges" class="st7" points="4.14323,92.84772 8.29037,94.76936 8.29037,99.81779 
+		4.14323,97.89377 	"/>
+	<polygon id="_x33_-13" shape-rendering="crispEdges" class="st5" points="8.29037,94.76936 12.44143,96.69282 12.44143,101.74364 
+		8.29037,99.81779 	"/>
+	<polygon id="_x34_-13" shape-rendering="crispEdges" class="st53" points="12.44143,96.69282 16.59641,98.61809 16.59641,103.6713 
+		12.44143,101.74364 	"/>
+	<polygon id="_x35_-13" shape-rendering="crispEdges" class="st5" points="16.59641,98.61809 20.75532,100.54518 
+		20.75532,105.60078 16.59641,103.6713 	"/>
+	<polygon id="_x36_-13" shape-rendering="crispEdges" class="st0" points="20.75532,100.54518 24.91817,102.4741 
+		24.91817,107.53209 20.75532,105.60078 	"/>
+	<polygon id="_x37_-13" shape-rendering="crispEdges" class="st5" points="24.91817,102.4741 29.08495,104.40485 
+		29.08495,109.46523 24.91817,107.53209 	"/>
+	<polygon id="_x38_-13" shape-rendering="crispEdges" class="st45" points="29.08495,104.40485 33.25568,106.33742 
+		33.25568,111.40019 29.08495,109.46523 	"/>
+	<polygon id="_x39_-13" shape-rendering="crispEdges" class="st11" points="33.25568,106.33742 37.43037,108.27182 
+		37.43037,113.337 33.25568,111.40019 	"/>
+	<polygon id="_x31_0-13" shape-rendering="crispEdges" class="st54" points="37.43037,108.27182 41.60901,110.20805 
+		41.60901,115.27563 37.43037,113.337 	"/>
+	<polygon id="_x31_1-13" shape-rendering="crispEdges" class="st0" points="41.60901,110.20805 45.79161,112.14613 
+		45.79161,117.21611 41.60901,115.27563 	"/>
+	<polygon id="_x31_2-13" shape-rendering="crispEdges" class="st0" points="45.79161,112.14613 49.97819,114.08604 
+		49.97819,119.15842 45.79161,117.21611 	"/>
+	<polygon id="_x31_3-13" shape-rendering="crispEdges" class="st55" points="49.97819,114.08604 54.16874,116.02779 
+		54.16874,121.10259 49.97819,119.15842 	"/>
+	<polygon id="_x31_4-13" shape-rendering="crispEdges" class="st56" points="54.16874,116.02779 58.36327,117.9714 
+		58.36327,123.0486 54.16874,121.10259 	"/>
+	<polygon id="_x31_5-13" shape-rendering="crispEdges" class="st57" points="58.36327,117.9714 62.56178,119.91684 
+		62.56178,124.99645 58.36327,123.0486 	"/>
+	<polygon id="_x31_6-13" shape-rendering="crispEdges" points="62.56178,119.91684 66.76428,121.86414 66.76428,126.94617 
+		62.56178,124.99645 	"/>
+	<polygon id="_x31_-14" shape-rendering="crispEdges" points="0,95.97157 4.14323,97.89377 4.14323,102.93982 0,101.01524 	"/>
+	<polygon id="_x32_-14" shape-rendering="crispEdges" class="st0" points="4.14323,97.89377 8.29037,99.81779 8.29037,104.86623 
+		4.14323,102.93982 	"/>
+	<polygon id="_x33_-14" shape-rendering="crispEdges" class="st15" points="8.29037,99.81779 12.44143,101.74364 
+		12.44143,106.79446 8.29037,104.86623 	"/>
+	<polygon id="_x34_-14" shape-rendering="crispEdges" class="st53" points="12.44143,101.74364 16.59641,103.6713 
+		16.59641,108.7245 12.44143,106.79446 	"/>
+	<polygon id="_x35_-14" shape-rendering="crispEdges" class="st5" points="16.59641,103.6713 20.75532,105.60078 
+		20.75532,110.65637 16.59641,108.7245 	"/>
+	<polygon id="_x36_-14" shape-rendering="crispEdges" class="st7" points="20.75532,105.60078 24.91817,107.53209 
+		24.91817,112.59007 20.75532,110.65637 	"/>
+	<polygon id="_x37_-14" shape-rendering="crispEdges" class="st6" points="24.91817,107.53209 29.08495,109.46523 
+		29.08495,114.5256 24.91817,112.59007 	"/>
+	<polygon id="_x38_-14" shape-rendering="crispEdges" class="st11" points="29.08495,109.46523 33.25568,111.40019 
+		33.25568,116.46297 29.08495,114.5256 	"/>
+	<polygon id="_x39_-14" shape-rendering="crispEdges" class="st1" points="33.25568,111.40019 37.43037,113.337 37.43037,118.40218 
+		33.25568,116.46297 	"/>
+	<polygon id="_x31_0-14" shape-rendering="crispEdges" class="st10" points="37.43037,113.337 41.60901,115.27563 
+		41.60901,120.34321 37.43037,118.40218 	"/>
+	<polygon id="_x31_1-14" shape-rendering="crispEdges" class="st58" points="41.60901,115.27563 45.79161,117.21611 
+		45.79161,122.28609 41.60901,120.34321 	"/>
+	<polygon id="_x31_2-14" shape-rendering="crispEdges" class="st0" points="45.79161,117.21611 49.97819,119.15842 
+		49.97819,124.23081 45.79161,122.28609 	"/>
+	<polygon id="_x31_3-14" shape-rendering="crispEdges" class="st0" points="49.97819,119.15842 54.16874,121.10259 
+		54.16874,126.17738 49.97819,124.23081 	"/>
+	<polygon id="_x31_4-14" shape-rendering="crispEdges" class="st25" points="54.16874,121.10259 58.36327,123.0486 
+		58.36327,128.12579 54.16874,126.17738 	"/>
+	<polygon id="_x31_5-14" shape-rendering="crispEdges" class="st59" points="58.36327,123.0486 62.56178,124.99645 
+		62.56178,130.07607 58.36327,128.12579 	"/>
+	<polygon id="_x31_6-14" shape-rendering="crispEdges" points="62.56178,124.99645 66.76428,126.94617 66.76428,132.0282 
+		62.56178,130.07607 	"/>
+	<polygon id="_x31_-15" shape-rendering="crispEdges" points="0,101.01524 4.14323,102.93982 4.14323,107.98587 0,106.05891 	"/>
+	<polygon id="_x32_-15" shape-rendering="crispEdges" class="st5" points="4.14323,102.93982 8.29037,104.86623 8.29037,109.91467 
+		4.14323,107.98587 	"/>
+	<polygon id="_x33_-15" shape-rendering="crispEdges" class="st0" points="8.29037,104.86623 12.44143,106.79446 
+		12.44143,111.84527 8.29037,109.91467 	"/>
+	<polygon id="_x34_-15" shape-rendering="crispEdges" class="st13" points="12.44143,106.79446 16.59641,108.7245 
+		16.59641,113.77771 12.44143,111.84527 	"/>
+	<polygon id="_x35_-15" shape-rendering="crispEdges" class="st0" points="16.59641,108.7245 20.75532,110.65637 
+		20.75532,115.71197 16.59641,113.77771 	"/>
+	<polygon id="_x36_-15" shape-rendering="crispEdges" class="st5" points="20.75532,110.65637 24.91817,112.59007 
+		24.91817,117.64806 20.75532,115.71197 	"/>
+	<polygon id="_x37_-15" shape-rendering="crispEdges" class="st5" points="24.91817,112.59007 29.08495,114.5256 
+		29.08495,119.58599 24.91817,117.64806 	"/>
+	<polygon id="_x38_-15" shape-rendering="crispEdges" class="st11" points="29.08495,114.5256 33.25568,116.46297 
+		33.25568,121.52575 29.08495,119.58599 	"/>
+	<polygon id="_x39_-15" shape-rendering="crispEdges" class="st1" points="33.25568,116.46297 37.43037,118.40218 
+		37.43037,123.46735 33.25568,121.52575 	"/>
+	<polygon id="_x31_0-15" shape-rendering="crispEdges" class="st5" points="37.43037,118.40218 41.60901,120.34321 
+		41.60901,125.41079 37.43037,123.46735 	"/>
+	<polygon id="_x31_1-15" shape-rendering="crispEdges" class="st0" points="41.60901,120.34321 45.79161,122.28609 
+		45.79161,127.35607 41.60901,125.41079 	"/>
+	<polygon id="_x31_2-15" shape-rendering="crispEdges" class="st10" points="45.79161,122.28609 49.97819,124.23081 
+		49.97819,129.30319 45.79161,127.35607 	"/>
+	<polygon id="_x31_3-15" shape-rendering="crispEdges" class="st7" points="49.97819,124.23081 54.16874,126.17738 
+		54.16874,131.25218 49.97819,129.30319 	"/>
+	<polygon id="_x31_4-15" shape-rendering="crispEdges" class="st5" points="54.16874,126.17738 58.36327,128.12579 
+		58.36327,133.203 54.16874,131.25218 	"/>
+	<polygon id="_x31_5-15" shape-rendering="crispEdges" class="st60" points="58.36327,128.12579 62.56178,130.07607 
+		62.56178,135.15569 58.36327,133.203 	"/>
+	<polygon id="_x31_6-15" shape-rendering="crispEdges" points="62.56178,130.07607 66.76428,132.0282 66.76428,137.11023 
+		62.56178,135.15569 	"/>
+	<polygon id="_x31_-16" shape-rendering="crispEdges" points="0,106.05891 4.14323,107.98587 4.14323,113.03193 0,111.10258 	"/>
+	<polygon id="_x32_-16" shape-rendering="crispEdges" class="st15" points="4.14323,107.98587 8.29037,109.91467 8.29037,114.9631 
+		4.14323,113.03193 	"/>
+	<polygon id="_x33_-16" shape-rendering="crispEdges" class="st15" points="8.29037,109.91467 12.44143,111.84527 
+		12.44143,116.89609 8.29037,114.9631 	"/>
+	<polygon id="_x34_-16" shape-rendering="crispEdges" class="st61" points="12.44143,111.84527 16.59641,113.77771 
+		16.59641,118.83091 12.44143,116.89609 	"/>
+	<polygon id="_x35_-16" shape-rendering="crispEdges" class="st16" points="16.59641,113.77771 20.75532,115.71197 
+		20.75532,120.76756 16.59641,118.83091 	"/>
+	<polygon id="_x36_-16" shape-rendering="crispEdges" class="st16" points="20.75532,115.71197 24.91817,117.64806 
+		24.91817,122.70605 20.75532,120.76756 	"/>
+	<polygon id="_x37_-16" shape-rendering="crispEdges" class="st62" points="24.91817,117.64806 29.08495,119.58599 
+		29.08495,124.64637 24.91817,122.70605 	"/>
+	<polygon id="_x38_-16" shape-rendering="crispEdges" points="29.08495,119.58599 33.25568,121.52575 33.25568,126.58852 
+		29.08495,124.64637 	"/>
+	<polygon id="_x39_-16" shape-rendering="crispEdges" points="33.25568,121.52575 37.43037,123.46735 37.43037,128.53253 
+		33.25568,126.58852 	"/>
+	<polygon id="_x31_0-16" shape-rendering="crispEdges" class="st15" points="37.43037,123.46735 41.60901,125.41079 
+		41.60901,130.47836 37.43037,128.53253 	"/>
+	<polygon id="_x31_1-16" shape-rendering="crispEdges" class="st15" points="41.60901,125.41079 45.79161,127.35607 
+		45.79161,132.42606 41.60901,130.47836 	"/>
+	<polygon id="_x31_2-16" shape-rendering="crispEdges" class="st48" points="45.79161,127.35607 49.97819,129.30319 
+		49.97819,134.37558 45.79161,132.42606 	"/>
+	<polygon id="_x31_3-16" shape-rendering="crispEdges" class="st63" points="49.97819,129.30319 54.16874,131.25218 
+		54.16874,136.32697 49.97819,134.37558 	"/>
+	<polygon id="_x31_4-16" shape-rendering="crispEdges" class="st16" points="54.16874,131.25218 58.36327,133.203 
+		58.36327,138.28021 54.16874,136.32697 	"/>
+	<polygon id="_x31_5-16" shape-rendering="crispEdges" class="st16" points="58.36327,133.203 62.56178,135.15569 
+		62.56178,140.23531 58.36327,138.28021 	"/>
+	<polygon id="_x31_6-16" shape-rendering="crispEdges" points="62.56178,135.15569 66.76428,137.11023 66.76428,142.19225 
+		62.56178,140.23531 	"/>
+</g>
+<g>
+	<polygon id="_x31_-1_00000108304938949497485760000017351186389614225058_" shape-rendering="crispEdges" points="
+		66.76428,60.87978 70.96291,58.96323 70.96161,64.06746 66.76428,65.98552 	"/>
+	<polygon id="_x32_-1_00000010999515613945087710000001919849410217799577_" shape-rendering="crispEdges" class="st64" points="
+		70.96291,58.96323 75.15807,57.04826 75.15546,62.15098 70.96161,64.06746 	"/>
+	<polygon id="_x33_-1_00000049219365993976950640000004063643130162947989_" shape-rendering="crispEdges" class="st64" points="
+		75.15807,57.04826 79.34976,55.13488 79.34586,60.23608 75.15546,62.15098 	"/>
+	<polygon id="_x34_-1_00000121249521214633545260000013059276450674515897_" shape-rendering="crispEdges" class="st64" points="
+		79.34976,55.13488 83.538,53.22307 83.53279,58.32277 79.34586,60.23608 	"/>
+	<polygon id="_x35_-1_00000072260844718134493400000001107439263279998637_" shape-rendering="crispEdges" class="st64" points="
+		83.538,53.22307 87.72279,51.31284 87.71628,56.41102 83.53279,58.32277 	"/>
+	<polygon id="_x36_-1_00000035493606581032426830000004145278782217920426_" shape-rendering="crispEdges" points="
+		87.72279,51.31284 91.90411,49.40419 91.89632,54.50086 87.71628,56.41102 	"/>
+	<polygon id="_x37_-1_00000138532041390339150400000017415833632460293532_" shape-rendering="crispEdges" class="st65" points="
+		91.90411,49.40419 96.082,47.4971 96.07291,52.59227 91.89632,54.50086 	"/>
+	<polygon id="_x38_-1_00000026163908662989984100000002625989695627280302_" shape-rendering="crispEdges" class="st66" points="
+		96.082,47.4971 100.25644,45.59159 100.24606,50.68525 96.07291,52.59227 	"/>
+	<polygon id="_x39_-1_00000005235923297695078950000015212406057058083225_" shape-rendering="crispEdges" class="st67" points="
+		100.25644,45.59159 104.42744,43.68765 104.41577,48.7798 100.24606,50.68525 	"/>
+	<polygon id="_x31_0-1_00000083768870368873125120000009333922089735737790_" shape-rendering="crispEdges" class="st68" points="
+		104.42744,43.68765 108.59502,41.78527 108.58205,46.87592 104.41577,48.7798 	"/>
+	<polygon id="_x31_1-1_00000048492786900036372580000016537904290058059184_" shape-rendering="crispEdges" points="
+		108.59502,41.78527 112.75916,39.88447 112.74491,44.97361 108.58205,46.87592 	"/>
+	<polygon id="_x31_2-1_00000144296356171910447890000008327575136634547608_" shape-rendering="crispEdges" class="st69" points="
+		112.75916,39.88447 116.91987,37.98522 116.90435,43.07286 112.74491,44.97361 	"/>
+	<polygon id="_x31_3-1_00000043443625341569333510000012023807088772255410_" shape-rendering="crispEdges" class="st69" points="
+		116.91986,37.98523 121.07716,36.08754 121.06036,41.17367 116.90434,43.07286 	"/>
+	<polygon id="_x31_4-1_00000007423754849155908640000012443117431234778245_" shape-rendering="crispEdges" class="st69" points="
+		121.07716,36.08754 125.23103,34.19142 125.21295,39.27605 121.06036,41.17367 	"/>
+	<polygon id="_x31_5-1_00000147184944502796537880000003291574532414144668_" shape-rendering="crispEdges" class="st69" points="
+		125.23103,34.19142 129.3815,32.29685 129.36214,37.37998 125.21295,39.27605 	"/>
+	<polygon id="_x31_6-1_00000171678840206596901490000007586293583101677448_" shape-rendering="crispEdges" points="
+		129.3815,32.29685 133.52856,30.40384 133.50793,35.48547 129.36214,37.37998 	"/>
+	<polygon id="_x31_-2_00000170245409299843481720000000579905786739156638_" shape-rendering="crispEdges" points="
+		66.76428,65.98552 70.96161,64.06746 70.9603,69.16851 66.76428,71.08809 	"/>
+	<polygon id="_x32_-2_00000054980231319255470880000014005332024456722335_" shape-rendering="crispEdges" class="st69" points="
+		70.96161,64.06746 75.15546,62.15098 75.15285,67.25053 70.9603,69.16851 	"/>
+	<polygon id="_x33_-2_00000098197128586752253330000002261147686432644784_" shape-rendering="crispEdges" class="st70" points="
+		75.15546,62.15098 79.34586,60.23608 79.34195,65.33411 75.15285,67.25053 	"/>
+	<polygon id="_x34_-2_00000041982290504098683410000001096041928198696101_" shape-rendering="crispEdges" class="st71" points="
+		79.34586,60.23608 83.53279,58.32277 83.52759,63.41929 79.34195,65.33411 	"/>
+	<polygon id="_x35_-2_00000157301690535263509230000015889604430992120987_" shape-rendering="crispEdges" class="st72" points="
+		83.53279,58.32277 87.71628,56.41102 87.70978,61.50604 83.52759,63.41929 	"/>
+	<polygon id="_x36_-2_00000057110974607961680100000000649303305225111461_" shape-rendering="crispEdges" class="st70" points="
+		87.71628,56.41102 91.89632,54.50086 91.88852,59.59437 87.70978,61.50604 	"/>
+	<polygon id="_x37_-2_00000155114038264332228520000006176426457570135724_" shape-rendering="crispEdges" points="
+		91.89632,54.50086 96.07291,52.59227 96.06382,57.68427 91.88852,59.59437 	"/>
+	<polygon id="_x38_-2_00000154426320662899624230000008317806515573174420_" shape-rendering="crispEdges" class="st67" points="
+		96.07291,52.59227 100.24606,50.68525 100.23568,55.77575 96.06382,57.68427 	"/>
+	<polygon id="_x39_-2_00000083774083982139530570000001606838334577375411_" shape-rendering="crispEdges" class="st67" points="
+		100.24606,50.68525 104.41577,48.7798 104.40411,53.8688 100.23568,55.77575 	"/>
+	<polygon id="_x31_0-2_00000145764482940490271580000010077569693198164117_" shape-rendering="crispEdges" points="
+		104.41577,48.7798 108.58205,46.87592 108.56911,51.96341 104.40411,53.8688 	"/>
+	<polygon id="_x31_1-2_00000037672672457678027340000008178398534318145155_" shape-rendering="crispEdges" class="st73" points="
+		108.58205,46.87592 112.74491,44.97361 112.73068,50.0596 108.56911,51.96341 	"/>
+	<polygon id="_x31_2-2_00000163053246421150902720000006123596968819013790_" shape-rendering="crispEdges" class="st72" points="
+		112.74491,44.97361 116.90435,43.07286 116.88883,48.15734 112.73068,50.0596 	"/>
+	<polygon id="_x31_3-2_00000170253081256258797340000013048015176898551691_" shape-rendering="crispEdges" class="st64" points="
+		116.90434,43.07286 121.06036,41.17367 121.04356,46.25666 116.88882,48.15735 	"/>
+	<polygon id="_x31_4-2_00000039106010638746568890000003196688327040957853_" shape-rendering="crispEdges" class="st70" points="
+		121.06036,41.17367 125.21295,39.27605 125.19489,44.35753 121.04356,46.25666 	"/>
+	<polygon id="_x31_5-2_00000023262865215933755090000004030140062089261989_" shape-rendering="crispEdges" class="st69" points="
+		125.21295,39.27605 129.36214,37.37998 129.3428,42.45996 125.19489,44.35753 	"/>
+	<polygon id="_x31_6-2_00000000187277464295765020000002053497754254205366_" shape-rendering="crispEdges" points="
+		129.36214,37.37998 133.50793,35.48547 133.4873,40.56395 129.3428,42.45996 	"/>
+	<polygon id="_x31_-3_00000062168915011889830670000010209685577033610139_" shape-rendering="crispEdges" points="
+		66.76428,71.08809 70.9603,69.16851 70.959,74.2664 66.76428,76.18748 	"/>
+	<polygon id="_x32_-3_00000077317434218814964750000015475823847164163238_" shape-rendering="crispEdges" class="st69" points="
+		70.9603,69.16851 75.15285,67.25053 75.15025,72.3469 70.959,74.2664 	"/>
+	<polygon id="_x33_-3_00000134216505435557141920000011754498945194755507_" shape-rendering="crispEdges" class="st64" points="
+		75.15285,67.25053 79.34195,65.33411 79.33804,70.42899 75.15025,72.3469 	"/>
+	<polygon id="_x34_-3_00000045603731474661669180000003948385553336315572_" shape-rendering="crispEdges" class="st64" points="
+		79.34195,65.33411 83.52759,63.41929 83.52238,68.51266 79.33804,70.42899 	"/>
+	<polygon id="_x35_-3_00000063593032697734795720000003254970389910557113_" shape-rendering="crispEdges" class="st74" points="
+		83.52759,63.41929 87.70978,61.50604 87.70328,66.5979 83.52238,68.51266 	"/>
+	<polygon id="_x36_-3_00000055709267996695212270000014365833530687439280_" shape-rendering="crispEdges" class="st75" points="
+		87.70978,61.50604 91.88852,59.59437 91.88073,64.68472 87.70328,66.5979 	"/>
+	<polygon id="_x37_-3_00000018233380964487964790000016837023293464121743_" shape-rendering="crispEdges" class="st72" points="
+		91.88852,59.59437 96.06382,57.68427 96.05473,62.77312 91.88073,64.68472 	"/>
+	<polygon id="_x38_-3_00000150818723810522218550000016190577206299703948_" shape-rendering="crispEdges" points="
+		96.06382,57.68427 100.23568,55.77575 100.22531,60.8631 96.05473,62.77312 	"/>
+	<polygon id="_x39_-3_00000116942745396784187700000012262223141666372482_" shape-rendering="crispEdges" points="
+		100.23568,55.77575 104.40411,53.8688 104.39245,58.95464 100.22531,60.8631 	"/>
+	<polygon id="_x31_0-3_00000020387385856126493840000001704881307636027551_" shape-rendering="crispEdges" class="st69" points="
+		104.40411,53.8688 108.56911,51.96341 108.55617,57.04776 104.39245,58.95464 	"/>
+	<polygon id="_x31_1-3_00000161607712665608680040000005176241318858925476_" shape-rendering="crispEdges" class="st69" points="
+		108.56911,51.96341 112.73068,50.0596 112.71646,55.14244 108.55617,57.04776 	"/>
+	<polygon id="_x31_2-3_00000049940595154951565750000005176734288205912449_" shape-rendering="crispEdges" class="st70" points="
+		112.73068,50.0596 116.88883,48.15734 116.87333,53.23869 112.71646,55.14244 	"/>
+	<polygon id="_x31_3-3_00000091707343786751943530000003389665333592756618_" shape-rendering="crispEdges" class="st63" points="
+		116.88882,48.15735 121.04356,46.25666 121.02678,51.3365 116.87332,53.23869 	"/>
+	<polygon id="_x31_4-3_00000104687663853026281860000009870781881347208357_" shape-rendering="crispEdges" class="st69" points="
+		121.04356,46.25666 125.19489,44.35753 125.17683,49.43587 121.02678,51.3365 	"/>
+	<polygon id="_x31_5-3_00000039099516215205638370000013724567217606690220_" shape-rendering="crispEdges" class="st69" points="
+		125.19489,44.35753 129.3428,42.45996 129.32347,47.53681 125.17683,49.43587 	"/>
+	<polygon id="_x31_6-3_00000101101234568935905800000008846290197685252023_" shape-rendering="crispEdges" points="
+		129.3428,42.45996 133.4873,40.56395 133.46671,45.6393 129.32347,47.53681 	"/>
+	<polygon id="_x31_-4_00000132796777926708731990000017605131317467237015_" shape-rendering="crispEdges" points="
+		66.76428,76.18748 70.959,74.2664 70.9577,79.36111 66.76428,81.2837 	"/>
+	<polygon id="_x32_-4_00000023991662813639532760000015054251017172761511_" shape-rendering="crispEdges" class="st76" points="
+		70.959,74.2664 75.15025,72.3469 75.14764,77.44011 70.9577,79.36111 	"/>
+	<polygon id="_x33_-4_00000015320305965029140590000004735026192134204822_" shape-rendering="crispEdges" class="st76" points="
+		75.15025,72.3469 79.33804,70.42899 79.33414,75.52069 75.14764,77.44011 	"/>
+	<polygon id="_x34_-4_00000090256769522674454270000005004995642822903969_" shape-rendering="crispEdges" class="st77" points="
+		79.33804,70.42899 83.52238,68.51266 83.51719,73.60286 79.33414,75.52069 	"/>
+	<polygon id="_x35_-4_00000110436948510664196630000011747520000274449599_" shape-rendering="crispEdges" class="st77" points="
+		83.52238,68.51266 87.70328,66.5979 87.69678,71.6866 83.51719,73.60286 	"/>
+	<polygon id="_x36_-4_00000011019122124109753300000009898026172605945016_" shape-rendering="crispEdges" class="st63" points="
+		87.70328,66.5979 91.88073,64.68472 91.87294,69.77192 87.69678,71.6866 	"/>
+	<polygon id="_x37_-4_00000030458334342071853250000012010778446553142666_" shape-rendering="crispEdges" class="st78" points="
+		91.88073,64.68472 96.05473,62.77312 96.04566,67.85882 91.87294,69.77192 	"/>
+	<polygon id="_x38_-4_00000156572798413677665170000003822223297808790437_" shape-rendering="crispEdges" points="
+		96.05473,62.77312 100.22531,60.8631 100.21494,65.9473 96.04566,67.85882 	"/>
+	<polygon id="_x39_-4_00000099637082076302354000000015190510129169637555_" shape-rendering="crispEdges" points="
+		100.22531,60.8631 104.39245,58.95464 104.3808,64.03734 100.21494,65.9473 	"/>
+	<polygon id="_x31_0-4_00000012455866833869146410000012316231051000180395_" shape-rendering="crispEdges" class="st63" points="
+		104.39245,58.95464 108.55617,57.04776 108.54324,62.12895 104.3808,64.03734 	"/>
+	<polygon id="_x31_1-4_00000080924329761448972560000012059059693477255829_" shape-rendering="crispEdges" class="st79" points="
+		108.55617,57.04776 112.71646,55.14244 112.70224,60.22213 108.54324,62.12895 	"/>
+	<polygon id="_x31_2-4_00000091003292518114676030000002871316607605715844_" shape-rendering="crispEdges" class="st76" points="
+		112.71646,55.14244 116.87333,53.23869 116.85783,58.31689 112.70224,60.22213 	"/>
+	<polygon id="_x31_3-4_00000091005732389734325660000003671922871888083872_" shape-rendering="crispEdges" class="st76" points="
+		116.87332,53.23869 121.02678,51.3365 121.01001,56.4132 116.85783,58.31689 	"/>
+	<polygon id="_x31_4-4_00000134208071791127436260000011425049425171233940_" shape-rendering="crispEdges" class="st76" points="
+		121.02678,51.3365 125.17683,49.43587 125.15878,54.51108 121.01001,56.4132 	"/>
+	<polygon id="_x31_5-4_00000173859871909923060450000005464968998098128823_" shape-rendering="crispEdges" class="st63" points="
+		125.17683,49.43587 129.32347,47.53681 129.30415,52.61052 125.15878,54.51108 	"/>
+	<polygon id="_x31_6-4_00000157306367101060632850000014441252507163645623_" shape-rendering="crispEdges" points="
+		129.32347,47.53681 133.46671,45.6393 133.44612,50.71151 129.30415,52.61052 	"/>
+	<polygon id="_x31_-5_00000116231950017739983770000013128142774013863299_" shape-rendering="crispEdges" points="
+		66.76428,81.2837 70.9577,79.36111 70.95639,84.45267 66.76428,86.37676 	"/>
+	<polygon id="_x32_-5_00000164516198489426024210000017866573346258890139_" shape-rendering="crispEdges" class="st64" points="
+		70.9577,79.36111 75.14764,77.44011 75.14504,82.53016 70.95639,84.45267 	"/>
+	<polygon id="_x33_-5_00000178905757561259114770000011216537840152833463_" shape-rendering="crispEdges" class="st64" points="
+		75.14764,77.44011 79.33414,75.52069 79.33024,80.60924 75.14504,82.53016 	"/>
+	<polygon id="_x34_-5_00000125577480139908078970000018407799302807414409_" shape-rendering="crispEdges" class="st80" points="
+		79.33414,75.52069 83.51719,73.60286 83.51199,78.6899 79.33024,80.60924 	"/>
+	<polygon id="_x35_-5_00000013191128977946321170000007964261713387184000_" shape-rendering="crispEdges" class="st64" points="
+		83.51719,73.60286 87.69678,71.6866 87.69029,76.77215 83.51199,78.6899 	"/>
+	<polygon id="_x36_-5_00000183948713816371532550000012842210666445261475_" shape-rendering="crispEdges" class="st69" points="
+		87.69678,71.6866 91.87294,69.77192 91.86516,74.85596 87.69029,76.77215 	"/>
+	<polygon id="_x37_-5_00000170252759848788066710000016186803787961019033_" shape-rendering="crispEdges" class="st69" points="
+		91.87294,69.77192 96.04566,67.85882 96.03659,72.94137 91.86516,74.85596 	"/>
+	<polygon id="_x38_-5_00000034807732398672597270000009601730454685246639_" shape-rendering="crispEdges" points="
+		96.04566,67.85882 100.21494,65.9473 100.20459,71.02834 96.03659,72.94137 	"/>
+	<polygon id="_x39_-5_00000177484852227278694310000005940583991735309500_" shape-rendering="crispEdges" points="
+		100.21494,65.9473 104.3808,64.03734 104.36916,69.11689 100.20459,71.02834 	"/>
+	<polygon id="_x31_0-5_00000153707683665178875640000001880808414062725042_" shape-rendering="crispEdges" class="st64" points="
+		104.3808,64.03734 108.54324,62.12895 108.5303,67.207 104.36916,69.11689 	"/>
+	<polygon id="_x31_1-5_00000004524811308168693770000002965827360040158366_" shape-rendering="crispEdges" class="st81" points="
+		108.54324,62.12895 112.70224,60.22213 112.68803,65.29869 108.5303,67.207 	"/>
+	<polygon id="_x31_2-5_00000073693807612136390040000009755768466332175488_" shape-rendering="crispEdges" class="st63" points="
+		112.70224,60.22213 116.85783,58.31689 116.84235,63.39194 112.68803,65.29869 	"/>
+	<polygon id="_x31_3-5_00000072250068993483276310000002432186901712797349_" shape-rendering="crispEdges" class="st72" points="
+		116.85783,58.31689 121.01001,56.4132 120.99325,61.48677 116.84234,63.39195 	"/>
+	<polygon id="_x31_4-5_00000074439292157608621500000006792822512841785020_" shape-rendering="crispEdges" class="st72" points="
+		121.01001,56.4132 125.15878,54.51108 125.14074,59.58315 120.99325,61.48677 	"/>
+	<polygon id="_x31_5-5_00000161612576509491782790000004782923511389622925_" shape-rendering="crispEdges" class="st72" points="
+		125.15878,54.51108 129.30415,52.61052 129.28484,57.6811 125.14074,59.58315 	"/>
+	<polygon id="_x31_6-5_00000122687535688114669240000016305094831491360419_" shape-rendering="crispEdges" points="
+		129.30415,52.61052 133.44612,50.71151 133.42554,55.7806 129.28484,57.6811 	"/>
+	<polygon id="_x31_-6_00000034065556973258218770000010594459168627881868_" shape-rendering="crispEdges" points="
+		66.76428,86.37676 70.95639,84.45267 70.95509,89.54106 66.76428,91.46665 	"/>
+	<polygon id="_x32_-6_00000057150563451433338710000018091445722515487416_" shape-rendering="crispEdges" class="st82" points="
+		70.95639,84.45267 75.14504,82.53016 75.14244,87.61705 70.95509,89.54106 	"/>
+	<polygon id="_x33_-6_00000126299484916814832270000008878980875778613433_" shape-rendering="crispEdges" class="st78" points="
+		75.14504,82.53016 79.33024,80.60924 79.32635,85.69463 75.14244,87.61705 	"/>
+	<polygon id="_x34_-6_00000121968475250581938420000010203167647574475184_" shape-rendering="crispEdges" points="
+		79.33024,80.60924 83.51199,78.6899 83.5068,83.7738 79.32635,85.69463 	"/>
+	<polygon id="_x35_-6_00000183927274338040283820000009571431788595245199_" shape-rendering="crispEdges" class="st72" points="
+		83.51199,78.6899 87.69029,76.77215 87.68381,81.85454 83.5068,83.7738 	"/>
+	<polygon id="_x36_-6_00000065758101432443690510000017360301564653503121_" shape-rendering="crispEdges" points="
+		87.69029,76.77215 91.86516,74.85596 91.85738,79.93686 87.68381,81.85454 	"/>
+	<polygon id="_x37_-6_00000049205765181989260790000006315850658826084508_" shape-rendering="crispEdges" class="st69" points="
+		91.86516,74.85596 96.03659,72.94137 96.02753,78.02077 91.85738,79.93686 	"/>
+	<polygon id="_x38_-6_00000101073530292465796580000017115987317018327686_" shape-rendering="crispEdges" points="
+		96.03659,72.94137 100.20459,71.02834 100.19424,76.10624 96.02753,78.02077 	"/>
+	<polygon id="_x39_-6_00000008837636993999583230000009132669348955465918_" shape-rendering="crispEdges" points="
+		100.20459,71.02834 104.36916,69.11689 104.35752,74.19329 100.19424,76.10624 	"/>
+	<polygon id="_x31_0-6_00000142143151016153233470000008781748205899834026_" shape-rendering="crispEdges" class="st83" points="
+		104.36916,69.11689 108.5303,67.207 108.51739,72.28191 104.35752,74.19329 	"/>
+	<polygon id="_x31_1-6_00000134937426801754137730000005166822234568601514_" shape-rendering="crispEdges" class="st84" points="
+		108.5303,67.207 112.68803,65.29869 112.67384,70.37211 108.51739,72.28191 	"/>
+	<polygon id="_x31_2-6_00000018219183866098723340000004816600610326653321_" shape-rendering="crispEdges" class="st72" points="
+		112.68803,65.29869 116.84235,63.39194 116.82687,68.46387 112.67384,70.37211 	"/>
+	<polygon id="_x31_3-6_00000049188965768703773460000009848939132702421393_" shape-rendering="crispEdges" class="st64" points="
+		116.84234,63.39195 120.99325,61.48677 120.97649,66.5572 116.82687,68.46387 	"/>
+	<polygon id="_x31_4-6_00000023265459183408391070000017782985713231318952_" shape-rendering="crispEdges" class="st64" points="
+		120.99325,61.48677 125.14074,59.58315 125.12272,64.65209 120.97649,66.5572 	"/>
+	<polygon id="_x31_5-6_00000057868069724213043830000009763815347419699605_" shape-rendering="crispEdges" class="st64" points="
+		125.14074,59.58315 129.28484,57.6811 129.26555,62.74854 125.12272,64.65209 	"/>
+	<polygon id="_x31_6-6_00000183934732632268911980000009370955181375916684_" shape-rendering="crispEdges" points="
+		129.28484,57.6811 133.42554,55.7806 133.40497,60.84656 129.26555,62.74854 	"/>
+	<polygon id="_x31_-7_00000046327840740082877200000009049578102006171028_" shape-rendering="crispEdges" points="
+		66.76428,91.46665 70.95509,89.54106 70.95379,94.62629 66.76428,96.55338 	"/>
+	<polygon id="_x32_-7_00000000917015298960734840000011874727168747713671_" shape-rendering="crispEdges" class="st85" points="
+		70.95509,89.54106 75.14244,87.61705 75.13985,92.70079 70.95379,94.62629 	"/>
+	<polygon id="_x33_-7_00000010311083926222731900000010901020211473181882_" shape-rendering="crispEdges" class="st69" points="
+		75.14244,87.61705 79.32635,85.69463 79.32245,90.77687 75.13985,92.70079 	"/>
+	<polygon id="_x34_-7_00000179648491463604926790000000953934675025362846_" shape-rendering="crispEdges" points="
+		79.32635,85.69463 83.5068,83.7738 83.50161,88.85454 79.32245,90.77687 	"/>
+	<polygon id="_x35_-7_00000060743013682486630530000007142667753977245843_" shape-rendering="crispEdges" class="st86" points="
+		83.5068,83.7738 87.68381,81.85454 87.67733,86.93378 83.50161,88.85454 	"/>
+	<polygon id="_x36_-7_00000093140064551475817820000007152360644035774881_" shape-rendering="crispEdges" points="
+		87.68381,81.85454 91.85738,79.93686 91.84962,85.01461 87.67733,86.93378 	"/>
+	<polygon id="_x37_-7_00000157307816856773619670000016856592201112612267_" shape-rendering="crispEdges" class="st86" points="
+		91.85738,79.93686 96.02753,78.02077 96.01847,83.09702 91.84962,85.01461 	"/>
+	<polygon id="_x38_-7_00000088850640161127009400000003423266327450346930_" shape-rendering="crispEdges" points="
+		96.02753,78.02077 100.19424,76.10624 100.18389,81.181 96.01847,83.09702 	"/>
+	<polygon id="_x39_-7_00000028288699173547304930000017807295767188210070_" shape-rendering="crispEdges" points="
+		100.19424,76.10624 104.35752,74.19329 104.34589,79.26656 100.18389,81.181 	"/>
+	<polygon id="_x31_0-7_00000046329232509235920660000011144925127987621259_" shape-rendering="crispEdges" class="st75" points="
+		104.35752,74.19329 108.51739,72.28191 108.50448,77.35369 104.34589,79.26656 	"/>
+	<polygon id="_x31_1-7_00000144325248332332911850000007084736331194992266_" shape-rendering="crispEdges" class="st77" points="
+		108.51739,72.28191 112.67384,70.37211 112.65965,75.44239 108.50448,77.35369 	"/>
+	<polygon id="_x31_2-7_00000084502661193567085210000012348894038023280541_" shape-rendering="crispEdges" class="st69" points="
+		112.67384,70.37211 116.82687,68.46387 116.81141,73.53266 112.65965,75.44239 	"/>
+	<polygon id="_x31_3-7_00000044143201989206797820000013884089033102566588_" shape-rendering="crispEdges" class="st69" points="
+		116.82687,68.46387 120.97649,66.5572 120.95975,71.6245 116.8114,73.53266 	"/>
+	<polygon id="_x31_4-7_00000124123225944287191850000000151931201427272364_" shape-rendering="crispEdges" class="st69" points="
+		120.97649,66.5572 125.12272,64.65209 125.10471,69.7179 120.95975,71.6245 	"/>
+	<polygon id="_x31_5-7_00000116949364946573631610000017225977757184062351_" shape-rendering="crispEdges" class="st69" points="
+		125.12272,64.65209 129.26555,62.74854 129.24626,67.81287 125.10471,69.7179 	"/>
+	<polygon id="_x31_6-7_00000126311807556812352420000010406577453517029776_" shape-rendering="crispEdges" points="
+		129.26555,62.74854 133.40497,60.84656 133.38441,65.90939 129.24626,67.81287 	"/>
+	<polygon id="_x31_-8_00000149372962464257923840000010127041684793803404_" shape-rendering="crispEdges" points="
+		66.76428,96.55338 70.95379,94.62629 70.95249,99.70837 66.76428,101.63696 	"/>
+	<polygon id="_x32_-8_00000006667541835779485430000008229741168399635135_" shape-rendering="crispEdges" class="st63" points="
+		70.95379,94.62629 75.13985,92.70079 75.13725,97.78137 70.95249,99.70837 	"/>
+	<polygon id="_x33_-8_00000127737444617498425820000008693750145190843819_" shape-rendering="crispEdges" class="st76" points="
+		75.13985,92.70079 79.32245,90.77687 79.31856,95.85596 75.13725,97.78137 	"/>
+	<polygon id="_x34_-8_00000026165476793404255980000005591573698051184312_" shape-rendering="crispEdges" class="st76" points="
+		79.32245,90.77687 83.50161,88.85454 83.49642,93.93213 79.31856,95.85596 	"/>
+	<polygon id="_x35_-8_00000036943839303442821090000003922068307196835235_" shape-rendering="crispEdges" class="st87" points="
+		83.50161,88.85454 87.67733,86.93378 87.67085,92.00988 83.49642,93.93213 	"/>
+	<polygon id="_x36_-8_00000179612885223439176060000004447176857122120619_" shape-rendering="crispEdges" class="st76" points="
+		87.67733,86.93378 91.84962,85.01461 91.84185,90.08922 87.67085,92.00988 	"/>
+	<polygon id="_x37_-8_00000006674441304472946900000012456669865767039391_" shape-rendering="crispEdges" class="st88" points="
+		91.84962,85.01461 96.01847,83.09702 96.00941,88.17013 91.84185,90.08922 	"/>
+	<polygon id="_x38_-8_00000027587669892206714910000006681339338560149385_" shape-rendering="crispEdges" points="
+		96.01847,83.09702 100.18389,81.181 100.17355,86.25262 96.00941,88.17013 	"/>
+	<polygon id="_x39_-8_00000016796349813449614570000006813853666983670453_" shape-rendering="crispEdges" points="
+		100.18389,81.181 104.34589,79.26656 104.33427,84.33669 100.17355,86.25262 	"/>
+	<polygon id="_x31_0-8_00000149375241788093978890000015844144801527393946_" shape-rendering="crispEdges" class="st63" points="
+		104.34589,79.26656 108.50448,77.35369 108.49158,82.42233 104.33427,84.33669 	"/>
+	<polygon id="_x31_1-8_00000037658346641662934340000004069227434677113520_" shape-rendering="crispEdges" class="st76" points="
+		108.50448,77.35369 112.65965,75.44239 112.64547,80.50954 108.49158,82.42233 	"/>
+	<polygon id="_x31_2-8_00000018920733093354750950000000074317931789541772_" shape-rendering="crispEdges" class="st79" points="
+		112.65965,75.44239 116.81141,73.53266 116.79595,78.59832 112.64547,80.50954 	"/>
+	<polygon id="_x31_3-8_00000060722692555910109240000012580976034628949693_" shape-rendering="crispEdges" class="st76" points="
+		116.8114,73.53266 120.95975,71.6245 120.94302,76.68867 116.79594,78.59832 	"/>
+	<polygon id="_x31_4-8_00000061437561028865168270000014036160244310105764_" shape-rendering="crispEdges" class="st76" points="
+		120.95975,71.6245 125.10471,69.7179 125.0867,74.78059 120.94302,76.68867 	"/>
+	<polygon id="_x31_5-8_00000080900549321012892640000006327012152130546846_" shape-rendering="crispEdges" class="st89" points="
+		125.10471,69.7179 129.24626,67.81287 129.22699,72.87406 125.0867,74.78059 	"/>
+	<polygon id="_x31_6-8_00000080884819365671108610000002669700933086951809_" shape-rendering="crispEdges" points="
+		129.24626,67.81287 133.38441,65.90939 133.36388,70.9691 129.22699,72.87406 	"/>
+	<polygon id="_x31_-9_00000056414223197592975290000005926172896036640665_" shape-rendering="crispEdges" points="
+		66.76428,101.63696 70.95249,99.70837 70.95119,104.7873 66.76428,106.71738 	"/>
+	<polygon id="_x32_-9_00000073687470069359787930000003747199546240039863_" shape-rendering="crispEdges" class="st90" points="
+		70.95249,99.70837 75.13725,97.78137 75.13465,102.8588 70.95119,104.7873 	"/>
+	<polygon id="_x33_-9_00000133487984151760543150000005238703286662201763_" shape-rendering="crispEdges" class="st69" points="
+		75.13725,97.78137 79.31856,95.85596 79.31467,100.93189 75.13465,102.8588 	"/>
+	<polygon id="_x34_-9_00000129898071649492826020000004034947298090453120_" shape-rendering="crispEdges" class="st91" points="
+		79.31856,95.85596 83.49642,93.93213 83.49124,99.00657 79.31467,100.93189 	"/>
+	<polygon id="_x35_-9_00000021801481764418978500000005880543632796263089_" shape-rendering="crispEdges" class="st92" points="
+		83.49642,93.93213 87.67085,92.00988 87.66438,97.08283 83.49124,99.00657 	"/>
+	<polygon id="_x36_-9_00000057840267812360070800000014774971455987839142_" shape-rendering="crispEdges" class="st93" points="
+		87.67085,92.00988 91.84185,90.08922 91.83408,95.16068 87.66438,97.08283 	"/>
+	<polygon id="_x37_-9_00000178198576997372664780000006638115446893409688_" shape-rendering="crispEdges" class="st94" points="
+		91.84185,90.08922 96.00941,88.17013 96.00037,93.2401 91.83408,95.16068 	"/>
+	<polygon id="_x38_-9_00000052091488627456340690000004127991504139394441_" shape-rendering="crispEdges" points="
+		96.00941,88.17013 100.17355,86.25262 100.16322,91.3211 96.00037,93.2401 	"/>
+	<polygon id="_x39_-9_00000086677560272462781420000010034328947650173372_" shape-rendering="crispEdges" points="
+		100.17355,86.25262 104.33427,84.33669 104.32266,89.40368 100.16322,91.3211 	"/>
+	<polygon id="_x31_0-9_00000002386729080713509520000011980652527966459563_" shape-rendering="crispEdges" class="st70" points="
+		104.33427,84.33669 108.49158,82.42233 108.47868,87.48783 104.32266,89.40368 	"/>
+	<polygon id="_x31_1-9_00000140010652533423495890000006187809779197236920_" shape-rendering="crispEdges" class="st72" points="
+		108.49158,82.42233 112.64547,80.50954 112.6313,85.57355 108.47868,87.48783 	"/>
+	<polygon id="_x31_2-9_00000165953629821012383100000004280820365132772766_" shape-rendering="crispEdges" class="st72" points="
+		112.64547,80.50954 116.79595,78.59832 116.78051,83.66085 112.6313,85.57355 	"/>
+	<polygon id="_x31_3-9_00000034797112061895143840000017648775332205258402_" shape-rendering="crispEdges" class="st69" points="
+		116.79594,78.59832 120.94302,76.68867 120.9263,81.74972 116.78049,83.66085 	"/>
+	<polygon id="_x31_4-9_00000159459409918271736370000018348287529850031795_" shape-rendering="crispEdges" class="st69" points="
+		120.94302,76.68867 125.0867,74.78059 125.06871,79.84014 120.9263,81.74972 	"/>
+	<polygon id="_x31_5-9_00000051341207772175651430000005386765875914645889_" shape-rendering="crispEdges" class="st69" points="
+		125.0867,74.78059 129.22699,72.87406 129.20772,77.93214 125.06871,79.84014 	"/>
+	<polygon id="_x31_6-9_00000103222797392366499240000002091626607141137330_" shape-rendering="crispEdges" points="
+		129.22699,72.87406 133.36388,70.9691 133.34335,76.02569 129.20772,77.93214 	"/>
+	<polygon id="_x31_-10_00000074440912111073825580000001639419834566017431_" shape-rendering="crispEdges" points="
+		66.76428,106.71738 70.95119,104.7873 70.9499,109.86308 66.76428,111.79465 	"/>
+	<polygon id="_x32_-10_00000101787191255187345650000005094770560423683205_" shape-rendering="crispEdges" class="st82" points="
+		70.95119,104.7873 75.13465,102.8588 75.13206,107.93309 70.9499,109.86308 	"/>
+	<polygon id="_x33_-10_00000131326131503676021980000016675391098812256939_" shape-rendering="crispEdges" class="st64" points="
+		75.13465,102.8588 79.31467,100.93189 79.31078,106.00468 75.13206,107.93309 	"/>
+	<polygon id="_x34_-10_00000058585419325966891010000012008814215482564782_" shape-rendering="crispEdges" class="st95" points="
+		79.31467,100.93189 83.49124,99.00657 83.48606,104.07787 79.31078,106.00468 	"/>
+	<polygon id="_x35_-10_00000181082623679008761390000001663209883357377444_" shape-rendering="crispEdges" class="st96" points="
+		83.49124,99.00657 87.66438,97.08283 87.65791,102.15265 83.48606,104.07787 	"/>
+	<polygon id="_x36_-10_00000099634234656497507700000001504346820985584035_" shape-rendering="crispEdges" class="st97" points="
+		87.66438,97.08283 91.83408,95.16068 91.82633,100.229 87.65791,102.15265 	"/>
+	<polygon id="_x37_-10_00000177478203471996880760000004593906155827066537_" shape-rendering="crispEdges" class="st98" points="
+		91.83408,95.16068 96.00037,93.2401 95.99133,98.30694 91.82633,100.229 	"/>
+	<polygon id="_x38_-10_00000014605412897646970130000006164037011888541119_" shape-rendering="crispEdges" points="
+		96.00037,93.2401 100.16322,91.3211 100.1529,96.38645 95.99133,98.30694 	"/>
+	<polygon id="_x39_-10_00000029033385076806263650000004014087775593243018_" shape-rendering="crispEdges" points="
+		100.16322,91.3211 104.32266,89.40368 104.31106,94.46754 100.1529,96.38645 	"/>
+	<polygon id="_x31_0-10_00000105424625473903237850000003453068158314575804_" shape-rendering="crispEdges" class="st64" points="
+		104.32266,89.40368 108.47868,87.48783 108.46581,92.55021 104.31106,94.46754 	"/>
+	<polygon id="_x31_1-10_00000158005206782208320300000002464088460260655748_" shape-rendering="crispEdges" class="st64" points="
+		108.47868,87.48783 112.6313,85.57355 112.61714,90.63445 108.46581,92.55021 	"/>
+	<polygon id="_x31_2-10_00000070828045006621552110000005188335700359066557_" shape-rendering="crispEdges" class="st99" points="
+		112.6313,85.57355 116.78051,83.66085 116.76507,88.72025 112.61714,90.63445 	"/>
+	<polygon id="_x31_3-10_00000166644820887432519170000004235904463816091798_" shape-rendering="crispEdges" class="st69" points="
+		116.78049,83.66085 120.9263,81.74972 120.90959,86.80764 116.76506,88.72026 	"/>
+	<polygon id="_x31_4-10_00000129190970724591219700000006106740571683758221_" shape-rendering="crispEdges" class="st64" points="
+		120.9263,81.74972 125.06871,79.84014 125.05073,84.89658 120.90959,86.80764 	"/>
+	<polygon id="_x31_5-10_00000035497530494036630150000001998581363387851414_" shape-rendering="crispEdges" class="st100" points="
+		125.06871,79.84014 129.20772,77.93214 129.18848,82.98709 125.05073,84.89658 	"/>
+	<polygon id="_x31_6-10_00000026147899760061378500000003955218715812113836_" shape-rendering="crispEdges" points="
+		129.20772,77.93214 133.34335,76.02569 133.32283,81.07916 129.18848,82.98709 	"/>
+	<polygon id="_x31_-11_00000067953059209842805700000001027152324964197516_" shape-rendering="crispEdges" points="
+		66.76428,111.79465 70.9499,109.86308 70.9486,114.93571 66.76428,116.86877 	"/>
+	<polygon id="_x32_-11_00000167397452189487496970000008731027594157946768_" shape-rendering="crispEdges" class="st72" points="
+		70.9499,109.86308 75.13206,107.93309 75.12946,113.00423 70.9486,114.93571 	"/>
+	<polygon id="_x33_-11_00000093864121200205871840000012129372075353520274_" shape-rendering="crispEdges" class="st101" points="
+		75.13206,107.93309 79.31078,106.00468 79.30689,111.07434 75.12946,113.00423 	"/>
+	<polygon id="_x34_-11_00000050638130224847961280000003383305066560578477_" shape-rendering="crispEdges" class="st72" points="
+		79.31078,106.00468 83.48606,104.07787 83.48088,109.14604 79.30689,111.07434 	"/>
+	<polygon id="_x35_-11_00000096775887161713717380000009249901734037113513_" shape-rendering="crispEdges" class="st90" points="
+		83.48606,104.07787 87.65791,102.15265 87.65144,107.21932 83.48088,109.14604 	"/>
+	<polygon id="_x36_-11_00000176021831803070242570000001177724018079653773_" shape-rendering="crispEdges" class="st69" points="
+		87.65791,102.15265 91.82633,100.229 91.81858,105.29419 87.65144,107.21932 	"/>
+	<polygon id="_x37_-11_00000178924702588298083770000000149942456842173073_" shape-rendering="crispEdges" class="st102" points="
+		91.82633,100.229 95.99133,98.30694 95.98229,103.37064 91.81858,105.29419 	"/>
+	<polygon id="_x38_-11_00000060720050662514029560000003839358994619494023_" shape-rendering="crispEdges" points="
+		95.99133,98.30694 100.1529,96.38645 100.14258,101.44867 95.98229,103.37064 	"/>
+	<polygon id="_x39_-11_00000013911277764986749030000001191513518044853644_" shape-rendering="crispEdges" points="
+		100.1529,96.38645 104.31106,94.46754 104.29945,99.52827 100.14258,101.44867 	"/>
+	<polygon id="_x31_0-11_00000009578239473842552440000003847471182019092398_" shape-rendering="crispEdges" class="st64" points="
+		104.31106,94.46754 108.46581,92.55021 108.45293,97.60946 104.29945,99.52827 	"/>
+	<polygon id="_x31_1-11_00000074409385325444955560000000567802564253416894_" shape-rendering="crispEdges" class="st72" points="
+		108.46581,92.55021 112.61714,90.63445 112.60298,95.69221 108.45293,97.60946 	"/>
+	<polygon id="_x31_2-11_00000060007884334402632310000000424583967405955969_" shape-rendering="crispEdges" class="st72" points="
+		112.61714,90.63445 116.76507,88.72025 116.74964,93.77654 112.60298,95.69221 	"/>
+	<polygon id="_x31_3-11_00000037676926430652500360000006516081277877904285_" shape-rendering="crispEdges" class="st84" points="
+		116.76506,88.72026 120.90959,86.80764 120.89289,91.86244 116.74963,93.77654 	"/>
+	<polygon id="_x31_4-11_00000093881751726054600160000001005786191550148796_" shape-rendering="crispEdges" class="st70" points="
+		120.90959,86.80764 125.05073,84.89658 125.03276,89.94991 120.89289,91.86244 	"/>
+	<polygon id="_x31_5-11_00000054985512318938651900000001656109220008277388_" shape-rendering="crispEdges" class="st72" points="
+		125.05073,84.89658 129.18848,82.98709 129.16924,88.03893 125.03276,89.94991 	"/>
+	<polygon id="_x31_6-11_00000067230038322592748100000014485473990674488741_" shape-rendering="crispEdges" points="
+		129.18848,82.98709 133.32283,81.07916 133.30234,86.12952 129.16924,88.03893 	"/>
+	<polygon id="_x31_-12_00000054975021528116158520000006208577227665830833_" shape-rendering="crispEdges" points="
+		66.76428,116.86877 70.9486,114.93571 70.9473,120.0052 66.76428,121.93975 	"/>
+	<polygon id="_x32_-12_00000091717678860157602060000009049749405914559121_" shape-rendering="crispEdges" class="st76" points="
+		70.9486,114.93571 75.12946,113.00423 75.12688,118.07223 70.9473,120.0052 	"/>
+	<polygon id="_x33_-12_00000103987560539544020450000001695200412302145416_" shape-rendering="crispEdges" class="st63" points="
+		75.12946,113.00423 79.30689,111.07434 79.30301,116.14085 75.12688,118.07223 	"/>
+	<polygon id="_x34_-12_00000037689143560304155410000005682375991844466606_" shape-rendering="crispEdges" class="st63" points="
+		79.30689,111.07434 83.48088,109.14604 83.47571,114.21107 79.30301,116.14085 	"/>
+	<polygon id="_x35_-12_00000065074245515359611360000007451607755582826655_" shape-rendering="crispEdges" class="st76" points="
+		83.48088,109.14604 87.65144,107.21932 87.64498,112.28287 83.47571,114.21107 	"/>
+	<polygon id="_x36_-12_00000052085237158230209950000007480464240727117493_" shape-rendering="crispEdges" class="st76" points="
+		87.65144,107.21932 91.81858,105.29419 91.81083,110.35625 87.64498,112.28287 	"/>
+	<polygon id="_x37_-12_00000103266057711274857300000009076954215765707708_" shape-rendering="crispEdges" class="st76" points="
+		91.81858,105.29419 95.98229,103.37064 95.97326,108.43121 91.81083,110.35625 	"/>
+	<polygon id="_x38_-12_00000162311589034505237950000006191393474097842819_" shape-rendering="crispEdges" points="
+		95.98229,103.37064 100.14258,101.44867 100.13227,106.50776 95.97326,108.43121 	"/>
+	<polygon id="_x39_-12_00000096776045550424705360000017480865734145612195_" shape-rendering="crispEdges" points="
+		100.14258,101.44867 104.29945,99.52827 104.28786,104.58588 100.13227,106.50776 	"/>
+	<polygon id="_x31_0-12_00000102511978015778104190000012781756325643561351_" shape-rendering="crispEdges" class="st63" points="
+		104.29945,99.52827 108.45293,97.60946 108.44006,102.66558 104.28786,104.58588 	"/>
+	<polygon id="_x31_1-12_00000119814579811458437880000005491708877125012127_" shape-rendering="crispEdges" class="st63" points="
+		108.45293,97.60946 112.60298,95.69221 112.58884,100.74686 108.44006,102.66558 	"/>
+	<polygon id="_x31_2-12_00000157990092214479209780000002107320573216238997_" shape-rendering="crispEdges" class="st63" points="
+		112.60298,95.69221 116.74964,93.77654 116.73422,98.8297 112.58884,100.74686 	"/>
+	<polygon id="_x31_3-12_00000109022549301440299610000007149601703610155453_" shape-rendering="crispEdges" class="st79" points="
+		116.74963,93.77654 120.89289,91.86244 120.87621,96.91412 116.73421,98.8297 	"/>
+	<polygon id="_x31_4-12_00000049224205533037233890000014136832702122765185_" shape-rendering="crispEdges" class="st76" points="
+		120.89289,91.86244 125.03276,89.94991 125.0148,95.00011 120.87621,96.91412 	"/>
+	<polygon id="_x31_5-12_00000108301414430349726960000013501161140800138684_" shape-rendering="crispEdges" class="st76" points="
+		125.03276,89.94991 129.16924,88.03893 129.15001,93.08766 125.0148,95.00011 	"/>
+	<polygon id="_x31_6-12_00000106858583684467711730000005590755237543245741_" shape-rendering="crispEdges" points="
+		129.16924,88.03893 133.30234,86.12952 133.28185,91.17678 129.15001,93.08766 	"/>
+	<polygon id="_x31_-13_00000078735122878362549110000004518692008903357097_" shape-rendering="crispEdges" points="
+		66.76428,121.93975 70.9473,120.0052 70.94601,125.07154 66.76428,127.00758 	"/>
+	<polygon id="_x32_-13_00000116211594903055168320000012140894512565378492_" shape-rendering="crispEdges" class="st69" points="
+		70.9473,120.0052 75.12688,118.07223 75.12428,123.13708 70.94601,125.07154 	"/>
+	<polygon id="_x33_-13_00000150087531430739557310000008270945053143062426_" shape-rendering="crispEdges" class="st69" points="
+		75.12688,118.07223 79.30301,116.14085 79.29913,121.20423 75.12428,123.13708 	"/>
+	<polygon id="_x34_-13_00000111174702081155095910000017912868837714459036_" shape-rendering="crispEdges" class="st103" points="
+		79.30301,116.14085 83.47571,114.21107 83.47054,119.27296 79.29913,121.20423 	"/>
+	<polygon id="_x35_-13_00000169518608317664539620000011085891517102227854_" shape-rendering="crispEdges" class="st69" points="
+		83.47571,114.21107 87.64498,112.28287 87.63853,117.34328 83.47054,119.27296 	"/>
+	<polygon id="_x36_-13_00000143580082174845723220000007798205056346559649_" shape-rendering="crispEdges" class="st64" points="
+		87.64498,112.28287 91.81083,110.35625 91.80309,115.41518 87.63853,117.34328 	"/>
+	<polygon id="_x37_-13_00000094595649597884053100000009021081405902135717_" shape-rendering="crispEdges" class="st69" points="
+		91.81083,110.35625 95.97326,108.43121 95.96423,113.48866 91.80309,115.41518 	"/>
+	<polygon id="_x38_-13_00000005239808897148955810000007938164734381452686_" shape-rendering="crispEdges" points="
+		95.97326,108.43121 100.13227,106.50776 100.12196,111.56372 95.96423,113.48866 	"/>
+	<polygon id="_x39_-13_00000122717660798405837340000005095146886030158249_" shape-rendering="crispEdges" points="
+		100.13227,106.50776 104.28786,104.58588 104.27628,109.64037 100.12196,111.56372 	"/>
+	<polygon id="_x31_0-13_00000021801254527757304080000016230002374123511452_" shape-rendering="crispEdges" class="st64" points="
+		104.28786,104.58588 108.44006,102.66558 108.42719,107.71859 104.27628,109.64037 	"/>
+	<polygon id="_x31_1-13_00000011741503778624034490000011944634679691208358_" shape-rendering="crispEdges" class="st64" points="
+		108.44006,102.66558 112.58884,100.74686 112.57471,105.79839 108.42719,107.71859 	"/>
+	<polygon id="_x31_2-13_00000097470429387934451840000011055432184871158657_" shape-rendering="crispEdges" class="st64" points="
+		112.58884,100.74686 116.73422,98.8297 116.71882,103.87975 112.57471,105.79839 	"/>
+	<polygon id="_x31_3-13_00000028286710888605565350000006926082998941203890_" shape-rendering="crispEdges" class="st84" points="
+		116.73421,98.8297 120.87621,96.91412 120.85953,101.96269 116.7188,103.87975 	"/>
+	<polygon id="_x31_4-13_00000114782657431483318510000007879631092995207047_" shape-rendering="crispEdges" class="st63" points="
+		120.87621,96.91412 125.0148,95.00011 124.99686,100.0472 120.85953,101.96269 	"/>
+	<polygon id="_x31_5-13_00000138555209858102727920000005542491777637285511_" shape-rendering="crispEdges" class="st69" points="
+		125.0148,95.00011 129.15001,93.08766 129.1308,98.13328 124.99686,100.0472 	"/>
+	<polygon id="_x31_6-13_00000168079165312687288770000003307090289694055062_" shape-rendering="crispEdges" points="
+		129.15001,93.08766 133.28185,91.17678 133.26137,96.22092 129.1308,98.13328 	"/>
+	<polygon id="_x31_-14_00000071524416850885186650000001122639019704668295_" shape-rendering="crispEdges" points="
+		66.76428,127.00758 70.94601,125.07154 70.94471,130.13475 66.76428,132.07228 	"/>
+	<polygon id="_x32_-14_00000122709673880310276530000008515458421530468515_" shape-rendering="crispEdges" class="st64" points="
+		70.94601,125.07154 75.12428,123.13708 75.1217,128.19881 70.94471,130.13475 	"/>
+	<polygon id="_x33_-14_00000164492146391051434740000003608840500621636500_" shape-rendering="crispEdges" class="st63" points="
+		75.12428,123.13708 79.29913,121.20423 79.29525,126.26447 75.1217,128.19881 	"/>
+	<polygon id="_x34_-14_00000183237914252520558130000003658507450174127518_" shape-rendering="crispEdges" class="st103" points="
+		79.29913,121.20423 83.47054,119.27296 83.46538,124.33172 79.29525,126.26447 	"/>
+	<polygon id="_x35_-14_00000050627561138357807200000014479639241441880997_" shape-rendering="crispEdges" class="st69" points="
+		83.47054,119.27296 87.63853,117.34328 87.63207,122.40056 83.46538,124.33172 	"/>
+	<polygon id="_x36_-14_00000091017682760115341770000016081052504832441783_" shape-rendering="crispEdges" class="st69" points="
+		87.63853,117.34328 91.80309,115.41518 91.79535,120.47098 87.63207,122.40056 	"/>
+	<polygon id="_x37_-14_00000179641095571459753330000005011783942910021289_" shape-rendering="crispEdges" class="st69" points="
+		91.80309,115.41518 95.96423,113.48866 95.95522,118.54298 91.79535,120.47098 	"/>
+	<polygon id="_x38_-14_00000167363924261793464100000006536522296398607264_" shape-rendering="crispEdges" points="
+		95.96423,113.48866 100.12196,111.56372 100.11166,116.61657 95.95522,118.54298 	"/>
+	<polygon id="_x39_-14_00000000926166074940612390000004971804268279085449_" shape-rendering="crispEdges" points="
+		100.12196,111.56372 104.27628,109.64037 104.2647,114.69173 100.11166,116.61657 	"/>
+	<polygon id="_x31_0-14_00000074438143639232247120000010989817520441101225_" shape-rendering="crispEdges" class="st70" points="
+		104.27628,109.64037 108.42719,107.71859 108.41434,112.76847 104.2647,114.69173 	"/>
+	<polygon id="_x31_1-14_00000168834485968226958590000001531153405038769547_" shape-rendering="crispEdges" class="st70" points="
+		108.42719,107.71859 112.57471,105.79839 112.56058,110.84679 108.41434,112.76847 	"/>
+	<polygon id="_x31_2-14_00000062897470621279056190000001720161970447417270_" shape-rendering="crispEdges" class="st64" points="
+		112.57471,105.79839 116.71882,103.87975 116.70341,108.92669 112.56058,110.84679 	"/>
+	<polygon id="_x31_3-14_00000166658621192149427690000009933550945990752902_" shape-rendering="crispEdges" class="st64" points="
+		116.7188,103.87975 120.85953,101.96269 120.84286,107.00816 116.70341,108.92669 	"/>
+	<polygon id="_x31_4-14_00000122678521904433757550000005383971065563638403_" shape-rendering="crispEdges" class="st64" points="
+		120.85953,101.96269 124.99686,100.0472 124.97892,105.09119 120.84286,107.00816 	"/>
+	<polygon id="_x31_5-14_00000165217485927010003880000004169611464888610733_" shape-rendering="crispEdges" class="st64" points="
+		124.99686,100.0472 129.1308,98.13328 129.1116,103.17579 124.97892,105.09119 	"/>
+	<polygon id="_x31_6-14_00000152976532906004324070000010993291911368749444_" shape-rendering="crispEdges" points="
+		129.1308,98.13328 133.26137,96.22092 133.24091,101.26196 129.1116,103.17579 	"/>
+	<polygon id="_x31_-15_00000114763733168387275720000009139837634009305499_" shape-rendering="crispEdges" points="
+		66.76428,132.07228 70.94471,130.13475 70.94341,135.19482 66.76428,137.13383 	"/>
+	<polygon id="_x32_-15_00000033369400104305740390000016390977237205124757_" shape-rendering="crispEdges" class="st104" points="
+		70.94471,130.13475 75.1217,128.19881 75.11911,133.2574 70.94341,135.19482 	"/>
+	<polygon id="_x33_-15_00000028321302089874212860000014995364668255326089_" shape-rendering="crispEdges" class="st64" points="
+		75.1217,128.19881 79.29525,126.26447 79.29137,131.32158 75.11911,133.2574 	"/>
+	<polygon id="_x34_-15_00000006698582251826209400000008764229230393127338_" shape-rendering="crispEdges" class="st105" points="
+		79.29525,126.26447 83.46538,124.33172 83.46021,129.38736 79.29137,131.32158 	"/>
+	<polygon id="_x35_-15_00000141415820470495001160000006111527813942350743_" shape-rendering="crispEdges" class="st64" points="
+		83.46538,124.33172 87.63207,122.40056 87.62563,127.45471 83.46021,129.38736 	"/>
+	<polygon id="_x36_-15_00000118376620411591495400000001274353989401278901_" shape-rendering="crispEdges" class="st69" points="
+		87.63207,122.40056 91.79535,120.47098 91.78762,125.52365 87.62563,127.45471 	"/>
+	<polygon id="_x37_-15_00000008830202814528949500000009650086614761692822_" shape-rendering="crispEdges" class="st69" points="
+		91.79535,120.47098 95.95522,118.54298 95.9462,123.59418 91.78762,125.52365 	"/>
+	<polygon id="_x38_-15_00000023260283517467439560000001863743932543134081_" shape-rendering="crispEdges" points="
+		95.95522,118.54298 100.11166,116.61657 100.10137,121.66629 95.9462,123.59418 	"/>
+	<polygon id="_x39_-15_00000151535770107899885020000017556072664916018871_" shape-rendering="crispEdges" points="
+		100.11166,116.61657 104.2647,114.69173 104.25314,119.73998 100.10137,121.66629 	"/>
+	<polygon id="_x31_0-15_00000178924807291551348040000016301637765616760469_" shape-rendering="crispEdges" class="st69" points="
+		104.2647,114.69173 108.41434,112.76847 108.4015,117.81525 104.25314,119.73998 	"/>
+	<polygon id="_x31_1-15_00000130628911791481640270000005844600598015702668_" shape-rendering="crispEdges" class="st64" points="
+		108.41434,112.76847 112.56058,110.84679 112.54646,115.89209 108.4015,117.81525 	"/>
+	<polygon id="_x31_2-15_00000002348704927624706310000004996864705448477596_" shape-rendering="crispEdges" class="st72" points="
+		112.56058,110.84679 116.70341,108.92669 116.68803,113.97051 112.54646,115.89209 	"/>
+	<polygon id="_x31_3-15_00000049938476382175939140000012146965315110369429_" shape-rendering="crispEdges" class="st69" points="
+		116.70341,108.92669 120.84286,107.00816 120.8262,112.05051 116.68802,113.97051 	"/>
+	<polygon id="_x31_4-15_00000098218367182746978290000006800758942728657083_" shape-rendering="crispEdges" class="st69" points="
+		120.84286,107.00816 124.97892,105.09119 124.961,110.13207 120.8262,112.05051 	"/>
+	<polygon id="_x31_5-15_00000120559216121746688850000005846154617069310893_" shape-rendering="crispEdges" class="st69" points="
+		124.97892,105.09119 129.1116,103.17579 129.09241,108.2152 124.961,110.13207 	"/>
+	<polygon id="_x31_6-15_00000065051733412575638290000016772991846809684384_" shape-rendering="crispEdges" points="
+		129.1116,103.17579 133.24091,101.26196 133.22044,106.2999 129.09241,108.2152 	"/>
+	<polygon id="_x31_-16_00000148626097966178025260000003584877422279086005_" shape-rendering="crispEdges" points="
+		66.76428,137.13383 70.94341,135.19482 70.94212,140.25177 66.76428,142.19225 	"/>
+	<polygon id="_x32_-16_00000132060752442982075670000011550114561041035704_" shape-rendering="crispEdges" class="st106" points="
+		70.94341,135.19482 75.11911,133.2574 75.11652,138.31287 70.94212,140.25177 	"/>
+	<polygon id="_x33_-16_00000176729580314084309230000000369581213977286532_" shape-rendering="crispEdges" class="st63" points="
+		75.11911,133.2574 79.29137,131.32158 79.2875,136.37556 75.11652,138.31287 	"/>
+	<polygon id="_x34_-16_00000026163057317098466400000002848519022501445285_" shape-rendering="crispEdges" class="st107" points="
+		79.29137,131.32158 83.46021,129.38736 83.45505,134.43987 79.2875,136.37556 	"/>
+	<polygon id="_x35_-16_00000080204862191813029730000002695481306939067027_" shape-rendering="crispEdges" class="st76" points="
+		83.46021,129.38736 87.62563,127.45471 87.61918,132.50574 83.45505,134.43987 	"/>
+	<polygon id="_x36_-16_00000049201453643997276200000013357534343489237155_" shape-rendering="crispEdges" class="st76" points="
+		87.62563,127.45471 91.78762,125.52365 91.77989,130.57321 87.61918,132.50574 	"/>
+	<polygon id="_x37_-16_00000056395802632834072970000015863313776132716187_" shape-rendering="crispEdges" class="st108" points="
+		91.78762,125.52365 95.9462,123.59418 95.93719,128.64226 91.77989,130.57321 	"/>
+	<polygon id="_x38_-16_00000000927795429460182530000014301303812840467855_" shape-rendering="crispEdges" points="
+		95.9462,123.59418 100.10137,121.66629 100.09108,126.7129 95.93719,128.64226 	"/>
+	<polygon id="_x39_-16_00000013192398692425030140000010102642004925121686_" shape-rendering="crispEdges" points="
+		100.10137,121.66629 104.25314,119.73998 104.24157,124.78511 100.09108,126.7129 	"/>
+	<polygon id="_x31_0-16_00000032640538865570234520000004564651929344741048_" shape-rendering="crispEdges" class="st109" points="
+		104.25314,119.73998 108.4015,117.81525 108.38866,122.85891 104.24157,124.78511 	"/>
+	<polygon id="_x31_1-16_00000108989523381405166740000005970939163394298775_" shape-rendering="crispEdges" class="st63" points="
+		108.4015,117.81525 112.54646,115.89209 112.53235,120.93428 108.38866,122.85891 	"/>
+	<polygon id="_x31_2-16_00000146460337012143060990000012496003499953244320_" shape-rendering="crispEdges" class="st76" points="
+		112.54646,115.89209 116.68803,113.97051 116.67265,119.01123 112.53235,120.93428 	"/>
+	<polygon id="_x31_3-16_00000178912156146952343200000006929227135185942146_" shape-rendering="crispEdges" class="st110" points="
+		116.68802,113.97051 120.8262,112.05051 120.80955,117.08975 116.67264,119.01123 	"/>
+	<polygon id="_x31_4-16_00000127749211633714954930000008745523102075282849_" shape-rendering="crispEdges" class="st76" points="
+		120.8262,112.05051 124.961,110.13207 124.94308,115.16985 120.80955,117.08975 	"/>
+	<polygon id="_x31_5-16_00000049212909422722434240000003018744058765608617_" shape-rendering="crispEdges" class="st76" points="
+		124.961,110.13207 129.09241,108.2152 129.07323,113.2515 124.94308,115.16985 	"/>
+	<polygon id="_x31_6-16_00000042719808134406439300000000215693204737266867_" shape-rendering="crispEdges" points="
+		129.09241,108.2152 133.22044,106.2999 133.20001,111.33473 129.07323,113.2515 	"/>
+</g>
+<g>
+	<polygon id="_x31_-1_00000006666317916319940850000012797375606624958907_" shape-rendering="crispEdges" class="st111" points="
+		66.30843,0.24588 70.46105,2.10893 66.33645,3.98615 62.18559,2.12101 	"/>
+	<polygon id="_x32_-1_00000031203573703217515180000004884847282474438018_" shape-rendering="crispEdges" class="st111" points="
+		70.46105,2.10893 74.62009,3.97486 70.49373,5.85418 66.33645,3.98615 	"/>
+	<polygon id="_x33_-1_00000145039440960770694080000006418128408564806298_" shape-rendering="crispEdges" class="st112" points="
+		74.62009,3.97486 78.78555,5.84368 74.65744,7.72509 70.49373,5.85418 	"/>
+	<polygon id="_x34_-1_00000067944075410417331800000003692401174940681364_" shape-rendering="crispEdges" class="st113" points="
+		78.78555,5.84368 82.95746,7.71539 78.8276,9.5989 74.65744,7.72509 	"/>
+	<polygon id="_x35_-1_00000160151413035076622540000012974272750104945067_" shape-rendering="crispEdges" class="st114" points="
+		82.95746,7.71539 87.13583,9.58999 83.00421,11.47561 78.8276,9.5989 	"/>
+	<polygon id="_x36_-1_00000101070896244780319970000000000317518506327203_" shape-rendering="crispEdges" class="st115" points="
+		87.13583,9.58999 91.32066,11.4675 87.1873,13.35523 83.00421,11.47561 	"/>
+	<polygon id="_x37_-1_00000088840292707321669200000016204067520394098613_" shape-rendering="crispEdges" class="st112" points="
+		91.32066,11.4675 95.51199,13.34792 91.37688,15.23777 87.1873,13.35523 	"/>
+	<polygon id="_x38_-1_00000017495417661844348350000014164166443868021164_" shape-rendering="crispEdges" class="st112" points="
+		95.51199,13.34792 99.70983,15.23126 95.57296,17.12323 91.37688,15.23777 	"/>
+	<polygon id="_x39_-1_00000150100260847248806820000002162294867479841922_" shape-rendering="crispEdges" class="st112" points="
+		99.70983,15.23126 103.91419,17.11752 99.77557,19.01162 95.57296,17.12323 	"/>
+	<polygon id="_x31_0-1_00000173125834482024493530000008211269178333404816_" shape-rendering="crispEdges" class="st116" points="
+		103.91419,17.11752 108.12508,19.00672 103.9847,20.90294 99.77557,19.01162 	"/>
+	<polygon id="_x31_1-1_00000033347915260992535870000005576420595357021085_" shape-rendering="crispEdges" class="st116" points="
+		108.12508,19.00672 112.34253,20.89886 108.20039,22.79721 103.9847,20.90294 	"/>
+	<polygon id="_x31_2-1_00000072261094740936165700000005336079626200463032_" shape-rendering="crispEdges" class="st112" points="
+		112.34253,20.89886 116.56654,22.79394 112.42264,24.69443 108.20039,22.79721 	"/>
+	<polygon id="_x31_3-1_00000049190725241679810470000013768705504172943806_" shape-rendering="crispEdges" class="st117" points="
+		116.56654,22.79394 120.79713,24.69197 116.65147,26.59461 112.42264,24.69443 	"/>
+	<polygon id="_x31_4-1_00000159459129533738806180000013267872178180825998_" shape-rendering="crispEdges" class="st118" points="
+		120.79713,24.69197 125.03431,26.59296 120.8869,28.49775 116.65147,26.59461 	"/>
+	<polygon id="_x31_5-1_00000125565959680447925640000008994151683916633022_" shape-rendering="crispEdges" class="st119" points="
+		125.03431,26.59296 129.27811,28.49692 125.12894,30.40385 120.8869,28.49775 	"/>
+	<polygon id="_x31_6-1_00000159467919534031110300000007714384539110141591_" shape-rendering="crispEdges" class="st120" points="
+		129.27811,28.49692 133.52853,30.40386 129.37761,32.31294 125.12894,30.40385 	"/>
+	<polygon id="_x31_-2_00000007430717586056690500000002107467823452633524_" shape-rendering="crispEdges" class="st111" points="
+		62.18559,2.12101 66.33645,3.98615 62.209,5.86467 58.05989,3.99743 	"/>
+	<polygon id="_x32_-2_00000024713155702432928740000007081429299032262585_" shape-rendering="crispEdges" class="st121" points="
+		66.33645,3.98615 70.49373,5.85418 66.36452,7.73479 62.209,5.86467 	"/>
+	<polygon id="_x33_-2_00000145759326111541681430000009066816021756519824_" shape-rendering="crispEdges" class="st121" points="
+		70.49373,5.85418 74.65744,7.72509 70.52648,9.6078 66.36452,7.73479 	"/>
+	<polygon id="_x34_-2_00000056418083256416809790000000424761257431745208_" shape-rendering="crispEdges" class="st122" points="
+		74.65744,7.72509 78.8276,9.5989 74.69489,11.48372 70.52648,9.6078 	"/>
+	<polygon id="_x35_-2_00000093148648191924375350000018290706754630675380_" shape-rendering="crispEdges" class="st123" points="
+		78.8276,9.5989 83.00421,11.47561 78.86974,13.36254 74.69489,11.48372 	"/>
+	<polygon id="_x36_-2_00000179629315217344599750000003237077049704080054_" shape-rendering="crispEdges" class="st124" points="
+		83.00421,11.47561 87.1873,13.35523 83.05107,15.24428 78.86974,13.36254 	"/>
+	<polygon id="_x37_-2_00000066499891253662211710000012566508583724304031_" shape-rendering="crispEdges" class="st124" points="
+		87.1873,13.35523 91.37688,15.23777 87.23889,17.12893 83.05107,15.24428 	"/>
+	<polygon id="_x38_-2_00000090975570839938129340000014389167516646734470_" shape-rendering="crispEdges" class="st124" points="
+		91.37688,15.23777 95.57296,17.12323 91.43322,19.01651 87.23889,17.12893 	"/>
+	<polygon id="_x39_-2_00000037677867400934284420000015198034331295566486_" shape-rendering="crispEdges" class="st124" points="
+		95.57296,17.12323 99.77557,19.01162 95.63406,20.90703 91.43322,19.01651 	"/>
+	<polygon id="_x31_0-2_00000044158564408128220680000010595074630946229905_" shape-rendering="crispEdges" class="st124" points="
+		99.77557,19.01162 103.9847,20.90294 99.84144,22.80048 95.63406,20.90703 	"/>
+	<polygon id="_x31_1-2_00000178180785740709280830000008607344126066709418_" shape-rendering="crispEdges" class="st124" points="
+		103.9847,20.90294 108.20039,22.79721 104.05537,24.69689 99.84144,22.80048 	"/>
+	<polygon id="_x31_2-2_00000114055319534456528200000001565671175148348577_" shape-rendering="crispEdges" class="st124" points="
+		108.20039,22.79721 112.42264,24.69443 108.27586,26.59625 104.05537,24.69689 	"/>
+	<polygon id="_x31_3-2_00000116215382760029296960000010120958071889762954_" shape-rendering="crispEdges" class="st125" points="
+		112.42264,24.69443 116.65147,26.59461 112.50294,28.49857 108.27586,26.59625 	"/>
+	<polygon id="_x31_4-2_00000054977677704860913370000012107258787192347520_" shape-rendering="crispEdges" class="st126" points="
+		116.65147,26.59461 120.8869,28.49775 116.7366,30.40385 112.50294,28.49857 	"/>
+	<polygon id="_x31_5-2_00000181073436349983459480000002417137551048643513_" shape-rendering="crispEdges" class="st126" points="
+		120.8869,28.49775 125.12894,30.40385 120.97688,32.31212 116.7366,30.40385 	"/>
+	<polygon id="_x31_6-2_00000098201424546584783660000016594300065539960246_" shape-rendering="crispEdges" class="st127" points="
+		125.12894,30.40385 129.37761,32.31294 125.22379,34.22336 120.97688,32.31212 	"/>
+	<polygon id="_x31_-3_00000037685334025317310310000017607044549121747882_" shape-rendering="crispEdges" class="st112" points="
+		58.05989,3.99743 62.209,5.86467 58.0787,7.74448 53.93135,5.87515 	"/>
+	<polygon id="_x32_-3_00000034791173466038308440000001601370757475291310_" shape-rendering="crispEdges" class="st121" points="
+		62.209,5.86467 66.36452,7.73479 62.23247,9.6167 58.0787,7.74448 	"/>
+	<polygon id="_x33_-3_00000008129046134660642560000012948816659865594290_" shape-rendering="crispEdges" class="st122" points="
+		66.36452,7.73479 70.52648,9.6078 66.39267,11.49182 62.23247,9.6167 	"/>
+	<polygon id="_x34_-3_00000083065281153892432190000003488903757907077802_" shape-rendering="crispEdges" class="st128" points="
+		70.52648,9.6078 74.69489,11.48372 70.55931,13.36984 66.39267,11.49182 	"/>
+	<polygon id="_x35_-3_00000156584603465970468920000010274180879138233763_" shape-rendering="crispEdges" class="st129" points="
+		74.69489,11.48372 78.86974,13.36254 74.73241,15.25077 70.55931,13.36984 	"/>
+	<polygon id="_x36_-3_00000178198011286324466990000009219004940313104561_" shape-rendering="crispEdges" class="st130" points="
+		78.86974,13.36254 83.05107,15.24428 78.91198,17.13463 74.73241,15.25077 	"/>
+	<polygon id="_x37_-3_00000123429349059710192160000008607405939625632927_" shape-rendering="crispEdges" class="st131" points="
+		83.05107,15.24428 87.23889,17.12893 83.09804,19.0214 78.91198,17.13463 	"/>
+	<polygon id="_x38_-3_00000109729303452416648480000008193416852968091561_" shape-rendering="crispEdges" class="st132" points="
+		87.23889,17.12893 91.43322,19.01651 87.2906,20.91111 83.09804,19.0214 	"/>
+	<polygon id="_x39_-3_00000158736080462870307690000015586909234336883847_" shape-rendering="crispEdges" class="st133" points="
+		91.43322,19.01651 95.63406,20.90703 91.48969,22.80375 87.2906,20.91111 	"/>
+	<polygon id="_x31_0-3_00000012455097951149652920000018092463039234729094_" shape-rendering="crispEdges" class="st134" points="
+		95.63406,20.90703 99.84144,22.80048 95.6953,24.69934 91.48969,22.80375 	"/>
+	<polygon id="_x31_1-3_00000168091462577097848440000012341587604318709161_" shape-rendering="crispEdges" class="st129" points="
+		99.84144,22.80048 104.05537,24.69689 99.90746,26.59789 95.6953,24.69934 	"/>
+	<polygon id="_x31_2-3_00000111874979633608966720000006544266942172504971_" shape-rendering="crispEdges" class="st129" points="
+		104.05537,24.69689 108.27586,26.59625 104.1262,28.49939 99.90746,26.59789 	"/>
+	<polygon id="_x31_3-3_00000142154386788257840510000012444159314680952716_" shape-rendering="crispEdges" class="st135" points="
+		108.27586,26.59625 112.50294,28.49857 108.35151,30.40385 104.1262,28.49939 	"/>
+	<polygon id="_x31_4-3_00000067216900058777836590000001559146319590328988_" shape-rendering="crispEdges" class="st125" points="
+		112.50294,28.49857 116.7366,30.40385 112.58341,32.31129 108.35151,30.40385 	"/>
+	<polygon id="_x31_5-3_00000006704093036038550750000000424245215135191176_" shape-rendering="crispEdges" class="st126" points="
+		116.7366,30.40385 120.97688,32.31212 116.82193,34.22171 112.58341,32.31129 	"/>
+	<polygon id="_x31_6-3_00000078005346079881245060000004894956775201303958_" shape-rendering="crispEdges" class="st136" points="
+		120.97688,32.31212 125.22379,34.22336 121.06707,36.13512 116.82193,34.22171 	"/>
+	<polygon id="_x31_-4_00000034052930079144426130000013250960757913142207_" shape-rendering="crispEdges" class="st111" points="
+		53.93135,5.87515 58.0787,7.74448 53.94555,9.62559 49.79996,7.75416 	"/>
+	<polygon id="_x32_-4_00000131352565562864104330000002712564668498685857_" shape-rendering="crispEdges" class="st122" points="
+		58.0787,7.74448 62.23247,9.6167 58.09756,11.49991 53.94555,9.62559 	"/>
+	<polygon id="_x33_-4_00000139980803652697357660000016202228527342449062_" shape-rendering="crispEdges" class="st137" points="
+		62.23247,9.6167 66.39267,11.49182 62.25599,13.37714 58.09756,11.49991 	"/>
+	<polygon id="_x34_-4_00000034060219733324563480000012180651089985765508_" shape-rendering="crispEdges" class="st138" points="
+		66.39267,11.49182 70.55931,13.36984 66.42087,15.25727 62.25599,13.37714 	"/>
+	<polygon id="_x35_-4_00000107550828638057809700000012234510853534792100_" shape-rendering="crispEdges" class="st139" points="
+		70.55931,13.36984 74.73241,15.25077 70.59221,17.14032 66.42087,15.25727 	"/>
+	<polygon id="_x36_-4_00000149344463181580087390000017291037961631588018_" shape-rendering="crispEdges" class="st140" points="
+		74.73241,15.25077 78.91198,17.13463 74.77001,19.02629 70.59221,17.14032 	"/>
+	<polygon id="_x37_-4_00000047044066304180688530000013883141618482436242_" shape-rendering="crispEdges" class="st140" points="
+		78.91198,17.13463 83.09804,19.0214 78.95431,20.91519 74.77001,19.02629 	"/>
+	<polygon id="_x38_-4_00000095299447932125974710000009346720228699966378_" shape-rendering="crispEdges" class="st140" points="
+		83.09804,19.0214 87.2906,20.91111 83.14511,22.80702 78.95431,20.91519 	"/>
+	<polygon id="_x39_-4_00000177465772785868766230000014332063670812742821_" shape-rendering="crispEdges" class="st141" points="
+		87.2906,20.91111 91.48969,22.80375 87.34243,24.7018 83.14511,22.80702 	"/>
+	<polygon id="_x31_0-4_00000106149299260577976990000003341414424855938432_" shape-rendering="crispEdges" class="st141" points="
+		91.48969,22.80375 95.6953,24.69934 91.54628,26.59953 87.34243,24.7018 	"/>
+	<polygon id="_x31_1-4_00000040563752229428485380000017361307460364200324_" shape-rendering="crispEdges" class="st142" points="
+		95.6953,24.69934 99.90746,26.59789 95.75668,28.50021 91.54628,26.59953 	"/>
+	<polygon id="_x31_2-4_00000115516156156584905930000014306430086549030273_" shape-rendering="crispEdges" class="st143" points="
+		99.90746,26.59789 104.1262,28.49939 99.97364,30.40385 95.75668,28.50021 	"/>
+	<polygon id="_x31_3-4_00000167389853134444218250000001008019419507237026_" shape-rendering="crispEdges" class="st144" points="
+		104.1262,28.49939 108.35151,30.40385 104.19718,32.31047 99.97364,30.40385 	"/>
+	<polygon id="_x31_4-4_00000147927968795583553930000008395467286071603377_" shape-rendering="crispEdges" class="st131" points="
+		108.35151,30.40385 112.58341,32.31129 108.42732,34.22006 104.19718,32.31047 	"/>
+	<polygon id="_x31_5-4_00000031914388216955688670000010891181682722836147_" shape-rendering="crispEdges" class="st125" points="
+		112.58341,32.31129 116.82193,34.22171 112.66407,36.13264 108.42732,34.22006 	"/>
+	<polygon id="_x31_6-4_00000139994392784107068930000009474123346981500333_" shape-rendering="crispEdges" class="st145" points="
+		116.82193,34.22171 121.06707,36.13512 116.90744,38.04821 112.66407,36.13264 	"/>
+	<polygon id="_x31_-5_00000134972870880773804870000011491544692443206825_" shape-rendering="crispEdges" class="st146" points="
+		49.79996,7.75416 53.94555,9.62559 49.80955,11.508 45.66572,9.63447 	"/>
+	<polygon id="_x32_-5_00000050634327180339804190000001692460388328817334_" shape-rendering="crispEdges" class="st147" points="
+		53.94555,9.62559 58.09756,11.49991 53.95979,13.38442 49.80955,11.508 	"/>
+	<polygon id="_x33_-5_00000147221743188550937670000005430277504187844011_" shape-rendering="crispEdges" class="st148" points="
+		58.09756,11.49991 62.25599,13.37714 58.11646,15.26376 53.95979,13.38442 	"/>
+	<polygon id="_x34_-5_00000103966121654465928520000013066970598034566036_" shape-rendering="crispEdges" class="st149" points="
+		62.25599,13.37714 66.42087,15.25727 62.27957,17.146 58.11646,15.26376 	"/>
+	<polygon id="_x35_-5_00000008141476156180446960000012166831377669632442_" shape-rendering="crispEdges" class="st150" points="
+		66.42087,15.25727 70.59221,17.14032 66.44913,19.03117 62.27957,17.146 	"/>
+	<polygon id="_x36_-5_00000032615349938931252090000014380601162583073683_" shape-rendering="crispEdges" class="st151" points="
+		70.59221,17.14032 74.77001,19.02629 70.62518,20.91926 66.44913,19.03117 	"/>
+	<polygon id="_x37_-5_00000008131595012801811140000016442246229217215649_" shape-rendering="crispEdges" class="st140" points="
+		74.77001,19.02629 78.95431,20.91519 74.80771,22.81029 70.62518,20.91926 	"/>
+	<polygon id="_x38_-5_00000007427276295668749010000016006572822456826528_" shape-rendering="crispEdges" class="st152" points="
+		78.95431,20.91519 83.14511,22.80702 78.99674,24.70425 74.80771,22.81029 	"/>
+	<polygon id="_x39_-5_00000181054710803571977830000018240568481460733325_" shape-rendering="crispEdges" class="st152" points="
+		83.14511,22.80702 87.34243,24.7018 83.19228,26.60116 78.99674,24.70425 	"/>
+	<polygon id="_x31_0-5_00000177455832408610679720000010424811809134466228_" shape-rendering="crispEdges" class="st141" points="
+		87.34243,24.7018 91.54628,26.59953 87.39437,28.50103 83.19228,26.60116 	"/>
+	<polygon id="_x31_1-5_00000169530210318938063440000018040361811216838808_" shape-rendering="crispEdges" class="st153" points="
+		91.54628,26.59953 95.75668,28.50021 91.603,30.40385 87.39437,28.50103 	"/>
+	<polygon id="_x31_2-5_00000080180447338603111470000014046217033607569312_" shape-rendering="crispEdges" class="st154" points="
+		95.75668,28.50021 99.97364,30.40385 95.81819,32.30965 91.603,30.40385 	"/>
+	<polygon id="_x31_3-5_00000012440281199829737630000009005246089737161114_" shape-rendering="crispEdges" class="st144" points="
+		99.97364,30.40385 104.19718,32.31047 100.03996,34.21841 95.81819,32.30965 	"/>
+	<polygon id="_x31_4-5_00000029016315472157768250000018126383288758438049_" shape-rendering="crispEdges" class="st129" points="
+		104.19718,32.31047 108.42732,34.22006 104.26833,36.13017 100.03996,34.21841 	"/>
+	<polygon id="_x31_5-5_00000170962531648099161020000009995610060903774636_" shape-rendering="crispEdges" class="st152" points="
+		108.42732,34.22006 112.66407,36.13264 108.50331,38.0449 104.26833,36.13017 	"/>
+	<polygon id="_x31_6-5_00000084493121895298628300000004064778018808542871_" shape-rendering="crispEdges" class="st155" points="
+		112.66407,36.13264 116.90744,38.04821 112.74491,39.96264 108.50331,38.0449 	"/>
+	<polygon id="_x31_-6_00000137842685777282783180000013761813258703576717_" shape-rendering="crispEdges" class="st146" points="
+		45.66572,9.63447 49.80955,11.508 45.67068,13.39171 41.52862,11.51608 	"/>
+	<polygon id="_x32_-6_00000041996821770576542570000001559454497118528675_" shape-rendering="crispEdges" class="st147" points="
+		49.80955,11.508 53.95979,13.38442 49.81916,15.27024 45.67068,13.39171 	"/>
+	<polygon id="_x33_-6_00000018207633569892094170000013496955780153764233_" shape-rendering="crispEdges" class="st129" points="
+		53.95979,13.38442 58.11646,15.26376 53.97406,17.15168 49.81916,15.27024 	"/>
+	<polygon id="_x34_-6_00000170999092166014069680000006356908838724548009_" shape-rendering="crispEdges" class="st149" points="
+		58.11646,15.26376 62.27957,17.146 58.1354,19.03605 53.97406,17.15168 	"/>
+	<polygon id="_x35_-6_00000057145871754254754010000012280428832818048156_" shape-rendering="crispEdges" class="st156" points="
+		62.27957,17.146 66.44913,19.03117 62.3032,20.92333 58.1354,19.03605 	"/>
+	<polygon id="_x36_-6_00000161603858692409902810000008353098185139307413_" shape-rendering="crispEdges" class="st157" points="
+		66.44913,19.03117 70.62518,20.91926 66.47747,22.81355 62.3032,20.92333 	"/>
+	<polygon id="_x37_-6_00000134207976515925435970000007708632575089340343_" shape-rendering="crispEdges" class="st158" points="
+		70.62518,20.91926 74.80771,22.81029 70.65823,24.7067 66.47747,22.81355 	"/>
+	<polygon id="_x38_-6_00000065036437768471887570000002166067263206702238_" shape-rendering="crispEdges" class="st159" points="
+		74.80771,22.81029 78.99674,24.70425 74.84548,26.6028 70.65823,24.7067 	"/>
+	<polygon id="_x39_-6_00000019674951488440101500000012725533559685705661_" shape-rendering="crispEdges" class="st129" points="
+		78.99674,24.70425 83.19228,26.60116 79.03926,28.50185 74.84548,26.6028 	"/>
+	<polygon id="_x31_0-6_00000156587490024575558730000007608117710447560874_" shape-rendering="crispEdges" class="st160" points="
+		83.19228,26.60116 87.39437,28.50103 83.23957,30.40385 79.03926,28.50185 	"/>
+	<polygon id="_x31_1-6_00000149362126955099468780000015170349927323531936_" shape-rendering="crispEdges" class="st161" points="
+		87.39437,28.50103 91.603,30.40385 87.44643,32.30882 83.23957,30.40385 	"/>
+	<polygon id="_x31_2-6_00000149356395142069979550000000985365125978502323_" shape-rendering="crispEdges" class="st162" points="
+		91.603,30.40385 95.81819,32.30965 91.65985,34.21677 87.44643,32.30882 	"/>
+	<polygon id="_x31_3-6_00000068646516031186187780000009007017227327875750_" shape-rendering="crispEdges" class="st144" points="
+		95.81819,32.30965 100.03996,34.21841 95.87984,36.12769 91.65985,34.21677 	"/>
+	<polygon id="_x31_4-6_00000052097752251709380150000011832944868454852025_" shape-rendering="crispEdges" class="st132" points="
+		100.03996,34.21841 104.26833,36.13017 100.10644,38.0416 95.87984,36.12769 	"/>
+	<polygon id="_x31_5-6_00000072982168943503493710000006896417025601779091_" shape-rendering="crispEdges" class="st152" points="
+		104.26833,36.13017 108.50331,38.0449 104.33964,39.9585 100.10644,38.0416 	"/>
+	<polygon id="_x31_6-6_00000035532581504240821360000016983486297479777980_" shape-rendering="crispEdges" class="st163" points="
+		108.50331,38.0449 112.74491,39.96264 108.57947,41.8784 104.33964,39.9585 	"/>
+	<polygon id="_x31_-7_00000156559096330195235790000000244774655827240881_" shape-rendering="crispEdges" class="st146" points="
+		41.52862,11.51608 45.67068,13.39171 41.52896,15.27672 37.38867,13.39898 	"/>
+	<polygon id="_x32_-7_00000008836722776762814090000017793706747181242041_" shape-rendering="crispEdges" class="st147" points="
+		45.67068,13.39171 49.81916,15.27024 45.67566,17.15736 41.52896,15.27672 	"/>
+	<polygon id="_x33_-7_00000168114441563270825370000016941790228315906699_" shape-rendering="crispEdges" class="st129" points="
+		49.81916,15.27024 53.97406,17.15168 49.82879,19.04092 45.67566,17.15736 	"/>
+	<polygon id="_x34_-7_00000164486587541599043720000009312768141373784734_" shape-rendering="crispEdges" class="st149" points="
+		53.97406,17.15168 58.1354,19.03605 53.98836,20.9274 49.82879,19.04092 	"/>
+	<polygon id="_x35_-7_00000172424334949384261120000009403977549276133523_" shape-rendering="crispEdges" class="st164" points="
+		58.1354,19.03605 62.3032,20.92333 58.15438,22.8168 53.98836,20.9274 	"/>
+	<polygon id="_x36_-7_00000060716672961272093550000012299561465468808861_" shape-rendering="crispEdges" class="st165" points="
+		62.3032,20.92333 66.47747,22.81355 62.32688,24.70915 58.15438,22.8168 	"/>
+	<polygon id="_x37_-7_00000013874414261046137130000010027918476764301471_" shape-rendering="crispEdges" class="st166" points="
+		66.47747,22.81355 70.65823,24.7067 66.50586,26.60443 62.32688,24.70915 	"/>
+	<polygon id="_x38_-7_00000059993602220084002430000007931497538025638022_" shape-rendering="crispEdges" class="st166" points="
+		70.65823,24.7067 74.84548,26.6028 70.69135,28.50266 66.50586,26.60443 	"/>
+	<polygon id="_x39_-7_00000057150079588739783440000006915046176738668200_" shape-rendering="crispEdges" class="st167" points="
+		74.84548,26.6028 79.03926,28.50185 74.88335,30.40385 70.69135,28.50266 	"/>
+	<polygon id="_x31_0-7_00000023988511927075217630000011355245996408896432_" shape-rendering="crispEdges" class="st149" points="
+		79.03926,28.50185 83.23957,30.40385 79.08188,32.308 74.88335,30.40385 	"/>
+	<polygon id="_x31_1-7_00000096745501257650763900000017488827399444858293_" shape-rendering="crispEdges" class="st160" points="
+		83.23957,30.40385 87.44643,32.30882 83.28696,34.21512 79.08188,32.308 	"/>
+	<polygon id="_x31_2-7_00000019656125427557477650000002696009264369723056_" shape-rendering="crispEdges" class="st168" points="
+		87.44643,32.30882 91.65985,34.21677 87.4986,36.12522 83.28696,34.21512 	"/>
+	<polygon id="_x31_3-7_00000101074608945610712480000014600801289860680331_" shape-rendering="crispEdges" class="st144" points="
+		91.65985,34.21677 95.87984,36.12769 91.71683,38.0383 87.4986,36.12522 	"/>
+	<polygon id="_x31_4-7_00000003827961704150289360000004911543259665472913_" shape-rendering="crispEdges" class="st169" points="
+		95.87984,36.12769 100.10644,38.0416 95.94164,39.95437 91.71683,38.0383 	"/>
+	<polygon id="_x31_5-7_00000003105491564697632090000008703494252988069528_" shape-rendering="crispEdges" class="st152" points="
+		100.10644,38.0416 104.33964,39.9585 100.17307,41.87344 95.94164,39.95437 	"/>
+	<polygon id="_x31_6-7_00000119822399806643136150000015234008389708096152_" shape-rendering="crispEdges" class="st170" points="
+		104.33964,39.9585 108.57947,41.8784 104.41111,43.79551 100.17307,41.87344 	"/>
+	<polygon id="_x31_-8_00000052096946988087984510000017275316413568649900_" shape-rendering="crispEdges" class="st146" points="
+		37.38867,13.39898 41.52896,15.27672 37.38437,17.16303 33.24585,15.28319 	"/>
+	<polygon id="_x32_-8_00000013177281999354825500000000774434029533731761_" shape-rendering="crispEdges" class="st147" points="
+		41.52896,15.27672 45.67566,17.15736 41.5293,19.04579 37.38437,17.16303 	"/>
+	<polygon id="_x33_-8_00000074439668915231633310000010969655381125345717_" shape-rendering="crispEdges" class="st129" points="
+		45.67566,17.15736 49.82879,19.04092 45.68065,20.93146 41.5293,19.04579 	"/>
+	<polygon id="_x34_-8_00000125598016031036688840000013545578079637074819_" shape-rendering="crispEdges" class="st171" points="
+		49.82879,19.04092 53.98836,20.9274 49.83844,22.82006 45.68065,20.93146 	"/>
+	<polygon id="_x35_-8_00000171709573225703783640000012886547948843435411_" shape-rendering="crispEdges" class="st172" points="
+		53.98836,20.9274 58.15438,22.8168 54.00269,24.71159 49.83844,22.82006 	"/>
+	<polygon id="_x36_-8_00000147201093521041505190000011703842625565375413_" shape-rendering="crispEdges" class="st135" points="
+		58.15438,22.8168 62.32688,24.70915 58.17341,26.60606 54.00269,24.71159 	"/>
+	<polygon id="_x37_-8_00000100371460459553863340000003086871114952501402_" shape-rendering="crispEdges" class="st166" points="
+		62.32688,24.70915 66.50586,26.60443 62.35061,28.50348 58.17341,26.60606 	"/>
+	<polygon id="_x38_-8_00000152230016755511823910000004337369657901876917_" shape-rendering="crispEdges" class="st152" points="
+		66.50586,26.60443 70.69135,28.50266 66.53432,30.40385 62.35061,28.50348 	"/>
+	<polygon id="_x39_-8_00000177455907533289873190000016416720258128472252_" shape-rendering="crispEdges" class="st152" points="
+		70.69135,28.50266 74.88335,30.40385 70.72454,32.30718 66.53432,30.40385 	"/>
+	<polygon id="_x31_0-8_00000007420327636625510730000006358117717299557551_" shape-rendering="crispEdges" class="st149" points="
+		74.88335,30.40385 79.08188,32.308 74.9213,34.21348 70.72454,32.30718 	"/>
+	<polygon id="_x31_1-8_00000105389230776586399330000008726002294638146466_" shape-rendering="crispEdges" class="st129" points="
+		79.08188,32.308 83.28696,34.21512 79.1246,36.12275 74.9213,34.21348 	"/>
+	<polygon id="_x31_2-8_00000174595727229042689120000002961652124776997524_" shape-rendering="crispEdges" class="st173" points="
+		83.28696,34.21512 87.4986,36.12522 83.33446,38.035 79.1246,36.12275 	"/>
+	<polygon id="_x31_3-8_00000098206359983669127960000004729681953269694351_" shape-rendering="crispEdges" class="st144" points="
+		87.4986,36.12522 91.71683,38.0383 87.5509,39.95024 83.33446,38.035 	"/>
+	<polygon id="_x31_4-8_00000098934562663522024970000005793283908873437094_" shape-rendering="crispEdges" class="st128" points="
+		91.71683,38.0383 95.94164,39.95437 91.77393,41.86847 87.5509,39.95024 	"/>
+	<polygon id="_x31_5-8_00000103979819874012790750000017813945920619616179_" shape-rendering="crispEdges" class="st152" points="
+		95.94164,39.95437 100.17307,41.87344 96.00357,43.78971 91.77393,41.86847 	"/>
+	<polygon id="_x31_6-8_00000121271505291051248340000015075500797706807435_" shape-rendering="crispEdges" class="st114" points="
+		100.17307,41.87344 104.41111,43.79551 100.23984,45.71395 96.00357,43.78971 	"/>
+	<polygon id="_x31_-9_00000168800455309711311810000005043557483962363014_" shape-rendering="crispEdges" class="st174" points="
+		33.24585,15.28319 37.38437,17.16303 33.23692,19.05065 29.10018,17.1687 	"/>
+	<polygon id="_x32_-9_00000183247878312567064190000017540909251749864877_" shape-rendering="crispEdges" class="st147" points="
+		37.38437,17.16303 41.5293,19.04579 37.38006,20.93552 33.23692,19.05065 	"/>
+	<polygon id="_x33_-9_00000078760040681161192230000014348407804185173929_" shape-rendering="crispEdges" class="st175" points="
+		41.5293,19.04579 45.68065,20.93146 41.52963,22.82331 37.38006,20.93552 	"/>
+	<polygon id="_x34_-9_00000171716396641111679310000010243671819349545389_" shape-rendering="crispEdges" class="st176" points="
+		45.68065,20.93146 49.83844,22.82006 45.68565,24.71404 41.52963,22.82331 	"/>
+	<polygon id="_x35_-9_00000020364846942283866830000014624043366712231046_" shape-rendering="crispEdges" class="st177" points="
+		49.83844,22.82006 54.00269,24.71159 49.84811,26.60769 45.68565,24.71404 	"/>
+	<polygon id="_x36_-9_00000047035816701704419360000003483610475221646497_" shape-rendering="crispEdges" class="st135" points="
+		54.00269,24.71159 58.17341,26.60606 54.01705,28.5043 49.84811,26.60769 	"/>
+	<polygon id="_x37_-9_00000124126312612498053940000017374671748196929963_" shape-rendering="crispEdges" class="st166" points="
+		58.17341,26.60606 62.35061,28.50348 58.19248,30.40385 54.01705,28.5043 	"/>
+	<polygon id="_x38_-9_00000068644111420849178350000011447489133388680845_" shape-rendering="crispEdges" class="st152" points="
+		62.35061,28.50348 66.53432,30.40385 62.3744,32.30636 58.19248,30.40385 	"/>
+	<polygon id="_x39_-9_00000026866146921928611780000001607267117266658488_" shape-rendering="crispEdges" class="st152" points="
+		66.53432,30.40385 70.72454,32.30718 66.56284,34.21183 62.3744,32.30636 	"/>
+	<polygon id="_x31_0-9_00000114046000379437913240000016103379210270861220_" shape-rendering="crispEdges" class="st149" points="
+		70.72454,32.30718 74.9213,34.21348 70.75781,36.12028 66.56284,34.21183 	"/>
+	<polygon id="_x31_1-9_00000109750839208578270630000014169027975640497340_" shape-rendering="crispEdges" class="st131" points="
+		74.9213,34.21348 79.1246,36.12275 74.95933,38.0317 70.75781,36.12028 	"/>
+	<polygon id="_x31_2-9_00000033329133217459810420000015270769846105057154_" shape-rendering="crispEdges" class="st152" points="
+		79.1246,36.12275 83.33446,38.035 79.16741,39.94611 74.95933,38.0317 	"/>
+	<polygon id="_x31_3-9_00000119824167481838251640000007848385946460677282_" shape-rendering="crispEdges" class="st144" points="
+		83.33446,38.035 87.5509,39.95024 83.38206,41.86351 79.16741,39.94611 	"/>
+	<polygon id="_x31_4-9_00000067942223630960647790000006349868369056040111_" shape-rendering="crispEdges" class="st178" points="
+		87.5509,39.95024 91.77393,41.86847 87.60331,43.78392 83.38206,41.86351 	"/>
+	<polygon id="_x31_5-9_00000098936919022409225670000001647078413182515132_" shape-rendering="crispEdges" class="st152" points="
+		91.77393,41.86847 96.00357,43.78971 91.83117,45.70732 87.60331,43.78392 	"/>
+	<polygon id="_x31_6-9_00000127016618160972575220000012669267389475133881_" shape-rendering="crispEdges" class="st114" points="
+		96.00357,43.78971 100.23984,45.71395 96.06565,47.63374 91.83117,45.70732 	"/>
+	<polygon id="_x31_-10_00000084499225781403787550000017315761521602161042_" shape-rendering="crispEdges" class="st174" points="
+		29.10018,17.1687 33.23692,19.05065 29.08659,20.93958 24.95163,19.05551 	"/>
+	<polygon id="_x32_-10_00000117678075961931460510000011685072352213207430_" shape-rendering="crispEdges" class="st147" points="
+		33.23692,19.05065 37.38006,20.93552 33.22795,22.82656 29.08659,20.93958 	"/>
+	<polygon id="_x33_-10_00000166656965420039409320000009770520292570845840_" shape-rendering="crispEdges" class="st179" points="
+		37.38006,20.93552 41.52963,22.82331 37.37574,24.71648 33.22795,22.82656 	"/>
+	<polygon id="_x34_-10_00000142176108716690381890000013323532401719073419_" shape-rendering="crispEdges" class="st180" points="
+		41.52963,22.82331 45.68565,24.71404 41.52997,26.60932 37.37574,24.71648 	"/>
+	<polygon id="_x35_-10_00000018916730498626791770000017834264762025353879_" shape-rendering="crispEdges" class="st181" points="
+		45.68565,24.71404 49.84811,26.60769 45.69066,28.50511 41.52997,26.60932 	"/>
+	<polygon id="_x36_-10_00000072253145682483670140000015905859416135755178_" shape-rendering="crispEdges" class="st182" points="
+		49.84811,26.60769 54.01705,28.5043 49.85781,30.40385 45.69066,28.50511 	"/>
+	<polygon id="_x37_-10_00000015332524999088018530000011106437791430090938_" shape-rendering="crispEdges" class="st166" points="
+		54.01705,28.5043 58.19248,30.40385 54.03145,32.30554 49.85781,30.40385 	"/>
+	<polygon id="_x38_-10_00000124127620405472196020000013161442788164183971_" shape-rendering="crispEdges" class="st166" points="
+		58.19248,30.40385 62.3744,32.30636 58.21159,34.21019 54.03145,32.30554 	"/>
+	<polygon id="_x39_-10_00000061462926660583140750000014108356667613314969_" shape-rendering="crispEdges" class="st141" points="
+		62.3744,32.30636 66.56284,34.21183 62.39824,36.11782 58.21159,34.21019 	"/>
+	<polygon id="_x31_0-10_00000183237102790063787000000018174140978188940932_" shape-rendering="crispEdges" class="st149" points="
+		66.56284,34.21183 70.75781,36.12028 66.59143,38.02841 62.39824,36.11782 	"/>
+	<polygon id="_x31_1-10_00000098208086317586741130000001588073550585165496_" shape-rendering="crispEdges" class="st165" points="
+		70.75781,36.12028 74.95933,38.0317 70.79116,39.94199 66.59143,38.02841 	"/>
+	<polygon id="_x31_2-10_00000019645449334739060740000017810775016668891069_" shape-rendering="crispEdges" class="st165" points="
+		74.95933,38.0317 79.16741,39.94611 74.99745,41.85856 70.79116,39.94199 	"/>
+	<polygon id="_x31_3-10_00000067957624033267264100000008692667111623658644_" shape-rendering="crispEdges" class="st144" points="
+		79.16741,39.94611 83.38206,41.86351 79.21032,43.77813 74.99745,41.85856 	"/>
+	<polygon id="_x31_4-10_00000090280550616705709310000004344577393247749038_" shape-rendering="crispEdges" class="st183" points="
+		83.38206,41.86351 87.60331,43.78392 83.42978,45.7007 79.21032,43.77813 	"/>
+	<polygon id="_x31_5-10_00000164490846124814300820000016829018544801733803_" shape-rendering="crispEdges" class="st152" points="
+		87.60331,43.78392 91.83117,45.70732 87.65585,47.62628 83.42978,45.7007 	"/>
+	<polygon id="_x31_6-10_00000021091760356252896350000012533502016365798051_" shape-rendering="crispEdges" class="st184" points="
+		91.83117,45.70732 96.06565,47.63374 91.88853,49.55487 87.65585,47.62628 	"/>
+	<polygon id="_x31_-11_00000014632074553849149500000014472871202096755364_" shape-rendering="crispEdges" class="st174" points="
+		24.95163,19.05551 29.08659,20.93958 24.93339,22.82981 20.80022,20.94363 	"/>
+	<polygon id="_x32_-11_00000043453264250940955010000010135999138073354149_" shape-rendering="crispEdges" class="st147" points="
+		29.08659,20.93958 33.22795,22.82656 29.07297,24.71892 24.93339,22.82981 	"/>
+	<polygon id="_x33_-11_00000106107882670650589360000013738502265282797480_" shape-rendering="crispEdges" class="st129" points="
+		33.22795,22.82656 37.37574,24.71648 33.21898,26.61095 29.07297,24.71892 	"/>
+	<polygon id="_x34_-11_00000023270161153002344390000012299980537614829708_" shape-rendering="crispEdges" class="st185" points="
+		37.37574,24.71648 41.52997,26.60932 37.37142,28.50593 33.21898,26.61095 	"/>
+	<polygon id="_x35_-11_00000074441571943845736760000005495514674055980933_" shape-rendering="crispEdges" class="st153" points="
+		41.52997,26.60932 45.69066,28.50511 41.53031,30.40385 37.37142,28.50593 	"/>
+	<polygon id="_x36_-11_00000003801865416969016120000012318461894519471761_" shape-rendering="crispEdges" class="st169" points="
+		45.69066,28.50511 49.85781,30.40385 45.69568,32.30472 41.53031,30.40385 	"/>
+	<polygon id="_x37_-11_00000003794284983225792350000006318905775153359528_" shape-rendering="crispEdges" class="st165" points="
+		49.85781,30.40385 54.03145,32.30554 49.86753,34.20855 45.69568,32.30472 	"/>
+	<polygon id="_x38_-11_00000147920857143770261010000008003907681154679725_" shape-rendering="crispEdges" class="st129" points="
+		54.03145,32.30554 58.21159,34.21019 54.04588,36.11535 49.86753,34.20855 	"/>
+	<polygon id="_x39_-11_00000034079164793832503140000011176201032398046627_" shape-rendering="crispEdges" class="st161" points="
+		58.21159,34.21019 62.39824,36.11782 58.23074,38.02512 54.04588,36.11535 	"/>
+	<polygon id="_x31_0-11_00000157271454463208073280000017686371702870644654_" shape-rendering="crispEdges" class="st186" points="
+		62.39824,36.11782 66.59143,38.02841 62.42214,39.93787 58.23074,38.02512 	"/>
+	<polygon id="_x31_1-11_00000039111864297255629280000014510083860128284555_" shape-rendering="crispEdges" class="st187" points="
+		66.59143,38.02841 70.79116,39.94199 66.62008,41.85361 62.42214,39.93787 	"/>
+	<polygon id="_x31_2-11_00000142150746813149022590000002111451940143595945_" shape-rendering="crispEdges" class="st188" points="
+		70.79116,39.94199 74.99745,41.85856 70.82458,43.77235 66.62008,41.85361 	"/>
+	<polygon id="_x31_3-11_00000157300491676110484910000007067526284972912790_" shape-rendering="crispEdges" class="st144" points="
+		74.99745,41.85856 79.21032,43.77813 75.03565,45.69408 70.82458,43.77235 	"/>
+	<polygon id="_x31_4-11_00000026127143733895174130000004413950490809270459_" shape-rendering="crispEdges" class="st183" points="
+		79.21032,43.77813 83.42978,45.7007 79.25333,47.61882 75.03565,45.69408 	"/>
+	<polygon id="_x31_5-11_00000008145741872052183940000018069012814546421380_" shape-rendering="crispEdges" class="st152" points="
+		83.42978,45.7007 87.65585,47.62628 83.4776,49.54657 79.25333,47.61882 	"/>
+	<polygon id="_x31_6-11_00000119838208437141949220000002886617584978898561_" shape-rendering="crispEdges" class="st111" points="
+		87.65585,47.62628 91.88853,49.55487 87.7085,51.47735 83.4776,49.54657 	"/>
+	<polygon id="_x31_-12_00000142155471233763785000000002855792696329296283_" shape-rendering="crispEdges" class="st112" points="
+		20.80022,20.94363 24.93339,22.82981 20.77732,24.72135 16.64594,22.83306 	"/>
+	<polygon id="_x32_-12_00000133525245546301760980000000938208353125783982_" shape-rendering="crispEdges" class="st147" points="
+		24.93339,22.82981 29.07297,24.71892 24.91511,26.61258 20.77732,24.72135 	"/>
+	<polygon id="_x33_-12_00000078046306387793442790000014362405595445448885_" shape-rendering="crispEdges" class="st129" points="
+		29.07297,24.71892 33.21898,26.61095 29.05932,28.50674 24.91511,26.61258 	"/>
+	<polygon id="_x34_-12_00000109738266325170390560000006853639938927196290_" shape-rendering="crispEdges" class="st189" points="
+		33.21898,26.61095 37.37142,28.50593 33.20997,30.40385 29.05932,28.50674 	"/>
+	<polygon id="_x35_-12_00000041289921661700130430000016398067660591502486_" shape-rendering="crispEdges" class="st190" points="
+		37.37142,28.50593 41.53031,30.40385 37.36708,32.30391 33.20997,30.40385 	"/>
+	<polygon id="_x36_-12_00000131368493271412904900000017664796906855035041_" shape-rendering="crispEdges" class="st177" points="
+		41.53031,30.40385 45.69568,32.30472 41.53065,34.20692 37.36708,32.30391 	"/>
+	<polygon id="_x37_-12_00000174580781489789519730000014663073825621268409_" shape-rendering="crispEdges" class="st191" points="
+		45.69568,32.30472 49.86753,34.20855 45.70071,36.11289 41.53065,34.20692 	"/>
+	<polygon id="_x38_-12_00000023269265523337964820000004940616200487562147_" shape-rendering="crispEdges" class="st147" points="
+		49.86753,34.20855 54.04588,36.11535 49.87727,38.02184 45.70071,36.11289 	"/>
+	<polygon id="_x39_-12_00000132081588253783248310000015722198450689775784_" shape-rendering="crispEdges" class="st152" points="
+		54.04588,36.11535 58.23074,38.02512 54.06034,39.93376 49.87727,38.02184 	"/>
+	<polygon id="_x31_0-12_00000002370374635600115590000016200209181272930946_" shape-rendering="crispEdges" class="st191" points="
+		58.23074,38.02512 62.42214,39.93787 58.24994,41.84867 54.06034,39.93376 	"/>
+	<polygon id="_x31_1-12_00000012473624280453557200000013107951452890485676_" shape-rendering="crispEdges" class="st192" points="
+		62.42214,39.93787 66.62008,41.85361 62.44609,43.76657 58.24994,41.84867 	"/>
+	<polygon id="_x31_2-12_00000085941120795034609460000012110668193722433672_" shape-rendering="crispEdges" class="st188" points="
+		66.62008,41.85361 70.82458,43.77235 66.6488,45.68747 62.44609,43.76657 	"/>
+	<polygon id="_x31_3-12_00000049196243914816739140000002134991994277806265_" shape-rendering="crispEdges" class="st144" points="
+		70.82458,43.77235 75.03565,45.69408 70.85808,47.61137 66.6488,45.68747 	"/>
+	<polygon id="_x31_4-12_00000139987599994600713630000014818566677626593970_" shape-rendering="crispEdges" class="st183" points="
+		75.03565,45.69408 79.25333,47.61882 75.07394,49.53828 70.85808,47.61137 	"/>
+	<polygon id="_x31_5-12_00000035496387039013177510000018158175245520457350_" shape-rendering="crispEdges" class="st152" points="
+		79.25333,47.61882 83.4776,49.54657 79.29642,51.46822 75.07394,49.53828 	"/>
+	<polygon id="_x31_6-12_00000171677708190982544130000015234615571984235655_" shape-rendering="crispEdges" class="st193" points="
+		83.4776,49.54657 87.7085,51.47735 83.52553,53.40118 79.29642,51.46822 	"/>
+	<polygon id="_x31_-13_00000057120306536869393220000005904771257834742426_" shape-rendering="crispEdges" class="st146" points="
+		16.64594,22.83306 20.77732,24.72135 16.61836,26.61421 12.48878,24.72379 	"/>
+	<polygon id="_x32_-13_00000112593788364914412080000014591687957024697504_" shape-rendering="crispEdges" class="st194" points="
+		20.77732,24.72135 24.91511,26.61258 20.75436,28.50756 16.61836,26.61421 	"/>
+	<polygon id="_x33_-13_00000173872697356380586860000017216575340189914008_" shape-rendering="crispEdges" class="st169" points="
+		24.91511,26.61258 29.05932,28.50674 24.89678,30.40385 20.75436,28.50756 	"/>
+	<polygon id="_x34_-13_00000027575730028428421770000015644385602609666451_" shape-rendering="crispEdges" class="st189" points="
+		29.05932,28.50674 33.20997,30.40385 29.04564,32.30309 24.89678,30.40385 	"/>
+	<polygon id="_x35_-13_00000005983989918666435760000012068846647609260679_" shape-rendering="crispEdges" class="st189" points="
+		33.20997,30.40385 37.36708,32.30391 33.20095,34.20528 29.04564,32.30309 	"/>
+	<polygon id="_x36_-13_00000165920076374762607960000009107055649095672704_" shape-rendering="crispEdges" class="st185" points="
+		37.36708,32.30391 41.53065,34.20692 37.36273,36.11043 33.20095,34.20528 	"/>
+	<polygon id="_x37_-13_00000032636147452714254150000011455217134086870196_" shape-rendering="crispEdges" class="st191" points="
+		41.53065,34.20692 45.70071,36.11289 41.53099,38.01855 37.36273,36.11043 	"/>
+	<polygon id="_x38_-13_00000115514862178519445330000006616742137333445055_" shape-rendering="crispEdges" class="st191" points="
+		45.70071,36.11289 49.87727,38.02184 45.70576,39.92965 41.53099,38.01855 	"/>
+	<polygon id="_x39_-13_00000068657509022834184620000018119675233237697423_" shape-rendering="crispEdges" class="st191" points="
+		49.87727,38.02184 54.06034,39.93376 49.88703,41.84373 45.70576,39.92965 	"/>
+	<polygon id="_x31_0-13_00000162311640233398766590000004104075554852540829_" shape-rendering="crispEdges" class="st191" points="
+		54.06034,39.93376 58.24994,41.84867 54.07484,43.7608 49.88703,41.84373 	"/>
+	<polygon id="_x31_1-13_00000119821631759142289860000005349738540435235257_" shape-rendering="crispEdges" class="st191" points="
+		58.24994,41.84867 62.44609,43.76657 58.26918,45.68086 54.07484,43.7608 	"/>
+	<polygon id="_x31_2-13_00000170990327330681019980000007837215507494009516_" shape-rendering="crispEdges" class="st191" points="
+		62.44609,43.76657 66.6488,45.68747 62.47009,47.60392 58.26918,45.68086 	"/>
+	<polygon id="_x31_3-13_00000119817729375473824270000007480344643841411990_" shape-rendering="crispEdges" class="st144" points="
+		66.6488,45.68747 70.85808,47.61137 66.67757,49.53 62.47009,47.60392 	"/>
+	<polygon id="_x31_4-13_00000044164186566100011410000015914168316593570704_" shape-rendering="crispEdges" class="st129" points="
+		70.85808,47.61137 75.07394,49.53828 70.89165,51.45909 66.67757,49.53 	"/>
+	<polygon id="_x31_5-13_00000111879670107989603670000007296047902135468950_" shape-rendering="crispEdges" class="st195" points="
+		75.07394,49.53828 79.29642,51.46822 75.11233,53.3912 70.89165,51.45909 	"/>
+	<polygon id="_x31_6-13_00000062907710356451782490000001709932131126999975_" shape-rendering="crispEdges" class="st112" points="
+		79.29642,51.46822 83.52553,53.40118 79.33963,55.32635 75.11233,53.3912 	"/>
+	<polygon id="_x31_-14_00000137846328178571501720000008516650265395112613_" shape-rendering="crispEdges" class="st196" points="
+		12.48878,24.72379 16.61836,26.61421 12.45653,28.50837 8.32874,26.61583 	"/>
+	<polygon id="_x32_-14_00000037657918167370246550000016578276001635091114_" shape-rendering="crispEdges" class="st197" points="
+		16.61836,26.61421 20.75436,28.50756 16.59073,30.40385 12.45653,28.50837 	"/>
+	<polygon id="_x33_-14_00000029030024522185071740000009660503114021280146_" shape-rendering="crispEdges" class="st194" points="
+		20.75436,28.50756 24.89678,30.40385 20.73135,32.30227 16.59073,30.40385 	"/>
+	<polygon id="_x34_-14_00000106137553822441853150000006661957997423750813_" shape-rendering="crispEdges" class="st169" points="
+		24.89678,30.40385 29.04564,32.30309 24.87842,34.20364 20.73135,32.30227 	"/>
+	<polygon id="_x35_-14_00000130647565366290905660000015178844998549987985_" shape-rendering="crispEdges" class="st169" points="
+		29.04564,32.30309 33.20095,34.20528 29.03193,36.10798 24.87842,34.20364 	"/>
+	<polygon id="_x36_-14_00000147185156871891846290000014203765236072391302_" shape-rendering="crispEdges" class="st129" points="
+		33.20095,34.20528 37.36273,36.11043 33.19191,38.01527 29.03193,36.10798 	"/>
+	<polygon id="_x37_-14_00000137825719254735698290000013372948002806621601_" shape-rendering="crispEdges" class="st134" points="
+		37.36273,36.11043 41.53099,38.01855 37.35838,39.92554 33.19191,38.01527 	"/>
+	<polygon id="_x38_-14_00000182521729913365735610000016664458269109983912_" shape-rendering="crispEdges" class="st134" points="
+		41.53099,38.01855 45.70576,39.92965 41.53134,41.83879 37.35838,39.92554 	"/>
+	<polygon id="_x39_-14_00000103975306554859387200000001821864276370737572_" shape-rendering="crispEdges" class="st198" points="
+		45.70576,39.92965 49.88703,41.84373 45.71081,43.75503 41.53134,41.83879 	"/>
+	<polygon id="_x31_0-14_00000055701975847179077390000018414785499729212545_" shape-rendering="crispEdges" class="st199" points="
+		49.88703,41.84373 54.07484,43.7608 49.89682,45.67426 45.71081,43.75503 	"/>
+	<polygon id="_x31_1-14_00000173879593937864992090000001532255859898375096_" shape-rendering="crispEdges" class="st200" points="
+		54.07484,43.7608 58.26918,45.68086 54.08936,47.59649 49.89682,45.67426 	"/>
+	<polygon id="_x31_2-14_00000005255907538342752750000016753315776364524691_" shape-rendering="crispEdges" class="st200" points="
+		58.26918,45.68086 62.47009,47.60392 58.28847,49.52172 54.08936,47.59649 	"/>
+	<polygon id="_x31_3-14_00000143585834199611662720000004137578439658572710_" shape-rendering="crispEdges" class="st133" points="
+		62.47009,47.60392 66.67757,49.53 62.49415,51.44997 58.28847,49.52172 	"/>
+	<polygon id="_x31_4-14_00000149355707736681089670000004929388708306285723_" shape-rendering="crispEdges" class="st195" points="
+		66.67757,49.53 70.89165,51.45909 66.70642,53.38124 62.49415,51.44997 	"/>
+	<polygon id="_x31_5-14_00000124869037249630154670000002982288184825337242_" shape-rendering="crispEdges" class="st201" points="
+		70.89165,51.45909 75.11233,53.3912 70.92529,55.31554 66.70642,53.38124 	"/>
+	<polygon id="_x31_6-14_00000111172811831990275880000005457140562525173652_" shape-rendering="crispEdges" class="st202" points="
+		75.11233,53.3912 79.33963,55.32635 75.15079,57.25288 70.92529,55.31554 	"/>
+	<polygon id="_x31_-15_00000149354957019072503820000006801276020106115713_" shape-rendering="crispEdges" class="st203" points="
+		8.32874,26.61583 12.45653,28.50837 8.29181,30.40385 4.16582,28.50918 	"/>
+	<polygon id="_x32_-15_00000001625830823673091360000002233683745697477768_" shape-rendering="crispEdges" class="st197" points="
+		12.45653,28.50837 16.59073,30.40385 12.42421,32.30145 8.29181,30.40385 	"/>
+	<polygon id="_x33_-15_00000027594436793251442280000006175394777957990567_" shape-rendering="crispEdges" class="st197" points="
+		16.59073,30.40385 20.73135,32.30227 16.56304,34.20201 12.42421,32.30145 	"/>
+	<polygon id="_x34_-15_00000013155972137087664860000011258079033496398988_" shape-rendering="crispEdges" class="st194" points="
+		20.73135,32.30227 24.87842,34.20364 20.7083,36.10552 16.56304,34.20201 	"/>
+	<polygon id="_x35_-15_00000078040689188726684540000011618243806405184182_" shape-rendering="crispEdges" class="st169" points="
+		24.87842,34.20364 29.03193,36.10798 24.86001,38.01199 20.7083,36.10552 	"/>
+	<polygon id="_x36_-15_00000096746311639730059520000018345223547076891568_" shape-rendering="crispEdges" class="st188" points="
+		29.03193,36.10798 33.19191,38.01527 29.01819,39.92144 24.86001,38.01199 	"/>
+	<polygon id="_x37_-15_00000017482328347888905610000014450973314843302555_" shape-rendering="crispEdges" class="st204" points="
+		33.19191,38.01527 37.35838,39.92554 33.18285,41.83386 29.01819,39.92144 	"/>
+	<polygon id="_x38_-15_00000104683611142646979510000017519691351320340367_" shape-rendering="crispEdges" class="st204" points="
+		37.35838,39.92554 41.53134,41.83879 37.35401,43.74926 33.18285,41.83386 	"/>
+	<polygon id="_x39_-15_00000067232586536229498140000018083780273693251463_" shape-rendering="crispEdges" class="st204" points="
+		41.53134,41.83879 45.71081,43.75503 41.53168,45.66766 37.35401,43.74926 	"/>
+	<polygon id="_x31_0-15_00000003073847550731310530000012049756420061351609_" shape-rendering="crispEdges" class="st204" points="
+		45.71081,43.75503 49.89682,45.67426 45.71588,47.58905 41.53168,45.66766 	"/>
+	<polygon id="_x31_1-15_00000150095466497734596000000012795468425228886672_" shape-rendering="crispEdges" class="st205" points="
+		49.89682,45.67426 54.08936,47.59649 49.90662,49.51345 45.71588,47.58905 	"/>
+	<polygon id="_x31_2-15_00000036227729031811355560000011499492022726231476_" shape-rendering="crispEdges" class="st172" points="
+		54.08936,47.59649 58.28847,49.52172 54.10392,51.44086 49.90662,49.51345 	"/>
+	<polygon id="_x31_3-15_00000130645941569673209310000010771813044434469305_" shape-rendering="crispEdges" class="st195" points="
+		58.28847,49.52172 62.49415,51.44997 58.3078,53.37128 54.10392,51.44086 	"/>
+	<polygon id="_x31_4-15_00000146472547600402191660000005555849510844008608_" shape-rendering="crispEdges" class="st201" points="
+		62.49415,51.44997 66.70642,53.38124 62.51826,55.30474 58.3078,53.37128 	"/>
+	<polygon id="_x31_5-15_00000062189393958650483930000016360216158662321069_" shape-rendering="crispEdges" class="st201" points="
+		66.70642,53.38124 70.92529,55.31554 66.73533,57.24123 62.51826,55.30474 	"/>
+	<polygon id="_x31_6-15_00000177459021728692656060000018184782612441235371_" shape-rendering="crispEdges" class="st117" points="
+		70.92529,55.31554 75.15079,57.25288 70.95902,59.18075 66.73533,57.24123 	"/>
+	<polygon id="_x31_-16_00000106861051733167423900000011000551055968939661_" shape-rendering="crispEdges" class="st120" points="
+		4.16582,28.50918 8.29181,30.40385 4.1242,32.30064 0.00001,30.40385 	"/>
+	<polygon id="_x32_-16_00000171713999004418741330000011922393797253590719_" shape-rendering="crispEdges" class="st206" points="
+		8.29181,30.40385 12.42421,32.30145 8.2548,34.20037 4.1242,32.30064 	"/>
+	<polygon id="_x33_-16_00000134947009490486298060000003337712300464197537_" shape-rendering="crispEdges" class="st207" points="
+		12.42421,32.30145 16.56304,34.20201 12.39182,36.10307 8.2548,34.20037 	"/>
+	<polygon id="_x34_-16_00000173869652523445195800000014394891604997397641_" shape-rendering="crispEdges" class="st113" points="
+		16.56304,34.20201 20.7083,36.10552 16.53528,38.00872 12.39182,36.10307 	"/>
+	<polygon id="_x35_-16_00000029744743483911425440000002809507607564310711_" shape-rendering="crispEdges" class="st155" points="
+		20.7083,36.10552 24.86001,38.01199 20.68518,39.91734 16.53528,38.00872 	"/>
+	<polygon id="_x36_-16_00000109005417655048401250000012555309498940258489_" shape-rendering="crispEdges" class="st208" points="
+		24.86001,38.01199 29.01819,39.92144 24.84156,41.82893 20.68518,39.91734 	"/>
+	<polygon id="_x37_-16_00000109738579554358077480000008833776803564111236_" shape-rendering="crispEdges" class="st209" points="
+		29.01819,39.92144 33.18285,41.83386 29.00442,43.74351 24.84156,41.82893 	"/>
+	<polygon id="_x38_-16_00000096772286225701673240000000825847745643529615_" shape-rendering="crispEdges" class="st210" points="
+		33.18285,41.83386 37.35401,43.74926 33.17377,45.66107 29.00442,43.74351 	"/>
+	<polygon id="_x39_-16_00000091697783862316609670000017357437876816840587_" shape-rendering="crispEdges" class="st210" points="
+		37.35401,43.74926 41.53168,45.66766 37.34963,47.58163 33.17377,45.66107 	"/>
+	<polygon id="_x31_0-16_00000149343059884805977920000010655023523046267303_" shape-rendering="crispEdges" class="st211" points="
+		41.53168,45.66766 45.71588,47.58905 41.53202,49.50518 37.34963,47.58163 	"/>
+	<polygon id="_x31_1-16_00000064327802572408636810000004767552421979015831_" shape-rendering="crispEdges" class="st212" points="
+		45.71588,47.58905 49.90662,49.51345 45.72096,51.43175 41.53202,49.50518 	"/>
+	<polygon id="_x31_2-16_00000064334918227623097570000004281104030924513170_" shape-rendering="crispEdges" class="st119" points="
+		49.90662,49.51345 54.10392,51.44086 49.91645,53.36134 45.72096,51.43175 	"/>
+	<polygon id="_x31_3-16_00000178200886340779671020000012204556350271826580_" shape-rendering="crispEdges" class="st213" points="
+		54.10392,51.44086 58.3078,53.37128 54.11852,55.29395 49.91645,53.36134 	"/>
+	<polygon id="_x31_4-16_00000025411930156650092570000012897692588284711311_" shape-rendering="crispEdges" class="st146" points="
+		58.3078,53.37128 62.51826,55.30474 58.32717,57.22958 54.11852,55.29395 	"/>
+	<polygon id="_x31_5-16_00000102513142824917071580000017058945390915956657_" shape-rendering="crispEdges" class="st196" points="
+		62.51826,55.30474 66.73533,57.24123 62.54243,59.16826 58.32717,57.22958 	"/>
+	<polygon id="_x31_6-16_00000074421649971878850500000018416987592260647606_" shape-rendering="crispEdges" class="st119" points="
+		66.73533,57.24123 70.95902,59.18075 66.76431,61.10998 62.54243,59.16826 	"/>
+</g>
+</svg>

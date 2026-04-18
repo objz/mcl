@@ -1,4 +1,4 @@
-use once_cell::sync::Lazy;
+use std::sync::LazyLock;
 use std::sync::{Arc, Mutex};
 
 #[derive(Debug, Default, Clone)]
@@ -11,8 +11,8 @@ pub struct ProgressState {
     pub sub_action: Option<String>,
 }
 
-pub static PROGRESS: Lazy<Arc<Mutex<ProgressState>>> =
-    Lazy::new(|| Arc::new(Mutex::new(ProgressState::default())));
+pub static PROGRESS: LazyLock<Arc<Mutex<ProgressState>>> =
+    LazyLock::new(|| Arc::new(Mutex::new(ProgressState::default())));
 
 pub fn set_action(text: impl Into<String>) {
     let text = text.into();

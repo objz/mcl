@@ -106,23 +106,28 @@ pub fn game_version_from_dependencies(deps: &HashMap<String, String>) -> Option<
 
 const API_BASE: &str = "https://api.modrinth.com/v2";
 
+fn url_encode(s: &str) -> String {
+    use std::fmt::Write;
+    let mut encoded = String::with_capacity(s.len());
+    for byte in s.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                encoded.push(byte as char);
+            }
+            _ => {
+                write!(encoded, "%{byte:02X}").unwrap();
+            }
+        }
+    }
+    encoded
+}
+
 pub async fn fetch_project(
     client: &crate::net::HttpClient,
     slug_or_id: &str,
 ) -> Result<ProjectInfo, crate::net::NetError> {
-    let url = format!("{}/project/{}", API_BASE, slug_or_id);
-    let resp = client
-        .inner()
-        .get(&url)
-        .send()
-        .await?;
-    if !resp.status().is_success() {
-        return Err(crate::net::NetError::StatusError {
-            status: resp.status().as_u16(),
-            url,
-        });
-    }
-    resp.json().await.map_err(crate::net::NetError::Http)
+    let url = format!("{}/project/{}", API_BASE, url_encode(slug_or_id));
+    client.get_json(&url).await
 }
 
 pub async fn fetch_versions(
@@ -131,39 +136,17 @@ pub async fn fetch_versions(
 ) -> Result<Vec<VersionInfo>, crate::net::NetError> {
     let url = format!(
         "{}/project/{}/version?loaders=[\"fabric\",\"forge\",\"neoforge\",\"quilt\"]",
-        API_BASE, slug_or_id
+        API_BASE, url_encode(slug_or_id)
     );
-    let resp = client
-        .inner()
-        .get(&url)
-        .send()
-        .await?;
-    if !resp.status().is_success() {
-        return Err(crate::net::NetError::StatusError {
-            status: resp.status().as_u16(),
-            url,
-        });
-    }
-    resp.json().await.map_err(crate::net::NetError::Http)
+    client.get_json(&url).await
 }
 
 pub async fn fetch_version(
     client: &crate::net::HttpClient,
     version_id: &str,
 ) -> Result<VersionInfo, crate::net::NetError> {
-    let url = format!("{}/version/{}", API_BASE, version_id);
-    let resp = client
-        .inner()
-        .get(&url)
-        .send()
-        .await?;
-    if !resp.status().is_success() {
-        return Err(crate::net::NetError::StatusError {
-            status: resp.status().as_u16(),
-            url,
-        });
-    }
-    resp.json().await.map_err(crate::net::NetError::Http)
+    let url = format!("{}/version/{}", API_BASE, url_encode(version_id));
+    client.get_json(&url).await
 }
 
 pub async fn download_mrpack(
@@ -315,6 +298,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "hits live Modrinth API"]
     async fn test_fetch_project() {
         let client = crate::net::HttpClient::new();
         let project = fetch_project(&client, "fabulously-optimized").await;
@@ -328,6 +312,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "hits live Modrinth API"]
     async fn test_fetch_versions() {
         let client = crate::net::HttpClient::new();
         let versions = fetch_versions(&client, "fabulously-optimized").await;

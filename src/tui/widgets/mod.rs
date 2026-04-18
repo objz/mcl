@@ -1,4 +1,4 @@
-use crate::tui::theme::THEME;
+use crate::config::theme::THEME;
 use crossterm::event::KeyEvent;
 use ratatui::{
     style::Style,
@@ -7,16 +7,16 @@ use ratatui::{
 
 pub mod account;
 pub mod content;
-pub mod content_list;
 pub mod details;
 pub mod logs_viewer;
 pub mod popups;
-pub mod profiles;
+pub mod instances;
 pub mod screenshots_grid;
 pub mod search;
 pub mod status;
 
 pub fn styled_title(title: &str, highlight: bool) -> Line<'_> {
+    let theme = THEME.as_ref();
     if !highlight || title.is_empty() {
         Line::from(Span::raw(title))
     } else {
@@ -24,8 +24,8 @@ pub fn styled_title(title: &str, highlight: bool) -> Line<'_> {
         let first = chars.next().unwrap_or_default().to_string();
         let rest: String = chars.collect();
         Line::from(vec![
-            Span::styled(first, Style::default().fg(THEME.general.accent)),
-            Span::raw(rest),
+            Span::styled(first, Style::default().fg(theme.accent())),
+            Span::styled(rest, Style::default().fg(theme.text())),
         ])
     }
 }

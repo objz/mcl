@@ -13,7 +13,7 @@ use ratatui::{
 use ratatui_image::{protocol::StatefulProtocol, Resize, StatefulImage};
 
 use crate::instance::screenshots::ScreenshotEntry;
-use crate::tui::theme::THEME;
+use crate::config::theme::THEME;
 
 const TARGET_CELL_WIDTH: u16 = 34;
 const MIN_CELL_WIDTH: u16 = 24;
@@ -219,14 +219,18 @@ pub fn handle_key(key_event: &KeyEvent, state: &mut ScreenshotsState) -> bool {
         KeyCode::Enter if key_event.modifiers.contains(KeyModifiers::SHIFT) => {
             if let Some(entry) = state.entries.get(state.selected) {
                 if let Some(dir) = entry.path.parent() {
-                    xdg_open(dir);
+                    if let Err(e) = open::that(dir) {
+                        tracing::error!("Failed to open directory: {}", e);
+                    }
                 }
             }
             true
         }
         KeyCode::Enter => {
             if let Some(entry) = state.entries.get(state.selected) {
-                xdg_open(&entry.path);
+                if let Err(e) = open::that(&entry.path) {
+                    tracing::error!("Failed to open file: {}", e);
+                }
             }
             true
         }
@@ -261,22 +265,12 @@ pub fn handle_key(key_event: &KeyEvent, state: &mut ScreenshotsState) -> bool {
     }
 }
 
-fn xdg_open(path: &std::path::Path) {
-    if let Err(e) = std::process::Command::new("xdg-open")
-        .arg(path)
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .spawn()
-    {
-        tracing::error!("Failed to open: {}", e);
-    }
-}
-
 pub fn render(frame: &mut Frame, area: Rect, state: &mut ScreenshotsState, is_focused: bool) {
+    let theme = THEME.as_ref();
     if state.loading {
         frame.render_widget(
             Paragraph::new("Loading screenshots...")
-                .style(Style::default().fg(THEME.screenshots.label_fg)),
+                .style(Style::default().fg(theme.text_dim())),
             area,
         );
         return;
@@ -285,7 +279,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &mut ScreenshotsState, is_fo
     if state.entries.is_empty() {
         frame.render_widget(
             Paragraph::new("No screenshots.")
-                .style(Style::default().fg(THEME.screenshots.label_fg)),
+                .style(Style::default().fg(theme.text_dim())),
             area,
         );
         return;
@@ -352,10 +346,10 @@ pub fn render(frame: &mut Frame, area: Rect, state: &mut ScreenshotsState, is_fo
             let name = &state.entries[idx].name;
             let name_style = if is_selected {
                 Style::default()
-                    .fg(THEME.screenshots.selected_border_fg)
+                    .fg(theme.accent())
                     .add_modifier(Modifier::BOLD)
             } else {
-                Style::default().fg(THEME.screenshots.label_fg)
+                Style::default().fg(theme.text_dim())
             };
 
             let truncated = if name.len() > cell_width as usize {
@@ -382,7 +376,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &mut ScreenshotsState, is_fo
             .begin_symbol(Some("\u{25b2}"))
             .style(
                 Style::default()
-                    .fg(THEME.screenshots.border_focused_fg)
+                    .fg(theme.text_dim())
                     .add_modifier(Modifier::BOLD),
             )
             .thumb_symbol("\u{2551}")

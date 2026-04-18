@@ -10,7 +10,7 @@ use tracing::Level;
 use super::base::PopupFrame;
 use crate::config::SETTINGS;
 use crate::tui::error_buffer::ErrorEvent;
-use crate::tui::theme::THEME;
+use crate::config::theme::THEME;
 
 pub struct ErrorPopup {
     pub event: ErrorEvent,
@@ -24,31 +24,34 @@ impl ErrorPopup {
 
 impl Widget for ErrorPopup {
     fn render(self, area: Rect, buf: &mut Buffer) {
+        let theme = THEME.as_ref();
         let (border_color, label) = match self.event.level {
-            Level::ERROR => (THEME.popup_error.error_fg, "ERROR"),
-            Level::WARN => (THEME.popup_error.warn_fg, "WARN"),
-            _ => (THEME.popup_error.border_fg, "INFO"),
+            Level::ERROR => (theme.error(), "ERROR"),
+            Level::WARN => (theme.warning(), "WARN"),
+            _ => (theme.text_dim(), "INFO"),
         };
 
         let title = Line::from(vec![Span::styled(
             format!(" {} ", label),
             Style::default()
-                .fg(THEME.popup_error.badge_text_fg)
+                .fg(theme.text_bright())
                 .bg(border_color)
                 .add_modifier(Modifier::BOLD),
         )]);
 
         let message = self.event.message.clone();
+        let text_color = theme.text();
+        let bg_color = theme.surface();
         let popup = PopupFrame {
             title,
             border_color,
-            bg: Some(THEME.popup_error.bg),
+            bg: Some(bg_color),
             keybinds: None,
             search_line: None,
             content: Box::new(move |inner, buf| {
                 Paragraph::new(message.as_str())
                     .wrap(Wrap { trim: true })
-                    .style(Style::default().fg(THEME.popup_error.text_fg))
+                    .style(Style::default().fg(text_color))
                     .render(inner, buf);
             }),
         };

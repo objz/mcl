@@ -3,7 +3,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
-use once_cell::sync::Lazy;
+use std::sync::LazyLock;
 use tracing::Level;
 
 const MAX_ERROR_EVENTS: usize = 50;
@@ -17,8 +17,8 @@ pub struct ErrorEvent {
     pub pushed_at: Instant,
 }
 
-pub static ERROR_EVENTS: Lazy<Arc<Mutex<VecDeque<ErrorEvent>>>> =
-    Lazy::new(|| Arc::new(Mutex::new(VecDeque::new())));
+pub static ERROR_EVENTS: LazyLock<Arc<Mutex<VecDeque<ErrorEvent>>>> =
+    LazyLock::new(|| Arc::new(Mutex::new(VecDeque::new())));
 
 pub fn push_error(event: ErrorEvent) {
     match ERROR_EVENTS.lock() {
@@ -36,6 +36,7 @@ pub fn push_error(event: ErrorEvent) {
     }
 }
 
+#[must_use]
 pub fn has_errors() -> bool {
     match ERROR_EVENTS.lock() {
         Ok(events) => !events.is_empty(),
@@ -43,6 +44,7 @@ pub fn has_errors() -> bool {
     }
 }
 
+#[must_use]
 pub fn pop_error() -> Option<ErrorEvent> {
     match ERROR_EVENTS.lock() {
         Ok(mut events) => events.pop_front(),
@@ -50,6 +52,7 @@ pub fn pop_error() -> Option<ErrorEvent> {
     }
 }
 
+#[must_use]
 pub fn peek_error() -> Option<ErrorEvent> {
     match ERROR_EVENTS.lock() {
         Ok(events) => events.front().cloned(),
@@ -58,6 +61,7 @@ pub fn peek_error() -> Option<ErrorEvent> {
 }
 
 /// Returns all queued error events, newest first (for top-to-bottom stacking).
+#[must_use]
 pub fn peek_all_errors() -> Vec<ErrorEvent> {
     match ERROR_EVENTS.lock() {
         Ok(events) => events.iter().rev().cloned().collect(),

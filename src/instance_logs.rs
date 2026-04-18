@@ -1,11 +1,11 @@
-use once_cell::sync::Lazy;
 use std::collections::{HashMap, VecDeque};
+use std::sync::LazyLock;
 use std::sync::{Arc, Mutex};
 
 const MAX_LINES: usize = 2000;
 
 type LogsMap = Arc<Mutex<HashMap<String, VecDeque<String>>>>;
-pub static LOGS: Lazy<LogsMap> = Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
+pub static LOGS: LazyLock<LogsMap> = LazyLock::new(|| Arc::new(Mutex::new(HashMap::new())));
 
 pub fn push(name: &str, line: impl Into<String>) {
     if let Ok(mut logs) = LOGS.lock() {
@@ -72,6 +72,9 @@ mod tests {
         }
         let lines = get_all(name);
         assert_eq!(lines.len(), MAX_LINES);
-        assert!(lines.last().unwrap().contains(&format!("{}", MAX_LINES + 99)));
+        assert!(lines
+            .last()
+            .unwrap()
+            .contains(&format!("{}", MAX_LINES + 99)));
     }
 }

@@ -1,0 +1,99 @@
+use std::collections::HashMap;
+use std::sync::{Arc, LazyLock, Mutex};
+
+use tachyonfx::Effect;
+
+use super::widgets::{self, instances};
+use crate::instance::{InstanceConfig, InstanceManager};
+
+pub(super) static PENDING_INSTANCES: LazyLock<Arc<Mutex<Vec<InstanceConfig>>>> =
+    LazyLock::new(|| Arc::new(Mutex::new(Vec::new())));
+
+pub struct App {
+    pub(super) exit: bool,
+    pub(super) focused: FocusedArea,
+    pub(super) pre_overlay_focused: FocusedArea,
+    pub(super) content_tab: widgets::content::ContentTab,
+    pub(super) instances_state: instances::State,
+    pub(super) mods_state: widgets::content::list::ContentListState,
+    pub(super) resource_packs_state: widgets::content::list::ContentListState,
+    pub(super) shaders_state: widgets::content::list::ContentListState,
+    pub(super) worlds_state: widgets::content::list::ContentListState,
+    pub(super) screenshots_state: widgets::screenshots_grid::ScreenshotsState,
+    pub(super) logs_state: widgets::logs_viewer::LogsState,
+    pub(super) account_state: widgets::account::AccountState,
+    pub(super) picker: ratatui_image::picker::Picker,
+    pub(super) instance_manager: InstanceManager,
+    pub(super) log_overlay_scroll: usize,
+    pub(super) log_overlay_max_scroll: usize,
+    pub(super) log_overlay_search: widgets::search::SearchState,
+    pub(super) log_overlay_scrollbar: ratatui::widgets::ScrollbarState,
+    pub(super) throbber_state: throbber_widgets_tui::ThrobberState,
+    pub(super) throbber_tick: u8,
+    pub(super) error_effects: HashMap<u64, ErrorEffectState>,
+    pub(super) pending_editor: Option<std::path::PathBuf>,
+}
+
+pub(super) enum ErrorEffectState {
+    SlidingIn(Effect, std::time::Instant),
+    Idle,
+    FadingOut(Effect, std::time::Instant),
+}
+
+#[derive(Default, Debug, Clone, Copy, PartialEq)]
+pub enum FocusedArea {
+    #[default]
+    Instances,
+    Content,
+    Account,
+    Settings,
+    Overview,
+    OverviewExpanded,
+    Popup,
+    ImportPopup,
+    ErrorPopup,
+    ConfirmDelete,
+}
+
+impl App {
+    pub fn new(picker: ratatui_image::picker::Picker) -> Self {
+        let instances_dir = crate::config::SETTINGS.paths.resolve_instances_dir();
+        let meta_dir = crate::config::SETTINGS.paths.resolve_meta_dir();
+
+        let _ = std::fs::create_dir_all(&instances_dir);
+        let _ = std::fs::create_dir_all(&meta_dir);
+
+        let manager = InstanceManager::new(instances_dir, meta_dir);
+        let instances = manager.load_all();
+        let instances_state = instances::State::with_instances(instances);
+
+        App {
+            exit: false,
+            focused: FocusedArea::default(),
+            pre_overlay_focused: FocusedArea::default(),
+            content_tab: widgets::content::ContentTab::default(),
+            instances_state,
+            mods_state: widgets::content::list::ContentListState::default(),
+            resource_packs_state: widgets::content::list::ContentListState::default(),
+            shaders_state: widgets::content::list::ContentListState::default(),
+            worlds_state: widgets::content::list::ContentListState::default(),
+            logs_state: widgets::logs_viewer::LogsState::default(),
+            account_state: widgets::account::AccountState::default(),
+            screenshots_state: {
+                let mut s = widgets::screenshots_grid::ScreenshotsState::default();
+                s.font_size = picker.font_size();
+                s
+            },
+            picker,
+            instance_manager: manager,
+            log_overlay_scroll: 0,
+            log_overlay_max_scroll: 0,
+            log_overlay_search: widgets::search::SearchState::default(),
+            log_overlay_scrollbar: ratatui::widgets::ScrollbarState::default(),
+            throbber_state: throbber_widgets_tui::ThrobberState::default(),
+            throbber_tick: 0,
+            error_effects: HashMap::new(),
+            pending_editor: None,
+        }
+    }
+}

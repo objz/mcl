@@ -1,4 +1,4 @@
-use std::io::{self, Write};
+use std::io;
 use std::time::Duration;
 
 use clap::ArgMatches;
@@ -143,20 +143,7 @@ fn find_account_index(accounts: &[Account], username: &str) -> Option<usize> {
         .position(|account| account.username.eq_ignore_ascii_case(username))
 }
 
-fn confirm(message: &str) -> Result<bool, io::Error> {
-    print!("{}? [y/N] ", message);
-    io::stdout().flush()?;
-    let mut input = String::new();
-    io::stdin().read_line(&mut input)?;
-    Ok(input.trim().eq_ignore_ascii_case("y"))
-}
-
-fn required_arg<'a>(matches: &'a ArgMatches, name: &str) -> Result<&'a str, io::Error> {
-    matches
-        .get_one::<String>(name)
-        .map(String::as_str)
-        .ok_or_else(|| io::Error::other(format!("missing required argument '{}'", name)))
-}
+use super::utils::{confirm, required_arg};
 
 #[cfg(test)]
 mod tests {

@@ -6,6 +6,7 @@ pub mod modrinth;
 pub mod quilt;
 
 use reqwest::Client;
+use serde::de::DeserializeOwned;
 use std::path::Path;
 use thiserror::Error;
 
@@ -19,6 +20,10 @@ pub enum NetError {
     Parse(String),
     #[error("Server returned error status {status}: {url}")]
     StatusError { status: u16, url: String },
+    #[error("Installer process failed: {0}")]
+    InstallerFailed(String),
+    #[error("Task failed: {0}")]
+    TaskFailed(String),
 }
 
 #[derive(Clone)]
@@ -34,23 +39,31 @@ impl Default for HttpClient {
 
 impl HttpClient {
     pub fn new() -> Self {
-        match Client::builder()
-            .user_agent("mcl/0.1.0 (Minecraft Launcher)")
+        let client = Client::builder()
+            .user_agent(format!("mcl/{} (Minecraft Launcher)", env!("CARGO_PKG_VERSION")))
             .timeout(std::time::Duration::from_secs(30))
             .build()
-        {
-            Ok(client) => HttpClient { inner: client },
-            Err(e) => {
-                tracing::error!("Failed to build HTTP client: {}", e);
-                HttpClient {
-                    inner: Client::new(),
-                }
-            }
-        }
+            .unwrap_or_else(|_| Client::new());
+        Self { inner: client }
     }
 
     pub fn inner(&self) -> &Client {
         &self.inner
+    }
+
+    pub async fn get(&self, url: &str) -> Result<reqwest::Response, NetError> {
+        let response = self.inner.get(url).send().await?;
+        if !response.status().is_success() {
+            return Err(NetError::StatusError {
+                status: response.status().as_u16(),
+                url: url.to_string(),
+            });
+        }
+        Ok(response)
+    }
+
+    pub async fn get_json<T: DeserializeOwned>(&self, url: &str) -> Result<T, NetError> {
+        Ok(self.get(url).await?.json().await?)
     }
 }
 
@@ -64,80 +77,41 @@ pub async fn download_file(
 ) -> Result<(), NetError> {
     use tokio::io::AsyncWriteExt;
 
-    let response = match client.inner().get(url).send().await {
-        Ok(r) => r,
-        Err(e) => {
-            tracing::error!("GET {} failed: {}", url, e);
-            return Err(NetError::Http(e));
-        }
-    };
-
-    if !response.status().is_success() {
-        let status = response.status().as_u16();
-        tracing::error!("HTTP {} for {}", status, url);
-        return Err(NetError::StatusError {
-            status,
-            url: url.to_string(),
-        });
-    }
-
+    let response = client.get(url).await?;
     let total = response.content_length().unwrap_or(0);
 
     if let Some(parent) = dest.parent() {
-        match tokio::fs::create_dir_all(parent).await {
-            Ok(_) => {}
-            Err(e) => {
-                tracing::error!("Failed to create directory {}: {}", parent.display(), e);
-                return Err(NetError::Io(e));
-            }
-        }
+        tokio::fs::create_dir_all(parent).await?;
     }
 
-    let mut file = match tokio::fs::File::create(dest).await {
-        Ok(f) => f,
-        Err(e) => {
-            tracing::error!("Failed to create file {}: {}", dest.display(), e);
-            return Err(NetError::Io(e));
-        }
-    };
-
+    let mut file = tokio::fs::File::create(dest).await?;
     let mut downloaded: u64 = 0;
     let mut stream = response;
 
-    loop {
-        match stream.chunk().await {
-            Ok(Some(chunk)) => {
-                match file.write_all(&chunk).await {
-                    Ok(_) => {}
-                    Err(e) => {
-                        tracing::error!("Failed to write chunk to {}: {}", dest.display(), e);
-                        return Err(NetError::Io(e));
-                    }
-                }
-                downloaded += chunk.len() as u64;
-                progress_cb(downloaded, total);
-            }
-            Ok(None) => break,
-            Err(e) => {
-                tracing::error!("Failed to read response chunk from {}: {}", url, e);
-                return Err(NetError::Http(e));
-            }
-        }
+    while let Some(chunk) = stream.chunk().await? {
+        file.write_all(&chunk).await?;
+        downloaded += chunk.len() as u64;
+        progress_cb(downloaded, total);
     }
 
     Ok(())
 }
 
+#[must_use]
 pub fn detect_java_path() -> String {
     if let Ok(java_home) = std::env::var("JAVA_HOME") {
-        let path = std::path::Path::new(&java_home).join("bin").join("java");
-        if path.exists() {
-            return path.to_string_lossy().to_string();
+        let java_name = if cfg!(windows) { "java.exe" } else { "java" };
+        let bin = std::path::Path::new(&java_home).join("bin").join(java_name);
+        if bin.exists() {
+            return bin.to_string_lossy().to_string();
         }
     }
-    "java".to_string()
+    which::which("java")
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(|_| "java".to_string())
 }
 
+#[must_use]
 pub fn maven_coord_to_path(coord: &str) -> Option<String> {
     let parts: Vec<&str> = coord.split(':').collect();
     match parts.as_slice() {

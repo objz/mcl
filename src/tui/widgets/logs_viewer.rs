@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
     layout::{Constraint, Layout, Rect},
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState},
     Frame,
@@ -12,7 +12,7 @@ use ratatui::{
 use tui_widget_list::{ListBuilder, ListState as TuiListState, ListView};
 
 use crate::instance::log_files::{read_log_file, scan_log_files, LogFileEntry};
-use crate::tui::theme::THEME;
+use crate::config::theme::{THEME, BORDER_STYLE};
 
 type PendingLogs = Arc<Mutex<Option<(String, Vec<LogFileEntry>)>>>;
 
@@ -342,9 +342,10 @@ pub fn handle_key(key_event: &KeyEvent, state: &mut LogsState) -> bool {
 }
 
 pub fn render(frame: &mut Frame, area: Rect, state: &mut LogsState, is_focused: bool) {
+    let theme = THEME.as_ref();
     if state.loading {
         frame.render_widget(
-            Paragraph::new("Loading logs...").style(Style::default().fg(THEME.logs.text_fg)),
+            Paragraph::new("Loading logs...").style(Style::default().fg(theme.text_dim())),
             area,
         );
         return;
@@ -355,7 +356,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &mut LogsState, is_focused: 
 
     if display_count == 0 {
         frame.render_widget(
-            Paragraph::new("No logs yet.").style(Style::default().fg(THEME.logs.text_fg)),
+            Paragraph::new("No logs yet.").style(Style::default().fg(theme.text_dim())),
             area,
         );
         return;
@@ -380,16 +381,17 @@ fn render_list(
     is_focused: bool,
     has_live: bool,
 ) {
+    let theme = THEME.as_ref();
     let list_focused = is_focused && !state.viewer_focused;
     let border_color = if list_focused {
-        THEME.logs.border_focused_fg
+        theme.accent()
     } else {
-        THEME.logs.border_unfocused_fg
+        theme.border()
     };
 
     let block = Block::default()
         .borders(Borders::RIGHT)
-        .border_type(THEME.general.border_type.to_border_type())
+        .border_type(BORDER_STYLE.to_border_type())
         .border_style(Style::default().fg(border_color));
 
     let inner = block.inner(area);
@@ -413,34 +415,27 @@ fn render_list(
         let show_selected = list_focused && context.is_selected;
 
         let style = if *is_live && show_selected {
-            let s = Style::default().fg(THEME.logs.running_fg);
-            if THEME.logs.selected_bold {
-                s.add_modifier(Modifier::BOLD)
-            } else {
-                s
-            }
+            Style::default().fg(theme.success()).add_modifier(Modifier::BOLD)
         } else if *is_live {
-            Style::default().fg(THEME.logs.running_fg)
+            Style::default().fg(theme.success())
         } else if show_selected {
-            let s = Style::default().fg(THEME.logs.selected_fg);
-            if THEME.logs.selected_bold {
-                s.add_modifier(Modifier::BOLD)
-            } else {
-                s
-            }
+            Style::default().fg(theme.accent()).add_modifier(Modifier::BOLD)
         } else {
-            Style::default().fg(THEME.logs.text_fg)
+            Style::default().fg(theme.text())
         };
 
-        let bg = if show_selected {
-            THEME.logs.selected_bg
-        } else if context.index % 2 == 0 {
-            Color::Reset
+        let bg = if context.index % 2 == 0 {
+            theme.background()
         } else {
-            THEME.logs.row_alt_bg
+            theme.stripe()
         };
 
-        let item = ratatui::text::Text::from(Line::from(Span::styled(name.clone(), style)))
+        let selector = if show_selected {
+            Span::styled("\u{258c} ", Style::default().fg(theme.accent()))
+        } else {
+            Span::raw("  ")
+        };
+        let item = ratatui::text::Text::from(Line::from(vec![selector, Span::styled(name.clone(), style)]))
             .style(Style::default().bg(bg));
         (item, 1)
     });
@@ -460,7 +455,7 @@ fn render_list(
             .begin_symbol(Some("\u{25b2}"))
             .style(
                 Style::default()
-                    .fg(THEME.logs.border_focused_fg)
+                    .fg(theme.accent())
                     .add_modifier(Modifier::BOLD),
             )
             .thumb_symbol("\u{2551}")
@@ -478,6 +473,7 @@ fn render_viewer(
     _is_focused: bool,
     has_live: bool,
 ) {
+    let theme = THEME.as_ref();
     let is_live = has_live && state.list_state.selected == Some(0);
 
     let all_lines: Vec<String> = if is_live {
@@ -528,7 +524,7 @@ fn render_viewer(
             .begin_symbol(Some("\u{25b2}"))
             .style(
                 Style::default()
-                    .fg(THEME.logs.border_focused_fg)
+                    .fg(theme.accent())
                     .add_modifier(Modifier::BOLD),
             )
             .thumb_symbol("\u{2551}")
@@ -540,16 +536,15 @@ fn render_viewer(
 }
 
 fn line_level_style(line: &str) -> Style {
+    let theme = THEME.as_ref();
     let upper = line.to_uppercase();
     if upper.contains("ERROR") || upper.contains("FATAL") || upper.contains("[STDERR]") {
-        Style::default().fg(THEME.logs.error_fg)
+        Style::default().fg(theme.error())
     } else if upper.contains("WARN") {
-        Style::default().fg(THEME.logs.warn_fg)
-    } else if upper.contains("DEBUG") {
-        Style::default().fg(THEME.logs.debug_fg)
-    } else if upper.contains("TRACE") {
-        Style::default().fg(THEME.logs.trace_fg)
+        Style::default().fg(theme.warning())
+    } else if upper.contains("DEBUG") || upper.contains("TRACE") {
+        Style::default().fg(theme.text_dim())
     } else {
-        Style::default().fg(THEME.logs.text_fg)
+        Style::default().fg(theme.text())
     }
 }

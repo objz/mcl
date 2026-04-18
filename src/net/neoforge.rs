@@ -26,8 +26,6 @@ fn game_version_to_neoforge_prefix(game_version: &str) -> Option<String> {
         ["1", minor] => Some(format!("{}.0.", minor)),
         // "1.20.4" → prefix "20.4."
         ["1", minor, patch] => Some(format!("{}.{}.", minor, patch)),
-        [major, minor] => Some(format!("{}.{}.", major, minor)),
-        [major, minor, _patch] => Some(format!("{}.{}.", major, minor)),
         _ => None,
     }
 }
@@ -39,10 +37,6 @@ pub async fn fetch_neoforge_versions(
     let prefix = match game_version_to_neoforge_prefix(game_version) {
         Some(p) => p,
         None => {
-            tracing::error!(
-                "Cannot map game version '{}' to NeoForge version prefix",
-                game_version
-            );
             return Err(NetError::Parse(format!(
                 "Invalid game version for NeoForge: {}",
                 game_version
@@ -50,30 +44,7 @@ pub async fn fetch_neoforge_versions(
         }
     };
 
-    let response = match client.inner().get(NEOFORGE_API_BASE).send().await {
-        Ok(r) => r,
-        Err(e) => {
-            tracing::error!("GET {} failed: {}", NEOFORGE_API_BASE, e);
-            return Err(NetError::Http(e));
-        }
-    };
-
-    if !response.status().is_success() {
-        let status = response.status().as_u16();
-        tracing::error!("HTTP {} for {}", status, NEOFORGE_API_BASE);
-        return Err(NetError::StatusError {
-            status,
-            url: NEOFORGE_API_BASE.to_string(),
-        });
-    }
-
-    let maven_versions: NeoForgeMavenVersions = match response.json().await {
-        Ok(v) => v,
-        Err(e) => {
-            tracing::error!("Failed to parse NeoForge maven versions: {}", e);
-            return Err(NetError::Http(e));
-        }
-    };
+    let maven_versions: NeoForgeMavenVersions = client.get_json(NEOFORGE_API_BASE).await?;
 
     let versions: Vec<String> = maven_versions
         .versions
@@ -87,30 +58,7 @@ pub async fn fetch_neoforge_versions(
 pub async fn fetch_neoforge_game_versions(
     client: &HttpClient,
 ) -> Result<Vec<GameVersion>, NetError> {
-    let response = match client.inner().get(NEOFORGE_API_BASE).send().await {
-        Ok(r) => r,
-        Err(e) => {
-            tracing::error!("GET {} failed: {}", NEOFORGE_API_BASE, e);
-            return Err(NetError::Http(e));
-        }
-    };
-
-    if !response.status().is_success() {
-        let status = response.status().as_u16();
-        tracing::error!("HTTP {} for {}", status, NEOFORGE_API_BASE);
-        return Err(NetError::StatusError {
-            status,
-            url: NEOFORGE_API_BASE.to_string(),
-        });
-    }
-
-    let maven: NeoForgeMavenVersions = match response.json().await {
-        Ok(m) => m,
-        Err(e) => {
-            tracing::error!("Failed to parse NeoForge versions: {}", e);
-            return Err(NetError::Http(e));
-        }
-    };
+    let maven: NeoForgeMavenVersions = client.get_json(NEOFORGE_API_BASE).await?;
 
     let mut game_versions: Vec<String> = Vec::new();
     for version in &maven.versions {
@@ -152,17 +100,10 @@ pub async fn download_neoforge_installer(
 
     set_action(format!("Downloading NeoForge {}...", neoforge_version));
 
-    match download_file(client, &url, dest, |downloaded, total| {
+    download_file(client, &url, dest, |downloaded, total| {
         crate::tui::progress::set_progress(downloaded, total);
     })
     .await
-    {
-        Ok(()) => Ok(()),
-        Err(e) => {
-            tracing::error!("Failed to download NeoForge installer from {}: {}", url, e);
-            Err(e)
-        }
-    }
 }
 
 pub async fn run_neoforge_installer(
@@ -184,21 +125,12 @@ pub async fn run_neoforge_installer(
     {
         Ok(o) => o,
         Err(e) => {
-            tracing::error!("Failed to launch NeoForge installer: {}", e);
             return Err(NetError::Io(e));
         }
     };
 
     if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        tracing::error!(
-            "NeoForge installer failed (exit {:?}): {} {}",
-            output.status.code(),
-            stderr,
-            stdout
-        );
-        return Err(NetError::Parse(format!(
+        return Err(NetError::InstallerFailed(format!(
             "NeoForge installer exited with {:?}",
             output.status.code()
         )));
@@ -213,6 +145,7 @@ mod tests {
     use crate::net::HttpClient;
 
     #[tokio::test]
+    #[ignore = "hits live NeoForge API"]
     async fn test_fetch_versions() {
         let client = HttpClient::new();
         match fetch_neoforge_versions(&client, "1.21").await {
@@ -227,6 +160,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "hits live NeoForge API"]
     async fn test_fetch_game_versions() {
         let client = HttpClient::new();
         match fetch_neoforge_game_versions(&client).await {

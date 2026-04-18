@@ -40,28 +40,7 @@ pub struct QuiltLibrary {
 
 pub async fn fetch_quilt_game_versions(client: &HttpClient) -> Result<Vec<GameVersion>, NetError> {
     let url = format!("{}/versions/game", QUILT_META_BASE);
-
-    let response = match client.inner().get(&url).send().await {
-        Ok(r) => r,
-        Err(e) => {
-            tracing::error!("Quilt game versions GET {} failed: {}", url, e);
-            return Err(NetError::Http(e));
-        }
-    };
-
-    if !response.status().is_success() {
-        let status = response.status().as_u16();
-        tracing::error!("HTTP {} for {}", status, url);
-        return Err(NetError::StatusError { status, url });
-    }
-
-    let versions: Vec<QuiltGameVersion> = match response.json().await {
-        Ok(v) => v,
-        Err(e) => {
-            tracing::error!("Failed to parse Quilt game versions: {}", e);
-            return Err(NetError::Http(e));
-        }
-    };
+    let versions: Vec<QuiltGameVersion> = client.get_json(&url).await?;
 
     Ok(versions
         .into_iter()
@@ -77,33 +56,7 @@ pub async fn fetch_quilt_versions(
     game_version: &str,
 ) -> Result<Vec<QuiltLoaderVersion>, NetError> {
     let url = format!("{}/versions/loader/{}", QUILT_META_BASE, game_version);
-
-    let response = match client.inner().get(&url).send().await {
-        Ok(r) => r,
-        Err(e) => {
-            tracing::error!("Quilt meta GET {} failed: {}", url, e);
-            return Err(NetError::Http(e));
-        }
-    };
-
-    if !response.status().is_success() {
-        let status = response.status().as_u16();
-        tracing::error!("Quilt meta HTTP {} for {}", status, url);
-        return Err(NetError::StatusError {
-            status,
-            url: url.clone(),
-        });
-    }
-
-    let versions: Vec<QuiltLoaderVersion> = match response.json().await {
-        Ok(v) => v,
-        Err(e) => {
-            tracing::error!("Failed to parse Quilt loader versions: {}", e);
-            return Err(NetError::Http(e));
-        }
-    };
-
-    Ok(versions)
+    client.get_json(&url).await
 }
 
 pub async fn fetch_quilt_profile(
@@ -115,33 +68,7 @@ pub async fn fetch_quilt_profile(
         "{}/versions/loader/{}/{}/profile/json",
         QUILT_META_BASE, game_version, loader_version
     );
-
-    let response = match client.inner().get(&url).send().await {
-        Ok(r) => r,
-        Err(e) => {
-            tracing::error!("Quilt profile GET {} failed: {}", url, e);
-            return Err(NetError::Http(e));
-        }
-    };
-
-    if !response.status().is_success() {
-        let status = response.status().as_u16();
-        tracing::error!("Quilt profile HTTP {} for {}", status, url);
-        return Err(NetError::StatusError {
-            status,
-            url: url.clone(),
-        });
-    }
-
-    let profile: QuiltProfile = match response.json().await {
-        Ok(p) => p,
-        Err(e) => {
-            tracing::error!("Failed to parse Quilt profile: {}", e);
-            return Err(NetError::Http(e));
-        }
-    };
-
-    Ok(profile)
+    client.get_json(&url).await
 }
 
 pub async fn download_quilt_libraries(
@@ -155,7 +82,6 @@ pub async fn download_quilt_libraries(
         let maven_path = match crate::net::maven_coord_to_path(&lib.name) {
             Some(p) => p,
             None => {
-                tracing::error!("Invalid Maven coordinate in Quilt profile: {}", lib.name);
                 return Err(NetError::Parse(format!(
                     "Invalid Maven coordinate: {}",
                     lib.name
@@ -176,13 +102,7 @@ pub async fn download_quilt_libraries(
         set_sub_action(&lib.name);
         tracing::info!("Downloading Quilt library: {}", lib.name);
 
-        match download_file(client, &download_url, &dest, |_, _| {}).await {
-            Ok(()) => {}
-            Err(e) => {
-                tracing::error!("Failed to download Quilt library {}: {}", lib.name, e);
-                return Err(e);
-            }
-        }
+        download_file(client, &download_url, &dest, |_, _| {}).await?;
     }
 
     Ok(())
@@ -194,6 +114,7 @@ mod tests {
     use crate::net::HttpClient;
 
     #[tokio::test]
+    #[ignore = "hits live Quilt API"]
     async fn test_fetch_versions() {
         let client = HttpClient::new();
         match fetch_quilt_versions(&client, "1.20.1").await {
@@ -208,6 +129,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "hits live Quilt API"]
     async fn test_fetch_game_versions() {
         let client = HttpClient::new();
         match fetch_quilt_game_versions(&client).await {
@@ -219,13 +141,4 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_maven_coord_to_path() {
-        assert_eq!(
-            crate::net::maven_coord_to_path("org.quiltmc:quilt-loader:0.20.0"),
-            Some("org/quiltmc/quilt-loader/0.20.0/quilt-loader-0.20.0.jar".to_string())
-        );
-        assert_eq!(crate::net::maven_coord_to_path("invalid"), None);
-        assert_eq!(crate::net::maven_coord_to_path("only:two"), None);
-    }
 }

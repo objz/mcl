@@ -117,14 +117,14 @@ pub struct AssetObject {
 }
 
 pub async fn fetch_version_manifest(client: &HttpClient) -> Result<VersionManifest, NetError> {
-    fetch_json(client, MANIFEST_URL).await
+    client.get_json(MANIFEST_URL).await
 }
 
 pub async fn fetch_version_meta(
     client: &HttpClient,
     entry: &VersionEntry,
 ) -> Result<VersionMeta, NetError> {
-    fetch_json(client, &entry.url).await
+    client.get_json(&entry.url).await
 }
 
 pub async fn download_client_jar(
@@ -203,7 +203,7 @@ pub async fn download_assets(
 ) -> Result<(), NetError> {
     set_action("Downloading assets...");
 
-    let asset_index = match fetch_json::<AssetIndexContent>(client, &meta.asset_index.url).await {
+    let asset_index: AssetIndexContent = match client.get_json(&meta.asset_index.url).await {
         Ok(index) => index,
         Err(e) => {
             clear();
@@ -242,10 +242,8 @@ pub async fn download_assets(
     let mut downloads = Vec::new();
     for object in asset_index.objects.values() {
         if object.hash.len() < 2 {
-            let message = format!("Invalid asset hash: {}", object.hash);
-            tracing::error!("{}", message);
             clear();
-            return Err(NetError::Parse(message));
+            return Err(NetError::Parse(format!("Invalid asset hash: {}", object.hash)));
         }
 
         let prefix = &object.hash[..2];
@@ -272,36 +270,6 @@ pub async fn download_assets(
     let result = run_parallel_downloads(client, downloads, true).await;
     clear();
     result
-}
-
-async fn fetch_json<T>(client: &HttpClient, url: &str) -> Result<T, NetError>
-where
-    T: for<'de> Deserialize<'de>,
-{
-    let response = match client.inner().get(url).send().await {
-        Ok(response) => response,
-        Err(e) => {
-            tracing::error!("Failed to fetch {}: {}", url, e);
-            return Err(NetError::Http(e));
-        }
-    };
-
-    if !response.status().is_success() {
-        let status = response.status().as_u16();
-        tracing::error!("HTTP {} from {}", status, url);
-        return Err(NetError::StatusError {
-            status,
-            url: url.to_string(),
-        });
-    }
-
-    match response.json::<T>().await {
-        Ok(data) => Ok(data),
-        Err(e) => {
-            tracing::error!("Failed to parse JSON from {}: {}", url, e);
-            Err(NetError::Http(e))
-        }
-    }
 }
 
 fn library_allowed_for_current_os(library: &Library) -> bool {
@@ -384,7 +352,7 @@ async fn run_parallel_downloads(
             Err(e) => {
                 tracing::error!("Task panicked: {}", e);
                 if first_error.is_none() {
-                    first_error = Some(NetError::Parse(format!("Join error: {}", e)));
+                    first_error = Some(NetError::TaskFailed(format!("Join error: {}", e)));
                 }
             }
         }
@@ -409,18 +377,11 @@ fn spawn_download_task(
     job: (String, PathBuf, String),
 ) {
     let (url, destination, label) = job;
-    let task_client = HttpClient {
-        inner: client.inner().clone(),
-    };
+    let task_client = client.clone();
 
     set.spawn(async move {
-        let label_for_progress = label.clone();
         let result = download_file(&task_client, &url, &destination, |_current, _total| {}).await;
-
-        match result {
-            Ok(()) => Ok(label_for_progress),
-            Err(e) => Err(e),
-        }
+        result.map(|()| label)
     });
 }
 
@@ -430,6 +391,7 @@ mod tests {
     use crate::net::HttpClient;
 
     #[tokio::test]
+    #[ignore = "hits live Mojang API"]
     async fn test_fetch_manifest_contains_1_20_1() {
         let client = HttpClient::new();
         match fetch_version_manifest(&client).await {

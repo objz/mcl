@@ -1,8 +1,9 @@
-use std::io::{self, Write};
+use std::io;
 use std::time::Duration;
 
 use clap::ArgMatches;
 
+use super::utils::{confirm, required_arg};
 use crate::cli::output::{format_datetime, print_table};
 use crate::instance::{InstanceManager, ModLoader};
 use crate::running::RunState;
@@ -87,13 +88,16 @@ fn list_instances() -> CliResult {
 async fn create_instance(matches: &ArgMatches) -> CliResult {
     let name = required_arg(matches, "name")?;
     let version = required_arg(matches, "version")?;
-    let loader = parse_loader(required_arg(matches, "loader")?)
-        .map_err(io::Error::other)?;
-    let loader_version = matches.get_one::<String>("loader-version").map(String::as_str);
+    let loader = parse_loader(required_arg(matches, "loader")?).map_err(io::Error::other)?;
+    let loader_version = matches
+        .get_one::<String>("loader-version")
+        .map(String::as_str);
     let manager = manager();
 
     println!("Creating instance '{}'...", name);
-    let config = manager.create(name, version, loader, loader_version).await?;
+    let config = manager
+        .create(name, version, loader, loader_version)
+        .await?;
     println!(
         "Created '{}'  ({} {})",
         config.name, config.game_version, config.loader
@@ -140,7 +144,7 @@ async fn launch_instance(matches: &ArgMatches) -> CliResult {
                 break;
             }
             Some(RunState::Crashed(None)) => {
-                println!("Game exited with status terminated.");
+                println!("Game was terminated.");
                 break;
             }
             Some(_) => tokio::time::sleep(Duration::from_millis(500)).await,
@@ -278,28 +282,16 @@ fn apply_config_update(
     Ok(())
 }
 
-fn confirm(message: &str) -> Result<bool, io::Error> {
-    print!("{}? [y/N] ", message);
-    io::stdout().flush()?;
-    let mut input = String::new();
-    io::stdin().read_line(&mut input)?;
-    Ok(input.trim().eq_ignore_ascii_case("y"))
-}
-
-fn required_arg<'a>(matches: &'a ArgMatches, name: &str) -> Result<&'a str, io::Error> {
-    matches
-        .get_one::<String>(name)
-        .map(String::as_str)
-        .ok_or_else(|| io::Error::other(format!("missing required argument '{}'", name)))
-}
-
 #[cfg(test)]
 mod tests {
     use super::parse_resolution;
 
     #[test]
     fn parses_valid_resolution() {
-        assert_eq!(parse_resolution("1920x1080").expect("should parse"), (1920, 1080));
+        assert_eq!(
+            parse_resolution("1920x1080").expect("should parse"),
+            (1920, 1080)
+        );
     }
 
     #[test]

@@ -1,28 +1,18 @@
-use super::base::PopupFrame;
-use super::new_instance::LoadState;
+use super::super::new_instance::LoadState;
 use crate::instance::import::ImportSummary;
 use crate::net::modrinth::{self, ModrinthInput, VersionInfo};
-use crate::tui::layout::FocusedArea;
-use crate::tui::theme::THEME;
-use crate::tui::widgets::profiles;
+use crate::tui::widgets::instances;
 use crate::tui::widgets::search::SearchState;
 use crossterm::event::{KeyCode, KeyEvent};
-use once_cell::sync::Lazy;
-use ratatui::{
-    layout::{Constraint, Direction, Layout, Rect},
-    style::{Modifier, Style},
-    text::{Line, Span},
-    widgets::{List, ListItem, ListState, Paragraph, StatefulWidget, Widget, Wrap},
-    Frame,
-};
+use std::sync::LazyLock;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use tracing::Level;
 
-static IMPORT_STATE: Lazy<Arc<Mutex<ImportWizardState>>> =
-    Lazy::new(|| Arc::new(Mutex::new(ImportWizardState::default())));
-static IMPORT_RESULT: Lazy<Arc<Mutex<Option<ImportResult>>>> =
-    Lazy::new(|| Arc::new(Mutex::new(None)));
+pub(super) static IMPORT_STATE: LazyLock<Arc<Mutex<ImportWizardState>>> =
+    LazyLock::new(|| Arc::new(Mutex::new(ImportWizardState::default())));
+pub(super) static IMPORT_RESULT: LazyLock<Arc<Mutex<Option<ImportResult>>>> =
+    LazyLock::new(|| Arc::new(Mutex::new(None)));
 
 #[derive(Debug, Clone)]
 pub struct ImportResult {
@@ -69,91 +59,21 @@ impl ImportWizardState {
     }
 }
 
-pub fn render(frame: &mut Frame, area: Rect, _focused: FocusedArea) {
-    let snapshot = match IMPORT_STATE.lock() {
-        Ok(state) => state.clone(),
-        Err(e) => {
-            tracing::error!("Import state lock poisoned: {}", e);
-            ImportWizardState::default()
-        }
-    };
-
-    let keybinds = step_keybinds(&snapshot);
-
-    let search_line = if snapshot.step == ImportStep::Version {
-        snapshot.version_search.title_line()
-    } else {
-        None
-    };
-
-    let popup = PopupFrame {
-        title: wizard_title(&snapshot),
-        border_color: THEME.popup_import.border_fg,
-        bg: Some(THEME.popup_import.bg),
-        keybinds: Some(keybinds),
-        search_line,
-        content: Box::new(move |popup_area, buf| {
-            let chunks = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints([Constraint::Min(1)])
-                .split(popup_area);
-
-            match snapshot.step {
-                ImportStep::Input => render_input_step(&snapshot, chunks[0], buf),
-                ImportStep::Fetching => render_fetching_step(chunks[0], buf),
-                ImportStep::Version => render_version_step(&snapshot, chunks[0], buf),
-                ImportStep::Confirm => render_confirm_step(&snapshot, chunks[0], buf),
-            }
-        }),
-    };
-
-    frame.render_widget(popup, area);
-}
-
-pub fn popup_rect(frame_area: Rect) -> Rect {
-    let w = Constraint::Percentage(50);
-    let step = match IMPORT_STATE.lock() {
-        Ok(s) => s.step.clone(),
-        Err(_) => ImportStep::Input,
-    };
-
-    match step {
-        ImportStep::Input => {
-            let h = 8u16.min(frame_area.height.saturating_sub(4));
-            frame_area.centered(w, Constraint::Length(h))
-        }
-        ImportStep::Fetching => {
-            let h = 5u16.min(frame_area.height.saturating_sub(4));
-            frame_area.centered(w, Constraint::Length(h))
-        }
-        ImportStep::Version => {
-            let h = (frame_area.height * 2 / 3)
-                .max(10)
-                .min(frame_area.height.saturating_sub(4));
-            frame_area.centered(w, Constraint::Length(h))
-        }
-        ImportStep::Confirm => {
-            let h = 10u16.min(frame_area.height.saturating_sub(4));
-            frame_area.centered(w, Constraint::Length(h))
-        }
-    }
-}
-
-pub fn handle_key(key_event: &KeyEvent, profiles_state: &mut profiles::State) {
+pub fn handle_key(key_event: &KeyEvent, instances_state: &mut instances::State) {
     let mut state = match IMPORT_STATE.lock() {
         Ok(state) => state,
         Err(e) => {
             tracing::error!("Import state lock poisoned: {}", e);
-            profiles_state.show_import_popup = false;
+            instances_state.show_import_popup = false;
             return;
         }
     };
 
     match state.step {
-        ImportStep::Input => handle_input_key(&mut state, key_event, profiles_state),
-        ImportStep::Fetching => handle_fetching_key(&mut state, key_event, profiles_state),
-        ImportStep::Version => handle_version_key(&mut state, key_event, profiles_state),
-        ImportStep::Confirm => handle_confirm_key(&mut state, key_event, profiles_state),
+        ImportStep::Input => handle_input_key(&mut state, key_event, instances_state),
+        ImportStep::Fetching => handle_fetching_key(&mut state, key_event, instances_state),
+        ImportStep::Version => handle_version_key(&mut state, key_event, instances_state),
+        ImportStep::Confirm => handle_confirm_key(&mut state, key_event, instances_state),
     }
 }
 
@@ -167,10 +87,10 @@ pub fn take_result() -> Option<ImportResult> {
 fn handle_input_key(
     state: &mut ImportWizardState,
     key_event: &KeyEvent,
-    profiles_state: &mut profiles::State,
+    instances_state: &mut instances::State,
 ) {
     match key_event.code {
-        KeyCode::Esc => close_popup(state, profiles_state),
+        KeyCode::Esc => close_popup(state, instances_state),
         KeyCode::Backspace => {
             state.input.pop();
         }
@@ -190,17 +110,17 @@ fn handle_input_key(
 fn handle_fetching_key(
     state: &mut ImportWizardState,
     key_event: &KeyEvent,
-    profiles_state: &mut profiles::State,
+    instances_state: &mut instances::State,
 ) {
     if key_event.code == KeyCode::Esc {
-        close_popup(state, profiles_state);
+        close_popup(state, instances_state);
     }
 }
 
 fn handle_version_key(
     state: &mut ImportWizardState,
     key_event: &KeyEvent,
-    profiles_state: &mut profiles::State,
+    instances_state: &mut instances::State,
 ) {
     if state.version_search.active {
         match key_event.code {
@@ -232,7 +152,7 @@ fn handle_version_key(
     let visible_count = visible_versions(state).len();
 
     match key_event.code {
-        KeyCode::Esc => close_popup(state, profiles_state),
+        KeyCode::Esc => close_popup(state, instances_state),
         KeyCode::Left | KeyCode::Char('h') if !state.version_search.active => {
             state.step = ImportStep::Input;
             state.versions = LoadState::Idle;
@@ -265,10 +185,10 @@ fn handle_version_key(
 fn handle_confirm_key(
     state: &mut ImportWizardState,
     key_event: &KeyEvent,
-    profiles_state: &mut profiles::State,
+    instances_state: &mut instances::State,
 ) {
     match key_event.code {
-        KeyCode::Esc => close_popup(state, profiles_state),
+        KeyCode::Esc => close_popup(state, instances_state),
         KeyCode::Left | KeyCode::Char('h') => {
             if matches!(state.versions, LoadState::Loaded(_)) {
                 state.step = ImportStep::Version;
@@ -291,7 +211,7 @@ fn handle_confirm_key(
                 }
             }
 
-            close_popup(state, profiles_state);
+            close_popup(state, instances_state);
         }
         _ => {}
     }
@@ -418,14 +338,7 @@ async fn resolve_version_id(
 }
 
 fn resolve_local_file(state_arc: Arc<Mutex<ImportWizardState>>, path: &str) {
-    let resolved = if let Some(stripped) = path.strip_prefix("~/") {
-        match dirs_next::home_dir() {
-            Some(home) => home.join(stripped),
-            None => std::path::PathBuf::from(path),
-        }
-    } else {
-        std::path::PathBuf::from(path)
-    };
+    let resolved = crate::config::settings::resolve_path(path);
 
     match modrinth::parse_mrpack(&resolved) {
         Ok(index) => {
@@ -506,157 +419,9 @@ fn start_version_download(state: &mut ImportWizardState) {
     });
 }
 
-fn render_input_step(
-    state: &ImportWizardState,
-    area: Rect,
-    buf: &mut ratatui::buffer::Buffer,
-) {
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(1),
-            Constraint::Length(1),
-            Constraint::Min(0),
-        ])
-        .split(area);
-
-    let input_line = if state.input.is_empty() {
-        Line::from(vec![
-            Span::styled(
-                "URL, slug, or .mrpack path...",
-                Style::default().fg(THEME.popup_import.field_inactive_border_fg),
-            ),
-            Span::styled(
-                "\u{2588}",
-                Style::default()
-                    .fg(THEME.popup_import.border_fg)
-                    .add_modifier(Modifier::SLOW_BLINK),
-            ),
-        ])
-    } else {
-        Line::from(vec![
-            Span::styled(
-                state.input.clone(),
-                Style::default().fg(THEME.popup_import.text_fg),
-            ),
-            Span::styled(
-                "\u{2588}",
-                Style::default()
-                    .fg(THEME.popup_import.border_fg)
-                    .add_modifier(Modifier::SLOW_BLINK),
-            ),
-        ])
-    };
-    Paragraph::new(input_line).render(chunks[0], buf);
-}
-
-fn render_fetching_step(area: Rect, buf: &mut ratatui::buffer::Buffer) {
-    Paragraph::new("Fetching modpack info...")
-        .style(Style::default().fg(THEME.popup_import.field_inactive_border_fg))
-        .render(area, buf);
-}
-
-fn render_version_step(
-    state: &ImportWizardState,
-    area: Rect,
-    buf: &mut ratatui::buffer::Buffer,
-) {
-    match &state.versions {
-        LoadState::Idle | LoadState::Loading => {
-            Paragraph::new("Loading versions...")
-                .style(Style::default().fg(THEME.popup_import.field_inactive_border_fg))
-                .render(area, buf);
-        }
-        LoadState::Error(message) => {
-            Paragraph::new(message.as_str())
-                .wrap(Wrap { trim: true })
-                .style(Style::default().fg(THEME.general.error))
-                .render(area, buf);
-        }
-        LoadState::Loaded(_) => {
-            let items: Vec<ListItem> = visible_versions(state)
-                .into_iter()
-                .map(|version| {
-                    let game_ver = version.game_versions.first().cloned().unwrap_or_default();
-                    let loader = version.loaders.first().cloned().unwrap_or_default();
-                    ListItem::new(Line::from(Span::styled(
-                        format!("{}  {}  {}", version.version_number, game_ver, loader),
-                        Style::default().fg(THEME.popup_import.text_fg),
-                    )))
-                })
-                .collect();
-
-            let list = List::new(items)
-                .highlight_style(
-                    Style::default()
-                        .fg(THEME.popup_import.accent_fg)
-                        .add_modifier(Modifier::BOLD),
-                )
-                .highlight_symbol("\u{25b6} ");
-
-            let mut list_state = ListState::default().with_selected(Some(state.version_idx));
-            StatefulWidget::render(list, area, buf, &mut list_state);
-        }
-    }
-}
-
-fn render_confirm_step(
-    state: &ImportWizardState,
-    area: Rect,
-    buf: &mut ratatui::buffer::Buffer,
-) {
-    let summary = match &state.summary {
-        Some(s) => s,
-        None => {
-            Paragraph::new("No summary available")
-                .style(Style::default().fg(THEME.popup_import.field_inactive_border_fg))
-                .render(area, buf);
-            return;
-        }
-    };
-
-    let label_style = Style::default().fg(THEME.popup_import.border_fg);
-
-    let loader_display = if let Some(ref lv) = summary.loader_version {
-        format!("{} {}", summary.loader, lv)
-    } else {
-        summary.loader.to_string()
-    };
-
-    Paragraph::new(vec![
-        Line::from(vec![
-            Span::styled("Name: ", label_style),
-            Span::raw(summary.name.clone()),
-        ]),
-        Line::from(vec![
-            Span::styled("Pack Version: ", label_style),
-            Span::raw(summary.pack_version.clone()),
-        ]),
-        Line::from(vec![
-            Span::styled("MC Version: ", label_style),
-            Span::raw(summary.game_version.clone()),
-        ]),
-        Line::from(vec![
-            Span::styled("Loader: ", label_style),
-            Span::raw(loader_display),
-        ]),
-        Line::from(vec![
-            Span::styled("Mods: ", label_style),
-            Span::raw(format!("{} files", summary.mod_count)),
-        ]),
-        Line::from(vec![
-            Span::styled("Overrides: ", label_style),
-            Span::raw(format!("{} files", summary.override_count)),
-        ]),
-    ])
-    .style(Style::default().fg(THEME.popup_import.text_fg))
-    .wrap(Wrap { trim: true })
-    .render(area, buf);
-}
-
-fn close_popup(state: &mut ImportWizardState, profiles_state: &mut profiles::State) {
+fn close_popup(state: &mut ImportWizardState, instances_state: &mut instances::State) {
     state.reset();
-    profiles_state.show_import_popup = false;
+    instances_state.show_import_popup = false;
 }
 
 fn push_import_error(msg: String) {
@@ -668,35 +433,7 @@ fn push_import_error(msg: String) {
     });
 }
 
-fn wizard_title(_state: &ImportWizardState) -> Line<'static> {
-    use crate::tui::widgets::styled_title;
-    styled_title("Import Modpack", false)
-}
-
-fn step_keybinds(state: &ImportWizardState) -> Line<'static> {
-    use super::keybind_line;
-    match state.step {
-        ImportStep::Input => keybind_line(&[("Enter", " fetch")]),
-        ImportStep::Fetching => keybind_line(&[("Esc", " cancel")]),
-        ImportStep::Version => keybind_line(&[
-            ("/", " search"),
-            ("h", " back"),
-            ("Enter", " select"),
-        ]),
-        ImportStep::Confirm => keybind_line(&[("h", " back"), ("Enter", " import")]),
-    }
-}
-
-fn selected_version(state: &ImportWizardState) -> Option<&VersionInfo> {
-    if let LoadState::Loaded(ref versions) = state.versions {
-        let visible: Vec<_> = visible_versions_ref(versions, &state.version_search);
-        visible.get(state.version_idx).copied()
-    } else {
-        None
-    }
-}
-
-fn visible_versions(state: &ImportWizardState) -> Vec<VersionInfo> {
+pub(super) fn visible_versions(state: &ImportWizardState) -> Vec<VersionInfo> {
     match &state.versions {
         LoadState::Loaded(versions) => {
             let q = state.version_search.query.to_lowercase();
@@ -727,6 +464,15 @@ fn visible_versions_ref<'a>(
                 || v.version_number.to_lowercase().contains(&q)
         })
         .collect()
+}
+
+fn selected_version(state: &ImportWizardState) -> Option<&VersionInfo> {
+    if let LoadState::Loaded(ref versions) = state.versions {
+        let visible: Vec<_> = visible_versions_ref(versions, &state.version_search);
+        visible.get(state.version_idx).copied()
+    } else {
+        None
+    }
 }
 
 fn clamp_version_index(state: &mut ImportWizardState) {

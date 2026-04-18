@@ -3,7 +3,7 @@ use ratatui::{
     text::{Line, Span},
 };
 
-use crate::tui::theme::THEME;
+use crate::config::theme::THEME;
 
 #[derive(Debug, Default, Clone)]
 pub struct SearchState {
@@ -77,9 +77,10 @@ impl SearchState {
             return None;
         }
 
-        let dim = Style::default().fg(THEME.search.border_unfocused_fg);
+        let theme = THEME.as_ref();
+        let dim = Style::default().fg(theme.text_dim());
         let accent = Style::default()
-            .fg(THEME.search.border_focused_fg)
+            .fg(theme.text_dim())
             .add_modifier(Modifier::BOLD);
 
         let mut spans = vec![

@@ -1,20 +1,6 @@
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
 
-use minecraft_msa_auth::MinecraftAuthorizationFlow;
-use oauth2::basic::BasicClient;
-use oauth2::{
-    AuthUrl, ClientId, DeviceAuthorizationUrl, RefreshToken, Scope,
-    StandardDeviceAuthorizationResponse, TokenResponse, TokenUrl,
-};
-use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
-
-const CLIENT_ID: &str = "708e91b5-99f8-4a1d-80ec-e746cbb24771";
-const DEVICE_CODE_URL: &str = "https://login.microsoftonline.com/consumers/oauth2/v2.0/devicecode";
-const MSA_AUTHORIZE_URL: &str = "https://login.microsoftonline.com/consumers/oauth2/v2.0/authorize";
-const MSA_TOKEN_URL: &str = "https://login.microsoftonline.com/consumers/oauth2/v2.0/token";
-const MC_PROFILE_URL: &str = "https://api.minecraftservices.com/minecraft/profile";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Account {
@@ -32,22 +18,10 @@ pub enum AccountType {
     Offline,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct DeviceCodeInfo {
-    pub user_code: String,
-    pub verification_uri: String,
-}
-
 #[derive(Debug)]
 pub enum AuthResult {
     Success(Account),
     Error(String),
-}
-
-#[derive(Deserialize)]
-struct McProfile {
-    id: String,
-    name: String,
 }
 
 pub struct AccountStore {
@@ -67,10 +41,18 @@ impl AccountStore {
 
     pub fn save(&self) {
         if let Some(parent) = self.path.parent() {
-            let _ = std::fs::create_dir_all(parent);
+            if let Err(e) = std::fs::create_dir_all(parent) {
+                tracing::error!("Failed to create accounts directory: {}", e);
+                return;
+            }
         }
-        if let Ok(json) = serde_json::to_string_pretty(&self.accounts) {
-            let _ = std::fs::write(&self.path, json);
+        match serde_json::to_string_pretty(&self.accounts) {
+            Ok(json) => {
+                if let Err(e) = std::fs::write(&self.path, json) {
+                    tracing::error!("Failed to write accounts file: {}", e);
+                }
+            }
+            Err(e) => tracing::error!("Failed to serialize accounts: {}", e),
         }
     }
 
@@ -86,11 +68,10 @@ impl AccountStore {
     }
 
     pub fn add(&mut self, account: Account) {
-        let is_first = self.accounts.is_empty();
-        let uuid = account.uuid.clone();
-        self.accounts.retain(|a| a.uuid != uuid);
+        let uuid = &account.uuid;
+        self.accounts.retain(|a| a.uuid != *uuid);
         let mut account = account;
-        if is_first {
+        if self.accounts.is_empty() {
             account.active = true;
         }
         self.accounts.push(account);
@@ -109,16 +90,13 @@ impl AccountStore {
     }
 }
 
-fn account_store_path() -> PathBuf {
-    dirs_next::config_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("mcl")
-        .join("accounts.json")
+pub fn account_store_path() -> PathBuf {
+    crate::config::get_config_path().join("accounts.json")
 }
 
+/// Generate a deterministic offline-mode UUID for a username.
 pub fn offline_uuid(username: &str) -> String {
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
+    use std::hash::{DefaultHasher, Hash, Hasher};
     let mut hasher = DefaultHasher::new();
     format!("OfflinePlayer:{username}").hash(&mut hasher);
     let h = hasher.finish();
@@ -135,171 +113,10 @@ pub fn offline_uuid(username: &str) -> String {
 pub fn create_offline_account(username: &str) -> Account {
     Account {
         uuid: offline_uuid(username),
-        username: username.to_string(),
+        username: username.to_owned(),
         account_type: AccountType::Offline,
         active: false,
         refresh_token: None,
-    }
-}
-
-pub static DEVICE_CODE_DISPLAY: Lazy<Arc<Mutex<Option<DeviceCodeInfo>>>> =
-    Lazy::new(|| Arc::new(Mutex::new(None)));
-
-async fn run_full_oauth_flow() -> Result<(String, Option<String>), String> {
-    let oauth_client = BasicClient::new(ClientId::new(CLIENT_ID.to_string()))
-        .set_auth_uri(AuthUrl::new(MSA_AUTHORIZE_URL.to_string()).map_err(|e| e.to_string())?)
-        .set_token_uri(TokenUrl::new(MSA_TOKEN_URL.to_string()).map_err(|e| e.to_string())?)
-        .set_device_authorization_url(
-            DeviceAuthorizationUrl::new(DEVICE_CODE_URL.to_string()).map_err(|e| e.to_string())?,
-        );
-
-    let http_client = reqwest::Client::new();
-
-    let details: StandardDeviceAuthorizationResponse = oauth_client
-        .exchange_device_code()
-        .add_scope(Scope::new("XboxLive.signin".to_string()))
-        .add_scope(Scope::new("offline_access".to_string()))
-        .request_async(&http_client)
-        .await
-        .map_err(|e| format!("Device code request failed: {e}"))?;
-
-    if let Ok(mut slot) = DEVICE_CODE_DISPLAY.lock() {
-        *slot = Some(DeviceCodeInfo {
-            user_code: details.user_code().secret().to_string(),
-            verification_uri: details.verification_uri().to_string(),
-        });
-    }
-
-    let token = oauth_client
-        .exchange_device_access_token(&details)
-        .request_async(&http_client, tokio::time::sleep, None)
-        .await
-        .map_err(|e| format!("Authentication failed: {e}"))?;
-
-    let ms_access_token = token.access_token().secret().to_string();
-    let ms_refresh_token = token.refresh_token().map(|r| r.secret().to_string());
-
-    Ok((ms_access_token, ms_refresh_token))
-}
-
-pub fn start_microsoft_auth() -> Arc<Mutex<Option<AuthResult>>> {
-    let result: Arc<Mutex<Option<AuthResult>>> = Arc::new(Mutex::new(None));
-    let result_clone = result.clone();
-
-    tokio::spawn(async move {
-        let outcome = run_full_auth_flow().await;
-        if let Ok(mut slot) = result_clone.lock() {
-            *slot = Some(outcome);
-        }
-    });
-
-    result
-}
-
-async fn run_full_auth_flow() -> AuthResult {
-    let (ms_access_token, ms_refresh_token) = match run_full_oauth_flow().await {
-        Ok(pair) => pair,
-        Err(e) => return AuthResult::Error(e),
-    };
-
-    exchange_and_build_account(&ms_access_token, ms_refresh_token.as_deref()).await
-}
-
-async fn exchange_and_build_account(
-    ms_access_token: &str,
-    ms_refresh_token: Option<&str>,
-) -> AuthResult {
-    let mc_flow = MinecraftAuthorizationFlow::new(reqwest::Client::new());
-    let mc_token = match mc_flow.exchange_microsoft_token(ms_access_token).await {
-        Ok(t) => t,
-        Err(e) => return AuthResult::Error(format!("Minecraft auth failed: {e}")),
-    };
-
-    let client = reqwest::Client::new();
-    let profile_resp = match client
-        .get(MC_PROFILE_URL)
-        .header(
-            "Authorization",
-            format!("Bearer {}", mc_token.access_token().as_ref()),
-        )
-        .send()
-        .await
-    {
-        Ok(r) => r,
-        Err(e) => return AuthResult::Error(format!("Profile fetch failed: {e}")),
-    };
-
-    if !profile_resp.status().is_success() {
-        return AuthResult::Error("Account does not own Minecraft".to_string());
-    }
-
-    let profile: McProfile = match profile_resp.json().await {
-        Ok(p) => p,
-        Err(e) => return AuthResult::Error(format!("Profile parse failed: {e}")),
-    };
-
-    let uuid = if profile.id.len() == 32 {
-        format!(
-            "{}-{}-{}-{}-{}",
-            &profile.id[..8],
-            &profile.id[8..12],
-            &profile.id[12..16],
-            &profile.id[16..20],
-            &profile.id[20..32],
-        )
-    } else {
-        profile.id.clone()
-    };
-
-    AuthResult::Success(Account {
-        uuid,
-        username: profile.name,
-        account_type: AccountType::Microsoft,
-        active: false,
-        refresh_token: ms_refresh_token.map(|s| s.to_string()),
-    })
-}
-
-pub async fn refresh_and_get_token(account: &Account) -> Result<(String, Option<String>), String> {
-    match account.account_type {
-        AccountType::Offline => Ok(("0".to_string(), None)),
-        AccountType::Microsoft => {
-            let refresh = account.refresh_token.as_deref().ok_or_else(|| {
-                format!(
-                    "No saved credentials for '{}'. Please remove and re-add the account.",
-                    account.username
-                )
-            })?;
-
-            let oauth_client = BasicClient::new(ClientId::new(CLIENT_ID.to_string()))
-                .set_auth_uri(
-                    AuthUrl::new(MSA_AUTHORIZE_URL.to_string()).map_err(|e| e.to_string())?,
-                )
-                .set_token_uri(
-                    TokenUrl::new(MSA_TOKEN_URL.to_string()).map_err(|e| e.to_string())?,
-                );
-
-            let http_client = reqwest::Client::new();
-
-            let token = oauth_client
-                .exchange_refresh_token(&RefreshToken::new(refresh.to_string()))
-                .add_scope(Scope::new("XboxLive.signin".to_string()))
-                .add_scope(Scope::new("offline_access".to_string()))
-                .request_async(&http_client)
-                .await
-                .map_err(|e| format!("Token refresh failed: {e}"))?;
-
-            let ms_access_token = token.access_token().secret().to_string();
-            let new_refresh = token.refresh_token().map(|r| r.secret().to_string());
-
-            let mc_flow = MinecraftAuthorizationFlow::new(reqwest::Client::new());
-            let mc_token = mc_flow
-                .exchange_microsoft_token(&ms_access_token)
-                .await
-                .map_err(|e| format!("Minecraft auth failed: {e}"))?;
-
-            Ok((mc_token.access_token().as_ref().to_string(), new_refresh))
-        }
     }
 }
 
@@ -364,7 +181,7 @@ mod tests {
     fn dummy_account(name: &str) -> Account {
         Account {
             uuid: offline_uuid(name),
-            username: name.to_string(),
+            username: name.to_owned(),
             account_type: AccountType::Offline,
             active: false,
             refresh_token: None,
@@ -397,7 +214,7 @@ mod tests {
         let mut store = make_store(tmp.path());
         store.add(dummy_account("Alice"));
         let mut dup = dummy_account("Alice");
-        dup.username = "AliceRenamed".to_string();
+        dup.username = "AliceRenamed".to_owned();
         dup.uuid = store.accounts[0].uuid.clone();
         store.add(dup);
         assert_eq!(store.accounts.len(), 1);
