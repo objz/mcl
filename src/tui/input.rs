@@ -107,11 +107,10 @@ impl App {
                     widgets::content::ContentTab::Shaders => Some(&mut self.shaders_state),
                     _ => None,
                 };
-                if let Some(state) = state {
-                    if widgets::content::list::handle_key(&key_event, state) {
+                if let Some(state) = state
+                    && widgets::content::list::handle_key(&key_event, state) {
                         return Ok(());
                     }
-                }
             }
         }
 

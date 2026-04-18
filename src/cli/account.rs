@@ -73,19 +73,18 @@ async fn add_microsoft_account() -> CliResult {
     let result_arc = crate::auth::start_microsoft_auth();
 
     loop {
-        if let Ok(slot) = crate::auth::DEVICE_CODE_DISPLAY.lock() {
-            if let Some(info) = slot.as_ref() {
+        if let Ok(slot) = crate::auth::DEVICE_CODE_DISPLAY.lock()
+            && let Some(info) = slot.as_ref() {
                 println!("Open: {}", info.verification_uri);
                 println!("Code: {}", info.user_code);
                 break;
             }
-        }
         tokio::time::sleep(Duration::from_millis(200)).await;
     }
 
     loop {
-        if let Ok(slot) = result_arc.lock() {
-            if let Some(result) = slot.as_ref() {
+        if let Ok(slot) = result_arc.lock()
+            && let Some(result) = slot.as_ref() {
                 return match result {
                     AuthResult::Success(account) => {
                         let mut store = AccountStore::load();
@@ -96,7 +95,6 @@ async fn add_microsoft_account() -> CliResult {
                     AuthResult::Error(message) => Err(io::Error::other(message.clone()).into()),
                 };
             }
-        }
         tokio::time::sleep(Duration::from_millis(500)).await;
     }
 }

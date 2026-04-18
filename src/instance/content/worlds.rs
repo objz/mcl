@@ -71,17 +71,15 @@ fn world_description(world_dir: &Path) -> String {
 
     let mut lines = Vec::new();
 
-    if let Some(secs) = created {
-        if let Some(dt) = chrono::DateTime::from_timestamp(secs as i64, 0) {
+    if let Some(secs) = created
+        && let Some(dt) = chrono::DateTime::from_timestamp(secs as i64, 0) {
             lines.push(format!("Created:  {}", dt.format("%Y-%m-%d %H:%M")));
         }
-    }
 
-    if let Some(secs) = modified {
-        if let Some(dt) = chrono::DateTime::from_timestamp(secs as i64, 0) {
+    if let Some(secs) = modified
+        && let Some(dt) = chrono::DateTime::from_timestamp(secs as i64, 0) {
             lines.push(format!("Played:   {}", dt.format("%Y-%m-%d %H:%M")));
         }
-    }
 
     if dir_size > 0 {
         lines.push(format!("Size:     {}", format_size(dir_size)));
@@ -94,11 +92,10 @@ fn dir_size_approx(path: &Path) -> u64 {
     let mut total = 0u64;
     if let Ok(rd) = std::fs::read_dir(path) {
         for entry in rd.flatten() {
-            if let Ok(meta) = entry.metadata() {
-                if meta.is_file() {
+            if let Ok(meta) = entry.metadata()
+                && meta.is_file() {
                     total += meta.len();
                 }
-            }
         }
     }
     // Check region folder too (main chunk data)

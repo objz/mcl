@@ -89,14 +89,14 @@ impl LogsState {
     }
 
     pub fn drain_pending(&mut self) {
-        let taken = if let Ok(mut slot) = self.pending.lock() {
+        let taken = match self.pending.lock() { Ok(mut slot) => {
             slot.take()
-        } else {
+        } _ => {
             None
-        };
+        }};
 
-        if let Some((instance_name, entries)) = taken {
-            if self.loaded_for.as_deref() == Some(&instance_name) {
+        if let Some((instance_name, entries)) = taken
+            && self.loaded_for.as_deref() == Some(&instance_name) {
                 let prev_selected = self.list_state.selected;
                 self.entries = entries;
                 self.loading = false;
@@ -106,14 +106,12 @@ impl LogsState {
                 if display_count > 0 && prev_selected.is_none() {
                     self.list_state.selected = Some(0);
                     self.load_selected_content();
-                } else if let Some(sel) = prev_selected {
-                    if sel >= display_count && display_count > 0 {
+                } else if let Some(sel) = prev_selected
+                    && sel >= display_count && display_count > 0 {
                         self.list_state.selected = Some(display_count - 1);
                     }
-                }
                 self.update_scrollbar();
             }
-        }
     }
 
     pub fn try_rescan(&mut self) {

@@ -104,8 +104,8 @@ impl ContentListState {
     where
         F: FnOnce(&Path, &str) -> Vec<ContentEntry> + Send + 'static,
     {
-        if let Some(prev) = self.loaded_for.take() {
-            if !self.entries.is_empty() {
+        if let Some(prev) = self.loaded_for.take()
+            && !self.entries.is_empty() {
                 self.cache.insert(
                     prev,
                     CachedList {
@@ -114,7 +114,6 @@ impl ContentListState {
                     },
                 );
             }
-        }
 
         if let Some(cached) = self.cache.remove(instance_name) {
             self.entries = cached.entries;
@@ -147,14 +146,14 @@ impl ContentListState {
     }
 
     pub fn drain_pending(&mut self) {
-        let taken = if let Ok(mut slot) = self.pending.lock() {
+        let taken = match self.pending.lock() { Ok(mut slot) => {
             slot.take()
-        } else {
+        } _ => {
             None
-        };
+        }};
 
-        if let Some((instance_name, entries)) = taken {
-            if self.loaded_for.as_deref() == Some(&instance_name) || instance_name.is_empty() {
+        if let Some((instance_name, entries)) = taken
+            && (self.loaded_for.as_deref() == Some(&instance_name) || instance_name.is_empty()) {
                 let selected_name = self
                     .list_state
                     .selected
@@ -176,7 +175,6 @@ impl ContentListState {
                 }
                 self.update_scrollbar();
             }
-        }
     }
 
     fn update_scrollbar(&mut self) {
@@ -279,13 +277,11 @@ pub fn handle_key_no_toggle(key_event: &KeyEvent, state: &mut ContentListState) 
             true
         }
         KeyCode::Enter if key_event.modifiers.contains(KeyModifiers::SHIFT) => {
-            if let Some(&real_idx) = state.list_state.selected.and_then(|i| filtered.get(i)) {
-                if let Some(dir) = state.entries[real_idx].path.parent() {
-                    if let Err(e) = open::that(dir) {
+            if let Some(&real_idx) = state.list_state.selected.and_then(|i| filtered.get(i))
+                && let Some(dir) = state.entries[real_idx].path.parent()
+                    && let Err(e) = open::that(dir) {
                         tracing::error!("Failed to open directory: {}", e);
                     }
-                }
-            }
             true
         }
         _ => false,
@@ -316,13 +312,11 @@ pub fn handle_key(key_event: &KeyEvent, state: &mut ContentListState) -> bool {
             true
         }
         KeyCode::Enter if key_event.modifiers.contains(KeyModifiers::SHIFT) => {
-            if let Some(&real_idx) = state.list_state.selected.and_then(|i| filtered.get(i)) {
-                if let Some(dir) = state.entries[real_idx].path.parent() {
-                    if let Err(e) = open::that(dir) {
+            if let Some(&real_idx) = state.list_state.selected.and_then(|i| filtered.get(i))
+                && let Some(dir) = state.entries[real_idx].path.parent()
+                    && let Err(e) = open::that(dir) {
                         tracing::error!("Failed to open directory: {}", e);
                     }
-                }
-            }
             true
         }
         KeyCode::Enter => {
@@ -565,8 +559,8 @@ fn parse_mc_text(text: &str, base_style: Style) -> Vec<Span<'static>> {
     let mut chars = text.chars().peekable();
 
     while let Some(ch) = chars.next() {
-        if ch == '\u{00A7}' {
-            if let Some(&code) = chars.peek() {
+        if ch == '\u{00A7}'
+            && let Some(&code) = chars.peek() {
                 if !current_text.is_empty() {
                     spans.push(Span::styled(current_text.clone(), current_style));
                     current_text.clear();
@@ -597,7 +591,6 @@ fn parse_mc_text(text: &str, base_style: Style) -> Vec<Span<'static>> {
                 }
                 continue;
             }
-        }
         current_text.push(ch);
     }
 

@@ -91,28 +91,27 @@ impl ScreenshotsState {
     }
 
     pub fn drain_pending_entries(&mut self) {
-        let taken = if let Ok(mut slot) = self.pending_entries.lock() {
+        let taken = match self.pending_entries.lock() { Ok(mut slot) => {
             slot.take()
-        } else {
+        } _ => {
             None
-        };
+        }};
 
-        if let Some((instance_name, entries)) = taken {
-            if self.loaded_for.as_deref() == Some(&instance_name) {
+        if let Some((instance_name, entries)) = taken
+            && self.loaded_for.as_deref() == Some(&instance_name) {
                 self.entries = entries;
                 self.loading = false;
                 self.selected = 0;
                 self.scroll_row = 0;
             }
-        }
     }
 
     pub fn take_pending_images(&mut self) -> Vec<(usize, image::DynamicImage)> {
-        if let Ok(mut slot) = self.pending_images.lock() {
+        match self.pending_images.lock() { Ok(mut slot) => {
             std::mem::take(&mut *slot)
-        } else {
+        } _ => {
             Vec::new()
-        }
+        }}
     }
 
     pub fn set_protocol(&mut self, idx: usize, proto: StatefulProtocol) {
@@ -138,11 +137,10 @@ impl ScreenshotsState {
                         .await
                         .unwrap_or(None);
 
-                    if let Some(img) = img {
-                        if let Ok(mut slot) = pending.lock() {
+                    if let Some(img) = img
+                        && let Ok(mut slot) = pending.lock() {
                             slot.push((idx, img));
                         }
-                    }
                 });
             }
         }
@@ -217,21 +215,18 @@ pub fn handle_key(key_event: &KeyEvent, state: &mut ScreenshotsState) -> bool {
             true
         }
         KeyCode::Enter if key_event.modifiers.contains(KeyModifiers::SHIFT) => {
-            if let Some(entry) = state.entries.get(state.selected) {
-                if let Some(dir) = entry.path.parent() {
-                    if let Err(e) = open::that(dir) {
+            if let Some(entry) = state.entries.get(state.selected)
+                && let Some(dir) = entry.path.parent()
+                    && let Err(e) = open::that(dir) {
                         tracing::error!("Failed to open directory: {}", e);
                     }
-                }
-            }
             true
         }
         KeyCode::Enter => {
-            if let Some(entry) = state.entries.get(state.selected) {
-                if let Err(e) = open::that(&entry.path) {
+            if let Some(entry) = state.entries.get(state.selected)
+                && let Err(e) = open::that(&entry.path) {
                     tracing::error!("Failed to open file: {}", e);
                 }
-            }
             true
         }
         KeyCode::Char('L') | KeyCode::Right

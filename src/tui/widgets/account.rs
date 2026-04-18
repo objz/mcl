@@ -53,11 +53,11 @@ impl Default for AccountState {
 impl AccountState {
     pub fn drain_auth_result(&mut self) {
         if let AddMode::DeviceCodeWaiting { pending, .. } = &self.add_mode {
-            let result = if let Ok(mut slot) = pending.lock() {
+            let result = match pending.lock() { Ok(mut slot) => {
                 slot.take()
-            } else {
+            } _ => {
                 None
-            };
+            }};
 
             if let Some(result) = result {
                 match result {
@@ -200,16 +200,13 @@ pub fn handle_key(key_event: &KeyEvent, state: &mut AccountState) -> bool {
 }
 
 pub fn drain_device_code(state: &mut AccountState) {
-    if let AddMode::DeviceCodeWaiting { info, .. } = &mut state.add_mode {
-        if info.user_code.is_empty() {
-            if let Ok(mut slot) = auth::DEVICE_CODE_DISPLAY.lock() {
-                if let Some(dc_info) = slot.take() {
+    if let AddMode::DeviceCodeWaiting { info, .. } = &mut state.add_mode
+        && info.user_code.is_empty()
+            && let Ok(mut slot) = auth::DEVICE_CODE_DISPLAY.lock()
+                && let Some(dc_info) = slot.take() {
                     info.user_code = dc_info.user_code;
                     info.verification_uri = dc_info.verification_uri;
                 }
-            }
-        }
-    }
 }
 
 pub fn render(frame: &mut Frame, area: Rect, focused: FocusedArea, state: &mut AccountState) {

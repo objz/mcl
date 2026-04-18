@@ -209,8 +209,8 @@ impl InstanceManager {
         std::fs::rename(&old_dir, &new_dir)?;
 
         let config_path = new_dir.join("instance.json");
-        if let Ok(data) = std::fs::read_to_string(&config_path) {
-            if let Ok(mut config) = serde_json::from_str::<InstanceConfig>(&data) {
+        if let Ok(data) = std::fs::read_to_string(&config_path)
+            && let Ok(mut config) = serde_json::from_str::<InstanceConfig>(&data) {
                 config.name = new_name.to_string();
                 if let Ok(json) = serde_json::to_string_pretty(&config) {
                     let _ = std::fs::write(&config_path, json);
@@ -219,7 +219,6 @@ impl InstanceManager {
                     tracing::warn!("Failed to rename desktop shortcut: {}", e);
                 }
             }
-        }
 
         Ok(())
     }

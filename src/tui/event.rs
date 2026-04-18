@@ -189,14 +189,13 @@ impl App {
             if let Err(e) = result {
                 tracing::error!("Failed to open editor: {}", e);
             }
-        } else if let Err(e) = std::process::Command::new(&editor)
+        } else { if let Err(e) = std::process::Command::new(&editor)
             .arg(path)
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
-            .spawn()
-        {
+            .spawn() {
             tracing::error!("Failed to open editor: {}", e);
-        }
+        }}
     }
 
     pub(super) fn spawn_launch(&self, instance: crate::instance::InstanceConfig) {

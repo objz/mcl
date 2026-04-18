@@ -2,7 +2,7 @@
 name = "mcl"
 version = "0.1.0"
 authors = ["objz"]
-edition = "2021"
+edition = "2024"
 
 [dependencies]
 async-trait = "0.1"

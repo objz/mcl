@@ -18,11 +18,7 @@ pub(crate) fn parse_enabled_stem(file_name: &str, ext: &str) -> Option<(bool, St
     let disabled_ext = format!("{ext}.disabled");
     if let Some(stem) = file_name.strip_suffix(&disabled_ext) {
         Some((false, stem.to_string()))
-    } else if let Some(stem) = file_name.strip_suffix(ext) {
-        Some((true, stem.to_string()))
-    } else {
-        None
-    }
+    } else { file_name.strip_suffix(ext).map(|stem| (true, stem.to_string())) }
 }
 
 /// For directories: check if the name ends in `.disabled`.

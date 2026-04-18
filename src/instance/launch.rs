@@ -220,8 +220,8 @@ pub async fn launch(
                 }
                 crate::auth::AccountType::Offline => ("0".to_string(), None),
             };
-            if let Some(new_rt) = new_refresh {
-                if let Some(stored) = account_store
+            if let Some(new_rt) = new_refresh
+                && let Some(stored) = account_store
                     .accounts
                     .iter_mut()
                     .find(|a| a.uuid == acc.uuid)
@@ -229,7 +229,6 @@ pub async fn launch(
                     stored.refresh_token = Some(new_rt);
                     account_store.save();
                 }
-            }
             let user_type = match acc.account_type {
                 crate::auth::AccountType::Microsoft => "msa",
                 crate::auth::AccountType::Offline => "legacy",
@@ -321,11 +320,10 @@ pub async fn launch(
                 while let Ok(Some(line)) = lines.next_line().await {
                     tracing::info!(target: "mc_instance", "[{}] {}", n, line);
                     crate::instance_logs::push(&n, &line);
-                    if let Ok(mut f) = w.lock() {
-                        if let Some(f) = f.as_mut() {
+                    if let Ok(mut f) = w.lock()
+                        && let Some(f) = f.as_mut() {
                             let _ = writeln!(f, "{}", line);
                         }
-                    }
                 }
             });
         }
@@ -338,11 +336,10 @@ pub async fn launch(
                 while let Ok(Some(line)) = lines.next_line().await {
                     tracing::warn!(target: "mc_instance", "[{}] {}", n, line);
                     crate::instance_logs::push(&n, &line);
-                    if let Ok(mut f) = w.lock() {
-                        if let Some(f) = f.as_mut() {
+                    if let Ok(mut f) = w.lock()
+                        && let Some(f) = f.as_mut() {
                             let _ = writeln!(f, "[STDERR] {}", line);
                         }
-                    }
                 }
             });
         }

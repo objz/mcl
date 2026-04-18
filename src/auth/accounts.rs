@@ -40,12 +40,11 @@ impl AccountStore {
     }
 
     pub fn save(&self) {
-        if let Some(parent) = self.path.parent() {
-            if let Err(e) = std::fs::create_dir_all(parent) {
+        if let Some(parent) = self.path.parent()
+            && let Err(e) = std::fs::create_dir_all(parent) {
                 tracing::error!("Failed to create accounts directory: {}", e);
                 return;
             }
-        }
         match serde_json::to_string_pretty(&self.accounts) {
             Ok(json) => {
                 if let Err(e) = std::fs::write(&self.path, json) {
