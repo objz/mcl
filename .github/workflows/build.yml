@@ -47,8 +47,9 @@ jobs:
       - name: install cross-compilation deps (aarch64-linux)
         if: matrix.target == 'aarch64-unknown-linux-gnu'
         run: |
+          sudo dpkg --add-architecture arm64
           sudo apt-get update
-          sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+          sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu libssl-dev:arm64
 
       - name: install OpenSSL (linux x86_64)
         if: matrix.target == 'x86_64-unknown-linux-gnu'
@@ -57,6 +58,9 @@ jobs:
       - name: build
         env:
           CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
+          AARCH64_UNKNOWN_LINUX_GNU_OPENSSL_LIB_DIR: /usr/lib/aarch64-linux-gnu
+          AARCH64_UNKNOWN_LINUX_GNU_OPENSSL_INCLUDE_DIR: /usr/include/aarch64-linux-gnu
+          PKG_CONFIG_ALLOW_CROSS: 1
         run: cargo build --release --target ${{ matrix.target }}
 
       - name: package (unix)
