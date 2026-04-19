@@ -59,6 +59,8 @@ paru -S mcl-launcher-bin
 paru -S mcl-launcher-git
 ```
 
+also available on [crates.io](https://crates.io/crates/mcl-launcher)
+
 ### from source
 
 requires a Rust toolchain.
