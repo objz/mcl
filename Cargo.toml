@@ -3,6 +3,12 @@ name = "mcl"
 version = "0.1.0"
 authors = ["objz"]
 edition = "2024"
+description = "A fully featured Minecraft launcher TUI"
+repository = "https://github.com/objz/mcl"
+license = "GPL-3.0-only"
+readme = "README.md"
+keywords = ["minecraft", "launcher", "tui", "ratatui"]
+categories = ["command-line-utilities", "games"]
 
 [dependencies]
 async-trait = "0.1"
