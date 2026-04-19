@@ -16,7 +16,7 @@ log = "0.4"
 ratatui = { version = "0.30.0", features = ["serde"] }
 ratatui-themekit = { version = "0.6", features = ["serde"] }
 ratatui-textarea = { version = "0.9.1", features = ["crossterm"] }
-reqwest = { version = "0.12", features = ["json", "stream"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls"] }
 serde = { version = "1.0.217", features = ["derive"] }
 serde_json = "1.0"
 toml = "1.1.2"
