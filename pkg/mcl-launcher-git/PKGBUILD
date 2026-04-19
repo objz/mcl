@@ -1,15 +1,15 @@
 # Maintainer: objz <me@objz.dev>
-pkgname=mcl-git
-pkgver=r0.0000000
+pkgname=mcl-launcher-git
+pkgver=r116.ab9d9dd
 pkgrel=1
-pkgdesc="Minecraft launcher CLI"
+pkgdesc="Minecraft launcher TUI"
 arch=('x86_64' 'aarch64')
 url="https://github.com/objz/mcl"
 license=('GPL-3.0-only')
-depends=()
-makedepends=('git' 'rust' 'cargo')
-provides=('mcl')
-conflicts=('mcl')
+depends=('openssl')
+makedepends=('git' 'rust' 'cargo' 'openssl' 'pkgconf')
+provides=('mcl-launcher')
+conflicts=('mcl-launcher' 'mcl-launcher-bin')
 source=("git+$url.git")
 sha256sums=('SKIP')
 
@@ -31,6 +31,5 @@ check() {
 package() {
   cd "$srcdir/mcl"
   install -Dm755 "target/release/mcl" "$pkgdir/usr/bin/mcl"
-  # install -Dm644 README.md "$pkgdir/usr/share/doc/mcl/README.md"
-  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/mcl/LICENSE"
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
 }
