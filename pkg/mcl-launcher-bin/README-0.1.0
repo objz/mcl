@@ -10,7 +10,7 @@
 
 **MineCraft Launcher. or MineCraft cLi. pick whichever sounds better to you.**
 
-![screenshot](assets/screenshot.png)
+<!-- ![screenshot](assets/screenshot.png) -->
 
 [Report Bug](https://github.com/objz/mcl/issues) · [Request Feature](https://github.com/objz/mcl/issues)
 
@@ -61,7 +61,7 @@ paru -S mcl-launcher-git
 
 ### from source
 
-requires a Rust toolchain.
+requires a Rust toolchain and OpenSSL.
 
 ```sh
 git clone https://github.com/objz/mcl.git
