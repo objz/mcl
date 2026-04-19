@@ -1,5 +1,5 @@
 [package]
-name = "mcl"
+name = "mcl-launcher"
 version = "0.1.0"
 authors = ["objz"]
 edition = "2024"
@@ -9,6 +9,10 @@ license = "GPL-3.0-only"
 readme = "README.md"
 keywords = ["minecraft", "launcher", "tui", "ratatui"]
 categories = ["command-line-utilities", "games"]
+
+[[bin]]
+name = "mcl"
+path = "src/main.rs"
 
 [dependencies]
 async-trait = "0.1"
