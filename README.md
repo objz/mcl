@@ -109,7 +109,7 @@ you can create your own by dropping a TOML file in `~/.config/mcl/theme/` and re
 
 ## contributing
 
-contributions are welcome. fork it, branch it, PR it. make sure `cargo clippy` and `cargo test` pass before opening a PR.
+contributions are welcome. fork it, branch it, PR it. see [CONTRIBUTING.md](CONTRIBUTING.md) for code style and project structure.
 
 ---
 
