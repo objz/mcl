@@ -1,7 +1,8 @@
-// modpack importing from modrinth (remote slug/url) or local .mrpack files.
+// modpack importing from modrinth (remote slug/url) or local files (.mrpack, mmc zips).
 // resolves the input, downloads if needed, then hands off to the import engine.
 use clap::ArgMatches;
 
+use crate::instance::import::{parse_import_input, ImportInput};
 use crate::instance::InstanceManager;
 use crate::net::modrinth;
 
@@ -17,18 +18,17 @@ pub async fn handle_import(matches: &ArgMatches) -> CliResult {
     let manager = InstanceManager::new(instances_dir, meta_dir);
     let client = crate::net::HttpClient::new();
 
-    // figure out what the user gave us: a local file, a project slug, or a versioned URL
-    let parsed = modrinth::parse_input(input);
+    let parsed = parse_import_input(input);
 
-    let mrpack_path = match parsed {
-        modrinth::ModrinthInput::LocalFile(ref path) => {
+    let archive_path = match parsed {
+        ImportInput::LocalFile(ref path) => {
             let resolved = crate::config::settings::resolve_path(path);
             if !resolved.exists() {
                 return Err(format!("File not found: {}", resolved.display()).into());
             }
             resolved
         }
-        modrinth::ModrinthInput::ProjectSlug(ref slug) => {
+        ImportInput::ProjectSlug(ref slug) => {
             println!("Fetching project '{slug}'...");
             let project = modrinth::fetch_project(&client, slug)
                 .await
@@ -64,7 +64,7 @@ pub async fn handle_import(matches: &ArgMatches) -> CliResult {
                 .await
                 .map_err(|e| format!("Failed to download .mrpack: {e}"))?
         }
-        modrinth::ModrinthInput::VersionId {
+        ImportInput::VersionId {
             slug: _,
             ref version_id,
         } => {
@@ -87,10 +87,7 @@ pub async fn handle_import(matches: &ArgMatches) -> CliResult {
         }
     };
 
-    let index = modrinth::parse_mrpack(&mrpack_path)
-        .map_err(|e| format!("Failed to parse .mrpack: {e}"))?;
-
-    let mut summary = crate::instance::import::build_summary(&index, mrpack_path)
+    let mut summary = crate::instance::import::build_summary(&archive_path)
         .map_err(|e| format!("Invalid modpack: {e}"))?;
 
     if let Some(name) = override_name {

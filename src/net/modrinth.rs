@@ -1,5 +1,5 @@
-// modrinth modpack support: parses URLs/slugs, fetches project metadata,
-// downloads .mrpack files, and extracts loader info from pack manifests.
+// modrinth modpack support: fetches project metadata, downloads .mrpack files,
+// and extracts loader info from pack manifests.
 
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -49,44 +49,6 @@ pub struct MrpackFile {
     pub downloads: Vec<String>,
     #[serde(rename = "fileSize")]
     pub file_size: u64,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum ModrinthInput {
-    ProjectSlug(String),
-    VersionId { slug: String, version_id: String },
-    LocalFile(String),
-}
-
-// figures out what the user gave us: a modrinth URL, a local .mrpack file,
-// or just a project slug. accepts a pretty wide range of inputs so users
-// don't have to think about it.
-pub fn parse_input(input: &str) -> ModrinthInput {
-    let input = input.trim();
-
-    if input.ends_with(".mrpack")
-        || input.starts_with('/')
-        || input.starts_with("~/")
-    {
-        return ModrinthInput::LocalFile(input.to_string());
-    }
-
-    if let Some(rest) = input
-        .strip_prefix("https://modrinth.com/modpack/")
-        .or_else(|| input.strip_prefix("http://modrinth.com/modpack/"))
-    {
-        let parts: Vec<&str> = rest.split('/').filter(|s| !s.is_empty()).collect();
-        return match parts.as_slice() {
-            [slug, "version", version_id, ..] => ModrinthInput::VersionId {
-                slug: slug.to_string(),
-                version_id: version_id.to_string(),
-            },
-            [slug, ..] => ModrinthInput::ProjectSlug(slug.to_string()),
-            [] => ModrinthInput::ProjectSlug(String::new()),
-        };
-    }
-
-    ModrinthInput::ProjectSlug(input.to_string())
 }
 
 use crate::instance::models::ModLoader;
@@ -191,58 +153,6 @@ pub fn parse_mrpack(path: &std::path::Path) -> Result<MrpackIndex, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn parse_project_url() {
-        assert_eq!(
-            parse_input("https://modrinth.com/modpack/fabulously-optimized"),
-            ModrinthInput::ProjectSlug("fabulously-optimized".to_string())
-        );
-    }
-
-    #[test]
-    fn parse_version_url() {
-        let result = parse_input("https://modrinth.com/modpack/fabulously-optimized/version/abc123");
-        assert_eq!(
-            result,
-            ModrinthInput::VersionId {
-                slug: "fabulously-optimized".to_string(),
-                version_id: "abc123".to_string(),
-            }
-        );
-    }
-
-    #[test]
-    fn parse_local_mrpack() {
-        assert_eq!(
-            parse_input("/home/user/pack.mrpack"),
-            ModrinthInput::LocalFile("/home/user/pack.mrpack".to_string())
-        );
-    }
-
-    #[test]
-    fn parse_tilde_path() {
-        assert_eq!(
-            parse_input("~/Downloads/pack.mrpack"),
-            ModrinthInput::LocalFile("~/Downloads/pack.mrpack".to_string())
-        );
-    }
-
-    #[test]
-    fn parse_bare_slug() {
-        assert_eq!(
-            parse_input("fabulously-optimized"),
-            ModrinthInput::ProjectSlug("fabulously-optimized".to_string())
-        );
-    }
-
-    #[test]
-    fn parse_input_trims_whitespace() {
-        assert_eq!(
-            parse_input("  fabulously-optimized  "),
-            ModrinthInput::ProjectSlug("fabulously-optimized".to_string())
-        );
-    }
 
     #[test]
     fn loader_from_fabric_deps() {

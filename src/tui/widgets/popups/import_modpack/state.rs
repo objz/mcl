@@ -1,11 +1,11 @@
 // state machine for the modpack import wizard.
-// accepts modrinth URLs, project slugs, version IDs, or local .mrpack paths.
-// for remote packs, it fetches project info then lets the user pick a version.
+// accepts modrinth URLs, project slugs, version IDs, or local pack archives
+// (.mrpack, mmc/prism zips). remote packs go through version selection,
 // local files skip straight to the confirm step.
 
 use super::super::new_instance::LoadState;
-use crate::instance::import::ImportSummary;
-use crate::net::modrinth::{self, ModrinthInput, VersionInfo};
+use crate::instance::import::{parse_import_input, ImportInput, ImportSummary};
+use crate::net::modrinth::{self, VersionInfo};
 use crate::tui::widgets::instances;
 use crate::tui::widgets::search::SearchState;
 use crossterm::event::{KeyCode, KeyEvent};
@@ -241,19 +241,19 @@ fn start_resolve(state: &mut ImportWizardState) {
 
     tokio::spawn(async move {
         let client = crate::net::HttpClient::new();
-        let parsed = modrinth::parse_input(&input_text);
+        let parsed = parse_import_input(&input_text);
 
         match parsed {
-            ModrinthInput::ProjectSlug(slug) => {
+            ImportInput::ProjectSlug(slug) => {
                 resolve_project_slug(state_arc, &client, &slug).await;
             }
-            ModrinthInput::VersionId {
+            ImportInput::VersionId {
                 slug: _,
                 version_id,
             } => {
                 resolve_version_id(state_arc, &client, &version_id).await;
             }
-            ModrinthInput::LocalFile(path) => {
+            ImportInput::LocalFile(path) => {
                 resolve_local_file(state_arc, &path);
             }
         }
@@ -309,28 +309,21 @@ async fn resolve_version_id(
             }
 
             match modrinth::download_mrpack(client, &version, &tmp_dir).await {
-                Ok(mrpack_path) => match modrinth::parse_mrpack(&mrpack_path) {
-                    Ok(index) => {
-                        match crate::instance::import::build_summary(&index, mrpack_path) {
-                            Ok(summary) => {
-                                if let Ok(mut s) = state_arc.lock() {
-                                    s.summary = Some(summary);
-                                    s.step = ImportStep::Confirm;
-                                }
+                Ok(mrpack_path) => {
+                    match crate::instance::import::build_summary(&mrpack_path) {
+                        Ok(summary) => {
+                            if let Ok(mut s) = state_arc.lock() {
+                                s.summary = Some(summary);
+                                s.step = ImportStep::Confirm;
                             }
-                            Err(e) => set_error_and_back(
-                                &state_arc,
-                                format!("Failed to build summary: {}", e),
-                                ImportStep::Input,
-                            ),
                         }
+                        Err(e) => set_error_and_back(
+                            &state_arc,
+                            format!("Failed to build summary: {}", e),
+                            ImportStep::Input,
+                        ),
                     }
-                    Err(e) => set_error_and_back(
-                        &state_arc,
-                        format!("Failed to parse mrpack: {}", e),
-                        ImportStep::Input,
-                    ),
-                },
+                }
                 Err(e) => set_error_and_back(
                     &state_arc,
                     format!("Failed to download mrpack: {}", e),
@@ -349,31 +342,22 @@ async fn resolve_version_id(
 fn resolve_local_file(state_arc: Arc<Mutex<ImportWizardState>>, path: &str) {
     let resolved = crate::config::settings::resolve_path(path);
 
-    match modrinth::parse_mrpack(&resolved) {
-        Ok(index) => {
-            match crate::instance::import::build_summary(&index, resolved) {
-                Ok(summary) => {
-                    if let Ok(mut s) = state_arc.lock() {
-                        s.summary = Some(summary);
-                        s.step = ImportStep::Confirm;
-                    }
-                }
-                Err(e) => set_error_and_back(
-                    &state_arc,
-                    format!("Failed to build summary: {}", e),
-                    ImportStep::Input,
-                ),
+    match crate::instance::import::build_summary(&resolved) {
+        Ok(summary) => {
+            if let Ok(mut s) = state_arc.lock() {
+                s.summary = Some(summary);
+                s.step = ImportStep::Confirm;
             }
         }
         Err(e) => set_error_and_back(
             &state_arc,
-            format!("Failed to parse mrpack: {}", e),
+            format!("Failed to parse pack: {}", e),
             ImportStep::Input,
         ),
     }
 }
 
-// user picked a version from the list. download the .mrpack, parse it,
+// user picked a version from the list. download the .mrpack,
 // build a summary, and move to confirm.
 fn start_version_download(state: &mut ImportWizardState) {
     let version = match selected_version(state) {
@@ -399,28 +383,21 @@ fn start_version_download(state: &mut ImportWizardState) {
         }
 
         match modrinth::download_mrpack(&client, &version, &tmp_dir).await {
-            Ok(mrpack_path) => match modrinth::parse_mrpack(&mrpack_path) {
-                Ok(index) => {
-                    match crate::instance::import::build_summary(&index, mrpack_path) {
-                        Ok(summary) => {
-                            if let Ok(mut s) = state_arc.lock() {
-                                s.summary = Some(summary);
-                                s.step = ImportStep::Confirm;
-                            }
+            Ok(mrpack_path) => {
+                match crate::instance::import::build_summary(&mrpack_path) {
+                    Ok(summary) => {
+                        if let Ok(mut s) = state_arc.lock() {
+                            s.summary = Some(summary);
+                            s.step = ImportStep::Confirm;
                         }
-                        Err(e) => set_error_and_back(
-                            &state_arc,
-                            format!("Failed to build summary: {}", e),
-                            ImportStep::Version,
-                        ),
                     }
+                    Err(e) => set_error_and_back(
+                        &state_arc,
+                        format!("Failed to build summary: {}", e),
+                        ImportStep::Version,
+                    ),
                 }
-                Err(e) => set_error_and_back(
-                    &state_arc,
-                    format!("Failed to parse mrpack: {}", e),
-                    ImportStep::Version,
-                ),
-            },
+            }
             Err(e) => set_error_and_back(
                 &state_arc,
                 format!("Failed to download mrpack: {}", e),

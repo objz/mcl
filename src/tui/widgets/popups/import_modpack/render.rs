@@ -103,7 +103,7 @@ fn render_input_step(
     let input_line = if state.input.is_empty() {
         Line::from(vec![
             Span::styled(
-                "URL, slug, or .mrpack path...",
+                "URL, slug, or pack file path...",
                 Style::default().fg(theme.text_dim()),
             ),
             Span::styled(

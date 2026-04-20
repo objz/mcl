@@ -1,26 +1,18 @@
-// importing modrinth .mrpack modpacks: parse the manifest, create the instance,
-// download all the mods, and extract config/resource overrides from the zip
+// modrinth .mrpack import: parse the manifest, download all the mods,
+// and extract config/resource overrides from the zip
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use crate::instance::manager::InstanceManager;
 use crate::instance::models::ModLoader;
 use crate::net::modrinth::MrpackIndex;
 use crate::tui::progress;
 
-#[derive(Debug, Clone)]
-pub struct ImportSummary {
-    pub name: String,
-    pub pack_version: String,
-    pub game_version: String,
-    pub loader: ModLoader,
-    pub loader_version: Option<String>,
-    pub mod_count: usize,
-    pub override_count: usize,
-    pub mrpack_path: PathBuf,
-}
+use super::{ImportSummary, PackFormat};
 
-pub fn build_summary(index: &MrpackIndex, mrpack_path: PathBuf) -> Result<ImportSummary, String> {
+pub fn build_summary(path: &Path) -> Result<ImportSummary, String> {
+    let index = crate::net::modrinth::parse_mrpack(path)?;
+
     let game_version = crate::net::modrinth::game_version_from_dependencies(&index.dependencies)
         .ok_or_else(|| "Manifest missing minecraft dependency".to_string())?;
 
@@ -28,7 +20,7 @@ pub fn build_summary(index: &MrpackIndex, mrpack_path: PathBuf) -> Result<Import
         crate::net::modrinth::loader_from_dependencies(&index.dependencies);
     let loader = loader_opt.unwrap_or(ModLoader::Vanilla);
 
-    let override_count = count_overrides(&mrpack_path).unwrap_or(0);
+    let override_count = count_overrides(path).unwrap_or(0);
 
     Ok(ImportSummary {
         name: index.name.clone(),
@@ -38,7 +30,8 @@ pub fn build_summary(index: &MrpackIndex, mrpack_path: PathBuf) -> Result<Import
         loader_version,
         mod_count: index.files.len(),
         override_count,
-        mrpack_path,
+        format: PackFormat::Mrpack,
+        archive_path: path.to_path_buf(),
     })
 }
 
@@ -56,25 +49,11 @@ fn count_overrides(mrpack_path: &Path) -> Result<usize, String> {
     Ok(count)
 }
 
-pub fn unique_instance_name(base: &str, instances_dir: &Path) -> String {
-    let candidate = base.to_string();
-    if !instances_dir.join(&candidate).join("instance.json").exists() {
-        return candidate;
-    }
-    for n in 2..100 {
-        let candidate = format!("{base} ({n})");
-        if !instances_dir.join(&candidate).join("instance.json").exists() {
-            return candidate;
-        }
-    }
-    format!("{base} (import)")
-}
-
 pub async fn execute_import(
     summary: &ImportSummary,
     manager: &InstanceManager,
 ) -> Result<crate::instance::InstanceConfig, Box<dyn std::error::Error + Send + Sync>> {
-    let name = unique_instance_name(&summary.name, &manager.instances_dir);
+    let name = super::unique_instance_name(&summary.name, &manager.instances_dir);
 
     progress::set_action(format!("Importing '{name}'..."));
     progress::set_sub_action(format!("{} {}", summary.game_version, summary.loader));
@@ -91,12 +70,12 @@ pub async fn execute_import(
 
     let minecraft_dir = manager.instances_dir.join(&name).join(".minecraft");
 
-    let index = crate::net::modrinth::parse_mrpack(&summary.mrpack_path)
+    let index = crate::net::modrinth::parse_mrpack(&summary.archive_path)
         .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> { e.into() })?;
 
     download_mod_files(&index, &minecraft_dir).await?;
 
-    extract_overrides(&summary.mrpack_path, &minecraft_dir)?;
+    extract_overrides(&summary.archive_path, &minecraft_dir)?;
 
     progress::clear();
     Ok(config)
@@ -226,38 +205,4 @@ fn extract_overrides(
     }
 
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn unique_name_no_collision() {
-        let tmp = tempfile::tempdir().unwrap();
-        let name = unique_instance_name("TestPack", tmp.path());
-        assert_eq!(name, "TestPack");
-    }
-
-    #[test]
-    fn unique_name_with_collision() {
-        let tmp = tempfile::tempdir().unwrap();
-        let dir = tmp.path().join("TestPack");
-        std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join("instance.json"), "{}").unwrap();
-        let name = unique_instance_name("TestPack", tmp.path());
-        assert_eq!(name, "TestPack (2)");
-    }
-
-    #[test]
-    fn unique_name_multiple_collisions() {
-        let tmp = tempfile::tempdir().unwrap();
-        for suffix in ["", " (2)", " (3)"] {
-            let dir = tmp.path().join(format!("TestPack{suffix}"));
-            std::fs::create_dir_all(&dir).unwrap();
-            std::fs::write(dir.join("instance.json"), "{}").unwrap();
-        }
-        let name = unique_instance_name("TestPack", tmp.path());
-        assert_eq!(name, "TestPack (4)");
-    }
 }
