@@ -226,8 +226,8 @@ pub(crate) fn make_icon_pixels(
     Some(rows)
 }
 
-/// 6x3 fallback icon showing a "?" pattern for mods without icons.
-fn fallback_icon() -> Vec<Vec<IconCell>> {
+// 6x3 fallback icon showing a "?" pattern for mods without icons.
+pub(super) fn fallback_icon() -> Vec<Vec<IconCell>> {
     let b = IconCell {
         bg_r: 50,
         bg_g: 50,
@@ -256,6 +256,42 @@ fn fallback_icon() -> Vec<Vec<IconCell>> {
         vec![b, tb, tb, tb, tb, b],
         vec![b, b, b, bt, bt, b],
         vec![b, b, bt, bt, b, b],
+    ]
+}
+
+// 12x6 fallback icon showing a "?" pattern for worlds without icons.
+pub(super) fn fallback_icon_large() -> Vec<Vec<IconCell>> {
+    let b = IconCell {
+        bg_r: 50,
+        bg_g: 50,
+        bg_b: 50,
+        fg_r: 50,
+        fg_g: 50,
+        fg_b: 50,
+    };
+    let tb = IconCell {
+        bg_r: 50,
+        bg_g: 50,
+        bg_b: 50,
+        fg_r: 130,
+        fg_g: 130,
+        fg_b: 130,
+    };
+    let bt = IconCell {
+        bg_r: 130,
+        bg_g: 130,
+        bg_b: 130,
+        fg_r: 50,
+        fg_g: 50,
+        fg_b: 50,
+    };
+    vec![
+        vec![b, b, tb, tb, tb, tb, tb, tb, tb, tb, b, b],
+        vec![b, b, tb, tb, tb, tb, tb, tb, tb, tb, b, b],
+        vec![b, b, b, b, b, b, bt, bt, bt, bt, b, b],
+        vec![b, b, b, b, b, b, bt, bt, bt, bt, b, b],
+        vec![b, b, b, b, bt, bt, bt, bt, b, b, b, b],
+        vec![b, b, b, b, bt, bt, bt, bt, b, b, b, b],
     ]
 }
 

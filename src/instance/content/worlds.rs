@@ -35,7 +35,8 @@ pub fn scan_worlds(instances_dir: &Path, instance_name: &str) -> Vec<ContentEntr
         let icon_bytes = std::fs::read(path.join("icon.png")).ok();
         let icon_lines = icon_bytes
             .as_ref()
-            .and_then(|bytes| make_icon_pixels(bytes, 12, 6));
+            .and_then(|bytes| make_icon_pixels(bytes, 12, 6))
+            .or_else(|| Some(super::mods::fallback_icon_large()));
 
         let description = world_description(&path);
 

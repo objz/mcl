@@ -80,7 +80,8 @@ pub fn scan_resource_packs(instances_dir: &Path, instance_name: &str) -> Vec<Con
 
         let icon_lines = icon_bytes
             .as_ref()
-            .and_then(|bytes| make_icon_pixels(bytes, 6, 3));
+            .and_then(|bytes| make_icon_pixels(bytes, 6, 3))
+            .or_else(|| Some(super::mods::fallback_icon()));
 
         let display_name = if name.is_empty() { file_stem.clone() } else { name };
         entries.push(ContentEntry {
