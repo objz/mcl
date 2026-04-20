@@ -8,7 +8,7 @@
 [![Issues][issues-shield]][issues-url]
 [![GPL-3.0 License][license-shield]][license-url]
 
-**MineCraft Launcher. or MineCraft cLi. pick whichever sounds better to you.**
+**M**ine**C**raft **L**auncher. or **M**ine**C**raft c**L**i. pick whichever sounds better to you.
 
 ![screenshot](assets/screenshot.png)
 
@@ -37,6 +37,16 @@ it does everything you'd expect from a launcher. multiple instances, mod loaders
 | **desktop shortcuts** | click it and Minecraft starts, no need to open mcl or type anything |
 | **CLI** | every feature the TUI has is also available as a subcommand |
 | **theming** | 10 built-in themes, custom themes, color overrides |
+
+---
+
+## authentication
+
+mcl currently uses the Microsoft client ID from [portablemc](https://github.com/mindstorm38/portablemc) for Minecraft account authentication.
+
+this is temporary while mcl is going through the official Microsoft/Minecraft app approval process. once approved, mcl will switch to its own client ID.
+
+authentication still happens through Microsoft’s official services.
 
 ---
 
