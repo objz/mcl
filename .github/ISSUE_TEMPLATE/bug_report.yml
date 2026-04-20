@@ -1,0 +1,52 @@
+name: bug report
+description: something isn't working right
+labels: ["bug"]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: what happened
+      description: describe what went wrong and what you expected to happen instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: steps to reproduce
+      description: how can we trigger this?
+      placeholder: |
+        1. open mcl
+        2. do this
+        3. then this
+        4. it breaks
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: mcl version
+      description: run `mcl --version` or check the bottom of the TUI.
+      placeholder: 0.1.0
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: operating system
+      options:
+        - Linux
+        - macOS
+        - Windows
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: additional context
+      description: anything else that might help. screenshots, config changes, etc.
+    validations:
+      required: false

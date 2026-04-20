@@ -1,0 +1,54 @@
+name: crash report
+description: mcl crashed or panicked
+labels: ["crash"]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: what happened
+      description: what were you doing when mcl crashed?
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: logs
+      description: |
+        paste relevant log output here. you can find logs at:
+
+        - **mcl logs**: `~/.cache/mcl/` (daily rolling files like `mcl.log.2026-04-20`)
+        - **launch logs**: `~/.local/share/mcl/instances/{instance}/.minecraft/logs/launches/`
+
+        you can also view logs in the TUI via the log overlay or use `mcl log` from the CLI.
+      render: text
+    validations:
+      required: false
+
+  - type: input
+    id: version
+    attributes:
+      label: mcl version
+      description: run `mcl --version` or check the bottom of the TUI.
+      placeholder: 0.1.0
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: operating system
+      options:
+        - Linux
+        - macOS
+        - Windows
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: additional context
+      description: minecraft version, loader, instance setup, anything that might help narrow it down.
+    validations:
+      required: false
