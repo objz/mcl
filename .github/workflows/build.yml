@@ -111,10 +111,11 @@ jobs:
         with:
           path: artifacts
 
-      - name: create tag
+      - name: create and push tag
         if: steps.check.outputs.exists == 'false'
         run: |
           git tag "${{ steps.version.outputs.tag }}"
+          git push origin "${{ steps.version.outputs.tag }}"
 
       - name: generate changelog
         if: steps.check.outputs.exists == 'false'
