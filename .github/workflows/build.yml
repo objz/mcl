@@ -172,6 +172,8 @@ jobs:
           path: pkg/mcl-launcher
           updpkgsums: true
           srcinfo: true
+          flags: ""
+          namcap: false
 
       - name: update checksums for mcl-launcher-bin
         uses: datakrama/archlinux-package-action@v2
@@ -179,6 +181,8 @@ jobs:
           path: pkg/mcl-launcher-bin
           updpkgsums: true
           srcinfo: true
+          flags: ""
+          namcap: false
 
       - name: publish mcl-launcher to AUR
         uses: KSXGitHub/github-actions-deploy-aur@v4.1.3
