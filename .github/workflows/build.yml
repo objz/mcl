@@ -33,7 +33,7 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -68,7 +68,7 @@ jobs:
           Compress-Archive -Path ${{ matrix.artifact }} -DestinationPath ../../../mcl-${{ matrix.target }}.zip
 
       - name: upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: mcl-${{ matrix.target }}
           path: mcl-${{ matrix.target }}.*
@@ -83,7 +83,7 @@ jobs:
       tag: ${{ steps.version.outputs.tag }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -107,7 +107,7 @@ jobs:
 
       - name: download artifacts
         if: steps.check.outputs.exists == 'false'
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: artifacts
 
@@ -142,13 +142,13 @@ jobs:
     if: needs.release.outputs.released == 'true'
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: install Rust
         uses: dtolnay/rust-toolchain@stable
 
       - name: publish to crates.io
-        run: cargo publish
+        run: cargo publish --allow-dirty
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
@@ -158,10 +158,10 @@ jobs:
     if: needs.release.outputs.released == 'true'
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: download linux artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: artifacts
 
@@ -187,7 +187,7 @@ jobs:
           sed -i "s|^pkgver=.*|pkgver=${{ needs.release.outputs.version }}|" pkg/mcl-launcher/PKGBUILD
 
       - name: publish mcl-launcher to AUR
-        uses: KSXGitHub/github-actions-deploy-aur@v3
+        uses: KSXGitHub/github-actions-deploy-aur@v4.1.3
         with:
           pkgname: mcl-launcher
           pkgbuild: pkg/mcl-launcher/PKGBUILD
@@ -198,7 +198,7 @@ jobs:
           commit_message: "Update to ${{ needs.release.outputs.version }}"
 
       - name: publish mcl-launcher-bin to AUR
-        uses: KSXGitHub/github-actions-deploy-aur@v3
+        uses: KSXGitHub/github-actions-deploy-aur@v4.1.3
         with:
           pkgname: mcl-launcher-bin
           pkgbuild: pkg/mcl-launcher-bin/PKGBUILD
