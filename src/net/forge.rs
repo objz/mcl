@@ -241,15 +241,13 @@ pub(crate) async fn install_forge_from_profile(
         std::fs::write(&universal_dest, &buf)?;
     }
 
-    // download libraries that have a url field (forge-hosted ones).
-    // libs without url are from mojang and already handled elsewhere.
+    // download libraries needed by this forge version. libs with a url field
+    // are forge-hosted, libs without one are typically from mojang's library
+    // server. old forge versions reference libs like launchwrapper that aren't
+    // in mojang's modern version metadata, so we fetch those too.
     let libraries_dir = meta_dir.join("libraries");
     for lib in libraries {
         let name = lib.get("name").and_then(|v| v.as_str()).unwrap_or_default();
-        let url = match lib.get("url").and_then(|v| v.as_str()) {
-            Some(u) => u,
-            None => continue,
-        };
 
         let maven_path = match crate::net::maven_coord_to_path(name) {
             Some(p) => p,
@@ -265,12 +263,24 @@ pub(crate) async fn install_forge_from_profile(
             continue;
         }
 
-        let base_url = url.trim_end_matches('/');
+        let base_url = lib
+            .get("url")
+            .and_then(|v| v.as_str())
+            .unwrap_or("https://libraries.minecraft.net/")
+            .trim_end_matches('/');
         let download_url = format!("{base_url}/{maven_path}");
 
         set_sub_action(name);
         download_file(client, &download_url, &dest, |_, _| {}).await?;
     }
+
+    // old forge profiles store game arguments (like --tweakClass) in
+    // minecraftArguments. extract non-template args to pass at launch.
+    let game_arguments: Vec<String> = version_info
+        .get("minecraftArguments")
+        .and_then(|v| v.as_str())
+        .map(extract_extra_game_args)
+        .unwrap_or_default();
 
     set_action("Saving Forge profile...");
     let lib_entries: Vec<serde_json::Value> = libraries
@@ -285,11 +295,55 @@ pub(crate) async fn install_forge_from_profile(
     let profile_json = serde_json::json!({
         "mainClass": main_class,
         "libraries": lib_entries,
+        "gameArguments": game_arguments,
     });
 
     crate::instance::loader::save_profile_json(meta_dir, profile_filename, &profile_json)?;
 
     Ok(())
+}
+
+// pulls out game arguments from old forge's minecraftArguments string that
+// the launcher doesn't already handle. skips template variables (${...})
+// and standard args like --username that we build ourselves.
+fn extract_extra_game_args(minecraft_arguments: &str) -> Vec<String> {
+    let handled = [
+        "--username",
+        "--version",
+        "--gameDir",
+        "--assetsDir",
+        "--assetIndex",
+        "--uuid",
+        "--accessToken",
+        "--userProperties",
+        "--userType",
+    ];
+
+    let tokens: Vec<&str> = minecraft_arguments.split_whitespace().collect();
+    let mut result = Vec::new();
+    let mut i = 0;
+    while i < tokens.len() {
+        let token = tokens[i];
+        if token.starts_with("--") {
+            if handled.contains(&token) {
+                // skip the flag and its value
+                i += 2;
+                continue;
+            }
+            result.push(token.to_string());
+            // if the next token is a value (not a flag or template), include it
+            if i + 1 < tokens.len() && !tokens[i + 1].starts_with("--") {
+                let val = tokens[i + 1];
+                if !val.starts_with("${") {
+                    result.push(val.to_string());
+                }
+                i += 2;
+                continue;
+            }
+        }
+        i += 1;
+    }
+    result
 }
 
 #[cfg(test)]

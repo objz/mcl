@@ -42,13 +42,9 @@ it does everything you'd expect from a launcher. multiple instances, mod loaders
 
 ## authentication
 
-mcl currently uses the Microsoft client ID from [portablemc](https://github.com/mindstorm38/portablemc) for Minecraft account authentication.
+mcl uses its own Microsoft client ID for Minecraft account authentication.
 
-this is temporary while mcl is going through the official Microsoft/Minecraft app approval process. once approved, mcl will switch to its own client ID.
-
-authentication still happens through Microsoft’s official services.
-
----
+Authentication is performed through Microsoft’s official services.
 
 ## installation
 

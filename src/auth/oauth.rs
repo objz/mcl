@@ -14,7 +14,7 @@ use serde::Deserialize;
 
 use super::accounts::{Account, AccountType, AuthResult};
 
-const CLIENT_ID: &str = "708e91b5-99f8-4a1d-80ec-e746cbb24771";
+const CLIENT_ID: &str = "cc1b2d89-8d8b-439f-94e6-4a7fc484f672";
 const DEVICE_CODE_URL: &str = "https://login.microsoftonline.com/consumers/oauth2/v2.0/devicecode";
 const MSA_AUTHORIZE_URL: &str = "https://login.microsoftonline.com/consumers/oauth2/v2.0/authorize";
 const MSA_TOKEN_URL: &str = "https://login.microsoftonline.com/consumers/oauth2/v2.0/token";

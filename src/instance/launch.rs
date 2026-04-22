@@ -67,6 +67,8 @@ struct MetaOsRule {
 struct LoaderProfileJson {
     main_class: String,
     libraries: Vec<LoaderLibrary>,
+    #[serde(default)]
+    game_arguments: Vec<String>,
 }
 
 #[derive(serde::Deserialize)]
@@ -146,9 +148,9 @@ pub async fn launch(
         ModLoader::NeoForge => Some(format!("neoforge-{}.json", lv)),
     };
 
-    // if there's a mod loader, read its profile to get the real main class
-    // and extra libraries it needs on the classpath
-    let main_class = if let Some(filename) = profile_filename {
+    // if there's a mod loader, read its profile to get the real main class,
+    // extra libraries, and any additional game arguments (e.g. --tweakClass)
+    let (main_class, loader_game_args) = if let Some(filename) = profile_filename {
         let profile_path = meta_dir.join("loader-profiles").join(&filename);
         if !profile_path.exists() {
             return Err(LaunchError::MetaNotFound(
@@ -158,29 +160,30 @@ pub async fn launch(
         let profile: LoaderProfileJson =
             serde_json::from_slice(&tokio::fs::read(&profile_path).await?)?;
 
-        // forge/neoforge install some libs locally in the instance dir, so
-        // both locations need to be checked
+        // forge/neoforge install some libs locally in the instance dir.
+        // local libs take priority so modpacks can ship patched versions
+        // (e.g. GTNH's launchwrapper patched for java 9+ compatibility)
         let has_local_libs = matches!(config.loader, ModLoader::Forge | ModLoader::NeoForge);
         let local_lib_dir = minecraft_dir.join("libraries");
 
         for lib in &profile.libraries {
             if let Some(p) = crate::net::maven_coord_to_path(&lib.name) {
                 if has_local_libs {
-                    let in_meta = lib_dir.join(&p);
                     let in_local = local_lib_dir.join(&p);
-                    if in_meta.exists() {
-                        classpath.push(in_meta);
-                    } else if in_local.exists() {
+                    let in_meta = lib_dir.join(&p);
+                    if in_local.exists() {
                         classpath.push(in_local);
+                    } else if in_meta.exists() {
+                        classpath.push(in_meta);
                     }
                 } else {
                     classpath.push(lib_dir.join(p));
                 }
             }
         }
-        profile.main_class
+        (profile.main_class, profile.game_arguments)
     } else {
-        meta.main_class.clone()
+        (meta.main_class.clone(), Vec::new())
     };
 
     classpath.push(
@@ -189,6 +192,17 @@ pub async fn launch(
             .join(&config.game_version)
             .join(format!("{}.jar", config.game_version)),
     );
+
+    // lwjgl3ify ships a patched launchwrapper and retrofuturabootstrap for
+    // java 9+ compat. if present, prepend its patches to the classpath,
+    // override the main class to use RFB's bootstrap, and add the required
+    // --add-opens and system classloader flags.
+    let (lwjgl3ify_jvm_args, main_class) = if matches!(config.loader, ModLoader::Forge) {
+        let (jvm_args, override_main) = apply_lwjgl3ify_patches(&minecraft_dir, &mut classpath);
+        (jvm_args, override_main.unwrap_or(main_class))
+    } else {
+        (Vec::new(), main_class)
+    };
 
     let sep = if cfg!(windows) { ";" } else { ":" };
     let cp_str = classpath
@@ -213,6 +227,7 @@ pub async fn launch(
         format!("-Xms{}", config.memory_min.as_deref().unwrap_or("512M")),
         format!("-Xmx{}", config.memory_max.as_deref().unwrap_or("2G")),
     ];
+    jvm.extend(lwjgl3ify_jvm_args);
     jvm.extend(config.jvm_args.clone());
 
     // resolve auth credentials, refreshing the microsoft token if needed.
@@ -262,7 +277,7 @@ pub async fn launch(
         ),
     };
 
-    let game_args = vec![
+    let mut game_args = vec![
         "--username".to_string(),
         mc_username,
         "--version".to_string(),
@@ -280,6 +295,7 @@ pub async fn launch(
         "--userType".to_string(),
         mc_user_type,
     ];
+    game_args.extend(loader_game_args);
 
     let (kill_tx, kill_rx) = tokio::sync::oneshot::channel::<()>();
     crate::running::register_kill(&name, kill_tx);
@@ -393,4 +409,101 @@ pub async fn launch(
     });
 
     Ok(())
+}
+
+// lwjgl3ify (used by GTNH and other old forge modpacks) bundles a
+// forgePatches.zip with patched launchwrapper classes that fix the
+// URLClassLoader cast on java 9+. if we find it, extract the patches
+// and prepend them to the classpath so they shadow the vanilla classes.
+// also parses Add-Opens from the zip's manifest for the required
+// --add-opens flags.
+fn apply_lwjgl3ify_patches(
+    minecraft_dir: &Path,
+    classpath: &mut Vec<PathBuf>,
+) -> (Vec<String>, Option<String>) {
+    let mods_dir = minecraft_dir.join("mods");
+    let lwjgl3ify_jar = match find_lwjgl3ify_jar(&mods_dir) {
+        Some(p) => p,
+        None => return (Vec::new(), None),
+    };
+
+    let patches_dest = minecraft_dir.join(".forge-patches.zip");
+
+    if let Err(e) = extract_forge_patches(&lwjgl3ify_jar, &patches_dest) {
+        tracing::warn!("Failed to extract lwjgl3ify forge patches: {e}");
+        return (Vec::new(), None);
+    }
+
+    // prepend so patched classes shadow vanilla launchwrapper
+    classpath.insert(0, patches_dest.clone());
+
+    let mut jvm_args = parse_add_opens(&patches_dest).unwrap_or_default();
+
+    // RFB requires its own classloader to be the system classloader, and
+    // its Main class handles bootstrapping into launchwrapper.
+    // the other flags match lwjgl3ify's java9args.txt.
+    jvm_args.extend([
+        "-Djava.system.class.loader=com.gtnewhorizons.retrofuturabootstrap.RfbSystemClassLoader".to_string(),
+        "-Dfile.encoding=UTF-8".to_string(),
+        "--enable-native-access".to_string(),
+        "ALL-UNNAMED".to_string(),
+    ]);
+
+    // also prepend the lwjgl3ify jar itself so RFB can find its plugin classes
+    classpath.insert(1, lwjgl3ify_jar);
+
+    let main_class = "com.gtnewhorizons.retrofuturabootstrap.Main".to_string();
+
+    (jvm_args, Some(main_class))
+}
+
+fn find_lwjgl3ify_jar(mods_dir: &Path) -> Option<PathBuf> {
+    let entries = std::fs::read_dir(mods_dir).ok()?;
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if name.starts_with("lwjgl3ify") && name.ends_with(".jar") {
+            return Some(entry.path());
+        }
+    }
+    None
+}
+
+fn extract_forge_patches(lwjgl3ify_jar: &Path, dest: &Path) -> Result<(), std::io::Error> {
+    use std::io::Read;
+
+    let file = std::fs::File::open(lwjgl3ify_jar)?;
+    let mut archive = zip::ZipArchive::new(file)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+    let mut entry = archive
+        .by_name("me/eigenraven/lwjgl3ify/relauncher/forgePatches.zip")
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::NotFound, e))?;
+    let mut buf = Vec::new();
+    entry.read_to_end(&mut buf)?;
+    std::fs::write(dest, &buf)
+}
+
+fn parse_add_opens(patches_zip: &Path) -> Option<Vec<String>> {
+    use std::io::Read;
+
+    let file = std::fs::File::open(patches_zip).ok()?;
+    let mut archive = zip::ZipArchive::new(file).ok()?;
+    let mut entry = archive.by_name("META-INF/MANIFEST.MF").ok()?;
+    let mut manifest = String::new();
+    entry.read_to_string(&mut manifest).ok()?;
+
+    // manifest continuation lines start with a single space
+    let manifest = manifest.replace("\r\n ", "").replace("\n ", "");
+
+    let mut args = Vec::new();
+    for line in manifest.lines() {
+        if let Some(value) = line.strip_prefix("Add-Opens: ") {
+            for module_package in value.split_whitespace() {
+                args.push("--add-opens".to_string());
+                args.push(format!("{module_package}=ALL-UNNAMED"));
+            }
+        }
+    }
+
+    Some(args)
 }
