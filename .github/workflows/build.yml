@@ -77,9 +77,15 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/master' && github.event_name == 'push'
+    outputs:
+      released: ${{ steps.check.outputs.exists == 'false' }}
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: get version
         id: version
@@ -123,3 +129,74 @@ jobs:
             artifacts/mcl-*/*
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  publish-crates:
+    needs: release
+    runs-on: ubuntu-latest
+    if: needs.release.outputs.released == 'true'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: publish to crates.io
+        run: cargo publish
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+  publish-aur:
+    needs: release
+    runs-on: ubuntu-latest
+    if: needs.release.outputs.released == 'true'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: download linux artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: prepare mcl-launcher-bin PKGBUILD
+        run: |
+          VERSION="${{ needs.release.outputs.version }}"
+          SHA_X86=$(sha256sum artifacts/mcl-x86_64-unknown-linux-gnu/mcl-x86_64-unknown-linux-gnu.tar.gz | cut -d' ' -f1)
+          SHA_AARCH=$(sha256sum artifacts/mcl-aarch64-unknown-linux-gnu/mcl-aarch64-unknown-linux-gnu.tar.gz | cut -d' ' -f1)
+
+          # download LICENSE and README from the tag to compute their checksums
+          curl -sL "https://github.com/objz/mcl/raw/v${VERSION}/LICENSE" -o /tmp/LICENSE
+          curl -sL "https://github.com/objz/mcl/raw/v${VERSION}/README.md" -o /tmp/README.md
+          SHA_LICENSE=$(sha256sum /tmp/LICENSE | cut -d' ' -f1)
+          SHA_README=$(sha256sum /tmp/README.md | cut -d' ' -f1)
+
+          sed -i "s|^pkgver=.*|pkgver=${VERSION}|" pkg/mcl-launcher-bin/PKGBUILD
+          sed -i "s|^sha256sums=.*|sha256sums=('${SHA_LICENSE}' '${SHA_README}')|" pkg/mcl-launcher-bin/PKGBUILD
+          sed -i "s|^sha256sums_x86_64=.*|sha256sums_x86_64=('${SHA_X86}')|" pkg/mcl-launcher-bin/PKGBUILD
+          sed -i "s|^sha256sums_aarch64=.*|sha256sums_aarch64=('${SHA_AARCH}')|" pkg/mcl-launcher-bin/PKGBUILD
+
+      - name: prepare mcl-launcher PKGBUILD
+        run: |
+          sed -i "s|^pkgver=.*|pkgver=${{ needs.release.outputs.version }}|" pkg/mcl-launcher/PKGBUILD
+
+      - name: publish mcl-launcher to AUR
+        uses: KSXGitHub/github-actions-deploy-aur@v3
+        with:
+          pkgname: mcl-launcher
+          pkgbuild: pkg/mcl-launcher/PKGBUILD
+          updpkgsums: true
+          commit_username: objz
+          commit_email: me@objz.dev
+          ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          commit_message: "Update to ${{ needs.release.outputs.version }}"
+
+      - name: publish mcl-launcher-bin to AUR
+        uses: KSXGitHub/github-actions-deploy-aur@v3
+        with:
+          pkgname: mcl-launcher-bin
+          pkgbuild: pkg/mcl-launcher-bin/PKGBUILD
+          commit_username: objz
+          commit_email: me@objz.dev
+          ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          commit_message: "Update to ${{ needs.release.outputs.version }}"
