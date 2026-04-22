@@ -111,6 +111,11 @@ jobs:
         with:
           path: artifacts
 
+      - name: create tag
+        if: steps.check.outputs.exists == 'false'
+        run: |
+          git tag "${{ steps.version.outputs.tag }}"
+
       - name: generate changelog
         if: steps.check.outputs.exists == 'false'
         id: changelog
