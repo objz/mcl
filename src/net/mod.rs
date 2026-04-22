@@ -73,14 +73,45 @@ impl HttpClient {
     }
 }
 
+const MAX_RETRIES: u32 = 3;
+const RETRY_BASE_DELAY_MS: u64 = 500;
+
 // streams a file to disk in chunks, calling progress_cb(downloaded, total) along the way.
 // total will be 0 if the server doesn't send content-length, so callers
-// should handle that gracefully.
+// should handle that gracefully. retries transient failures with exponential backoff.
 pub async fn download_file(
     client: &HttpClient,
     url: &str,
     dest: &Path,
     progress_cb: impl Fn(u64, u64),
+) -> Result<(), NetError> {
+    let mut last_error = None;
+
+    for attempt in 0..=MAX_RETRIES {
+        if attempt > 0 {
+            let delay = RETRY_BASE_DELAY_MS * 2u64.pow(attempt - 1);
+            tracing::warn!("retrying download (attempt {}/{}): {}", attempt + 1, MAX_RETRIES + 1, url);
+            tokio::time::sleep(std::time::Duration::from_millis(delay)).await;
+        }
+
+        match download_file_once(client, url, dest, &progress_cb).await {
+            Ok(()) => return Ok(()),
+            Err(e) if is_retryable(&e) => {
+                last_error = Some(e);
+            }
+            Err(e) => return Err(e),
+        }
+    }
+
+    Err(last_error.unwrap())
+}
+
+// single attempt at downloading a file to disk
+async fn download_file_once(
+    client: &HttpClient,
+    url: &str,
+    dest: &Path,
+    progress_cb: &impl Fn(u64, u64),
 ) -> Result<(), NetError> {
     use tokio::io::AsyncWriteExt;
 
@@ -102,6 +133,15 @@ pub async fn download_file(
     }
 
     Ok(())
+}
+
+// body decode errors and timeouts are worth retrying, but a 404 or disk error isn't
+fn is_retryable(err: &NetError) -> bool {
+    match err {
+        NetError::Http(e) => e.is_timeout() || e.is_body() || e.is_connect(),
+        NetError::StatusError { status, .. } => *status >= 500,
+        _ => false,
+    }
 }
 
 // tries JAVA_HOME first, then PATH, then just yolos "java" and hopes for the best
