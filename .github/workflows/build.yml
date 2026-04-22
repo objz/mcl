@@ -105,12 +105,21 @@ jobs:
         with:
           path: artifacts
 
+      - name: generate changelog
+        if: steps.check.outputs.exists == 'false'
+        id: changelog
+        uses: orhun/git-cliff-action@v4
+        with:
+          args: --latest --strip header
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: create release
         if: steps.check.outputs.exists == 'false'
         run: |
           gh release create "${{ steps.version.outputs.tag }}" \
             --title "${{ steps.version.outputs.tag }}" \
-            --generate-notes \
+            --notes "${{ steps.changelog.outputs.content }}" \
             artifacts/mcl-*/*
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
