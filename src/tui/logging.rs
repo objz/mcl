@@ -54,12 +54,14 @@ pub fn init() -> WorkerGuard {
         }
     }
 
-    let file_appender = tracing_appender::rolling::daily(&log_dir, "mcl.log");
+    let now = chrono::Local::now().format("%Y-%m-%d_%H-%M-%S");
+    let file_appender = tracing_appender::rolling::never(&log_dir, format!("mcl_{now}.log"));
     let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
 
     let env_filter = EnvFilter::builder()
         .with_default_directive(Level::INFO.into())
-        .from_env_lossy();
+        .from_env_lossy()
+        .add_directive("mc_instance=off".parse().unwrap());
 
     let rust_log = std::env::var("RUST_LOG").unwrap_or_default().to_lowercase();
     let tui_level = if rust_log.contains("debug") || rust_log.contains("trace") {

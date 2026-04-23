@@ -85,15 +85,26 @@ mcl can be compiled for Linux, macOS, and Windows. right now it's only packaged 
 
 ## where things live
 
-| path | what |
-|---|---|
-| `~/.config/mcl/config.toml` | general config (paths, memory defaults, UI settings) |
-| `~/.config/mcl/theme.toml` | theme, border style, color overrides |
-| `~/.config/mcl/accounts.json` | accounts |
-| `~/.local/share/mcl/instances/` | instances, each in its own directory |
-| `~/.local/share/mcl/meta/` | cached game metadata, libraries, assets, loader profiles |
+### config & data
+
+settings, accounts, instances, and cached game metadata.
+
+| what | Linux | macOS | Windows |
+|---|---|---|---|
+| config (`config.toml`, `theme.toml`, `accounts.json`) | `~/.config/mcl/` | `~/Library/Application Support/mcl/` | `%APPDATA%\mcl\` |
+| instances | `~/.local/share/mcl/instances/` | `~/Library/Application Support/mcl/instances/` | `%LOCALAPPDATA%\mcl\instances\` |
+| metadata (versions, libraries, assets, loader profiles) | `~/.local/share/mcl/meta/` | `~/Library/Application Support/mcl/meta/` | `%LOCALAPPDATA%\mcl\meta\` |
 
 each instance has an `instance.json` for its config and a `.minecraft/` directory with the actual game files. standard layout, nothing weird.
+
+### logs
+
+launcher logs are per-session and contain mcl's own output. instance launch logs capture game stdout/stderr per launch.
+
+| what | Linux | macOS | Windows |
+|---|---|---|---|
+| launcher logs | `~/.cache/mcl/` | `~/Library/Caches/mcl/` | `%LOCALAPPDATA%\mcl\` |
+| instance launch logs | `<instances>/<name>/.minecraft/logs/launches/` | same | same |
 
 ---
 
