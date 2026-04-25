@@ -306,7 +306,9 @@ async fn replace_log4j_fixed(lib_dir: &Path, classpath: &mut [PathBuf]) {
             }
             let client = crate::net::HttpClient::new();
             if let Err(e) = crate::net::download_file(&client, url, &fixed_path, |_, _| {}).await {
-                tracing::error!("Failed to download patched {old_name}: {e}, continuing with unpatched version");
+                tracing::error!(
+                    "Failed to download patched {old_name}: {e}, continuing with unpatched version"
+                );
                 continue;
             }
         }

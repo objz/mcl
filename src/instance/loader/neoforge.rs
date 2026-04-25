@@ -7,7 +7,7 @@ use async_trait::async_trait;
 
 use super::{GameVersion, ModLoaderInstaller};
 use crate::instance::models::ModLoader;
-use crate::net::{neoforge as neoforge_api, HttpClient, NetError};
+use crate::net::{HttpClient, NetError, neoforge as neoforge_api};
 
 pub struct NeoForgeInstaller;
 
@@ -65,7 +65,11 @@ impl ModLoaderInstaller for NeoForgeInstaller {
     }
 }
 
-fn save_neoforge_profile(instance_dir: &Path, meta_dir: &Path, loader_version: &str) -> Result<(), NetError> {
+fn save_neoforge_profile(
+    instance_dir: &Path,
+    meta_dir: &Path,
+    loader_version: &str,
+) -> Result<(), NetError> {
     let version_dir_name = format!("neoforge-{loader_version}");
     let profile_filename = format!("neoforge-{loader_version}.json");
     super::save_installer_profile(instance_dir, meta_dir, &version_dir_name, &profile_filename)

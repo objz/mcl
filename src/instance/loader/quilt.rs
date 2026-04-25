@@ -7,7 +7,7 @@ use async_trait::async_trait;
 
 use super::{GameVersion, ModLoaderInstaller};
 use crate::instance::models::ModLoader;
-use crate::net::{quilt as quilt_api, HttpClient, NetError};
+use crate::net::{HttpClient, NetError, quilt as quilt_api};
 
 pub struct QuiltInstaller;
 
@@ -41,8 +41,7 @@ impl ModLoaderInstaller for QuiltInstaller {
         _instance_dir: &Path,
         meta_dir: &Path,
     ) -> Result<(), NetError> {
-        let profile =
-            quilt_api::fetch_quilt_profile(client, game_version, loader_version).await?;
+        let profile = quilt_api::fetch_quilt_profile(client, game_version, loader_version).await?;
         quilt_api::download_quilt_libraries(client, &profile, meta_dir).await?;
 
         super::save_profile_json(

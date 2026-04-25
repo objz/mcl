@@ -87,8 +87,8 @@ async fn download_mod_files(
     index: &MrpackIndex,
     minecraft_dir: &Path,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     let client = crate::net::HttpClient::new();
     let total = index.files.len();

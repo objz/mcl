@@ -3,15 +3,15 @@
 
 use super::super::base::PopupFrame;
 use super::super::new_instance::LoadState;
-use super::state::{ImportStep, ImportWizardState, IMPORT_STATE};
-use crate::tui::app::FocusedArea;
+use super::state::{IMPORT_STATE, ImportStep, ImportWizardState};
 use crate::config::theme::THEME;
+use crate::tui::app::FocusedArea;
 use ratatui::{
+    Frame,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
     widgets::{List, ListItem, ListState, Paragraph, StatefulWidget, Widget, Wrap},
-    Frame,
 };
 
 pub fn render(frame: &mut Frame, area: Rect, _focused: FocusedArea) {
@@ -85,11 +85,7 @@ pub fn popup_rect(frame_area: Rect) -> Rect {
     }
 }
 
-fn render_input_step(
-    state: &ImportWizardState,
-    area: Rect,
-    buf: &mut ratatui::buffer::Buffer,
-) {
+fn render_input_step(state: &ImportWizardState, area: Rect, buf: &mut ratatui::buffer::Buffer) {
     let theme = THEME.as_ref();
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -115,10 +111,7 @@ fn render_input_step(
         ])
     } else {
         Line::from(vec![
-            Span::styled(
-                state.input.clone(),
-                Style::default().fg(theme.text()),
-            ),
+            Span::styled(state.input.clone(), Style::default().fg(theme.text())),
             Span::styled(
                 "\u{2588}",
                 Style::default()
@@ -137,11 +130,7 @@ fn render_fetching_step(area: Rect, buf: &mut ratatui::buffer::Buffer) {
         .render(area, buf);
 }
 
-fn render_version_step(
-    state: &ImportWizardState,
-    area: Rect,
-    buf: &mut ratatui::buffer::Buffer,
-) {
+fn render_version_step(state: &ImportWizardState, area: Rect, buf: &mut ratatui::buffer::Buffer) {
     let theme = THEME.as_ref();
     match &state.versions {
         LoadState::Idle | LoadState::Loading => {
@@ -182,11 +171,7 @@ fn render_version_step(
     }
 }
 
-fn render_confirm_step(
-    state: &ImportWizardState,
-    area: Rect,
-    buf: &mut ratatui::buffer::Buffer,
-) {
+fn render_confirm_step(state: &ImportWizardState, area: Rect, buf: &mut ratatui::buffer::Buffer) {
     let theme = THEME.as_ref();
     let summary = match &state.summary {
         Some(s) => s,
@@ -247,11 +232,9 @@ fn step_keybinds(state: &ImportWizardState) -> Line<'static> {
     match state.step {
         ImportStep::Input => keybind_line(&[("Enter", " fetch")]),
         ImportStep::Fetching => keybind_line(&[("Esc", " cancel")]),
-        ImportStep::Version => keybind_line(&[
-            ("/", " search"),
-            ("h", " back"),
-            ("Enter", " select"),
-        ]),
+        ImportStep::Version => {
+            keybind_line(&[("/", " search"), ("h", " back"), ("Enter", " select")])
+        }
         ImportStep::Confirm => keybind_line(&[("h", " back"), ("Enter", " import")]),
     }
 }

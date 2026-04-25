@@ -87,10 +87,7 @@ pub async fn download_forge_installer(
 
     let mut last_err = None;
     for slug in &slugs {
-        let url = format!(
-            "{}/{slug}/forge-{slug}-installer.jar",
-            FORGE_MAVEN_BASE,
-        );
+        let url = format!("{}/{slug}/forge-{slug}-installer.jar", FORGE_MAVEN_BASE,);
         match download_file(client, &url, dest, |downloaded, total| {
             crate::tui::progress::set_progress(downloaded, total);
         })
@@ -179,25 +176,23 @@ pub(crate) async fn install_forge_from_profile(
     set_action("Installing legacy Forge from profile...");
 
     let file = std::fs::File::open(installer_path)?;
-    let mut archive = zip::ZipArchive::new(file).map_err(|e| {
-        NetError::Parse(format!("Failed to open installer as ZIP: {e}"))
-    })?;
+    let mut archive = zip::ZipArchive::new(file)
+        .map_err(|e| NetError::Parse(format!("Failed to open installer as ZIP: {e}")))?;
 
     let profile_data: serde_json::Value = {
         let entry = archive.by_name("install_profile.json").map_err(|e| {
             NetError::Parse(format!("install_profile.json not found in installer: {e}"))
         })?;
-        serde_json::from_reader(entry).map_err(|e| {
-            NetError::Parse(format!("Failed to parse install_profile.json: {e}"))
-        })?
+        serde_json::from_reader(entry)
+            .map_err(|e| NetError::Parse(format!("Failed to parse install_profile.json: {e}")))?
     };
 
-    let version_info = profile_data.get("versionInfo").ok_or_else(|| {
-        NetError::Parse("install_profile.json missing versionInfo".into())
-    })?;
-    let install_info = profile_data.get("install").ok_or_else(|| {
-        NetError::Parse("install_profile.json missing install section".into())
-    })?;
+    let version_info = profile_data
+        .get("versionInfo")
+        .ok_or_else(|| NetError::Parse("install_profile.json missing versionInfo".into()))?;
+    let install_info = profile_data
+        .get("install")
+        .ok_or_else(|| NetError::Parse("install_profile.json missing install section".into()))?;
 
     let main_class = version_info
         .get("mainClass")
@@ -221,9 +216,11 @@ pub(crate) async fn install_forge_from_profile(
         .ok_or_else(|| NetError::Parse("missing install.path".into()))?;
 
     // extract the universal jar to the correct maven location
-    let universal_maven_path = crate::net::maven_coord_to_path(install_path_coord)
-        .ok_or_else(|| {
-            NetError::Parse(format!("Invalid maven coord in install.path: {install_path_coord}"))
+    let universal_maven_path =
+        crate::net::maven_coord_to_path(install_path_coord).ok_or_else(|| {
+            NetError::Parse(format!(
+                "Invalid maven coord in install.path: {install_path_coord}"
+            ))
         })?;
 
     set_sub_action("Extracting universal JAR...");
@@ -234,7 +231,9 @@ pub(crate) async fn install_forge_from_profile(
 
     {
         let mut entry = archive.by_name(file_path).map_err(|e| {
-            NetError::Parse(format!("Universal JAR '{file_path}' not found in installer: {e}"))
+            NetError::Parse(format!(
+                "Universal JAR '{file_path}' not found in installer: {e}"
+            ))
         })?;
         let mut buf = Vec::new();
         entry.read_to_end(&mut buf)?;
@@ -252,9 +251,7 @@ pub(crate) async fn install_forge_from_profile(
         let maven_path = match crate::net::maven_coord_to_path(name) {
             Some(p) => p,
             None => {
-                return Err(NetError::Parse(format!(
-                    "Invalid Maven coordinate: {name}"
-                )));
+                return Err(NetError::Parse(format!("Invalid Maven coordinate: {name}")));
             }
         };
 

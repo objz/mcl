@@ -34,10 +34,10 @@ fn push_app_log(line: String) {
     }
 }
 
-    // returns a WorkerGuard that must be held alive for the duration of the
-    // program, otherwise the file logging thread gets dropped immediately.
-    // yes, you will spend 30 minutes debugging "why aren't my logs writing"
-    // before you remember this. ask me how i know.
+// returns a WorkerGuard that must be held alive for the duration of the
+// program, otherwise the file logging thread gets dropped immediately.
+// yes, you will spend 30 minutes debugging "why aren't my logs writing"
+// before you remember this. ask me how i know.
 pub fn init() -> WorkerGuard {
     let log_dir = match dirs_next::cache_dir() {
         Some(d) => d.join("mcl"),

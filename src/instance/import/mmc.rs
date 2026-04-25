@@ -59,8 +59,7 @@ pub fn build_summary(path: &Path) -> Result<ImportSummary, String> {
     let (loader_opt, loader_version) = pack.loader();
     let loader = loader_opt.unwrap_or(ModLoader::Vanilla);
 
-    let name = instance_name_from_cfg(path)
-        .unwrap_or_else(|| "Imported Pack".to_string());
+    let name = instance_name_from_cfg(path).unwrap_or_else(|| "Imported Pack".to_string());
 
     let (mod_count, override_count) = count_content_files(path)?;
 

@@ -76,9 +76,11 @@ mod tests {
         }
         let lines = get_all(name);
         assert_eq!(lines.len(), MAX_LINES);
-        assert!(lines
-            .last()
-            .unwrap()
-            .contains(&format!("{}", MAX_LINES + 99)));
+        assert!(
+            lines
+                .last()
+                .unwrap()
+                .contains(&format!("{}", MAX_LINES + 99))
+        );
     }
 }

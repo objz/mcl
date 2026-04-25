@@ -6,7 +6,7 @@ use std::path::Path;
 
 use serde::Deserialize;
 
-use super::mods::{make_icon_pixels, ContentEntry};
+use super::mods::{ContentEntry, make_icon_pixels};
 
 #[derive(Deserialize, Default)]
 pub(crate) struct PackMcMeta {
@@ -83,7 +83,11 @@ pub fn scan_resource_packs(instances_dir: &Path, instance_name: &str) -> Vec<Con
             .and_then(|bytes| make_icon_pixels(bytes, 6, 3))
             .or_else(|| Some(super::mods::fallback_icon()));
 
-        let display_name = if name.is_empty() { file_stem.clone() } else { name };
+        let display_name = if name.is_empty() {
+            file_stem.clone()
+        } else {
+            name
+        };
         entries.push(ContentEntry {
             file_stem,
             name: display_name,
@@ -194,10 +198,7 @@ mod tests {
     }
 
     fn setup_packs_dir(tmp: &std::path::Path, instance: &str) -> std::path::PathBuf {
-        let dir = tmp
-            .join(instance)
-            .join(".minecraft")
-            .join("resourcepacks");
+        let dir = tmp.join(instance).join(".minecraft").join("resourcepacks");
         std::fs::create_dir_all(&dir).unwrap();
         dir
     }

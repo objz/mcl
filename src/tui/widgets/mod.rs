@@ -10,9 +10,9 @@ use ratatui::{
 pub mod account;
 pub mod content;
 pub mod details;
+pub mod instances;
 pub mod logs_viewer;
 pub mod popups;
-pub mod instances;
 pub mod screenshots_grid;
 pub mod search;
 pub mod status;

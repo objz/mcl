@@ -81,28 +81,30 @@ async fn add_microsoft_account() -> CliResult {
     // wait for the device code to become available before showing it
     loop {
         if let Ok(slot) = crate::auth::DEVICE_CODE_DISPLAY.lock()
-            && let Some(info) = slot.as_ref() {
-                println!("Open: {}", info.verification_uri);
-                println!("Code: {}", info.user_code);
-                break;
-            }
+            && let Some(info) = slot.as_ref()
+        {
+            println!("Open: {}", info.verification_uri);
+            println!("Code: {}", info.user_code);
+            break;
+        }
         tokio::time::sleep(Duration::from_millis(200)).await;
     }
 
     // now wait for the user to complete auth in their browser
     loop {
         if let Ok(slot) = result_arc.lock()
-            && let Some(result) = slot.as_ref() {
-                return match result {
-                    AuthResult::Success(account) => {
-                        let mut store = AccountStore::load();
-                        store.add(account.clone());
-                        println!("Added Microsoft account '{}'.", account.username);
-                        Ok(())
-                    }
-                    AuthResult::Error(message) => Err(io::Error::other(message.clone()).into()),
-                };
-            }
+            && let Some(result) = slot.as_ref()
+        {
+            return match result {
+                AuthResult::Success(account) => {
+                    let mut store = AccountStore::load();
+                    store.add(account.clone());
+                    println!("Added Microsoft account '{}'.", account.username);
+                    Ok(())
+                }
+                AuthResult::Error(message) => Err(io::Error::other(message.clone()).into()),
+            };
+        }
         tokio::time::sleep(Duration::from_millis(500)).await;
     }
 }
@@ -153,7 +155,7 @@ use super::utils::{confirm, required_arg};
 
 #[cfg(test)]
 mod tests {
-    use super::{add_offline_account, AccountStoreLike};
+    use super::{AccountStoreLike, add_offline_account};
     use crate::auth::{Account, AccountType};
 
     #[derive(Default)]

@@ -8,7 +8,7 @@ use async_trait::async_trait;
 
 use super::{GameVersion, ModLoaderInstaller};
 use crate::instance::models::ModLoader;
-use crate::net::{forge as forge_api, HttpClient, NetError};
+use crate::net::{HttpClient, NetError, forge as forge_api};
 
 pub struct ForgeInstaller;
 

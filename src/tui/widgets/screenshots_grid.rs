@@ -8,16 +8,16 @@ use std::sync::{Arc, Mutex};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
+    Frame,
     layout::{Constraint, Layout, Rect},
     style::{Modifier, Style},
     text::Span,
     widgets::{Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState},
-    Frame,
 };
-use ratatui_image::{protocol::StatefulProtocol, Resize, StatefulImage};
+use ratatui_image::{Resize, StatefulImage, protocol::StatefulProtocol};
 
-use crate::instance::screenshots::ScreenshotEntry;
 use crate::config::theme::THEME;
+use crate::instance::screenshots::ScreenshotEntry;
 
 // grid cell sizing constraints in terminal columns.
 // the grid auto-fits columns within these bounds depending on terminal width
@@ -97,27 +97,26 @@ impl ScreenshotsState {
     }
 
     pub fn drain_pending_entries(&mut self) {
-        let taken = match self.pending_entries.lock() { Ok(mut slot) => {
-            slot.take()
-        } _ => {
-            None
-        }};
+        let taken = match self.pending_entries.lock() {
+            Ok(mut slot) => slot.take(),
+            _ => None,
+        };
 
         if let Some((instance_name, entries)) = taken
-            && self.loaded_for.as_deref() == Some(&instance_name) {
-                self.entries = entries;
-                self.loading = false;
-                self.selected = 0;
-                self.scroll_row = 0;
-            }
+            && self.loaded_for.as_deref() == Some(&instance_name)
+        {
+            self.entries = entries;
+            self.loading = false;
+            self.selected = 0;
+            self.scroll_row = 0;
+        }
     }
 
     pub fn take_pending_images(&mut self) -> Vec<(usize, image::DynamicImage)> {
-        match self.pending_images.lock() { Ok(mut slot) => {
-            std::mem::take(&mut *slot)
-        } _ => {
-            Vec::new()
-        }}
+        match self.pending_images.lock() {
+            Ok(mut slot) => std::mem::take(&mut *slot),
+            _ => Vec::new(),
+        }
     }
 
     pub fn set_protocol(&mut self, idx: usize, proto: StatefulProtocol) {
@@ -146,9 +145,10 @@ impl ScreenshotsState {
                         .unwrap_or(None);
 
                     if let Some(img) = img
-                        && let Ok(mut slot) = pending.lock() {
-                            slot.push((idx, img));
-                        }
+                        && let Ok(mut slot) = pending.lock()
+                    {
+                        slot.push((idx, img));
+                    }
                 });
             }
         }
@@ -229,16 +229,18 @@ pub fn handle_key(key_event: &KeyEvent, state: &mut ScreenshotsState) -> bool {
         KeyCode::Enter if key_event.modifiers.contains(KeyModifiers::SHIFT) => {
             if let Some(entry) = state.entries.get(state.selected)
                 && let Some(dir) = entry.path.parent()
-                    && let Err(e) = open::that(dir) {
-                        tracing::error!("Failed to open directory: {}", e);
-                    }
+                && let Err(e) = open::that(dir)
+            {
+                tracing::error!("Failed to open directory: {}", e);
+            }
             true
         }
         KeyCode::Enter => {
             if let Some(entry) = state.entries.get(state.selected)
-                && let Err(e) = open::that(&entry.path) {
-                    tracing::error!("Failed to open file: {}", e);
-                }
+                && let Err(e) = open::that(&entry.path)
+            {
+                tracing::error!("Failed to open file: {}", e);
+            }
             true
         }
         KeyCode::Char('L') | KeyCode::Right
@@ -276,8 +278,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &mut ScreenshotsState, is_fo
     let theme = THEME.as_ref();
     if state.loading {
         frame.render_widget(
-            Paragraph::new("Loading screenshots...")
-                .style(Style::default().fg(theme.text_dim())),
+            Paragraph::new("Loading screenshots...").style(Style::default().fg(theme.text_dim())),
             area,
         );
         return;
@@ -285,8 +286,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &mut ScreenshotsState, is_fo
 
     if state.entries.is_empty() {
         frame.render_widget(
-            Paragraph::new("No screenshots.")
-                .style(Style::default().fg(theme.text_dim())),
+            Paragraph::new("No screenshots.").style(Style::default().fg(theme.text_dim())),
             area,
         );
         return;

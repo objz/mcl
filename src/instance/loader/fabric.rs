@@ -7,7 +7,7 @@ use async_trait::async_trait;
 
 use super::{GameVersion, ModLoaderInstaller};
 use crate::instance::models::ModLoader;
-use crate::net::{fabric as fabric_api, HttpClient, NetError};
+use crate::net::{HttpClient, NetError, fabric as fabric_api};
 
 pub struct FabricInstaller;
 

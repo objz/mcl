@@ -8,7 +8,7 @@ use async_trait::async_trait;
 
 use super::{GameVersion, ModLoaderInstaller};
 use crate::instance::models::ModLoader;
-use crate::net::{mojang, HttpClient, NetError};
+use crate::net::{HttpClient, NetError, mojang};
 
 pub struct VanillaInstaller;
 

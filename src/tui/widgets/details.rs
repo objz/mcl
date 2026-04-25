@@ -2,16 +2,16 @@
 // and provides keybinds to open config files in $EDITOR
 
 use ratatui::{
+    Frame,
     layout::Rect,
     style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph},
-    Frame,
 };
 
+use crate::config::theme::{BORDER_STYLE, THEME};
 use crate::instance::models::InstanceConfig;
 use crate::tui::app::FocusedArea;
-use crate::config::theme::{THEME, BORDER_STYLE};
 
 use super::styled_title;
 
@@ -54,8 +54,7 @@ pub fn render(
 
     let Some(inst) = instance else {
         frame.render_widget(
-            Paragraph::new("No instance selected.")
-                .style(Style::default().fg(theme.text_dim())),
+            Paragraph::new("No instance selected.").style(Style::default().fg(theme.text_dim())),
             inner,
         );
         return;

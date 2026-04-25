@@ -3,8 +3,8 @@
 
 use std::path::Path;
 
-use super::mods::{make_icon_pixels, ContentEntry};
-use super::resource_packs::{extract_description, PackMcMeta};
+use super::mods::{ContentEntry, make_icon_pixels};
+use super::resource_packs::{PackMcMeta, extract_description};
 
 pub fn scan_shaders(instances_dir: &Path, instance_name: &str) -> Vec<ContentEntry> {
     let shaders_dir = instances_dir

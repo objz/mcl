@@ -3,16 +3,16 @@
 // also renders the instance name/version header with run state indicators.
 
 use ratatui::{
+    Frame,
     layout::{Alignment, Constraint, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph},
-    Frame,
 };
 use throbber_widgets_tui::{Throbber, ThrobberState};
 
+use crate::config::theme::{BORDER_STYLE, THEME};
 use crate::tui::app::FocusedArea;
-use crate::config::theme::{THEME, BORDER_STYLE};
 
 use crate::tui::widgets::styled_title;
 
@@ -200,7 +200,8 @@ pub fn render(
     };
 
     if let Some(kb) = kb {
-        let lines = crate::tui::widgets::popups::keybind_lines_wrapped(kb, area.width.saturating_sub(2));
+        let lines =
+            crate::tui::widgets::popups::keybind_lines_wrapped(kb, area.width.saturating_sub(2));
         for line in lines {
             block = block.title_bottom(line);
         }
@@ -219,7 +220,12 @@ pub fn render(
                         &instance.name,
                         crate::instance::scan_mods,
                     );
-                    mods_state.watch_dir(instances_dir.join(&instance.name).join(".minecraft").join("mods"));
+                    mods_state.watch_dir(
+                        instances_dir
+                            .join(&instance.name)
+                            .join(".minecraft")
+                            .join("mods"),
+                    );
                 }
                 super::list::render(
                     frame,
@@ -245,7 +251,12 @@ pub fn render(
                         &instance.name,
                         crate::instance::scan_resource_packs,
                     );
-                    resource_packs_state.watch_dir(instances_dir.join(&instance.name).join(".minecraft").join("resourcepacks"));
+                    resource_packs_state.watch_dir(
+                        instances_dir
+                            .join(&instance.name)
+                            .join(".minecraft")
+                            .join("resourcepacks"),
+                    );
                 }
                 super::list::render(
                     frame,
@@ -271,7 +282,12 @@ pub fn render(
                         &instance.name,
                         crate::instance::scan_shaders,
                     );
-                    shaders_state.watch_dir(instances_dir.join(&instance.name).join(".minecraft").join("shaderpacks"));
+                    shaders_state.watch_dir(
+                        instances_dir
+                            .join(&instance.name)
+                            .join(".minecraft")
+                            .join("shaderpacks"),
+                    );
                 }
                 super::list::render(
                     frame,
@@ -294,7 +310,12 @@ pub fn render(
                 if logs_state.loaded_for.as_deref() != Some(instance.name.as_str()) {
                     logs_state.start_load(instances_dir, &instance.name);
                 }
-                crate::tui::widgets::logs_viewer::render(frame, content_area, logs_state, is_focused);
+                crate::tui::widgets::logs_viewer::render(
+                    frame,
+                    content_area,
+                    logs_state,
+                    is_focused,
+                );
             } else {
                 frame.render_widget(
                     Paragraph::new("No instance selected.")
@@ -308,7 +329,12 @@ pub fn render(
                 if screenshots_state.loaded_for.as_deref() != Some(instance.name.as_str()) {
                     screenshots_state.start_load(instances_dir, &instance.name);
                 }
-                crate::tui::widgets::screenshots_grid::render(frame, content_area, screenshots_state, is_focused);
+                crate::tui::widgets::screenshots_grid::render(
+                    frame,
+                    content_area,
+                    screenshots_state,
+                    is_focused,
+                );
             } else {
                 frame.render_widget(
                     Paragraph::new("No instance selected.")
@@ -325,7 +351,12 @@ pub fn render(
                         &instance.name,
                         crate::instance::scan_worlds,
                     );
-                    worlds_state.watch_dir(instances_dir.join(&instance.name).join(".minecraft").join("saves"));
+                    worlds_state.watch_dir(
+                        instances_dir
+                            .join(&instance.name)
+                            .join(".minecraft")
+                            .join("saves"),
+                    );
                 }
                 super::list::render(
                     frame,
@@ -374,8 +405,7 @@ pub fn title(
     match instance {
         None => {
             frame.render_widget(
-                Paragraph::new("No instance selected")
-                    .style(Style::default().fg(theme.text_dim())),
+                Paragraph::new("No instance selected").style(Style::default().fg(theme.text_dim())),
                 inner,
             );
         }

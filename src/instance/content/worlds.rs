@@ -4,7 +4,7 @@
 
 use std::path::Path;
 
-use super::mods::{make_icon_pixels, ContentEntry};
+use super::mods::{ContentEntry, make_icon_pixels};
 
 pub fn scan_worlds(instances_dir: &Path, instance_name: &str) -> Vec<ContentEntry> {
     let saves_dir = instances_dir
@@ -77,14 +77,16 @@ fn world_description(world_dir: &Path) -> String {
     let mut lines = Vec::new();
 
     if let Some(secs) = created
-        && let Some(dt) = chrono::DateTime::from_timestamp(secs as i64, 0) {
-            lines.push(format!("Created:  {}", dt.format("%Y-%m-%d %H:%M")));
-        }
+        && let Some(dt) = chrono::DateTime::from_timestamp(secs as i64, 0)
+    {
+        lines.push(format!("Created:  {}", dt.format("%Y-%m-%d %H:%M")));
+    }
 
     if let Some(secs) = modified
-        && let Some(dt) = chrono::DateTime::from_timestamp(secs as i64, 0) {
-            lines.push(format!("Played:   {}", dt.format("%Y-%m-%d %H:%M")));
-        }
+        && let Some(dt) = chrono::DateTime::from_timestamp(secs as i64, 0)
+    {
+        lines.push(format!("Played:   {}", dt.format("%Y-%m-%d %H:%M")));
+    }
 
     if dir_size > 0 {
         lines.push(format!("Size:     {}", format_size(dir_size)));
@@ -100,9 +102,10 @@ fn dir_size_approx(path: &Path) -> u64 {
     if let Ok(rd) = std::fs::read_dir(path) {
         for entry in rd.flatten() {
             if let Ok(meta) = entry.metadata()
-                && meta.is_file() {
-                    total += meta.len();
-                }
+                && meta.is_file()
+            {
+                total += meta.len();
+            }
         }
     }
     // Check region folder too (main chunk data)
@@ -181,8 +184,14 @@ mod tests {
         std::fs::create_dir(dir.join("ActiveWorld")).unwrap();
         std::fs::create_dir(dir.join("HiddenWorld.disabled")).unwrap();
         let worlds = scan_worlds(tmp.path(), "inst");
-        let active = worlds.iter().find(|w| w.file_stem == "ActiveWorld").unwrap();
-        let hidden = worlds.iter().find(|w| w.file_stem == "HiddenWorld").unwrap();
+        let active = worlds
+            .iter()
+            .find(|w| w.file_stem == "ActiveWorld")
+            .unwrap();
+        let hidden = worlds
+            .iter()
+            .find(|w| w.file_stem == "HiddenWorld")
+            .unwrap();
         assert!(active.enabled);
         assert!(!hidden.enabled);
     }

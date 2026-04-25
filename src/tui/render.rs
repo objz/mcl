@@ -4,22 +4,24 @@
 // popups and error toasts render on top of everything.
 
 use ratatui::{
-    layout::{Constraint, Direction, Layout},
     Frame,
+    layout::{Constraint, Direction, Layout},
 };
-use tachyonfx::{fx, EffectRenderer, Interpolation, Motion};
+use tachyonfx::{EffectRenderer, Interpolation, Motion, fx};
 
 use super::app::{App, ErrorEffectState, FocusedArea};
-use super::widgets::{self, popups::confirm as confirm_popup, popups::import_modpack, popups::new_instance};
+use super::widgets::{
+    self, popups::confirm as confirm_popup, popups::import_modpack, popups::new_instance,
+};
 use crate::tui::error_buffer;
-use crate::tui::widgets::popups::confirm::{confirm_popup_area, ConfirmPopup};
-use crate::tui::widgets::popups::error::{popup_area, ErrorPopup};
+use crate::tui::widgets::popups::confirm::{ConfirmPopup, confirm_popup_area};
+use crate::tui::widgets::popups::error::{ErrorPopup, popup_area};
 
 impl App {
     pub(super) fn render_frame(&mut self, frame: &mut Frame) {
         use crate::config::theme::THEME;
-        use ratatui::widgets::Block;
         use ratatui::style::Style;
+        use ratatui::widgets::Block;
 
         let theme = THEME.as_ref();
         frame.render_widget(
@@ -29,10 +31,7 @@ impl App {
 
         let chunks = Layout::default()
             .direction(Direction::Horizontal)
-            .constraints([
-                Constraint::Percentage(20),
-                Constraint::Percentage(80),
-            ])
+            .constraints([Constraint::Percentage(20), Constraint::Percentage(80)])
             .split(frame.area());
 
         widgets::instances::render(frame, chunks[0], self.focused, &mut self.instances_state);
@@ -136,7 +135,7 @@ impl App {
     // full-screen log viewer with search highlighting and auto-scroll.
     // auto-sticks to the bottom unless the user scrolled up manually
     fn render_log_overlay(&mut self, frame: &mut Frame) {
-        use crate::config::theme::{THEME, BORDER_STYLE};
+        use crate::config::theme::{BORDER_STYLE, THEME};
         use crate::tui::logging::get_app_logs;
         use ratatui::{
             layout::{Alignment, Margin},
@@ -247,7 +246,13 @@ impl App {
         for event in events {
             self.error_effects.entry(event.id).or_insert_with(|| {
                 ErrorEffectState::SlidingIn(
-                    fx::slide_in(Motion::RightToLeft, 4, 0, bg, (250, Interpolation::CubicOut)),
+                    fx::slide_in(
+                        Motion::RightToLeft,
+                        4,
+                        0,
+                        bg,
+                        (250, Interpolation::CubicOut),
+                    ),
                     std::time::Instant::now(),
                 )
             });
@@ -278,7 +283,13 @@ impl App {
                 .or_insert(ErrorEffectState::Idle);
             if !matches!(entry, ErrorEffectState::FadingOut(..)) {
                 *entry = ErrorEffectState::FadingOut(
-                    fx::slide_out(Motion::LeftToRight, 4, 0, bg, (fly_out_ms as u32, Interpolation::CubicIn)),
+                    fx::slide_out(
+                        Motion::LeftToRight,
+                        4,
+                        0,
+                        bg,
+                        (fly_out_ms as u32, Interpolation::CubicIn),
+                    ),
                     std::time::Instant::now(),
                 );
             }
@@ -289,7 +300,11 @@ impl App {
                 ErrorEffectState::SlidingIn(effect, started) => {
                     let dt = started.elapsed().as_millis() as u32;
                     if effect.running() {
-                        frame.render_effect(effect, area, tachyonfx::Duration::from_millis(dt.min(32)));
+                        frame.render_effect(
+                            effect,
+                            area,
+                            tachyonfx::Duration::from_millis(dt.min(32)),
+                        );
                         *started = std::time::Instant::now();
                     } else {
                         *effect_state = ErrorEffectState::Idle;
@@ -299,7 +314,11 @@ impl App {
                 ErrorEffectState::FadingOut(effect, started) => {
                     let dt = started.elapsed().as_millis() as u32;
                     if effect.running() {
-                        frame.render_effect(effect, area, tachyonfx::Duration::from_millis(dt.min(32)));
+                        frame.render_effect(
+                            effect,
+                            area,
+                            tachyonfx::Duration::from_millis(dt.min(32)),
+                        );
                         *started = std::time::Instant::now();
                     }
                 }

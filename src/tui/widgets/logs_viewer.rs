@@ -8,16 +8,16 @@ use std::sync::{Arc, Mutex};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
+    Frame,
     layout::{Constraint, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState},
-    Frame,
 };
 use tui_widget_list::{ListBuilder, ListState as TuiListState, ListView};
 
-use crate::instance::log_files::{read_log_file, scan_log_files, LogFileEntry};
-use crate::config::theme::{THEME, BORDER_STYLE};
+use crate::config::theme::{BORDER_STYLE, THEME};
+use crate::instance::log_files::{LogFileEntry, read_log_file, scan_log_files};
 
 type PendingLogs = Arc<Mutex<Option<(String, Vec<LogFileEntry>)>>>;
 
@@ -94,29 +94,31 @@ impl LogsState {
     }
 
     pub fn drain_pending(&mut self) {
-        let taken = match self.pending.lock() { Ok(mut slot) => {
-            slot.take()
-        } _ => {
-            None
-        }};
+        let taken = match self.pending.lock() {
+            Ok(mut slot) => slot.take(),
+            _ => None,
+        };
 
         if let Some((instance_name, entries)) = taken
-            && self.loaded_for.as_deref() == Some(&instance_name) {
-                let prev_selected = self.list_state.selected;
-                self.entries = entries;
-                self.loading = false;
+            && self.loaded_for.as_deref() == Some(&instance_name)
+        {
+            let prev_selected = self.list_state.selected;
+            self.entries = entries;
+            self.loading = false;
 
-                let display_count = self.display_count();
+            let display_count = self.display_count();
 
-                if display_count > 0 && prev_selected.is_none() {
-                    self.list_state.selected = Some(0);
-                    self.load_selected_content();
-                } else if let Some(sel) = prev_selected
-                    && sel >= display_count && display_count > 0 {
-                        self.list_state.selected = Some(display_count - 1);
-                    }
-                self.update_scrollbar();
+            if display_count > 0 && prev_selected.is_none() {
+                self.list_state.selected = Some(0);
+                self.load_selected_content();
+            } else if let Some(sel) = prev_selected
+                && sel >= display_count
+                && display_count > 0
+            {
+                self.list_state.selected = Some(display_count - 1);
             }
+            self.update_scrollbar();
+        }
     }
 
     // periodically re-scan log files in case new ones appeared while playing.
@@ -430,11 +432,15 @@ fn render_list(
         let show_selected = list_focused && context.is_selected;
 
         let style = if *is_live && show_selected {
-            Style::default().fg(theme.success()).add_modifier(Modifier::BOLD)
+            Style::default()
+                .fg(theme.success())
+                .add_modifier(Modifier::BOLD)
         } else if *is_live {
             Style::default().fg(theme.success())
         } else if show_selected {
-            Style::default().fg(theme.accent()).add_modifier(Modifier::BOLD)
+            Style::default()
+                .fg(theme.accent())
+                .add_modifier(Modifier::BOLD)
         } else {
             Style::default().fg(theme.text())
         };
@@ -450,8 +456,11 @@ fn render_list(
         } else {
             Span::raw("  ")
         };
-        let item = ratatui::text::Text::from(Line::from(vec![selector, Span::styled(name.clone(), style)]))
-            .style(Style::default().bg(bg));
+        let item = ratatui::text::Text::from(Line::from(vec![
+            selector,
+            Span::styled(name.clone(), style),
+        ]))
+        .style(Style::default().bg(bg));
         (item, 1)
     });
 

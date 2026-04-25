@@ -6,7 +6,9 @@
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use super::app::{App, FocusedArea};
-use super::widgets::{self, popups::confirm as confirm_popup, popups::import_modpack, popups::new_instance, WidgetKey};
+use super::widgets::{
+    self, WidgetKey, popups::confirm as confirm_popup, popups::import_modpack, popups::new_instance,
+};
 use crate::tui::error_buffer;
 
 impl App {
@@ -106,7 +108,8 @@ impl App {
                     return Ok(());
                 }
             } else if self.content_tab == widgets::content::ContentTab::Worlds {
-                if widgets::content::list::handle_key_no_toggle(&key_event, &mut self.worlds_state) {
+                if widgets::content::list::handle_key_no_toggle(&key_event, &mut self.worlds_state)
+                {
                     return Ok(());
                 }
             } else {
@@ -119,9 +122,10 @@ impl App {
                     _ => None,
                 };
                 if let Some(state) = state
-                    && widgets::content::list::handle_key(&key_event, state) {
-                        return Ok(());
-                    }
+                    && widgets::content::list::handle_key(&key_event, state)
+                {
+                    return Ok(());
+                }
             }
         }
 
@@ -181,7 +185,8 @@ impl App {
                 import_modpack::handle_key(&key_event, &mut self.instances_state);
             }
             _ => {
-                if self.focused == FocusedArea::Instances && self.instances_state.renaming.is_some() {
+                if self.focused == FocusedArea::Instances && self.instances_state.renaming.is_some()
+                {
                     match key_event.code {
                         KeyCode::Enter => {
                             let new_name = self.instances_state.renaming.take().unwrap_or_default();

@@ -6,7 +6,7 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 use crate::instance::loader::GameVersion;
-use crate::net::{download_file, HttpClient, NetError};
+use crate::net::{HttpClient, NetError, download_file};
 use crate::tui::progress::set_sub_action;
 
 const FABRIC_META_BASE: &str = "https://meta.fabricmc.net/v2";
@@ -152,5 +152,4 @@ mod tests {
             Err(e) => panic!("fetch_fabric_game_versions failed: {}", e),
         }
     }
-
 }
