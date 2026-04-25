@@ -34,7 +34,7 @@ the codebase is split roughly like this:
 
 - `src/cli/` handles command line interface
 - `src/config/` has settings, paths, theme config
-- `src/instance/` is the core. `content/` scans mods, resource packs, shaders, worlds. `import/` handles modpack importing with `mod.rs` dispatching to format-specific modules like `mrpack.rs` and `mmc.rs`. `loader/` installs mod loaders (fabric, forge, neoforge, quilt). `launch.rs` builds the java command and spawns minecraft. `manager.rs` does instance CRUD
+- `src/instance/` is the core. `content/` scans mods, resource packs, shaders, worlds. `import/` handles modpack importing with `mod.rs` dispatching to format-specific modules like `mrpack.rs` and `mmc.rs`. `loader/` installs mod loaders (fabric, forge, neoforge, quilt). `launch/` builds the java command and spawns minecraft, with `patches.rs` handling lwjgl3ify classpath patches. `manager.rs` does instance CRUD
 - `src/net/` is the networking layer. http client, file downloads, and API clients per service
 - `src/tui/` is the terminal UI built with ratatui
 
@@ -52,4 +52,4 @@ start with what you did: `added`, `fixed`, `refactored`, etc. lowercase. separat
 
 ## before submitting
 
-make sure `cargo build`, `cargo clippy`, and `cargo test` all pass.
+make sure `cargo build`, `cargo clippy`, and `cargo test` all pass. you'll need a JDK (`javac` and `jar` on PATH) for the build script that compiles the java shim.

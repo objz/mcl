@@ -1,5 +1,8 @@
 // builds the full java command line and spawns minecraft as a child process.
 // handles classpath assembly, auth token injection, and log capture.
+// loader-specific patches live in submodules (e.g. patches.rs for lwjgl3ify).
+
+mod patches;
 
 use std::path::{Path, PathBuf};
 
@@ -76,6 +79,13 @@ struct LoaderLibrary {
     name: String,
 }
 
+struct GameAuth {
+    username: String,
+    uuid: String,
+    token: String,
+    user_type: String,
+}
+
 // mojang's library rules are a fun little state machine: each rule can allow
 // or disallow based on OS. if no rule matches the current OS, the library is
 // included only if no rule "dominated" (matched at all). yes, it's weird.
@@ -105,6 +115,38 @@ fn lib_allowed(lib: &MetaLibrary) -> bool {
         }
     }
     !dominated
+}
+
+fn build_game_args(
+    config: &InstanceConfig,
+    minecraft_dir: &Path,
+    meta_dir: &Path,
+    asset_index_id: &str,
+    auth: GameAuth,
+    loader_game_args: Vec<String>,
+) -> Vec<String> {
+    let mut game_args = vec![
+        "--username".to_string(),
+        auth.username,
+        "--version".to_string(),
+        config.game_version.clone(),
+        "--gameDir".to_string(),
+        minecraft_dir.to_string_lossy().into_owned(),
+        "--assetsDir".to_string(),
+        meta_dir.join("assets").to_string_lossy().into_owned(),
+        "--assetIndex".to_string(),
+        asset_index_id.to_string(),
+        "--uuid".to_string(),
+        auth.uuid,
+        "--accessToken".to_string(),
+        auth.token,
+        "--userProperties".to_string(),
+        "{}".to_string(),
+        "--userType".to_string(),
+        auth.user_type,
+    ];
+    game_args.extend(loader_game_args);
+    game_args
 }
 
 pub async fn launch(
@@ -193,15 +235,14 @@ pub async fn launch(
             .join(format!("{}.jar", config.game_version)),
     );
 
-    // lwjgl3ify ships a patched launchwrapper and retrofuturabootstrap for
-    // java 9+ compat. if present, prepend its patches to the classpath,
-    // override the main class to use RFB's bootstrap, and add the required
-    // --add-opens and system classloader flags.
-    let (lwjgl3ify_jvm_args, main_class) = if matches!(config.loader, ModLoader::Forge) {
-        let (jvm_args, override_main) = apply_lwjgl3ify_patches(&minecraft_dir, &mut classpath);
-        (jvm_args, override_main.unwrap_or(main_class))
+    // apply loader-specific patches (lwjgl3ify for old forge on java 9+)
+    let (patch_jvm_args, main_class, extra_args) = if matches!(config.loader, ModLoader::Forge) {
+        match patches::apply(&minecraft_dir, &lib_dir, &mut classpath).await {
+            Some(p) => (p.jvm_args, p.main_class, p.extra_args),
+            None => (Vec::new(), main_class, Vec::new()),
+        }
     } else {
-        (Vec::new(), main_class)
+        (Vec::new(), main_class, Vec::new())
     };
 
     let sep = if cfg!(windows) { ";" } else { ":" };
@@ -227,7 +268,7 @@ pub async fn launch(
         format!("-Xms{}", config.memory_min.as_deref().unwrap_or("512M")),
         format!("-Xmx{}", config.memory_max.as_deref().unwrap_or("2G")),
     ];
-    jvm.extend(lwjgl3ify_jvm_args);
+    jvm.extend(patch_jvm_args);
     jvm.extend(config.jvm_args.clone());
 
     // resolve auth credentials, refreshing the microsoft token if needed.
@@ -238,26 +279,36 @@ pub async fn launch(
         .cloned()
     {
         Some(acc) => {
-            let (token, new_refresh) = match acc.account_type {
+            let (token, new_refresh, new_expires) = match acc.account_type {
                 crate::auth::AccountType::Microsoft => {
                     match crate::auth::refresh_and_get_token(&acc).await {
-                        Ok(pair) => pair,
+                        Ok(triple) => triple,
                         Err(e) => {
                             return Err(LaunchError::Auth(format!("Authentication failed: {e}")));
                         }
                     }
                 }
-                crate::auth::AccountType::Offline => ("0".to_string(), None),
+                crate::auth::AccountType::Offline => ("0".to_string(), None, None),
             };
-            if let Some(new_rt) = new_refresh
-                && let Some(stored) = account_store
-                    .accounts
-                    .iter_mut()
-                    .find(|a| a.uuid == acc.uuid)
-                {
+            if let Some(stored) = account_store
+                .accounts
+                .iter_mut()
+                .find(|a| a.uuid == acc.uuid)
+            {
+                let mut changed = false;
+                if let Some(new_rt) = new_refresh {
                     stored.refresh_token = Some(new_rt);
+                    changed = true;
+                }
+                if let Some(expires) = new_expires {
+                    stored.cached_mc_token = Some(token.clone());
+                    stored.cached_mc_token_expires_at = Some(expires);
+                    changed = true;
+                }
+                if changed {
                     account_store.save();
                 }
+            }
             let user_type = match acc.account_type {
                 crate::auth::AccountType::Microsoft => "msa",
                 crate::auth::AccountType::Offline => "legacy",
@@ -277,25 +328,19 @@ pub async fn launch(
         ),
     };
 
-    let mut game_args = vec![
-        "--username".to_string(),
-        mc_username,
-        "--version".to_string(),
-        config.game_version.clone(),
-        "--gameDir".to_string(),
-        minecraft_dir.to_string_lossy().into_owned(),
-        "--assetsDir".to_string(),
-        meta_dir.join("assets").to_string_lossy().into_owned(),
-        "--assetIndex".to_string(),
-        meta.asset_index.id.clone(),
-        "--uuid".to_string(),
-        mc_uuid,
-        "--accessToken".to_string(),
-        mc_token,
-        "--userType".to_string(),
-        mc_user_type,
-    ];
-    game_args.extend(loader_game_args);
+    let game_args = build_game_args(
+        config,
+        &minecraft_dir,
+        meta_dir,
+        &meta.asset_index.id,
+        GameAuth {
+            username: mc_username,
+            uuid: mc_uuid,
+            token: mc_token,
+            user_type: mc_user_type,
+        },
+        loader_game_args,
+    );
 
     let (kill_tx, kill_rx) = tokio::sync::oneshot::channel::<()>();
     crate::running::register_kill(&name, kill_tx);
@@ -307,10 +352,24 @@ pub async fn launch(
         config.loader
     );
 
+    tracing::info!("[{}] Java: {}", name, java);
+    tracing::info!("[{}] JVM args: {:?}", name, jvm);
+    tracing::info!(
+        "[{}] Classpath:\n{}",
+        name,
+        classpath
+            .iter()
+            .map(|p| p.display().to_string())
+            .collect::<Vec<_>>()
+            .join("\n")
+    );
+    tracing::info!("[{}] Main class: {}", name, main_class);
+
     let mut cmd = tokio::process::Command::new(&java);
     cmd.args(&jvm);
     cmd.arg("-cp").arg(&cp_str);
     cmd.arg(&main_class);
+    cmd.args(&extra_args);
     cmd.args(&game_args);
     cmd.current_dir(&minecraft_dir);
     cmd.stdout(std::process::Stdio::piped());
@@ -353,9 +412,10 @@ pub async fn launch(
                     tracing::info!(target: "mc_instance", "[{}] {}", n, line);
                     crate::instance_logs::push(&n, &line);
                     if let Ok(mut f) = w.lock()
-                        && let Some(f) = f.as_mut() {
-                            let _ = writeln!(f, "{}", line);
-                        }
+                        && let Some(f) = f.as_mut()
+                    {
+                        let _ = writeln!(f, "{}", line);
+                    }
                 }
             });
         }
@@ -369,9 +429,10 @@ pub async fn launch(
                     tracing::warn!(target: "mc_instance", "[{}] {}", n, line);
                     crate::instance_logs::push(&n, &line);
                     if let Ok(mut f) = w.lock()
-                        && let Some(f) = f.as_mut() {
-                            let _ = writeln!(f, "[STDERR] {}", line);
-                        }
+                        && let Some(f) = f.as_mut()
+                    {
+                        let _ = writeln!(f, "[STDERR] {}", line);
+                    }
                 }
             });
         }
@@ -411,99 +472,54 @@ pub async fn launch(
     Ok(())
 }
 
-// lwjgl3ify (used by GTNH and other old forge modpacks) bundles a
-// forgePatches.zip with patched launchwrapper classes that fix the
-// URLClassLoader cast on java 9+. if we find it, extract the patches
-// and prepend them to the classpath so they shadow the vanilla classes.
-// also parses Add-Opens from the zip's manifest for the required
-// --add-opens flags.
-fn apply_lwjgl3ify_patches(
-    minecraft_dir: &Path,
-    classpath: &mut Vec<PathBuf>,
-) -> (Vec<String>, Option<String>) {
-    let mods_dir = minecraft_dir.join("mods");
-    let lwjgl3ify_jar = match find_lwjgl3ify_jar(&mods_dir) {
-        Some(p) => p,
-        None => return (Vec::new(), None),
-    };
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::Utc;
 
-    let patches_dest = minecraft_dir.join(".forge-patches.zip");
-
-    if let Err(e) = extract_forge_patches(&lwjgl3ify_jar, &patches_dest) {
-        tracing::warn!("Failed to extract lwjgl3ify forge patches: {e}");
-        return (Vec::new(), None);
-    }
-
-    // prepend so patched classes shadow vanilla launchwrapper
-    classpath.insert(0, patches_dest.clone());
-
-    let mut jvm_args = parse_add_opens(&patches_dest).unwrap_or_default();
-
-    // RFB requires its own classloader to be the system classloader, and
-    // its Main class handles bootstrapping into launchwrapper.
-    // the other flags match lwjgl3ify's java9args.txt.
-    jvm_args.extend([
-        "-Djava.system.class.loader=com.gtnewhorizons.retrofuturabootstrap.RfbSystemClassLoader".to_string(),
-        "-Dfile.encoding=UTF-8".to_string(),
-        "--enable-native-access".to_string(),
-        "ALL-UNNAMED".to_string(),
-    ]);
-
-    // also prepend the lwjgl3ify jar itself so RFB can find its plugin classes
-    classpath.insert(1, lwjgl3ify_jar);
-
-    let main_class = "com.gtnewhorizons.retrofuturabootstrap.Main".to_string();
-
-    (jvm_args, Some(main_class))
-}
-
-fn find_lwjgl3ify_jar(mods_dir: &Path) -> Option<PathBuf> {
-    let entries = std::fs::read_dir(mods_dir).ok()?;
-    for entry in entries.flatten() {
-        let name = entry.file_name();
-        let name = name.to_string_lossy();
-        if name.starts_with("lwjgl3ify") && name.ends_with(".jar") {
-            return Some(entry.path());
-        }
-    }
-    None
-}
-
-fn extract_forge_patches(lwjgl3ify_jar: &Path, dest: &Path) -> Result<(), std::io::Error> {
-    use std::io::Read;
-
-    let file = std::fs::File::open(lwjgl3ify_jar)?;
-    let mut archive = zip::ZipArchive::new(file)
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-    let mut entry = archive
-        .by_name("me/eigenraven/lwjgl3ify/relauncher/forgePatches.zip")
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::NotFound, e))?;
-    let mut buf = Vec::new();
-    entry.read_to_end(&mut buf)?;
-    std::fs::write(dest, &buf)
-}
-
-fn parse_add_opens(patches_zip: &Path) -> Option<Vec<String>> {
-    use std::io::Read;
-
-    let file = std::fs::File::open(patches_zip).ok()?;
-    let mut archive = zip::ZipArchive::new(file).ok()?;
-    let mut entry = archive.by_name("META-INF/MANIFEST.MF").ok()?;
-    let mut manifest = String::new();
-    entry.read_to_string(&mut manifest).ok()?;
-
-    // manifest continuation lines start with a single space
-    let manifest = manifest.replace("\r\n ", "").replace("\n ", "");
-
-    let mut args = Vec::new();
-    for line in manifest.lines() {
-        if let Some(value) = line.strip_prefix("Add-Opens: ") {
-            for module_package in value.split_whitespace() {
-                args.push("--add-opens".to_string());
-                args.push(format!("{module_package}=ALL-UNNAMED"));
-            }
+    fn test_config() -> InstanceConfig {
+        InstanceConfig {
+            name: "test".to_owned(),
+            game_version: "1.7.10".to_owned(),
+            loader: ModLoader::Forge,
+            loader_version: Some("10.13.4.1614".to_owned()),
+            created: Utc::now(),
+            last_played: None,
+            java_path: None,
+            memory_max: None,
+            memory_min: None,
+            jvm_args: Vec::new(),
+            resolution: None,
         }
     }
 
-    Some(args)
+    #[test]
+    fn game_args_include_empty_user_properties() {
+        let args = build_game_args(
+            &test_config(),
+            Path::new("/instances/test/.minecraft"),
+            Path::new("/meta"),
+            "legacy",
+            GameAuth {
+                username: "TestPlayer".to_owned(),
+                uuid: "00000000-0000-0000-0000-000000000000".to_owned(),
+                token: "token".to_owned(),
+                user_type: "msa".to_owned(),
+            },
+            vec![
+                "--tweakClass".to_owned(),
+                "cpw.mods.fml.common.launcher.FMLTweaker".to_owned(),
+            ],
+        );
+
+        let position = args
+            .iter()
+            .position(|arg| arg == "--userProperties")
+            .expect("game args should include --userProperties");
+        assert_eq!(args.get(position + 1).map(String::as_str), Some("{}"));
+        assert!(
+            args.windows(2)
+                .any(|pair| pair == ["--tweakClass", "cpw.mods.fml.common.launcher.FMLTweaker"])
+        );
+    }
 }
