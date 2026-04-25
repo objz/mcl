@@ -249,18 +249,10 @@ fn apply_config_update(
 ) -> CliResult {
     match key {
         "memory-max" => {
-            config.memory_max = if value.is_empty() {
-                None
-            } else {
-                Some(value.to_string())
-            }
+            config.memory_max = crate::instance::normalize_memory_value(value);
         }
         "memory-min" => {
-            config.memory_min = if value.is_empty() {
-                None
-            } else {
-                Some(value.to_string())
-            }
+            config.memory_min = crate::instance::normalize_memory_value(value);
         }
         "java-path" => {
             config.java_path = if value.is_empty() {

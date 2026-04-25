@@ -149,6 +149,19 @@ impl State {
         self.instances.push(instance);
         self.update_scrollbar();
     }
+
+    pub fn replace_instance(&mut self, old_name: &str, instance: InstanceConfig) {
+        if let Some(existing) = self
+            .instances
+            .iter_mut()
+            .find(|i| i.name == old_name || i.name == instance.name)
+        {
+            *existing = instance;
+        } else {
+            self.instances.push(instance);
+        }
+        self.update_scrollbar();
+    }
 }
 
 impl WidgetKey for State {

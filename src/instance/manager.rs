@@ -388,6 +388,33 @@ mod tests {
     }
 
     #[test]
+    fn test_load_all_accepts_numeric_memory() {
+        let (manager, tmp) = test_manager();
+        let instance_dir = tmp.join("test-memory");
+        std::fs::create_dir_all(&instance_dir).ok();
+        std::fs::write(
+            instance_dir.join("instance.json"),
+            r#"{
+  "name": "test-memory",
+  "game_version": "1.7.10",
+  "loader": "forge",
+  "loader_version": "10.13.4.1614",
+  "created": "2026-04-20T18:04:25.567993893Z",
+  "memory_max": 8,
+  "memory_min": 512
+}"#,
+        )
+        .expect("write config");
+
+        let all = manager.load_all();
+        assert_eq!(all.len(), 1);
+        assert_eq!(all[0].memory_max.as_deref(), Some("8G"));
+        assert_eq!(all[0].memory_min.as_deref(), Some("512M"));
+
+        std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
     fn test_load_one_not_found() {
         let (manager, tmp) = test_manager();
         let result = manager.load_one("ghost-instance");

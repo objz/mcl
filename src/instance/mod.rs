@@ -14,4 +14,4 @@ pub use content::{scan_mods, toggle_entry, ContentEntry, scan_resource_packs, sc
 pub use launch::LaunchError;
 pub use loader::{get_installer, GameVersion, ModLoaderInstaller, VanillaInstaller};
 pub use manager::{InstanceError, InstanceManager};
-pub use models::{InstanceConfig, ModLoader};
+pub use models::{normalize_memory_value, InstanceConfig, ModLoader};

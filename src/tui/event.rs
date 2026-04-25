@@ -54,8 +54,10 @@ impl App {
             terminal.draw(|frame| self.render_frame(frame))?;
             self.handle_events().wrap_err("handle events failed")?;
 
-            if let Some(path) = self.pending_editor.take() {
-                Self::run_editor(terminal, &path);
+            if let Some(path) = self.pending_editor.take()
+                && Self::run_editor(terminal, &path)
+            {
+                self.reload_edited_config(&path);
             }
         }
         Ok(())
@@ -149,7 +151,7 @@ impl App {
     // spawns $EDITOR/$VISUAL to edit a file. for terminal editors (vim, nano, etc)
     // gotta leave the alternate screen and restore it after, otherwise the
     // editor fights with ratatui for the terminal. GUI editors just get spawned detached.
-    fn run_editor(terminal: &mut ratatui::DefaultTerminal, path: &std::path::Path) {
+    fn run_editor(terminal: &mut ratatui::DefaultTerminal, path: &std::path::Path) -> bool {
         use ratatui::crossterm::{
             terminal::{
                 disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
@@ -199,19 +201,69 @@ impl App {
 
             if let Err(e) = result {
                 tracing::error!("Failed to open editor: {}", e);
+                return false;
             }
-        } else { if let Err(e) = std::process::Command::new(&editor)
-            .arg(path)
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .spawn() {
-            tracing::error!("Failed to open editor: {}", e);
-        }}
+            true
+        } else {
+            if let Err(e) = std::process::Command::new(&editor)
+                .arg(path)
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .spawn()
+            {
+                tracing::error!("Failed to open editor: {}", e);
+                return false;
+            }
+            false
+        }
+    }
+
+    fn reload_edited_config(&mut self, path: &std::path::Path) {
+        if path.file_name().and_then(|n| n.to_str()) != Some("instance.json") {
+            return;
+        }
+
+        let Some(name) = path
+            .parent()
+            .and_then(|p| p.file_name())
+            .and_then(|n| n.to_str())
+        else {
+            return;
+        };
+
+        match self.instance_manager.load_one(name) {
+            Ok(config) => {
+                self.instances_state.replace_instance(name, config);
+            }
+            Err(e) => {
+                tracing::error!("Failed to reload edited instance '{}': {}", name, e);
+                error_buffer::push_error(error_buffer::ErrorEvent {
+                    id: 0,
+                    level: tracing::Level::ERROR,
+                    message: format!("Failed to reload edited instance '{name}': {e}"),
+                    pushed_at: std::time::Instant::now(),
+                });
+            }
+        }
     }
 
     pub(super) fn spawn_launch(&self, instance: crate::instance::InstanceConfig) {
         use crate::instance::launch;
         use crate::running;
+
+        let instance = match self.instance_manager.load_one(&instance.name) {
+            Ok(config) => config,
+            Err(e) => {
+                tracing::error!("Failed to load instance '{}': {}", instance.name, e);
+                error_buffer::push_error(error_buffer::ErrorEvent {
+                    id: 0,
+                    level: tracing::Level::ERROR,
+                    message: format!("Failed to load instance '{}': {e}", instance.name),
+                    pushed_at: std::time::Instant::now(),
+                });
+                return;
+            }
+        };
 
         running::set_state(&instance.name, running::RunState::Authenticating);
 
