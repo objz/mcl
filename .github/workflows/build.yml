@@ -55,23 +55,30 @@ jobs:
           CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
         run: cargo build --release --target ${{ matrix.target }}
 
+      - name: get version
+        id: version
+        shell: bash
+        run: |
+          version=$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
       - name: package (unix)
         if: runner.os != 'Windows'
         run: |
           cd target/${{ matrix.target }}/release
-          tar czf ../../../mcl-${{ matrix.target }}.tar.gz ${{ matrix.artifact }}
+          tar czf ../../../mcl-${{ steps.version.outputs.version }}-${{ matrix.target }}.tar.gz ${{ matrix.artifact }}
 
       - name: package (windows)
         if: runner.os == 'Windows'
         run: |
           cd target/${{ matrix.target }}/release
-          Compress-Archive -Path ${{ matrix.artifact }} -DestinationPath ../../../mcl-${{ matrix.target }}.zip
+          Compress-Archive -Path ${{ matrix.artifact }} -DestinationPath ../../../mcl-${{ steps.version.outputs.version }}-${{ matrix.target }}.zip
 
       - name: upload artifact
         uses: actions/upload-artifact@v7
         with:
-          name: mcl-${{ matrix.target }}
-          path: mcl-${{ matrix.target }}.*
+          name: mcl-${{ steps.version.outputs.version }}-${{ matrix.target }}
+          path: mcl-${{ steps.version.outputs.version }}-${{ matrix.target }}.*
 
   release:
     needs: build
