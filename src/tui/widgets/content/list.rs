@@ -233,6 +233,11 @@ impl ContentListState {
 fn handle_search_keys(key_event: &KeyEvent, state: &mut ContentListState) -> bool {
     if state.search.active {
         match key_event.code {
+            KeyCode::Enter => {
+                state.search.confirm();
+                state.list_state.selected = Some(0);
+                state.update_scrollbar();
+            }
             KeyCode::Esc => {
                 state.search.deactivate();
                 state.list_state.selected = Some(0);

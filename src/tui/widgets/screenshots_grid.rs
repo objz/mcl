@@ -182,6 +182,10 @@ impl ScreenshotsState {
 pub fn handle_key(key_event: &KeyEvent, state: &mut ScreenshotsState) -> bool {
     if state.search.active {
         match key_event.code {
+            KeyCode::Enter => {
+                state.search.confirm();
+                state.selected = 0;
+            }
             KeyCode::Esc => {
                 state.search.deactivate();
                 state.selected = 0;

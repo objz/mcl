@@ -15,6 +15,9 @@ impl App {
         if self.focused == FocusedArea::OverviewExpanded {
             if self.log_overlay_search.active {
                 match key_event.code {
+                    KeyCode::Enter => {
+                        self.log_overlay_search.confirm();
+                    }
                     KeyCode::Esc => {
                         self.log_overlay_search.deactivate();
                     }

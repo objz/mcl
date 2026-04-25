@@ -168,6 +168,11 @@ impl WidgetKey for State {
     fn handle_key(&mut self, key_event: &crossterm::event::KeyEvent) {
         if self.search.active {
             match key_event.code {
+                KeyCode::Enter => {
+                    self.search.confirm();
+                    self.list_state.selected = Some(0);
+                    self.update_scrollbar();
+                }
                 KeyCode::Esc => {
                     self.search.deactivate();
                     self.list_state.selected = Some(0);

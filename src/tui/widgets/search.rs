@@ -24,6 +24,12 @@ impl SearchState {
         self.query.clear();
     }
 
+    // exit search mode but keep the filter active so the user can
+    // navigate the filtered results
+    pub fn confirm(&mut self) {
+        self.active = false;
+    }
+
     pub fn push(&mut self, c: char) {
         self.query.push(c);
     }
