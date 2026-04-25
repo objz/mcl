@@ -12,6 +12,10 @@ pub struct Account {
     pub active: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub refresh_token: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cached_mc_token: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cached_mc_token_expires_at: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -123,6 +127,8 @@ pub fn create_offline_account(username: &str) -> Account {
         account_type: AccountType::Offline,
         active: false,
         refresh_token: None,
+        cached_mc_token: None,
+        cached_mc_token_expires_at: None,
     }
 }
 
@@ -185,13 +191,7 @@ mod tests {
     }
 
     fn dummy_account(name: &str) -> Account {
-        Account {
-            uuid: offline_uuid(name),
-            username: name.to_owned(),
-            account_type: AccountType::Offline,
-            active: false,
-            refresh_token: None,
-        }
+        create_offline_account(name)
     }
 
     #[test]
