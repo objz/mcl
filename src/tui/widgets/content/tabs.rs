@@ -214,12 +214,9 @@ pub fn render(
         ContentTab::Mods => {
             if let Some(instance) = instance {
                 if mods_state.loaded_for.as_deref() != Some(instance.name.as_str()) {
-                    mods_state.start_load(
-                        instances_dir,
-                        &instance.name,
-                        crate::instance::scan_mods,
-                    );
-                    mods_state.watch_dir(instances_dir.join(&instance.name).join(".minecraft").join("mods"));
+                    let content_dir = instances_dir.join(&instance.name).join(".minecraft").join("mods");
+                    mods_state.start_load(&content_dir, &instance.name, crate::instance::scan_one_mod, ".jar");
+                    mods_state.watch_dir(content_dir);
                 }
                 super::list::render(
                     frame,
@@ -240,12 +237,9 @@ pub fn render(
         ContentTab::ResourcePacks => {
             if let Some(instance) = instance {
                 if resource_packs_state.loaded_for.as_deref() != Some(instance.name.as_str()) {
-                    resource_packs_state.start_load(
-                        instances_dir,
-                        &instance.name,
-                        crate::instance::scan_resource_packs,
-                    );
-                    resource_packs_state.watch_dir(instances_dir.join(&instance.name).join(".minecraft").join("resourcepacks"));
+                    let content_dir = instances_dir.join(&instance.name).join(".minecraft").join("resourcepacks");
+                    resource_packs_state.start_load(&content_dir, &instance.name, crate::instance::scan_one_resource_pack, ".zip");
+                    resource_packs_state.watch_dir(content_dir);
                 }
                 super::list::render(
                     frame,
@@ -266,12 +260,9 @@ pub fn render(
         ContentTab::Shaders => {
             if let Some(instance) = instance {
                 if shaders_state.loaded_for.as_deref() != Some(instance.name.as_str()) {
-                    shaders_state.start_load(
-                        instances_dir,
-                        &instance.name,
-                        crate::instance::scan_shaders,
-                    );
-                    shaders_state.watch_dir(instances_dir.join(&instance.name).join(".minecraft").join("shaderpacks"));
+                    let content_dir = instances_dir.join(&instance.name).join(".minecraft").join("shaderpacks");
+                    shaders_state.start_load(&content_dir, &instance.name, crate::instance::scan_one_shader, ".zip");
+                    shaders_state.watch_dir(content_dir);
                 }
                 super::list::render(
                     frame,
@@ -320,12 +311,9 @@ pub fn render(
         ContentTab::Worlds => {
             if let Some(instance) = instance {
                 if worlds_state.loaded_for.as_deref() != Some(instance.name.as_str()) {
-                    worlds_state.start_load(
-                        instances_dir,
-                        &instance.name,
-                        crate::instance::scan_worlds,
-                    );
-                    worlds_state.watch_dir(instances_dir.join(&instance.name).join(".minecraft").join("saves"));
+                    let content_dir = instances_dir.join(&instance.name).join(".minecraft").join("saves");
+                    worlds_state.start_load(&content_dir, &instance.name, crate::instance::scan_one_world, "");
+                    worlds_state.watch_dir(content_dir);
                 }
                 super::list::render(
                     frame,

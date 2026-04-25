@@ -31,13 +31,13 @@ impl App {
             self.drain_pending_instances();
             self.drain_pending_last_played();
             self.mods_state.drain_pending();
-            self.mods_state.try_rescan();
+            self.mods_state.drain_watcher();
             self.resource_packs_state.drain_pending();
-            self.resource_packs_state.try_rescan();
+            self.resource_packs_state.drain_watcher();
             self.shaders_state.drain_pending();
-            self.shaders_state.try_rescan();
+            self.shaders_state.drain_watcher();
             self.worlds_state.drain_pending();
-            self.worlds_state.try_rescan();
+            self.worlds_state.drain_watcher();
             self.logs_state.drain_pending();
             self.logs_state.try_rescan();
             self.account_state.drain_auth_result();

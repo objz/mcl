@@ -6,7 +6,7 @@
 
 use std::collections::HashMap;
 use std::path::Path;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, mpsc};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
@@ -21,12 +21,19 @@ use tui_widget_list::{ListBuilder, ListState as TuiListState, ListView};
 use crate::config::theme::THEME;
 use crate::instance::content::mods::{ContentEntry, IconCell};
 
-type PendingContent = Arc<Mutex<Option<(String, Vec<ContentEntry>)>>>;
 type SnapshotRow = (String, String, bool, Option<Vec<Vec<IconCell>>>);
+type ScanOneFn = fn(&Path, &str, bool) -> ContentEntry;
 
 struct CachedList {
     entries: Vec<ContentEntry>,
     selected: Option<usize>,
+}
+
+// result from the notify-triggered background diff
+struct WatcherDiff {
+    toggled: Vec<(String, bool, std::path::PathBuf)>,
+    removed: Vec<String>,
+    added: Vec<ContentEntry>,
 }
 
 pub struct ContentListState {
@@ -37,10 +44,16 @@ pub struct ContentListState {
     pub loading: bool,
     pub search: crate::tui::widgets::search::SearchState,
     cache: HashMap<String, CachedList>,
-    pending: PendingContent,
-    check_counter: u16,
+    // streaming: individual entries arrive here during initial load
+    stream_rx: Option<mpsc::Receiver<ContentEntry>>,
+    // file watcher: notify callback spawns background work,
+    // precomputed diff lands here for the UI to pick up
+    watcher_diff: Arc<Mutex<Option<WatcherDiff>>>,
+    _watcher: Option<notify::RecommendedWatcher>,
     watched_dir: Option<std::path::PathBuf>,
-    last_dir_mtime: Option<std::time::SystemTime>,
+    // stored for the watcher to scan individual new files
+    scan_one_fn: Option<ScanOneFn>,
+    content_ext: Option<&'static str>,
 }
 
 impl Default for ContentListState {
@@ -53,41 +66,229 @@ impl Default for ContentListState {
             loading: false,
             search: crate::tui::widgets::search::SearchState::default(),
             cache: HashMap::new(),
-            pending: Arc::new(Mutex::new(None)),
-            check_counter: 0,
+            stream_rx: None,
+            watcher_diff: Arc::new(Mutex::new(None)),
+            _watcher: None,
             watched_dir: None,
-            last_dir_mtime: None,
+            scan_one_fn: None,
+            content_ext: None,
         }
     }
 }
 
 impl ContentListState {
-    // poll the content directory for changes every ~120 ticks.
-    // if the dir's mtime changed, invalidate the cache to pick up
-    // mods/packs the user dropped in from outside the launcher
-    pub fn try_rescan(&mut self) {
-        self.check_counter = self.check_counter.wrapping_add(1);
-        if !self.check_counter.is_multiple_of(120) {
-            return;
-        }
-
-        let Some(dir) = &self.watched_dir else {
+    // drain streaming entries from the initial load. each entry arrives
+    // individually and is inserted in sorted position for a smooth fill-in
+    pub fn drain_pending(&mut self) {
+        let Some(rx) = &self.stream_rx else {
             return;
         };
 
-        let current_mtime = std::fs::metadata(dir).ok().and_then(|m| m.modified().ok());
-
-        if current_mtime != self.last_dir_mtime {
-            self.last_dir_mtime = current_mtime;
-            if let Some(name) = &self.loaded_for {
-                self.cache.remove(name);
-                self.loaded_for = None;
+        let mut received = false;
+        let mut finished = false;
+        loop {
+            match rx.try_recv() {
+                Ok(entry) => {
+                    received = true;
+                    let pos = self
+                        .entries
+                        .binary_search_by(|e| {
+                            e.name.to_lowercase().cmp(&entry.name.to_lowercase())
+                        })
+                        .unwrap_or_else(|i| i);
+                    self.entries.insert(pos, entry);
+                }
+                Err(mpsc::TryRecvError::Empty) => break,
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    self.stream_rx = None;
+                    finished = true;
+                    break;
+                }
             }
+        }
+
+        if received || finished {
+            self.loading = false;
+            if self.list_state.selected.is_none() && !self.entries.is_empty() {
+                self.list_state.selected = Some(0);
+            }
+            self.update_scrollbar();
         }
     }
 
+    // pick up the precomputed diff from the notify watcher callback.
+    // skip while streaming is in progress to avoid duplicate entries.
+    pub fn drain_watcher(&mut self) {
+        if self.stream_rx.is_some() {
+            return;
+        }
+
+        let diff = match self.watcher_diff.lock() {
+            Ok(mut slot) => slot.take(),
+            _ => None,
+        };
+
+        let Some(diff) = diff else {
+            return;
+        };
+
+        // apply toggles (enabled/path changes)
+        for (stem, enabled, path) in &diff.toggled {
+            if let Some(entry) = self.entries.iter_mut().find(|e| &e.file_stem == stem) {
+                entry.enabled = *enabled;
+                entry.path = path.clone();
+            }
+        }
+
+        // apply removals
+        if !diff.removed.is_empty() {
+            self.entries
+                .retain(|e| !diff.removed.contains(&e.file_stem));
+        }
+
+        // insert new entries in sorted position
+        for entry in diff.added {
+            let pos = self
+                .entries
+                .binary_search_by(|e| e.name.to_lowercase().cmp(&entry.name.to_lowercase()))
+                .unwrap_or_else(|i| i);
+            self.entries.insert(pos, entry);
+        }
+
+        // clamp selected
+        if let Some(sel) = self.list_state.selected {
+            if self.entries.is_empty() {
+                self.list_state.selected = None;
+            } else {
+                self.list_state.selected =
+                    Some(sel.min(self.entries.len().saturating_sub(1)));
+            }
+        }
+
+        self.update_scrollbar();
+    }
+
+    // starts a notify file watcher on the given directory. changes trigger
+    // a background diff that lands in watcher_diff for drain_watcher to apply.
     pub fn watch_dir(&mut self, dir: std::path::PathBuf) {
-        self.last_dir_mtime = std::fs::metadata(&dir).ok().and_then(|m| m.modified().ok());
+        use notify::{RecursiveMode, Watcher};
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        // drop previous watcher
+        self._watcher = None;
+
+        let watcher_diff = self.watcher_diff.clone();
+        let ext: &'static str = self.content_ext.unwrap_or(".jar");
+        let scan_one = self.scan_one_fn;
+
+        let dirty = Arc::new(AtomicBool::new(false));
+        let running = Arc::new(AtomicBool::new(false));
+        let dirty_cb = dirty.clone();
+        let running_cb = running.clone();
+
+        // initialize known stems from the current directory state so existing
+        // files are not treated as "new" on the first notify event
+        let known_stems = Arc::new(Mutex::new(read_dir_stems(&dir, ext)));
+
+        let watch_dir = dir.clone();
+        let watcher = notify::recommended_watcher(move |res: Result<notify::Event, _>| {
+            if res.is_err() {
+                return;
+            }
+
+            // mark dirty. if a thread is already running it will loop to
+            // pick up the change after its current diff
+            dirty_cb.store(true, Ordering::Relaxed);
+
+            if running_cb.swap(true, Ordering::Relaxed) {
+                return;
+            }
+
+            let dir = watch_dir.clone();
+            let diff_slot = watcher_diff.clone();
+            let dirty = dirty_cb.clone();
+            let running = running_cb.clone();
+            let known = known_stems.clone();
+
+            std::thread::spawn(move || {
+                // always clear `running` even if we panic
+                struct ResetOnDrop(Arc<AtomicBool>);
+                impl Drop for ResetOnDrop {
+                    fn drop(&mut self) {
+                        self.0.store(false, Ordering::Relaxed);
+                    }
+                }
+                let _guard = ResetOnDrop(running);
+
+                loop {
+                    dirty.store(false, Ordering::Relaxed);
+                    std::thread::sleep(std::time::Duration::from_millis(100));
+
+                    let result = (|| {
+                        let on_disk = read_dir_stems(&dir, ext);
+                        let mut known_map = known.lock().ok()?;
+
+                        let mut toggled = Vec::new();
+                        let mut removed = Vec::new();
+                        let mut added = Vec::new();
+
+                        for (stem, (old_path, old_enabled)) in known_map.iter() {
+                            if let Some((disk_path, disk_enabled)) = on_disk.get(stem) {
+                                if *disk_enabled != *old_enabled || *disk_path != *old_path {
+                                    toggled.push((
+                                        stem.clone(),
+                                        *disk_enabled,
+                                        disk_path.clone(),
+                                    ));
+                                }
+                            } else {
+                                removed.push(stem.clone());
+                            }
+                        }
+
+                        for (stem, (path, enabled)) in &on_disk {
+                            if !known_map.contains_key(stem)
+                                && let Some(scan_one) = scan_one
+                            {
+                                added.push(scan_one(path, stem, *enabled));
+                            }
+                        }
+
+                        *known_map = on_disk;
+
+                        Some(WatcherDiff {
+                            toggled,
+                            removed,
+                            added,
+                        })
+                    })();
+
+                    if let Some(diff) = result
+                        && let Ok(mut slot) = diff_slot.lock()
+                    {
+                        *slot = Some(diff);
+                    }
+
+                    if !dirty.load(Ordering::Relaxed) {
+                        break;
+                    }
+                }
+            });
+        });
+
+        match watcher {
+            Ok(mut w) => {
+                if let Err(e) = w.watch(&dir, RecursiveMode::NonRecursive) {
+                    tracing::warn!("Failed to watch {}: {e}", dir.display());
+                } else {
+                    self._watcher = Some(w);
+                }
+            }
+            Err(e) => {
+                tracing::warn!("Failed to create file watcher: {e}");
+            }
+        }
+
         self.watched_dir = Some(dir);
     }
 
@@ -103,11 +304,19 @@ impl ContentListState {
 
 impl ContentListState {
     // saves current entries to cache before loading new ones, and restores
-    // from cache if this instance was seen before (avoids re-scanning)
-    pub fn start_load<F>(&mut self, instances_dir: &Path, instance_name: &str, scan_fn: F)
-    where
-        F: FnOnce(&Path, &str) -> Vec<ContentEntry> + Send + 'static,
-    {
+    // from cache if this instance was seen before (avoids re-scanning).
+    // content_dir is the actual directory to scan (e.g. .minecraft/mods).
+    pub fn start_load(
+        &mut self,
+        content_dir: &Path,
+        instance_name: &str,
+        scan_one_fn: ScanOneFn,
+        ext: &'static str,
+    ) {
+        self.scan_one_fn = Some(scan_one_fn);
+        self.content_ext = Some(ext);
+
+        // save current entries to cache
         if let Some(prev) = self.loaded_for.take()
             && !self.entries.is_empty()
         {
@@ -120,66 +329,62 @@ impl ContentListState {
             );
         }
 
+        // try cache first
         if let Some(cached) = self.cache.remove(instance_name) {
             self.entries = cached.entries;
             self.list_state.selected = cached.selected;
             self.loading = false;
-        } else {
-            self.entries.clear();
-            self.list_state = TuiListState::default();
-            self.loading = true;
+            self.stream_rx = None;
+            self.loaded_for = Some(instance_name.to_string());
+            self.update_scrollbar();
+            return;
         }
 
+        // no cache, stream entries one by one as each file is scanned
+        self.entries.clear();
+        self.list_state = TuiListState::default();
+        self.loading = true;
         self.loaded_for = Some(instance_name.to_string());
         self.update_scrollbar();
 
-        let dir = instances_dir.to_path_buf();
-        let tag = instance_name.to_string();
-        let pending = self.pending.clone();
+        let (tx, rx) = mpsc::channel();
+        self.stream_rx = Some(rx);
+
+        let dir = content_dir.to_path_buf();
 
         tokio::spawn(async move {
-            let scan_dir = dir.clone();
-            let scan_name = tag.clone();
-            let entries = tokio::task::spawn_blocking(move || scan_fn(&scan_dir, &scan_name))
-                .await
-                .unwrap_or_default();
+            let _ = tokio::task::spawn_blocking(move || {
+                let read_dir = match std::fs::read_dir(&dir) {
+                    Ok(rd) => rd,
+                    Err(_) => return,
+                };
+                let disabled_ext = format!("{ext}.disabled");
 
-            if let Ok(mut slot) = pending.lock() {
-                *slot = Some((tag, entries));
-            }
+                for dir_entry in read_dir.flatten() {
+                    let path = dir_entry.path();
+                    let Some(fname) = path.file_name().and_then(|n| n.to_str()) else {
+                        continue;
+                    };
+
+                    let (enabled, file_stem) =
+                        if let Some(stem) = fname.strip_suffix(&disabled_ext) {
+                            (false, stem.to_owned())
+                        } else if let Some(stem) = fname.strip_suffix(ext) {
+                            (true, stem.to_owned())
+                        } else if path.is_dir() {
+                            crate::instance::content::parse_enabled_stem_dir(fname)
+                        } else {
+                            continue;
+                        };
+
+                    let entry = scan_one_fn(&path, &file_stem, enabled);
+                    if tx.send(entry).is_err() {
+                        break; // receiver dropped (instance switched)
+                    }
+                }
+            })
+            .await;
         });
-    }
-
-    pub fn drain_pending(&mut self) {
-        let taken = match self.pending.lock() {
-            Ok(mut slot) => slot.take(),
-            _ => None,
-        };
-
-        if let Some((instance_name, entries)) = taken
-            && (self.loaded_for.as_deref() == Some(&instance_name) || instance_name.is_empty())
-        {
-            let selected_name = self
-                .list_state
-                .selected
-                .and_then(|i| self.entries.get(i))
-                .map(|e| e.name.clone());
-
-            self.entries = entries;
-            self.loading = false;
-
-            if !self.entries.is_empty() {
-                let new_index = selected_name
-                    .and_then(|name| self.entries.iter().position(|e| e.name == name))
-                    .or(self.list_state.selected)
-                    .map(|i| i.min(self.entries.len().saturating_sub(1)))
-                    .unwrap_or(0);
-                self.list_state.selected = Some(new_index);
-            } else {
-                self.list_state.selected = None;
-            }
-            self.update_scrollbar();
-        }
     }
 
     fn update_scrollbar(&mut self) {
@@ -365,6 +570,7 @@ pub fn render(
     let filtered = state.filtered_indices();
 
     if filtered.is_empty() {
+        state.list_state.selected = None;
         frame.render_widget(
             Paragraph::new(empty_text).style(Style::default().fg(theme.text_dim())),
             area,
@@ -373,6 +579,13 @@ pub fn render(
     }
 
     let count = filtered.len();
+
+    // clamp selected so the ListView builder never gets an out-of-bounds index
+    if let Some(sel) = state.list_state.selected
+        && sel >= count
+    {
+        state.list_state.selected = Some(count.saturating_sub(1));
+    }
 
     let snapshot: Vec<SnapshotRow> = filtered
         .iter()
@@ -660,4 +873,45 @@ fn icon_spans(icon_pixels: Option<&Vec<Vec<IconCell>>>, row: usize) -> Vec<Span<
             )]
         }
     }
+}
+
+// reads a content directory and builds a stem -> (path, enabled) map.
+// used both by watch_dir to initialize known state and by the watcher
+// thread to detect changes. when ext is empty (worlds), only directories
+// are included.
+fn read_dir_stems(
+    dir: &std::path::Path,
+    ext: &str,
+) -> HashMap<String, (std::path::PathBuf, bool)> {
+    let mut map = HashMap::new();
+    let Ok(read_dir) = std::fs::read_dir(dir) else {
+        return map;
+    };
+    let dirs_only = ext.is_empty();
+    let disabled_ext = format!("{ext}.disabled");
+
+    for dir_entry in read_dir.flatten() {
+        let path = dir_entry.path();
+        let Some(fname) = path.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
+        if dirs_only {
+            if !path.is_dir() && !fname.ends_with(".disabled") {
+                continue;
+            }
+            let (enabled, stem) = crate::instance::content::parse_enabled_stem_dir(fname);
+            map.insert(stem, (path, enabled));
+            continue;
+        }
+        if let Some(stem) = fname.strip_suffix(&disabled_ext) {
+            map.insert(stem.to_owned(), (path, false));
+        } else if let Some(stem) = fname.strip_suffix(ext) {
+            map.insert(stem.to_owned(), (path, true));
+        } else if path.is_dir() {
+            let (enabled, stem) = crate::instance::content::parse_enabled_stem_dir(fname);
+            map.insert(stem, (path, enabled));
+        }
+    }
+
+    map
 }
