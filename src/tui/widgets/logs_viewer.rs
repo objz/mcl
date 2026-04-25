@@ -38,6 +38,7 @@ pub struct LogsState {
     pending: PendingLogs,
     rescan_counter: u8,
     instances_dir_cache: Option<std::path::PathBuf>,
+    was_live: bool,
 }
 
 impl Default for LogsState {
@@ -59,6 +60,7 @@ impl Default for LogsState {
             pending: Arc::new(Mutex::new(None)),
             rescan_counter: 0,
             instances_dir_cache: None,
+            was_live: false,
         }
     }
 }
@@ -94,6 +96,14 @@ impl LogsState {
     }
 
     pub fn drain_pending(&mut self) {
+        // when the instance stops while viewing the live log, transition
+        // to the on-disk log file so the viewer doesn't go blank
+        let live_now = self.has_live();
+        if self.was_live && !live_now && self.list_state.selected == Some(0) {
+            self.load_selected_content();
+        }
+        self.was_live = live_now;
+
         let taken = match self.pending.lock() {
             Ok(mut slot) => slot.take(),
             _ => None,
@@ -419,7 +429,12 @@ fn render_list(
     let entries_snapshot: Vec<(String, bool)> = {
         let mut v = Vec::new();
         if has_live {
-            v.push(("\u{25cf} Live".to_string(), true));
+            let live_name = state
+                .entries
+                .first()
+                .map(|e| e.name.trim_end_matches(".log"))
+                .unwrap_or("Live");
+            v.push((live_name.to_string(), true));
         }
         for e in &state.entries {
             v.push((e.name.trim_end_matches(".log").to_string(), false));
