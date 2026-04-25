@@ -70,17 +70,20 @@ pub struct ImportSummary {
 // peeks inside a zip to figure out what format it is.
 // checks for modrinth.index.json first, then mmc-pack.json.
 pub fn detect_format(path: &Path) -> Result<PackFormat, String> {
-    let file = std::fs::File::open(path)
-        .map_err(|e| format!("Cannot open '{}': {e}", path.display()))?;
-    let archive = zip::ZipArchive::new(file)
-        .map_err(|e| format!("Invalid ZIP '{}': {e}", path.display()))?;
+    let file =
+        std::fs::File::open(path).map_err(|e| format!("Cannot open '{}': {e}", path.display()))?;
+    let archive =
+        zip::ZipArchive::new(file).map_err(|e| format!("Invalid ZIP '{}': {e}", path.display()))?;
 
     if archive.file_names().any(|n| n == "modrinth.index.json") {
         return Ok(PackFormat::Mrpack);
     }
 
     // mmc-pack.json can be at root or one directory deep
-    if archive.file_names().any(|n| n == "mmc-pack.json" || n.ends_with("/mmc-pack.json")) {
+    if archive
+        .file_names()
+        .any(|n| n == "mmc-pack.json" || n.ends_with("/mmc-pack.json"))
+    {
         return Ok(PackFormat::Mmc);
     }
 
@@ -100,12 +103,20 @@ pub fn build_summary(path: &Path) -> Result<ImportSummary, String> {
 
 pub fn unique_instance_name(base: &str, instances_dir: &Path) -> String {
     let candidate = base.to_string();
-    if !instances_dir.join(&candidate).join("instance.json").exists() {
+    if !instances_dir
+        .join(&candidate)
+        .join("instance.json")
+        .exists()
+    {
         return candidate;
     }
     for n in 2..100 {
         let candidate = format!("{base} ({n})");
-        if !instances_dir.join(&candidate).join("instance.json").exists() {
+        if !instances_dir
+            .join(&candidate)
+            .join("instance.json")
+            .exists()
+        {
             return candidate;
         }
     }

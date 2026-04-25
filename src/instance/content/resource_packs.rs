@@ -6,7 +6,7 @@ use std::path::Path;
 
 use serde::Deserialize;
 
-use super::mods::{make_icon_pixels, ContentEntry};
+use super::mods::{ContentEntry, make_icon_pixels};
 
 #[derive(Deserialize, Default)]
 pub(crate) struct PackMcMeta {
@@ -203,10 +203,7 @@ mod tests {
     }
 
     fn setup_packs_dir(tmp: &std::path::Path, instance: &str) -> std::path::PathBuf {
-        let dir = tmp
-            .join(instance)
-            .join(".minecraft")
-            .join("resourcepacks");
+        let dir = tmp.join(instance).join(".minecraft").join("resourcepacks");
         std::fs::create_dir_all(&dir).unwrap();
         dir
     }

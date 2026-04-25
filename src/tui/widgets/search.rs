@@ -109,3 +109,47 @@ impl SearchState {
         Some(Line::from(spans).right_aligned())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn confirm_keeps_query_but_deactivates() {
+        let mut s = SearchState::default();
+        s.activate();
+        s.push('a');
+        s.push('b');
+        s.confirm();
+        assert!(!s.active);
+        assert_eq!(s.query, "ab");
+        // filter should still match
+        assert!(s.matches("abc"));
+        assert!(!s.matches("xyz"));
+    }
+
+    #[test]
+    fn deactivate_clears_query() {
+        let mut s = SearchState::default();
+        s.activate();
+        s.push('x');
+        s.deactivate();
+        assert!(!s.active);
+        assert!(s.query.is_empty());
+        // with empty query, everything matches
+        assert!(s.matches("anything"));
+    }
+
+    #[test]
+    fn confirm_then_reactivate_preserves_query() {
+        let mut s = SearchState::default();
+        s.activate();
+        s.push('t');
+        s.push('e');
+        s.confirm();
+        // user presses search key again to edit
+        s.activate();
+        assert!(s.active);
+        assert_eq!(s.query, "te");
+    }
+}

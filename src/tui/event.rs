@@ -3,9 +3,9 @@ use crossterm::event::{self, Event};
 use ratatui::crossterm::event::KeyEventKind;
 use std::time::Duration;
 
+use super::Tui;
 use super::app::{App, PENDING_INSTANCES};
 use super::widgets::{self, popups::import_modpack, popups::new_instance};
-use super::Tui;
 use crate::instance::InstanceManager;
 use crate::tui::error_buffer;
 use crate::tui::progress;
@@ -153,10 +153,10 @@ impl App {
     // editor fights with ratatui for the terminal. GUI editors just get spawned detached.
     fn run_editor(terminal: &mut ratatui::DefaultTerminal, path: &std::path::Path) -> bool {
         use ratatui::crossterm::{
-            terminal::{
-                disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
-            },
             ExecutableCommand,
+            terminal::{
+                EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
+            },
         };
         use std::io::stdout;
 

@@ -14,7 +14,8 @@ use ratatui::{
 
 use crate::config::theme::THEME;
 
-static CONFIRM_STATE: LazyLock<Mutex<ConfirmState>> = LazyLock::new(|| Mutex::new(ConfirmState::default()));
+static CONFIRM_STATE: LazyLock<Mutex<ConfirmState>> =
+    LazyLock::new(|| Mutex::new(ConfirmState::default()));
 
 #[derive(Debug, Default)]
 struct ConfirmState {

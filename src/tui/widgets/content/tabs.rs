@@ -3,16 +3,16 @@
 // also renders the instance name/version header with run state indicators.
 
 use ratatui::{
+    Frame,
     layout::{Alignment, Constraint, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph},
-    Frame,
 };
 use throbber_widgets_tui::{Throbber, ThrobberState};
 
+use crate::config::theme::{BORDER_STYLE, THEME};
 use crate::tui::app::FocusedArea;
-use crate::config::theme::{THEME, BORDER_STYLE};
 
 use crate::tui::widgets::styled_title;
 
@@ -200,7 +200,8 @@ pub fn render(
     };
 
     if let Some(kb) = kb {
-        let lines = crate::tui::widgets::popups::keybind_lines_wrapped(kb, area.width.saturating_sub(2));
+        let lines =
+            crate::tui::widgets::popups::keybind_lines_wrapped(kb, area.width.saturating_sub(2));
         for line in lines {
             block = block.title_bottom(line);
         }
@@ -285,7 +286,12 @@ pub fn render(
                 if logs_state.loaded_for.as_deref() != Some(instance.name.as_str()) {
                     logs_state.start_load(instances_dir, &instance.name);
                 }
-                crate::tui::widgets::logs_viewer::render(frame, content_area, logs_state, is_focused);
+                crate::tui::widgets::logs_viewer::render(
+                    frame,
+                    content_area,
+                    logs_state,
+                    is_focused,
+                );
             } else {
                 frame.render_widget(
                     Paragraph::new("No instance selected.")
@@ -299,7 +305,12 @@ pub fn render(
                 if screenshots_state.loaded_for.as_deref() != Some(instance.name.as_str()) {
                     screenshots_state.start_load(instances_dir, &instance.name);
                 }
-                crate::tui::widgets::screenshots_grid::render(frame, content_area, screenshots_state, is_focused);
+                crate::tui::widgets::screenshots_grid::render(
+                    frame,
+                    content_area,
+                    screenshots_state,
+                    is_focused,
+                );
             } else {
                 frame.render_widget(
                     Paragraph::new("No instance selected.")
@@ -362,8 +373,7 @@ pub fn title(
     match instance {
         None => {
             frame.render_widget(
-                Paragraph::new("No instance selected")
-                    .style(Style::default().fg(theme.text_dim())),
+                Paragraph::new("No instance selected").style(Style::default().fg(theme.text_dim())),
                 inner,
             );
         }

@@ -2,22 +2,22 @@
 // handles search/filter, scrollbar sync, and inline renaming.
 // each row shows instance name + "last played" or current run state.
 
-use crate::config::theme::{THEME, BORDER_STYLE};
+use crate::config::theme::{BORDER_STYLE, THEME};
 use crossterm::event::KeyCode;
 use ratatui::{
+    Frame,
     layout::Rect,
     style::{Modifier, Style},
     text::{Line, Span, Text},
     widgets::{Block, Borders, Scrollbar, ScrollbarOrientation, ScrollbarState},
-    Frame,
 };
 use tui_widget_list::{ListBuilder, ListState as TuiListState, ListView};
 
 use crate::instance::models::InstanceConfig;
-use crate::running::{get as get_run_state, RunState};
+use crate::running::{RunState, get as get_run_state};
 use crate::tui::app::FocusedArea;
 
-use super::{search::SearchState, styled_title, WidgetKey};
+use super::{WidgetKey, search::SearchState, styled_title};
 
 // rough human-friendly time delta. not trying to be precise here,
 // "2 months ago" is close enough when months are ~30 days
@@ -255,7 +255,9 @@ pub fn render(frame: &mut Frame, area: Rect, focused: FocusedArea, state: &mut S
 
         let (name_style, meta_style, bg) = if context.is_selected {
             (
-                Style::default().fg(theme.accent()).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(theme.accent())
+                    .add_modifier(Modifier::BOLD),
                 Style::default().fg(theme.text_dim()),
                 stripe_bg,
             )
@@ -300,14 +302,16 @@ pub fn render(frame: &mut Frame, area: Rect, focused: FocusedArea, state: &mut S
                 "Authenticating".to_string(),
                 Style::default().fg(theme.success()),
             ),
-            Some(RunState::Running) | Some(RunState::Starting) => (
-                "Playing".to_string(),
-                Style::default().fg(theme.success()),
-            ),
+            Some(RunState::Running) | Some(RunState::Starting) => {
+                ("Playing".to_string(), Style::default().fg(theme.success()))
+            }
             _ => (format_last_played(instance.last_played), meta_style),
         };
 
-        let meta_line = Line::from(vec![selector.clone(), Span::styled(meta_text, meta_text_style)]);
+        let meta_line = Line::from(vec![
+            selector.clone(),
+            Span::styled(meta_text, meta_text_style),
+        ]);
 
         let item = Text::from(vec![name_line, meta_line]).style(Style::default().bg(bg));
         (item, 2)

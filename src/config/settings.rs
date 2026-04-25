@@ -53,9 +53,10 @@ pub fn resolve_path(raw: &str) -> PathBuf {
             return home.join(stripped);
         }
     } else if raw == "~"
-        && let Some(home) = dirs_next::home_dir() {
-            return home;
-        }
+        && let Some(home) = dirs_next::home_dir()
+    {
+        return home;
+    }
     PathBuf::from(raw)
 }
 

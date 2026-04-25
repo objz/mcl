@@ -2,21 +2,21 @@
 // and the popup resizes itself based on which step is active.
 
 use super::state::{
-    clamp_loader_version_index, clamp_version_index, ensure_loader_versions_loaded,
-    ensure_versions_loaded, visible_versions, LoadState, WizardState, WizardStep, WIZARD_STATE,
+    LoadState, WIZARD_STATE, WizardState, WizardStep, clamp_loader_version_index,
+    clamp_version_index, ensure_loader_versions_loaded, ensure_versions_loaded, visible_versions,
 };
+use crate::config::theme::THEME;
 use crate::instance::models::ModLoader;
 use crate::tui::app::FocusedArea;
-use crate::config::theme::THEME;
 use crate::tui::widgets::popups::base::PopupFrame;
-use tui_prompts::State as PromptState;
 use ratatui::{
+    Frame,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
     widgets::{List, ListItem, ListState, Paragraph, StatefulWidget, Widget, Wrap},
-    Frame,
 };
+use tui_prompts::State as PromptState;
 
 pub fn render(frame: &mut Frame, area: Rect, _focused: FocusedArea) {
     // grab the lock, kick off any lazy-loading, then clone and release.
@@ -140,10 +140,7 @@ fn render_name_step(state: &WizardState, area: Rect, buf: &mut ratatui::buffer::
     // \u{2588} is the full block char used as a fake blinking cursor
     let line = if value.is_empty() {
         Line::from(vec![
-            Span::styled(
-                "Instance name...",
-                Style::default().fg(theme.text_dim()),
-            ),
+            Span::styled("Instance name...", Style::default().fg(theme.text_dim())),
             Span::styled(
                 "\u{2588}",
                 Style::default()

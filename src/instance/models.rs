@@ -56,9 +56,7 @@ pub fn normalize_memory_value(raw: &str) -> Option<String> {
     }
 
     let (digits, suffix) = match trimmed.chars().last() {
-        Some(c) if c.is_ascii_alphabetic() => {
-            (&trimmed[..trimmed.len() - c.len_utf8()], Some(c))
-        }
+        Some(c) if c.is_ascii_alphabetic() => (&trimmed[..trimmed.len() - c.len_utf8()], Some(c)),
         Some(_) => (trimmed, None),
         None => return None,
     };

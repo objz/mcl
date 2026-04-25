@@ -2,17 +2,17 @@
 // shows a gauge when the total is known, or a spinner when it's not.
 
 use ratatui::{
+    Frame,
     layout::{Constraint, Layout, Rect},
     style::{Modifier, Style},
     text::Span,
     widgets::{Block, Borders, Gauge, Paragraph},
-    Frame,
 };
 use throbber_widgets_tui::{Throbber, ThrobberState};
 
+use crate::config::theme::{BORDER_STYLE, THEME};
 use crate::tui::app::FocusedArea;
 use crate::tui::progress::PROGRESS;
-use crate::config::theme::{THEME, BORDER_STYLE};
 
 use super::styled_title;
 
@@ -39,11 +39,8 @@ pub fn render(
         Ok(s) => s.clone(),
         Err(_) => {
             frame.render_widget(
-                Paragraph::new(Span::styled(
-                    "Ready",
-                    Style::default().fg(theme.text_dim()),
-                ))
-                .block(block),
+                Paragraph::new(Span::styled("Ready", Style::default().fg(theme.text_dim())))
+                    .block(block),
                 area,
             );
             return;
@@ -52,11 +49,8 @@ pub fn render(
 
     if state.current_action.is_none() {
         frame.render_widget(
-            Paragraph::new(Span::styled(
-                "Ready",
-                Style::default().fg(theme.text_dim()),
-            ))
-            .block(block),
+            Paragraph::new(Span::styled("Ready", Style::default().fg(theme.text_dim())))
+                .block(block),
             area,
         );
         return;

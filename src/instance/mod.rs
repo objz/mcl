@@ -18,6 +18,6 @@ pub use content::{
     scan_worlds, scan_one_world,
 };
 pub use launch::LaunchError;
-pub use loader::{get_installer, GameVersion, ModLoaderInstaller, VanillaInstaller};
+pub use loader::{GameVersion, ModLoaderInstaller, VanillaInstaller, get_installer};
 pub use manager::{InstanceError, InstanceManager};
-pub use models::{normalize_memory_value, InstanceConfig, ModLoader};
+pub use models::{InstanceConfig, ModLoader, normalize_memory_value};

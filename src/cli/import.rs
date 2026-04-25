@@ -2,8 +2,8 @@
 // resolves the input, downloads if needed, then hands off to the import engine.
 use clap::ArgMatches;
 
-use crate::instance::import::{parse_import_input, ImportInput};
 use crate::instance::InstanceManager;
+use crate::instance::import::{ImportInput, parse_import_input};
 use crate::net::modrinth;
 
 type CliResult = Result<(), Box<dyn std::error::Error>>;

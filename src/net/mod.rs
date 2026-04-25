@@ -90,7 +90,12 @@ pub async fn download_file(
     for attempt in 0..=MAX_RETRIES {
         if attempt > 0 {
             let delay = RETRY_BASE_DELAY_MS * 2u64.pow(attempt - 1);
-            tracing::warn!("retrying download (attempt {}/{}): {}", attempt + 1, MAX_RETRIES + 1, url);
+            tracing::warn!(
+                "retrying download (attempt {}/{}): {}",
+                attempt + 1,
+                MAX_RETRIES + 1,
+                url
+            );
             tokio::time::sleep(std::time::Duration::from_millis(delay)).await;
         }
 

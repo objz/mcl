@@ -78,10 +78,11 @@ pub fn register_kill(name: &str, tx: tokio::sync::oneshot::Sender<()>) {
 
 pub fn send_kill(name: &str) -> bool {
     if let Ok(mut map) = KILL_SENDERS.lock()
-        && let Some(tx) = map.remove(name) {
-            let _ = tx.send(());
-            return true;
-        }
+        && let Some(tx) = map.remove(name)
+    {
+        let _ = tx.send(());
+        return true;
+    }
     false
 }
 

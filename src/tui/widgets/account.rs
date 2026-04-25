@@ -6,17 +6,17 @@ use std::sync::{Arc, Mutex};
 
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
+    Frame,
     layout::Rect,
     style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph, Widget},
-    Frame,
 };
 use tui_widget_list::{ListBuilder, ListState as TuiListState, ListView};
 
 use crate::auth::{self, AccountStore, AccountType, AuthResult, DeviceCodeInfo};
+use crate::config::theme::{BORDER_STYLE, THEME};
 use crate::tui::app::FocusedArea;
-use crate::config::theme::{THEME, BORDER_STYLE};
 
 use super::styled_title;
 
@@ -59,11 +59,10 @@ impl AccountState {
     // can't block on it because the TUI needs to keep rendering
     pub fn drain_auth_result(&mut self) {
         if let AddMode::DeviceCodeWaiting { pending, .. } = &self.add_mode {
-            let result = match pending.lock() { Ok(mut slot) => {
-                slot.take()
-            } _ => {
-                None
-            }};
+            let result = match pending.lock() {
+                Ok(mut slot) => slot.take(),
+                _ => None,
+            };
 
             if let Some(result) = result {
                 match result {
@@ -210,11 +209,12 @@ pub fn handle_key(key_event: &KeyEvent, state: &mut AccountState) -> bool {
 pub fn drain_device_code(state: &mut AccountState) {
     if let AddMode::DeviceCodeWaiting { info, .. } = &mut state.add_mode
         && info.user_code.is_empty()
-            && let Ok(mut slot) = auth::DEVICE_CODE_DISPLAY.lock()
-                && let Some(dc_info) = slot.take() {
-                    info.user_code = dc_info.user_code;
-                    info.verification_uri = dc_info.verification_uri;
-                }
+        && let Ok(mut slot) = auth::DEVICE_CODE_DISPLAY.lock()
+        && let Some(dc_info) = slot.take()
+    {
+        info.user_code = dc_info.user_code;
+        info.verification_uri = dc_info.verification_uri;
+    }
 }
 
 pub fn render(frame: &mut Frame, area: Rect, focused: FocusedArea, state: &mut AccountState) {
@@ -246,8 +246,7 @@ pub fn render(frame: &mut Frame, area: Rect, focused: FocusedArea, state: &mut A
 
     if state.store.accounts.is_empty() {
         frame.render_widget(
-            Paragraph::new("No accounts.")
-                .style(Style::default().fg(theme.text_dim())),
+            Paragraph::new("No accounts.").style(Style::default().fg(theme.text_dim())),
             inner,
         );
     } else {
@@ -299,7 +298,9 @@ fn render_account_list(
         let active_marker = if *is_active { "\u{25b8} " } else { "  " };
 
         let style = if show_selected {
-            Style::default().fg(theme.accent()).add_modifier(Modifier::BOLD)
+            Style::default()
+                .fg(theme.accent())
+                .add_modifier(Modifier::BOLD)
         } else if *is_active {
             Style::default()
                 .fg(theme.text())
@@ -315,7 +316,9 @@ fn render_account_list(
 
         if *acc_type == AccountType::Offline {
             let offline_style = if show_selected {
-                Style::default().fg(theme.accent()).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .fg(theme.accent())
+                    .add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(theme.text_dim())
             };
@@ -372,10 +375,7 @@ fn render_choose_popup(frame: &mut Frame) {
                             .fg(accent_color)
                             .add_modifier(Modifier::BOLD),
                     ),
-                    Span::styled(
-                        "Microsoft Account",
-                        Style::default().fg(text_color),
-                    ),
+                    Span::styled("Microsoft Account", Style::default().fg(text_color)),
                 ]),
                 Line::from(vec![
                     Span::styled(
@@ -384,10 +384,7 @@ fn render_choose_popup(frame: &mut Frame) {
                             .fg(accent_color)
                             .add_modifier(Modifier::BOLD),
                     ),
-                    Span::styled(
-                        "Offline Account",
-                        Style::default().fg(text_color),
-                    ),
+                    Span::styled("Offline Account", Style::default().fg(text_color)),
                 ]),
             ];
             Paragraph::new(text).render(inner, buf);
@@ -422,10 +419,7 @@ fn render_offline_popup(frame: &mut Frame, name: &str) {
         content: Box::new(move |inner, buf| {
             let line = if name.is_empty() {
                 Line::from(vec![
-                    Span::styled(
-                        "Username...",
-                        Style::default().fg(dim_color),
-                    ),
+                    Span::styled("Username...", Style::default().fg(dim_color)),
                     Span::styled(
                         "\u{2588}",
                         Style::default()
@@ -534,10 +528,7 @@ fn render_device_code_popup(frame: &mut Frame, info: &DeviceCodeInfo) {
                     )),
                     Line::from(""),
                     Line::from(vec![
-                        Span::styled(
-                            "Enter code: ",
-                            Style::default().fg(dim_color),
-                        ),
+                        Span::styled("Enter code: ", Style::default().fg(dim_color)),
                         Span::styled(
                             code.as_str(),
                             Style::default()

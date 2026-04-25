@@ -34,11 +34,7 @@ pub fn format_datetime(value: &DateTime<Utc>) -> String {
 }
 
 pub fn active_marker(active: bool) -> &'static str {
-    if active {
-        ">"
-    } else {
-        " "
-    }
+    if active { ">" } else { " " }
 }
 
 // find the widest value in each column to pad everything evenly

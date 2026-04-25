@@ -9,8 +9,8 @@ use clap::ArgMatches;
 use crate::cli::instance::parse_loader;
 use crate::cli::output::print_table;
 use crate::instance::ModLoader;
-use crate::net::mojang::{VersionEntry, VersionManifest};
 use crate::net::HttpClient;
+use crate::net::mojang::{VersionEntry, VersionManifest};
 
 type CliResult = Result<(), Box<dyn std::error::Error>>;
 

@@ -3,8 +3,8 @@
 
 use std::path::Path;
 
-use super::mods::{make_icon_pixels, ContentEntry};
-use super::resource_packs::{extract_description, PackMcMeta};
+use super::mods::{ContentEntry, make_icon_pixels};
+use super::resource_packs::{PackMcMeta, extract_description};
 
 pub fn scan_one_shader(path: &Path, file_stem: &str, enabled: bool) -> ContentEntry {
     let is_dir = path.is_dir();

@@ -55,7 +55,9 @@ use crate::instance::models::ModLoader;
 
 // mrpack dependencies use keys like "fabric-loader", "forge", etc.
 // checks in priority order and returns the first match.
-pub fn loader_from_dependencies(deps: &HashMap<String, String>) -> (Option<ModLoader>, Option<String>) {
+pub fn loader_from_dependencies(
+    deps: &HashMap<String, String>,
+) -> (Option<ModLoader>, Option<String>) {
     let loaders = [
         ("fabric-loader", ModLoader::Fabric),
         ("forge", ModLoader::Forge),
@@ -108,7 +110,8 @@ pub async fn fetch_versions(
 ) -> Result<Vec<VersionInfo>, crate::net::NetError> {
     let url = format!(
         "{}/project/{}/version?loaders=[\"fabric\",\"forge\",\"neoforge\",\"quilt\"]",
-        API_BASE, url_encode(slug_or_id)
+        API_BASE,
+        url_encode(slug_or_id)
     );
     client.get_json(&url).await
 }
@@ -187,7 +190,10 @@ mod tests {
     fn game_version_from_deps() {
         let mut deps = HashMap::new();
         deps.insert("minecraft".to_string(), "1.21.4".to_string());
-        assert_eq!(game_version_from_dependencies(&deps), Some("1.21.4".to_string()));
+        assert_eq!(
+            game_version_from_dependencies(&deps),
+            Some("1.21.4".to_string())
+        );
     }
 
     #[test]

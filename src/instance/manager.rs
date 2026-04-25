@@ -137,8 +137,7 @@ impl InstanceManager {
             }
         }
 
-        crate::net::mojang::download_libraries(&self.client, &version_meta, &self.meta_dir)
-            .await?;
+        crate::net::mojang::download_libraries(&self.client, &version_meta, &self.meta_dir).await?;
 
         crate::net::mojang::download_assets(&self.client, &version_meta, &self.meta_dir).await?;
 
@@ -217,15 +216,16 @@ impl InstanceManager {
 
         let config_path = new_dir.join("instance.json");
         if let Ok(data) = std::fs::read_to_string(&config_path)
-            && let Ok(mut config) = serde_json::from_str::<InstanceConfig>(&data) {
-                config.name = new_name.to_string();
-                if let Ok(json) = serde_json::to_string_pretty(&config) {
-                    let _ = std::fs::write(&config_path, json);
-                }
-                if let Err(e) = crate::instance::desktop::rename(old_name, &config) {
-                    tracing::warn!("Failed to rename desktop shortcut: {}", e);
-                }
+            && let Ok(mut config) = serde_json::from_str::<InstanceConfig>(&data)
+        {
+            config.name = new_name.to_string();
+            if let Ok(json) = serde_json::to_string_pretty(&config) {
+                let _ = std::fs::write(&config_path, json);
             }
+            if let Err(e) = crate::instance::desktop::rename(old_name, &config) {
+                tracing::warn!("Failed to rename desktop shortcut: {}", e);
+            }
+        }
 
         Ok(())
     }

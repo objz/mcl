@@ -295,10 +295,7 @@ fn read_mcmod_info(
     Some((name, description, logo))
 }
 
-fn read_zip_string(
-    archive: &mut zip::ZipArchive<std::fs::File>,
-    path: &str,
-) -> Option<String> {
+fn read_zip_string(archive: &mut zip::ZipArchive<std::fs::File>, path: &str) -> Option<String> {
     let mut entry = archive.by_name(path).ok()?;
     let mut s = String::new();
     entry.read_to_string(&mut s).ok()?;
@@ -566,6 +563,176 @@ mod tests {
         toggle_entry(&entry).unwrap();
         assert!(!disabled_path.exists());
         assert!(dir.join("mymod.jar").exists());
+    }
+
+    use std::io::Write as _;
+
+    // helper to create a jar (zip) file with the given entries
+    fn make_jar(dir: &Path, name: &str, entries: &[(&str, &[u8])]) {
+        let path = dir.join(name);
+        let file = std::fs::File::create(&path).unwrap();
+        let mut zip = zip::ZipWriter::new(file);
+        let options: zip::write::FileOptions<()> =
+            zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Stored);
+        for (entry_name, data) in entries {
+            zip.start_file(*entry_name, options).unwrap();
+            zip.write_all(data).unwrap();
+        }
+        zip.finish().unwrap();
+    }
+
+    #[test]
+    fn scan_mods_reads_fabric_metadata() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = setup_mods_dir(tmp.path(), "inst");
+        let meta = r#"{"name":"Fabric Mod","description":"A fabric mod","icon":"icon.png"}"#;
+        make_jar(
+            &dir,
+            "fabric-mod.jar",
+            &[("fabric.mod.json", meta.as_bytes())],
+        );
+        let mods = scan_mods(tmp.path(), "inst");
+        assert_eq!(mods.len(), 1);
+        assert_eq!(mods[0].name, "Fabric Mod");
+        assert_eq!(mods[0].description, "A fabric mod");
+    }
+
+    #[test]
+    fn scan_mods_reads_quilt_metadata() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = setup_mods_dir(tmp.path(), "inst");
+        let meta =
+            r#"{"quilt_loader":{"metadata":{"name":"Quilt Mod","description":"A quilt mod"}}}"#;
+        make_jar(
+            &dir,
+            "quilt-mod.jar",
+            &[("quilt.mod.json", meta.as_bytes())],
+        );
+        let mods = scan_mods(tmp.path(), "inst");
+        assert_eq!(mods.len(), 1);
+        assert_eq!(mods[0].name, "Quilt Mod");
+        assert_eq!(mods[0].description, "A quilt mod");
+    }
+
+    #[test]
+    fn scan_mods_reads_forge_toml_metadata() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = setup_mods_dir(tmp.path(), "inst");
+        let meta = r#"
+logoFile = "logo.png"
+
+[[mods]]
+displayName = "Forge Mod"
+description = "A forge mod"
+"#;
+        make_jar(
+            &dir,
+            "forge-mod.jar",
+            &[("META-INF/mods.toml", meta.as_bytes())],
+        );
+        let mods = scan_mods(tmp.path(), "inst");
+        assert_eq!(mods.len(), 1);
+        assert_eq!(mods[0].name, "Forge Mod");
+        assert_eq!(mods[0].description, "A forge mod");
+    }
+
+    #[test]
+    fn scan_mods_reads_neoforge_toml_metadata() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = setup_mods_dir(tmp.path(), "inst");
+        let meta = r#"
+logoFile = "logo.png"
+
+[[mods]]
+displayName = "NeoForge Mod"
+description = "A neoforge mod"
+"#;
+        make_jar(
+            &dir,
+            "neoforge-mod.jar",
+            &[("META-INF/neoforge.mods.toml", meta.as_bytes())],
+        );
+        let mods = scan_mods(tmp.path(), "inst");
+        assert_eq!(mods.len(), 1);
+        assert_eq!(mods[0].name, "NeoForge Mod");
+        assert_eq!(mods[0].description, "A neoforge mod");
+    }
+
+    #[test]
+    fn scan_mods_reads_mcmod_info_array() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = setup_mods_dir(tmp.path(), "inst");
+        let meta = r#"[{"name":"Legacy Mod","description":"An old forge mod"}]"#;
+        make_jar(&dir, "legacy-mod.jar", &[("mcmod.info", meta.as_bytes())]);
+        let mods = scan_mods(tmp.path(), "inst");
+        assert_eq!(mods.len(), 1);
+        assert_eq!(mods[0].name, "Legacy Mod");
+        assert_eq!(mods[0].description, "An old forge mod");
+    }
+
+    #[test]
+    fn scan_mods_reads_mcmod_info_modlist() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = setup_mods_dir(tmp.path(), "inst");
+        let meta = r#"{"modList":[{"name":"Wrapped Mod","description":"Has modList wrapper"}]}"#;
+        make_jar(&dir, "wrapped-mod.jar", &[("mcmod.info", meta.as_bytes())]);
+        let mods = scan_mods(tmp.path(), "inst");
+        assert_eq!(mods.len(), 1);
+        assert_eq!(mods[0].name, "Wrapped Mod");
+        assert_eq!(mods[0].description, "Has modList wrapper");
+    }
+
+    #[test]
+    fn scan_mods_prefers_fabric_over_forge() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = setup_mods_dir(tmp.path(), "inst");
+        let fabric = r#"{"name":"Fabric Name","description":"fabric desc"}"#;
+        let forge = "[[mods]]\ndisplayName = \"Forge Name\"\ndescription = \"forge desc\"\n";
+        make_jar(
+            &dir,
+            "multi.jar",
+            &[
+                ("fabric.mod.json", fabric.as_bytes()),
+                ("META-INF/mods.toml", forge.as_bytes()),
+            ],
+        );
+        let mods = scan_mods(tmp.path(), "inst");
+        assert_eq!(mods[0].name, "Fabric Name");
+    }
+
+    #[test]
+    fn scan_mods_fallback_icon_paths() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = setup_mods_dir(tmp.path(), "inst");
+        // jar with no metadata but has logo.png
+        let png_bytes = b"\x89PNG fake";
+        make_jar(&dir, "no-meta.jar", &[("logo.png", png_bytes)]);
+        let mods = scan_mods(tmp.path(), "inst");
+        assert_eq!(mods.len(), 1);
+        // should use filename as name since no metadata
+        assert_eq!(mods[0].name, "no-meta");
+        // icon_bytes should contain the logo.png content
+        assert_eq!(mods[0].icon_bytes.as_deref(), Some(png_bytes.as_slice()));
+    }
+
+    #[test]
+    fn icon_path_from_value_string() {
+        let val = serde_json::json!("assets/icon.png");
+        assert_eq!(icon_path_from_value(&val), "assets/icon.png");
+    }
+
+    #[test]
+    fn icon_path_from_value_map() {
+        let val = serde_json::json!({"64": "icon_64.png", "128": "icon_128.png"});
+        let result = icon_path_from_value(&val);
+        // should return one of the values
+        assert!(result == "icon_64.png" || result == "icon_128.png");
+    }
+
+    #[test]
+    fn icon_path_from_value_null() {
+        let val = serde_json::Value::Null;
+        assert_eq!(icon_path_from_value(&val), "");
     }
 
     #[test]
