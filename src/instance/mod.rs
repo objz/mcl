@@ -10,7 +10,13 @@ pub mod manager;
 pub mod models;
 pub mod screenshots;
 
-pub use content::{scan_mods, toggle_entry, ContentEntry, scan_resource_packs, scan_shaders, scan_worlds};
+pub use content::{
+    ContentEntry, toggle_entry,
+    scan_mods, scan_one_mod,
+    scan_resource_packs, scan_one_resource_pack,
+    scan_shaders, scan_one_shader,
+    scan_worlds, scan_one_world,
+};
 pub use launch::LaunchError;
 pub use loader::{get_installer, GameVersion, ModLoaderInstaller, VanillaInstaller};
 pub use manager::{InstanceError, InstanceManager};

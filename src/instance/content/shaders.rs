@@ -6,6 +6,29 @@ use std::path::Path;
 use super::mods::{make_icon_pixels, ContentEntry};
 use super::resource_packs::{extract_description, PackMcMeta};
 
+pub fn scan_one_shader(path: &Path, file_stem: &str, enabled: bool) -> ContentEntry {
+    let is_dir = path.is_dir();
+    let (description, icon_bytes) = if is_dir {
+        read_shader_metadata_from_dir(path)
+    } else {
+        read_shader_metadata_from_zip(path)
+    };
+
+    let icon_lines = icon_bytes
+        .as_ref()
+        .and_then(|bytes| make_icon_pixels(bytes, 6, 3));
+
+    ContentEntry {
+        file_stem: file_stem.to_owned(),
+        name: file_stem.to_owned(),
+        description,
+        enabled,
+        icon_bytes,
+        path: path.to_path_buf(),
+        icon_lines,
+    }
+}
+
 pub fn scan_shaders(instances_dir: &Path, instance_name: &str) -> Vec<ContentEntry> {
     let shaders_dir = instances_dir
         .join(instance_name)
@@ -26,8 +49,7 @@ pub fn scan_shaders(instances_dir: &Path, instance_name: &str) -> Vec<ContentEnt
             None => continue,
         };
 
-        let is_dir = path.is_dir();
-        let (enabled, file_stem) = if is_dir {
+        let (enabled, file_stem) = if path.is_dir() {
             super::parse_enabled_stem_dir(&file_name)
         } else if let Some(pair) = super::parse_enabled_stem(&file_name, ".zip") {
             pair
@@ -35,25 +57,7 @@ pub fn scan_shaders(instances_dir: &Path, instance_name: &str) -> Vec<ContentEnt
             continue;
         };
 
-        let (description, icon_bytes) = if is_dir {
-            read_shader_metadata_from_dir(&path)
-        } else {
-            read_shader_metadata_from_zip(&path)
-        };
-
-        let icon_lines = icon_bytes
-            .as_ref()
-            .and_then(|bytes| make_icon_pixels(bytes, 6, 3));
-
-        entries.push(ContentEntry {
-            name: file_stem.clone(),
-            file_stem,
-            description,
-            enabled,
-            icon_bytes,
-            path,
-            icon_lines,
-        });
+        entries.push(scan_one_shader(&path, &file_stem, enabled));
     }
 
     entries.sort_by_cached_key(|e| e.name.to_lowercase());

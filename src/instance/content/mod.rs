@@ -7,9 +7,10 @@ pub mod shaders;
 pub mod worlds;
 
 pub use mods::{ContentEntry, scan_mods, toggle_entry};
-pub use resource_packs::scan_resource_packs;
-pub use shaders::scan_shaders;
-pub use worlds::scan_worlds;
+pub use mods::scan_one_mod;
+pub use resource_packs::{scan_resource_packs, scan_one_resource_pack};
+pub use shaders::{scan_shaders, scan_one_shader};
+pub use worlds::{scan_worlds, scan_one_world};
 
 use std::io::Read;
 

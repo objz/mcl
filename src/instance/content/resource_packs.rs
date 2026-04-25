@@ -43,6 +43,36 @@ pub(crate) fn extract_description(value: &serde_json::Value) -> String {
     }
 }
 
+pub fn scan_one_resource_pack(path: &Path, file_stem: &str, enabled: bool) -> ContentEntry {
+    let is_dir = path.is_dir();
+    let (name, description, icon_bytes) = if is_dir {
+        read_pack_metadata_from_dir(path)
+    } else {
+        read_pack_metadata_from_zip(path)
+    };
+
+    let icon_lines = icon_bytes
+        .as_ref()
+        .and_then(|bytes| make_icon_pixels(bytes, 6, 3))
+        .or_else(|| Some(super::mods::fallback_icon()));
+
+    let display_name = if name.is_empty() {
+        file_stem.to_owned()
+    } else {
+        name
+    };
+
+    ContentEntry {
+        file_stem: file_stem.to_owned(),
+        name: display_name,
+        description,
+        enabled,
+        icon_bytes,
+        path: path.to_path_buf(),
+        icon_lines,
+    }
+}
+
 pub fn scan_resource_packs(instances_dir: &Path, instance_name: &str) -> Vec<ContentEntry> {
     let packs_dir = instances_dir
         .join(instance_name)
@@ -63,8 +93,7 @@ pub fn scan_resource_packs(instances_dir: &Path, instance_name: &str) -> Vec<Con
             None => continue,
         };
 
-        let is_dir = path.is_dir();
-        let (enabled, file_stem) = if is_dir {
+        let (enabled, file_stem) = if path.is_dir() {
             super::parse_enabled_stem_dir(&file_name)
         } else if let Some(pair) = super::parse_enabled_stem(&file_name, ".zip") {
             pair
@@ -72,27 +101,7 @@ pub fn scan_resource_packs(instances_dir: &Path, instance_name: &str) -> Vec<Con
             continue;
         };
 
-        let (name, description, icon_bytes) = if is_dir {
-            read_pack_metadata_from_dir(&path)
-        } else {
-            read_pack_metadata_from_zip(&path)
-        };
-
-        let icon_lines = icon_bytes
-            .as_ref()
-            .and_then(|bytes| make_icon_pixels(bytes, 6, 3))
-            .or_else(|| Some(super::mods::fallback_icon()));
-
-        let display_name = if name.is_empty() { file_stem.clone() } else { name };
-        entries.push(ContentEntry {
-            file_stem,
-            name: display_name,
-            description,
-            enabled,
-            icon_bytes,
-            path,
-            icon_lines,
-        });
+        entries.push(scan_one_resource_pack(&path, &file_stem, enabled));
     }
 
     entries.sort_by_cached_key(|e| e.name.to_lowercase());

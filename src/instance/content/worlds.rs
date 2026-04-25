@@ -6,6 +6,26 @@ use std::path::Path;
 
 use super::mods::{make_icon_pixels, ContentEntry};
 
+pub fn scan_one_world(path: &Path, file_stem: &str, enabled: bool) -> ContentEntry {
+    let icon_bytes = std::fs::read(path.join("icon.png")).ok();
+    let icon_lines = icon_bytes
+        .as_ref()
+        .and_then(|bytes| make_icon_pixels(bytes, 12, 6))
+        .or_else(|| Some(super::mods::fallback_icon_large()));
+
+    let description = world_description(path);
+
+    ContentEntry {
+        name: file_stem.to_owned(),
+        file_stem: file_stem.to_owned(),
+        description,
+        enabled,
+        icon_bytes,
+        path: path.to_path_buf(),
+        icon_lines,
+    }
+}
+
 pub fn scan_worlds(instances_dir: &Path, instance_name: &str) -> Vec<ContentEntry> {
     let saves_dir = instances_dir
         .join(instance_name)
@@ -31,24 +51,7 @@ pub fn scan_worlds(instances_dir: &Path, instance_name: &str) -> Vec<ContentEntr
         };
 
         let (enabled, file_stem) = super::parse_enabled_stem_dir(&file_name);
-
-        let icon_bytes = std::fs::read(path.join("icon.png")).ok();
-        let icon_lines = icon_bytes
-            .as_ref()
-            .and_then(|bytes| make_icon_pixels(bytes, 12, 6))
-            .or_else(|| Some(super::mods::fallback_icon_large()));
-
-        let description = world_description(&path);
-
-        entries.push(ContentEntry {
-            name: file_stem.clone(),
-            file_stem,
-            description,
-            enabled,
-            icon_bytes,
-            path,
-            icon_lines,
-        });
+        entries.push(scan_one_world(&path, &file_stem, enabled));
     }
 
     entries.sort_by_cached_key(|e| e.name.to_lowercase());

@@ -91,6 +91,30 @@ impl QuiltMetadata {
     }
 }
 
+pub fn scan_one_mod(path: &Path, file_stem: &str, enabled: bool) -> ContentEntry {
+    let (name, description, icon_bytes) = read_mod_metadata(path);
+    let icon_lines = icon_bytes
+        .as_ref()
+        .and_then(|bytes| make_icon_pixels(bytes, 6, 3))
+        .or_else(|| Some(fallback_icon()));
+
+    let display_name = if name.is_empty() {
+        file_stem.to_owned()
+    } else {
+        name
+    };
+
+    ContentEntry {
+        file_stem: file_stem.to_owned(),
+        name: display_name,
+        description,
+        enabled,
+        icon_bytes,
+        path: path.to_path_buf(),
+        icon_lines,
+    }
+}
+
 pub fn scan_mods(instances_dir: &Path, instance_name: &str) -> Vec<ContentEntry> {
     let mods_dir = instances_dir
         .join(instance_name)
@@ -115,26 +139,7 @@ pub fn scan_mods(instances_dir: &Path, instance_name: &str) -> Vec<ContentEntry>
             continue;
         };
 
-        let (name, description, icon_bytes) = read_mod_metadata(&path);
-        let icon_lines = icon_bytes
-            .as_ref()
-            .and_then(|bytes| make_icon_pixels(bytes, 6, 3))
-            .or_else(|| Some(fallback_icon()));
-
-        let display_name = if name.is_empty() {
-            file_stem.clone()
-        } else {
-            name
-        };
-        entries.push(ContentEntry {
-            file_stem,
-            name: display_name,
-            description,
-            enabled,
-            icon_bytes,
-            path,
-            icon_lines,
-        });
+        entries.push(scan_one_mod(&path, &file_stem, enabled));
     }
 
     entries.sort_by_cached_key(|e| e.name.to_lowercase());
