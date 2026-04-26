@@ -54,19 +54,27 @@ jobs:
               | tail -n1
           )
 
+          tag="v${version}"
+          head_sha="$(git rev-parse HEAD)"
+
           should_release=false
           if [[ -z "$latest" ]]; then
             should_release=true
           elif [[ "$version" != "$latest" && "$(printf '%s\n%s\n' "$latest" "$version" | sort -V | tail -n1)" == "$version" ]]; then
             should_release=true
+          elif git rev-parse "$tag" >/dev/null 2>&1; then
+            tag_sha="$(git rev-parse "$tag")"
+            if [[ "$tag_sha" != "$head_sha" ]]; then
+              echo "Tag ${tag} exists but points to ${tag_sha}, not HEAD ${head_sha}; will re-tag."
+              should_release=true
+            fi
           fi
 
-          tag="v${version}"
           echo "version=${version}" >> "$GITHUB_OUTPUT"
           echo "latest=${latest}" >> "$GITHUB_OUTPUT"
           echo "tag=${tag}" >> "$GITHUB_OUTPUT"
           echo "should-release=${should_release}" >> "$GITHUB_OUTPUT"
-          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "sha=${head_sha}" >> "$GITHUB_OUTPUT"
 
           if [[ "$should_release" == "true" ]]; then
             echo "Cargo.toml version ${version} is newer than latest tag ${latest:-<none>}; creating ${tag}."
@@ -88,7 +96,16 @@ jobs:
             exit 1
           fi
 
+          remote_url="https://x-access-token:${RELEASE_TOKEN}@github.com/${{ github.repository }}.git"
+
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          if git rev-parse "${TAG_NAME}" >/dev/null 2>&1; then
+            echo "Deleting existing tag ${TAG_NAME}"
+            git tag -d "${TAG_NAME}"
+            git push "$remote_url" ":refs/tags/${TAG_NAME}"
+          fi
+
           git tag "${TAG_NAME}"
-          git push "https://x-access-token:${RELEASE_TOKEN}@github.com/${{ github.repository }}.git" "${TAG_NAME}"
+          git push "$remote_url" "${TAG_NAME}"
