@@ -17,7 +17,8 @@ sha256sums_x86_64=('SKIP')
 sha256sums_aarch64=('SKIP')
 
 package() {
-  install -Dm755 mcl "$pkgdir/usr/bin/mcl"
+  local _dir="mcl-launcher-${CARCH}-unknown-linux-gnu"
+  install -Dm755 "$_dir/mcl" "$pkgdir/usr/bin/mcl"
   install -Dm644 "LICENSE-${pkgver}" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
   install -Dm644 "README-${pkgver}" "$pkgdir/usr/share/doc/$pkgname/README.md"
 }

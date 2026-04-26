@@ -1,6 +1,6 @@
 [package]
 name = "mcl-launcher"
-version = "0.2.3"
+version = "0.2.4"
 authors = ["objz"]
 edition = "2024"
 description = "A fully featured Minecraft launcher TUI"
