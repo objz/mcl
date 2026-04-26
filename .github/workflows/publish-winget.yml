@@ -90,6 +90,8 @@ jobs:
           "@
           $localeManifest | Set-Content -Path "$packagePath/$identifier.locale.en-US.yaml" -Encoding utf8
 
+          Remove-Item "$packagePath/$checksumFile"
+
           "path=$packagePath" >> $env:GITHUB_OUTPUT
 
       - name: submit WinGet manifest
