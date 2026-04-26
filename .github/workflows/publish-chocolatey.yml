@@ -1,0 +1,53 @@
+name: publish Chocolatey
+
+on:
+  workflow_call:
+    inputs:
+      plan:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    env:
+      PLAN: ${{ inputs.plan }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ fromJson(inputs.plan).announcement_tag }}
+
+      - name: prepare Chocolatey package
+        id: package
+        shell: bash
+        run: |
+          tag="$(jq --raw-output '.announcement_tag' <<< "$PLAN")"
+          version="$(jq --raw-output '.releases[0].app_version' <<< "$PLAN")"
+          package_dir="target/chocolatey/mcl-launcher"
+          checksum_file="mcl-launcher-x86_64-pc-windows-msvc.msi.sha256"
+
+          mkdir -p "$package_dir"
+          cp -R pkg/chocolatey/* "$package_dir/"
+          gh release download "$tag" --pattern "$checksum_file" --dir "$package_dir"
+
+          checksum="$(awk '{print $1}' "$package_dir/$checksum_file")"
+          sed -i "s|__TAG__|$tag|g; s|__CHECKSUM64__|$checksum|g" "$package_dir/tools/chocolateyInstall.ps1"
+          sed -i "s|__TAG__|$tag|g; s|__CHECKSUM64__|$checksum|g" "$package_dir/tools/VERIFICATION.txt"
+
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "package_dir=$package_dir" >> "$GITHUB_OUTPUT"
+
+      - name: pack Chocolatey package
+        uses: crazy-max/ghaction-chocolatey@v4
+        with:
+          args: pack ${{ steps.package.outputs.package_dir }}/mcl-launcher.nuspec --version ${{ steps.package.outputs.version }} --output-directory target/chocolatey/out
+
+      - name: push Chocolatey package
+        uses: crazy-max/ghaction-chocolatey@v4
+        with:
+          args: push target/chocolatey/out/mcl-launcher.${{ steps.package.outputs.version }}.nupkg --source "https://push.chocolatey.org/" --api-key "${{ secrets.CHOCOLATEY_API_KEY }}"

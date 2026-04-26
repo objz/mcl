@@ -7,213 +7,28 @@ on:
     branches: [master]
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  build:
-    strategy:
-      matrix:
-        include:
-          - os: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
-            artifact: mcl
-          - os: ubuntu-latest
-            target: aarch64-unknown-linux-gnu
-            artifact: mcl
-          - os: windows-latest
-            target: x86_64-pc-windows-msvc
-            artifact: mcl.exe
-          - os: macos-latest
-            target: x86_64-apple-darwin
-            artifact: mcl
-          - os: macos-latest
-            target: aarch64-apple-darwin
-            artifact: mcl
-
-    runs-on: ${{ matrix.os }}
+  check:
+    runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v6
 
       - name: install Rust
         uses: dtolnay/rust-toolchain@stable
+
+      - name: install JDK
+        uses: actions/setup-java@v5
         with:
-          targets: ${{ matrix.target }}
+          distribution: temurin
+          java-version: "21"
 
       - uses: Swatinem/rust-cache@v2
-        with:
-          key: ${{ matrix.target }}
 
-      - name: install cross-compilation deps (aarch64-linux)
-        if: matrix.target == 'aarch64-unknown-linux-gnu'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+      - name: check
+        run: cargo check --locked
 
-      - name: build
-        env:
-          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
-        run: cargo build --release --target ${{ matrix.target }}
-
-      - name: get version
-        id: version
-        shell: bash
-        run: |
-          version=$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-
-      - name: package (unix)
-        if: runner.os != 'Windows'
-        run: |
-          cd target/${{ matrix.target }}/release
-          tar czf ../../../mcl-${{ steps.version.outputs.version }}-${{ matrix.target }}.tar.gz ${{ matrix.artifact }}
-
-      - name: package (windows)
-        if: runner.os == 'Windows'
-        run: |
-          cd target/${{ matrix.target }}/release
-          Compress-Archive -Path ${{ matrix.artifact }} -DestinationPath ../../../mcl-${{ steps.version.outputs.version }}-${{ matrix.target }}.zip
-
-      - name: upload artifact
-        uses: actions/upload-artifact@v7
-        with:
-          name: mcl-${{ steps.version.outputs.version }}-${{ matrix.target }}
-          path: mcl-${{ steps.version.outputs.version }}-${{ matrix.target }}.*
-
-  release:
-    needs: build
-    runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/master' && github.event_name == 'push'
-    outputs:
-      released: ${{ steps.check.outputs.exists == 'false' }}
-      version: ${{ steps.version.outputs.version }}
-      tag: ${{ steps.version.outputs.tag }}
-
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-
-      - name: get version
-        id: version
-        run: |
-          version=$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "tag=v$version" >> "$GITHUB_OUTPUT"
-
-      - name: check if release exists
-        id: check
-        run: |
-          if gh release view "${{ steps.version.outputs.tag }}" > /dev/null 2>&1; then
-            echo "exists=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "exists=false" >> "$GITHUB_OUTPUT"
-          fi
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: download artifacts
-        if: steps.check.outputs.exists == 'false'
-        uses: actions/download-artifact@v8
-        with:
-          path: artifacts
-
-      - name: create and push tag
-        if: steps.check.outputs.exists == 'false'
-        run: |
-          git tag "${{ steps.version.outputs.tag }}"
-          git push origin "${{ steps.version.outputs.tag }}"
-
-      - name: generate changelog
-        if: steps.check.outputs.exists == 'false'
-        id: changelog
-        uses: orhun/git-cliff-action@v4
-        with:
-          args: --latest --strip header
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: create release
-        if: steps.check.outputs.exists == 'false'
-        run: |
-          gh release create "${{ steps.version.outputs.tag }}" \
-            --title "${{ steps.version.outputs.tag }}" \
-            --notes "${{ steps.changelog.outputs.content }}" \
-            artifacts/mcl-*/*
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  publish-crates:
-    needs: release
-    runs-on: ubuntu-latest
-    if: needs.release.outputs.released == 'true'
-
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: install Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: publish to crates.io
-        run: cargo publish --allow-dirty
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-
-  publish-aur:
-    needs: release
-    runs-on: ubuntu-latest
-    if: needs.release.outputs.released == 'true'
-
-    steps:
-      - uses: actions/checkout@v6
-
-      # mcl-launcher (source package)
-      - name: prepare mcl-launcher
-        run: |
-          sed -i "s|^pkgver=.*|pkgver=${{ needs.release.outputs.version }}|" pkg/mcl-launcher/PKGBUILD
-          cp pkg/mcl-launcher/PKGBUILD PKGBUILD
-
-      - name: update checksums for mcl-launcher
-        uses: datakrama/archlinux-package-action@v2
-        with:
-          updpkgsums: true
-          srcinfo: true
-          flags: ""
-          namcap: false
-
-      - name: publish mcl-launcher to AUR
-        uses: KSXGitHub/github-actions-deploy-aur@v4.1.3
-        with:
-          pkgname: mcl-launcher
-          pkgbuild: PKGBUILD
-          assets: .SRCINFO
-          commit_username: objz
-          commit_email: me@objz.dev
-          ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
-          commit_message: "Update to ${{ needs.release.outputs.version }}"
-
-      # mcl-launcher-bin (binary package)
-      - name: prepare mcl-launcher-bin
-        run: |
-          sed -i "s|^pkgver=.*|pkgver=${{ needs.release.outputs.version }}|" pkg/mcl-launcher-bin/PKGBUILD
-          cp pkg/mcl-launcher-bin/PKGBUILD PKGBUILD
-          rm -f .SRCINFO
-
-      - name: update checksums for mcl-launcher-bin
-        uses: datakrama/archlinux-package-action@v2
-        with:
-          updpkgsums: true
-          srcinfo: true
-          flags: ""
-          namcap: false
-
-      - name: publish mcl-launcher-bin to AUR
-        uses: KSXGitHub/github-actions-deploy-aur@v4.1.3
-        with:
-          pkgname: mcl-launcher-bin
-          pkgbuild: PKGBUILD
-          assets: .SRCINFO
-          commit_username: objz
-          commit_email: me@objz.dev
-          ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
-          commit_message: "Update to ${{ needs.release.outputs.version }}"
+      - name: clippy
+        run: cargo clippy --all-targets --locked -- -D warnings

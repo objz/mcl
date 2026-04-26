@@ -1,0 +1,99 @@
+name: publish WinGet
+
+on:
+  workflow_call:
+    inputs:
+      plan:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: windows-latest
+
+    steps:
+      - name: prepare WinGet manifest
+        id: manifest
+        shell: pwsh
+        env:
+          PLAN: ${{ inputs.plan }}
+        run: |
+          $plan = $env:PLAN | ConvertFrom-Json
+          $tag = $plan.announcement_tag
+          $version = $plan.releases[0].app_version
+          $identifier = 'Objz.MclLauncher'
+          $packagePath = "manifests/o/Objz/MclLauncher/$version"
+          $installerFile = 'mcl-launcher-x86_64-pc-windows-msvc.msi'
+          $checksumFile = "$installerFile.sha256"
+          $installerUrl = "https://github.com/objz/mcl/releases/download/$tag/$installerFile"
+          $checksumUrl = "https://github.com/objz/mcl/releases/download/$tag/$checksumFile"
+
+          New-Item -ItemType Directory -Path $packagePath -Force | Out-Null
+          Invoke-WebRequest -Uri $checksumUrl -OutFile "$packagePath/$checksumFile"
+          $checksum = (((Get-Content "$packagePath/$checksumFile" -Raw) -split '\s+')[0]).ToUpperInvariant()
+
+          $versionManifest = @"
+          PackageIdentifier: $identifier
+          PackageVersion: $version
+          DefaultLocale: en-US
+          ManifestType: version
+          ManifestVersion: 1.9.0
+          "@
+          $versionManifest | Set-Content -Path "$packagePath/$identifier.yaml" -Encoding utf8
+
+          $installerManifest = @"
+          PackageIdentifier: $identifier
+          PackageVersion: $version
+          InstallerType: wix
+          Scope: machine
+          InstallerSwitches:
+            Silent: /quiet /norestart
+            SilentWithProgress: /passive /norestart
+          UpgradeBehavior: install
+          Commands:
+          - mcl
+          Installers:
+          - Architecture: x64
+            InstallerUrl: $installerUrl
+            InstallerSha256: $checksum
+          ManifestType: installer
+          ManifestVersion: 1.9.0
+          "@
+          $installerManifest | Set-Content -Path "$packagePath/$identifier.installer.yaml" -Encoding utf8
+
+          $localeManifest = @"
+          PackageIdentifier: $identifier
+          PackageVersion: $version
+          PackageLocale: en-US
+          Publisher: objz
+          PublisherUrl: https://github.com/objz
+          PublisherSupportUrl: https://github.com/objz/mcl/issues
+          Author: objz
+          PackageName: mcl-launcher
+          PackageUrl: https://github.com/objz/mcl
+          License: GPL-3.0-only
+          LicenseUrl: https://github.com/objz/mcl/blob/master/LICENSE
+          Copyright: Copyright (c) objz
+          ShortDescription: Minecraft launcher TUI
+          Description: A fully featured Minecraft launcher TUI with Microsoft account authentication, instance management, mod loaders, imports, content management, and launch support.
+          Moniker: mcl
+          Tags:
+          - minecraft
+          - launcher
+          - cli
+          - tui
+          ManifestType: defaultLocale
+          ManifestVersion: 1.9.0
+          "@
+          $localeManifest | Set-Content -Path "$packagePath/$identifier.locale.en-US.yaml" -Encoding utf8
+
+          "path=$packagePath" >> $env:GITHUB_OUTPUT
+
+      - name: submit WinGet manifest
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri https://aka.ms/wingetcreate/latest -OutFile wingetcreate.exe
+          .\wingetcreate.exe submit "${{ steps.manifest.outputs.path }}" --token "${{ secrets.WINGET_TOKEN }}"

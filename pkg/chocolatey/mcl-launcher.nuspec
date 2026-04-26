@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2015/06/nuspec.xsd">
+  <metadata>
+    <id>mcl-launcher</id>
+    <version>0.0.0</version>
+    <packageSourceUrl>https://github.com/objz/mcl</packageSourceUrl>
+    <owners>objz</owners>
+    <title>mcl-launcher</title>
+    <authors>objz</authors>
+    <projectUrl>https://github.com/objz/mcl</projectUrl>
+    <licenseUrl>https://github.com/objz/mcl/blob/master/LICENSE</licenseUrl>
+    <requireLicenseAcceptance>false</requireLicenseAcceptance>
+    <projectSourceUrl>https://github.com/objz/mcl</projectSourceUrl>
+    <docsUrl>https://github.com/objz/mcl#readme</docsUrl>
+    <bugTrackerUrl>https://github.com/objz/mcl/issues</bugTrackerUrl>
+    <tags>minecraft launcher cli tui rust</tags>
+    <summary>Minecraft launcher TUI</summary>
+    <description>A fully featured Minecraft launcher TUI with Microsoft account authentication, instance management, mod loaders, imports, content management, and launch support.</description>
+  </metadata>
+  <files>
+    <file src="tools\**" target="tools" />
+  </files>
+</package>
