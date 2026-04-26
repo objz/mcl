@@ -77,18 +77,18 @@ jobs:
       - name: create release tag
         if: ${{ steps.release.outputs.should-release == 'true' }}
         env:
-          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
           TAG_NAME: ${{ steps.release.outputs.tag }}
-          TAG_SHA: ${{ steps.release.outputs.sha }}
         shell: bash
         run: |
           set -euo pipefail
 
-          if [[ -z "${GH_TOKEN}" ]]; then
+          if [[ -z "${RELEASE_TOKEN}" ]]; then
             echo "RELEASE_TOKEN is required so the created tag can trigger the generated release workflow." >&2
             exit 1
           fi
 
-          gh api "repos/${{ github.repository }}/git/refs" \
-            -f "ref=refs/tags/${TAG_NAME}" \
-            -f "sha=${TAG_SHA}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag "${TAG_NAME}"
+          git push "https://x-access-token:${RELEASE_TOKEN}@github.com/${{ github.repository }}.git" "${TAG_NAME}"
