@@ -26,6 +26,7 @@ pub enum AddMode {
     None,
     ChooseType,
     OfflineNameInput(String),
+    OfflineBlocked,
     ConfirmDelete(usize),
     DeviceCodeWaiting {
         info: DeviceCodeInfo,
@@ -98,7 +99,11 @@ pub fn handle_key(key_event: &KeyEvent, state: &mut AccountState) -> bool {
                 true
             }
             KeyCode::Char('o') | KeyCode::Char('2') => {
-                state.add_mode = AddMode::OfflineNameInput(String::new());
+                state.add_mode = if state.store.has_microsoft_account() {
+                    AddMode::OfflineNameInput(String::new())
+                } else {
+                    AddMode::OfflineBlocked
+                };
                 true
             }
             KeyCode::Esc => {
@@ -111,13 +116,19 @@ pub fn handle_key(key_event: &KeyEvent, state: &mut AccountState) -> bool {
             KeyCode::Enter => {
                 let trimmed = name.trim().to_string();
                 if !trimmed.is_empty() {
-                    let account = auth::create_offline_account(&trimmed);
-                    state.store.add(account);
-                    if state.list_state.selected.is_none() && !state.store.accounts.is_empty() {
-                        state.list_state.selected = Some(0);
+                    if state.store.has_microsoft_account() {
+                        let account = auth::create_offline_account(&trimmed);
+                        state.store.add(account);
+                        if state.list_state.selected.is_none() && !state.store.accounts.is_empty() {
+                            state.list_state.selected = Some(0);
+                        }
+                        state.add_mode = AddMode::None;
+                    } else {
+                        state.add_mode = AddMode::OfflineBlocked;
                     }
+                } else {
+                    state.add_mode = AddMode::None;
                 }
-                state.add_mode = AddMode::None;
                 true
             }
             KeyCode::Char(c) => {
@@ -133,6 +144,13 @@ pub fn handle_key(key_event: &KeyEvent, state: &mut AccountState) -> bool {
                 true
             }
             KeyCode::Esc => {
+                state.add_mode = AddMode::None;
+                true
+            }
+            _ => true,
+        },
+        AddMode::OfflineBlocked => match key_event.code {
+            KeyCode::Enter | KeyCode::Esc => {
                 state.add_mode = AddMode::None;
                 true
             }
@@ -257,6 +275,7 @@ pub fn render(frame: &mut Frame, area: Rect, focused: FocusedArea, state: &mut A
     match &state.add_mode {
         AddMode::ChooseType => render_choose_popup(frame),
         AddMode::OfflineNameInput(name) => render_offline_popup(frame, name),
+        AddMode::OfflineBlocked => render_offline_blocked_popup(frame),
         AddMode::ConfirmDelete(idx) => render_confirm_delete(frame, state, *idx),
         AddMode::DeviceCodeWaiting { info, .. } => render_device_code_popup(frame, info),
         AddMode::None => {}
@@ -439,6 +458,36 @@ fn render_offline_popup(frame: &mut Frame, name: &str) {
                 ])
             };
             Paragraph::new(line).render(inner, buf);
+        }),
+    }
+    .render(area, frame.buffer_mut());
+}
+
+fn render_offline_blocked_popup(frame: &mut Frame) {
+    use super::popups::{base::PopupFrame, keybind_line};
+    let theme = THEME.as_ref();
+    let area = popup_area(frame, 58, 5);
+
+    let border_color = theme.text_dim();
+    let bg_color = theme.surface();
+    let text_color = theme.text();
+
+    PopupFrame {
+        title: Line::from(Span::styled(
+            " Offline Account ",
+            Style::default()
+                .fg(border_color)
+                .add_modifier(Modifier::BOLD),
+        ))
+        .centered(),
+        border_color,
+        bg: Some(bg_color),
+        keybinds: Some(keybind_line(&[("Enter", " close")])),
+        search_line: None,
+        content: Box::new(move |inner, buf| {
+            Paragraph::new("Add a Microsoft account that owns Minecraft first.")
+                .style(Style::default().fg(text_color))
+                .render(inner, buf);
         }),
     }
     .render(area, frame.buffer_mut());

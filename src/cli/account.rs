@@ -21,13 +21,13 @@ pub async fn handle_account(matches: &ArgMatches) -> CliResult {
 
 // trait indirection so a mock store can be swapped in for tests
 trait AccountStoreLike {
-    fn accounts(&self) -> &[Account];
+    fn has_microsoft_account(&self) -> bool;
     fn add_account(&mut self, account: Account);
 }
 
 impl AccountStoreLike for AccountStore {
-    fn accounts(&self) -> &[Account] {
-        &self.accounts
+    fn has_microsoft_account(&self) -> bool {
+        AccountStore::has_microsoft_account(self)
     }
 
     fn add_account(&mut self, account: Account) {
@@ -114,6 +114,12 @@ fn add_offline_account<T: AccountStoreLike>(store: &mut T, username: &str) -> Cl
     if username.is_empty() {
         return Err(io::Error::other("offline username cannot be empty").into());
     }
+    if !store.has_microsoft_account() {
+        return Err(io::Error::other(
+            "add a Microsoft account that owns Minecraft before adding offline accounts",
+        )
+        .into());
+    }
 
     store.add_account(crate::auth::create_offline_account(username));
     Ok(())
@@ -122,7 +128,7 @@ fn add_offline_account<T: AccountStoreLike>(store: &mut T, username: &str) -> Cl
 fn delete_account(matches: &ArgMatches) -> CliResult {
     let username = required_arg(matches, "username")?;
     let mut store = AccountStore::load();
-    let index = find_account_index(store.accounts(), username)
+    let index = find_account_index(&store.accounts, username)
         .ok_or_else(|| io::Error::other(format!("account '{}' not found", username)))?;
 
     if !matches.get_flag("yes") && !confirm(&format!("Delete '{}'", username))? {
@@ -138,7 +144,7 @@ fn delete_account(matches: &ArgMatches) -> CliResult {
 fn use_account(matches: &ArgMatches) -> CliResult {
     let username = required_arg(matches, "username")?;
     let mut store = AccountStore::load();
-    let index = find_account_index(store.accounts(), username)
+    let index = find_account_index(&store.accounts, username)
         .ok_or_else(|| io::Error::other(format!("account '{}' not found", username)))?;
     store.set_active(index);
     println!("Active account set to '{}'.", username);
@@ -164,8 +170,10 @@ mod tests {
     }
 
     impl AccountStoreLike for MockStore {
-        fn accounts(&self) -> &[Account] {
-            &self.accounts
+        fn has_microsoft_account(&self) -> bool {
+            self.accounts
+                .iter()
+                .any(|account| account.account_type == AccountType::Microsoft)
         }
 
         fn add_account(&mut self, account: Account) {
@@ -173,14 +181,37 @@ mod tests {
         }
     }
 
+    fn microsoft_account() -> Account {
+        Account {
+            uuid: "00000000-0000-0000-0000-000000000001".to_owned(),
+            username: "Owner".to_owned(),
+            account_type: AccountType::Microsoft,
+            active: false,
+            refresh_token: Some("refresh".to_owned()),
+            cached_mc_token: None,
+            cached_mc_token_expires_at: None,
+        }
+    }
+
     #[test]
-    fn creates_offline_account_through_store() {
+    fn creates_offline_account_after_microsoft_account_exists() {
         let mut store = MockStore::default();
+        store.add_account(microsoft_account());
         add_offline_account(&mut store, "Steve").expect("offline account should be added");
 
-        assert_eq!(store.accounts.len(), 1);
-        assert_eq!(store.accounts[0].username, "Steve");
-        assert_eq!(store.accounts[0].account_type, AccountType::Offline);
+        assert_eq!(store.accounts.len(), 2);
+        assert_eq!(store.accounts[1].username, "Steve");
+        assert_eq!(store.accounts[1].account_type, AccountType::Offline);
+    }
+
+    #[test]
+    fn rejects_offline_account_before_microsoft_account_exists() {
+        let mut store = MockStore::default();
+        let err = add_offline_account(&mut store, "Steve")
+            .expect_err("offline account should require a microsoft account");
+
+        assert!(err.to_string().contains("Microsoft account"));
+        assert!(store.accounts.is_empty());
     }
 
     #[test]

@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 
 use thiserror::Error;
 
+use crate::auth::{Account, AccountType};
 use crate::instance::models::{InstanceConfig, ModLoader};
 
 #[derive(Debug, Error)]
@@ -84,6 +85,10 @@ struct GameAuth {
     uuid: String,
     token: String,
     user_type: String,
+}
+
+fn account_can_launch(has_microsoft_account: bool, account: &Account) -> bool {
+    account.account_type == AccountType::Microsoft || has_microsoft_account
 }
 
 // mojang's library rules are a fun little state machine: each rule can allow
@@ -272,23 +277,25 @@ pub async fn launch(
     jvm.extend(config.jvm_args.clone());
 
     // resolve auth credentials, refreshing the microsoft token if needed.
-    // falls back to a generic offline player if no account is configured.
     let mut account_store = crate::auth::AccountStore::load();
     let (mc_username, mc_uuid, mc_token, mc_user_type) = match account_store
         .active_account()
         .cloned()
     {
         Some(acc) => {
+            if !account_can_launch(account_store.has_microsoft_account(), &acc) {
+                return Err(LaunchError::Auth(
+                    "Offline accounts require a Microsoft account that owns Minecraft".to_owned(),
+                ));
+            }
             let (token, new_refresh, new_expires) = match acc.account_type {
-                crate::auth::AccountType::Microsoft => {
-                    match crate::auth::refresh_and_get_token(&acc).await {
-                        Ok(triple) => triple,
-                        Err(e) => {
-                            return Err(LaunchError::Auth(format!("Authentication failed: {e}")));
-                        }
+                AccountType::Microsoft => match crate::auth::refresh_and_get_token(&acc).await {
+                    Ok(triple) => triple,
+                    Err(e) => {
+                        return Err(LaunchError::Auth(format!("Authentication failed: {e}")));
                     }
-                }
-                crate::auth::AccountType::Offline => ("0".to_string(), None, None),
+                },
+                AccountType::Offline => ("0".to_string(), None, None),
             };
             if let Some(stored) = account_store
                 .accounts
@@ -310,8 +317,8 @@ pub async fn launch(
                 }
             }
             let user_type = match acc.account_type {
-                crate::auth::AccountType::Microsoft => "msa",
-                crate::auth::AccountType::Offline => "legacy",
+                AccountType::Microsoft => "msa",
+                AccountType::Offline => "legacy",
             };
             (
                 acc.username.clone(),
@@ -320,12 +327,7 @@ pub async fn launch(
                 user_type.to_string(),
             )
         }
-        None => (
-            "Player".to_string(),
-            "00000000-0000-0000-0000-000000000000".to_string(),
-            "0".to_string(),
-            "legacy".to_string(),
-        ),
+        None => return Err(LaunchError::Auth("No account selected".to_owned())),
     };
 
     let game_args = build_game_args(
@@ -475,6 +477,7 @@ pub async fn launch(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::auth::{Account, AccountType};
     use chrono::Utc;
 
     fn test_config() -> InstanceConfig {
@@ -490,6 +493,18 @@ mod tests {
             memory_min: None,
             jvm_args: Vec::new(),
             resolution: None,
+        }
+    }
+
+    fn test_account(account_type: AccountType) -> Account {
+        Account {
+            uuid: "00000000-0000-0000-0000-000000000001".to_owned(),
+            username: "TestPlayer".to_owned(),
+            account_type,
+            active: true,
+            refresh_token: Some("refresh".to_owned()),
+            cached_mc_token: None,
+            cached_mc_token_expires_at: None,
         }
     }
 
@@ -521,5 +536,26 @@ mod tests {
             args.windows(2)
                 .any(|pair| pair == ["--tweakClass", "cpw.mods.fml.common.launcher.FMLTweaker"])
         );
+    }
+
+    #[test]
+    fn offline_account_cannot_launch_without_microsoft_account() {
+        let offline = test_account(AccountType::Offline);
+
+        assert!(!account_can_launch(false, &offline));
+    }
+
+    #[test]
+    fn offline_account_can_launch_with_microsoft_account() {
+        let offline = test_account(AccountType::Offline);
+
+        assert!(account_can_launch(true, &offline));
+    }
+
+    #[test]
+    fn microsoft_account_can_launch_without_offline_gate() {
+        let microsoft = test_account(AccountType::Microsoft);
+
+        assert!(account_can_launch(false, &microsoft));
     }
 }

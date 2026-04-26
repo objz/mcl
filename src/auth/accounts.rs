@@ -66,6 +66,12 @@ impl AccountStore {
         self.accounts.iter().find(|a| a.active)
     }
 
+    pub fn has_microsoft_account(&self) -> bool {
+        self.accounts
+            .iter()
+            .any(|account| account.account_type == AccountType::Microsoft)
+    }
+
     pub fn set_active(&mut self, index: usize) {
         for (i, acc) in self.accounts.iter_mut().enumerate() {
             acc.active = i == index;
@@ -194,6 +200,18 @@ mod tests {
         create_offline_account(name)
     }
 
+    fn microsoft_account(name: &str) -> Account {
+        Account {
+            uuid: format!("00000000-0000-0000-0000-{:012}", name.len()),
+            username: name.to_owned(),
+            account_type: AccountType::Microsoft,
+            active: false,
+            refresh_token: Some("refresh".to_owned()),
+            cached_mc_token: None,
+            cached_mc_token_expires_at: None,
+        }
+    }
+
     #[test]
     fn store_add_first_becomes_active() {
         let tmp = tempfile::tempdir().unwrap();
@@ -232,6 +250,17 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let store = make_store(tmp.path());
         assert!(store.active_account().is_none());
+    }
+
+    #[test]
+    fn store_has_microsoft_account_when_one_exists() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut store = make_store(tmp.path());
+        store.add(dummy_account("Offline"));
+        assert!(!store.has_microsoft_account());
+
+        store.add(microsoft_account("Owner"));
+        assert!(store.has_microsoft_account());
     }
 
     #[test]
