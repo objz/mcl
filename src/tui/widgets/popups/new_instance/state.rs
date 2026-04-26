@@ -202,10 +202,8 @@ fn handle_version_key(
         KeyCode::Left | KeyCode::Char('h') if !state.version_search.active => {
             state.step = WizardStep::Loader;
         }
-        KeyCode::Char('j') | KeyCode::Down => {
-            if visible_count > 0 {
-                state.version_idx = (state.version_idx + 1).min(visible_count.saturating_sub(1));
-            }
+        KeyCode::Char('j') | KeyCode::Down if visible_count > 0 => {
+            state.version_idx = (state.version_idx + 1).min(visible_count.saturating_sub(1));
         }
         KeyCode::Char('k') | KeyCode::Up => {
             state.version_idx = state.version_idx.saturating_sub(1);
@@ -286,11 +284,9 @@ fn handle_loader_version_key(
     match key_event.code {
         KeyCode::Esc => close_popup(state, instances_state),
         KeyCode::Left | KeyCode::Char('h') => state.step = WizardStep::Version,
-        KeyCode::Char('j') | KeyCode::Down => {
-            if version_count > 0 {
-                state.loader_version_idx =
-                    (state.loader_version_idx + 1).min(version_count.saturating_sub(1));
-            }
+        KeyCode::Char('j') | KeyCode::Down if version_count > 0 => {
+            state.loader_version_idx =
+                (state.loader_version_idx + 1).min(version_count.saturating_sub(1));
         }
         KeyCode::Char('k') | KeyCode::Up => {
             state.loader_version_idx = state.loader_version_idx.saturating_sub(1);

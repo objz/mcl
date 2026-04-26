@@ -65,7 +65,7 @@ fn manager() -> InstanceManager {
 
 fn list_instances() -> CliResult {
     let mut instances = manager().load_all();
-    instances.sort_by(|left, right| left.name.to_lowercase().cmp(&right.name.to_lowercase()));
+    instances.sort_by_key(|instance| instance.name.to_lowercase());
 
     let rows = instances
         .into_iter()

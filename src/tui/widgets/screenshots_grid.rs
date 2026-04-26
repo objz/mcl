@@ -155,11 +155,7 @@ impl ScreenshotsState {
     }
 
     fn ensure_visible(&mut self) {
-        let row = if self.cols > 0 {
-            self.selected / self.cols
-        } else {
-            0
-        };
+        let row = self.selected.checked_div(self.cols).unwrap_or(0);
 
         if row < self.scroll_row {
             self.scroll_row = row;

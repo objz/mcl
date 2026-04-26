@@ -164,10 +164,8 @@ fn handle_version_key(
             state.version_idx = 0;
             state.version_search.deactivate();
         }
-        KeyCode::Char('j') | KeyCode::Down => {
-            if visible_count > 0 {
-                state.version_idx = (state.version_idx + 1).min(visible_count.saturating_sub(1));
-            }
+        KeyCode::Char('j') | KeyCode::Down if visible_count > 0 => {
+            state.version_idx = (state.version_idx + 1).min(visible_count.saturating_sub(1));
         }
         KeyCode::Char('k') | KeyCode::Up => {
             state.version_idx = state.version_idx.saturating_sub(1);
