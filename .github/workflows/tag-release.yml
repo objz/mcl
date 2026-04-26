@@ -54,27 +54,19 @@ jobs:
               | tail -n1
           )
 
-          tag="v${version}"
-          head_sha="$(git rev-parse HEAD)"
-
           should_release=false
           if [[ -z "$latest" ]]; then
             should_release=true
           elif [[ "$version" != "$latest" && "$(printf '%s\n%s\n' "$latest" "$version" | sort -V | tail -n1)" == "$version" ]]; then
             should_release=true
-          elif git rev-parse "$tag" >/dev/null 2>&1; then
-            tag_sha="$(git rev-parse "$tag")"
-            if [[ "$tag_sha" != "$head_sha" ]]; then
-              echo "Tag ${tag} exists but points to ${tag_sha}, not HEAD ${head_sha}; will re-tag."
-              should_release=true
-            fi
           fi
 
+          tag="v${version}"
           echo "version=${version}" >> "$GITHUB_OUTPUT"
           echo "latest=${latest}" >> "$GITHUB_OUTPUT"
           echo "tag=${tag}" >> "$GITHUB_OUTPUT"
           echo "should-release=${should_release}" >> "$GITHUB_OUTPUT"
-          echo "sha=${head_sha}" >> "$GITHUB_OUTPUT"
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
           if [[ "$should_release" == "true" ]]; then
             echo "Cargo.toml version ${version} is newer than latest tag ${latest:-<none>}; creating ${tag}."
@@ -85,27 +77,26 @@ jobs:
       - name: create release tag
         if: ${{ steps.release.outputs.should-release == 'true' }}
         env:
-          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
           TAG_NAME: ${{ steps.release.outputs.tag }}
+          TAG_SHA: ${{ steps.release.outputs.sha }}
         shell: bash
         run: |
           set -euo pipefail
 
-          if [[ -z "${RELEASE_TOKEN}" ]]; then
+          if [[ -z "${GH_TOKEN}" ]]; then
             echo "RELEASE_TOKEN is required so the created tag can trigger the generated release workflow." >&2
             exit 1
           fi
 
-          remote_url="https://x-access-token:${RELEASE_TOKEN}@github.com/${{ github.repository }}.git"
+          gh api "repos/${{ github.repository }}/git/refs" \
+            -f "ref=refs/tags/${TAG_NAME}" \
+            -f "sha=${TAG_SHA}"
 
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          if git rev-parse "${TAG_NAME}" >/dev/null 2>&1; then
-            echo "Deleting existing tag ${TAG_NAME}"
-            git tag -d "${TAG_NAME}"
-            git push "$remote_url" ":refs/tags/${TAG_NAME}"
-          fi
-
-          git tag "${TAG_NAME}"
-          git push "$remote_url" "${TAG_NAME}"
+      - name: trigger release workflow
+        if: ${{ steps.release.outputs.should-release == 'true' }}
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          TAG_NAME: ${{ steps.release.outputs.tag }}
+        run: |
+          gh workflow run release.yml --ref "${TAG_NAME}"
