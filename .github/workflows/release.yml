@@ -43,117 +43,16 @@ on:
   push:
     tags:
       - '**[0-9]+.[0-9]+.[0-9]+*'
-  workflow_run:
-    workflows: ["build"]
-    branches: [master]
-    types: [completed]
 
 jobs:
-  release-check:
-    runs-on: "ubuntu-22.04"
-    outputs:
-      should-release: ${{ steps.decide.outputs.should-release }}
-      publishing: ${{ steps.decide.outputs.publishing }}
-      tag: ${{ steps.decide.outputs.tag }}
-      tag-flag: ${{ steps.decide.outputs.tag-flag }}
-      release-commit: ${{ steps.decide.outputs.release-commit }}
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-          fetch-tags: true
-          ref: ${{ github.event.workflow_run.head_sha || github.ref }}
-      - id: decide
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            echo "should-release=true" >> "$GITHUB_OUTPUT"
-            echo "publishing=false" >> "$GITHUB_OUTPUT"
-            echo "tag=" >> "$GITHUB_OUTPUT"
-            echo "tag-flag=" >> "$GITHUB_OUTPUT"
-            echo "release-commit=${{ github.event.pull_request.head.sha }}" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          if [[ "${{ github.event_name }}" == "workflow_run" && "${{ github.event.workflow_run.conclusion }}" != "success" ]]; then
-            echo "build workflow concluded with ${{ github.event.workflow_run.conclusion }}; skipping release."
-            echo "should-release=false" >> "$GITHUB_OUTPUT"
-            echo "publishing=false" >> "$GITHUB_OUTPUT"
-            echo "tag=" >> "$GITHUB_OUTPUT"
-            echo "tag-flag=" >> "$GITHUB_OUTPUT"
-            echo "release-commit=${{ github.event.workflow_run.head_sha }}" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          if [[ "${{ github.ref_type }}" == "tag" ]]; then
-            echo "should-release=true" >> "$GITHUB_OUTPUT"
-            echo "publishing=true" >> "$GITHUB_OUTPUT"
-            echo "tag=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
-            echo "tag-flag=--tag=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
-            echo "release-commit=${{ github.sha }}" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          version=$(awk '
-            $0 == "[package]" { in_package = 1; next }
-            /^\[/ && in_package { exit }
-            in_package && $1 == "version" {
-              gsub(/"/, "", $3)
-              print $3
-              exit
-            }
-          ' Cargo.toml)
-
-          if [[ -z "$version" ]]; then
-            echo "failed to read package version from Cargo.toml" >&2
-            exit 1
-          fi
-
-          latest=$(
-            git tag --list \
-              | sed -nE 's/^v?([0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?)$/\1/p' \
-              | sort -V \
-              | tail -n1
-          )
-
-          should_release=false
-          if [[ -z "$latest" ]]; then
-            should_release=true
-          elif [[ "$version" != "$latest" && "$(printf '%s\n%s\n' "$latest" "$version" | sort -V | tail -n1)" == "$version" ]]; then
-            should_release=true
-          fi
-
-          if [[ "$should_release" == "true" ]]; then
-            tag="v${version}"
-            echo "Cargo.toml version ${version} is newer than latest tag ${latest:-<none>}; releasing ${tag}."
-            echo "should-release=true" >> "$GITHUB_OUTPUT"
-            echo "publishing=true" >> "$GITHUB_OUTPUT"
-            echo "tag=${tag}" >> "$GITHUB_OUTPUT"
-            echo "tag-flag=--tag=${tag}" >> "$GITHUB_OUTPUT"
-            echo "release-commit=${{ github.event.workflow_run.head_sha || github.sha }}" >> "$GITHUB_OUTPUT"
-          else
-            echo "Cargo.toml version ${version} is not newer than latest tag ${latest}; skipping release."
-            echo "should-release=false" >> "$GITHUB_OUTPUT"
-            echo "publishing=false" >> "$GITHUB_OUTPUT"
-            echo "tag=" >> "$GITHUB_OUTPUT"
-            echo "tag-flag=" >> "$GITHUB_OUTPUT"
-            echo "release-commit=${{ github.event.workflow_run.head_sha || github.sha }}" >> "$GITHUB_OUTPUT"
-          fi
-
   # Run 'dist plan' (or host) to determine what tasks we need to do
   plan:
-    needs:
-      - release-check
-    if: ${{ needs.release-check.outputs.should-release == 'true' }}
     runs-on: "ubuntu-22.04"
     outputs:
       val: ${{ steps.plan.outputs.manifest }}
-      tag: ${{ needs.release-check.outputs.tag }}
-      tag-flag: ${{ needs.release-check.outputs.tag-flag }}
-      publishing: ${{ needs.release-check.outputs.publishing }}
-      release-commit: ${{ needs.release-check.outputs.release-commit }}
+      tag: ${{ !github.event.pull_request && github.ref_name || '' }}
+      tag-flag: ${{ !github.event.pull_request && format('--tag={0}', github.ref_name) || '' }}
+      publishing: ${{ !github.event.pull_request }}
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
@@ -161,7 +60,6 @@ jobs:
         with:
           persist-credentials: false
           submodules: recursive
-          ref: ${{ needs.release-check.outputs.release-commit }}
       - name: Install dist
         # we specify bash to get pipefail; it guards against the `curl` command
         # failing. otherwise `sh` won't catch that `curl` returned non-0
@@ -179,7 +77,7 @@ jobs:
       # but also really annoying to build CI around when it needs secrets to work right.)
       - id: plan
         run: |
-          dist ${{ (needs.release-check.outputs.publishing == 'true' && format('host --steps=create --tag={0}', needs.release-check.outputs.tag)) || 'plan' }} --output-format=json > plan-dist-manifest.json
+          dist ${{ (!github.event.pull_request && format('host --steps=create --tag={0}', github.ref_name)) || 'plan' }} --output-format=json > plan-dist-manifest.json
           echo "dist ran successfully"
           cat plan-dist-manifest.json
           echo "manifest=$(jq -c "." plan-dist-manifest.json)" >> "$GITHUB_OUTPUT"
@@ -195,7 +93,7 @@ jobs:
     # Let the initial task tell us to not run (currently very blunt)
     needs:
       - plan
-    if: ${{ needs.plan.result == 'success' && fromJson(needs.plan.outputs.val).ci.github.artifacts_matrix.include != null && (needs.plan.outputs.publishing == 'true' || fromJson(needs.plan.outputs.val).ci.github.pr_run_mode == 'upload') }}
+    if: ${{ fromJson(needs.plan.outputs.val).ci.github.artifacts_matrix.include != null && (needs.plan.outputs.publishing == 'true' || fromJson(needs.plan.outputs.val).ci.github.pr_run_mode == 'upload') }}
     strategy:
       fail-fast: false
       # Target platforms/runners are computed by dist in create-release.
@@ -222,7 +120,6 @@ jobs:
         with:
           persist-credentials: false
           submodules: recursive
-          ref: ${{ needs.plan.outputs.release-commit }}
       - name: Install Rust non-interactively if not already installed
         if: ${{ matrix.container }}
         run: |
@@ -287,7 +184,6 @@ jobs:
         with:
           persist-credentials: false
           submodules: recursive
-          ref: ${{ needs.plan.outputs.release-commit }}
       - name: Install cached dist
         uses: actions/download-artifact@v7
         with:
@@ -338,7 +234,6 @@ jobs:
         with:
           persist-credentials: false
           submodules: recursive
-          ref: ${{ needs.plan.outputs.release-commit }}
       - name: Install cached dist
         uses: actions/download-artifact@v7
         with:
@@ -381,7 +276,7 @@ jobs:
           PRERELEASE_FLAG: "${{ fromJson(steps.host.outputs.manifest).announcement_is_prerelease && '--prerelease' || '' }}"
           ANNOUNCEMENT_TITLE: "${{ fromJson(steps.host.outputs.manifest).announcement_title }}"
           ANNOUNCEMENT_BODY: "${{ fromJson(steps.host.outputs.manifest).announcement_github_body }}"
-          RELEASE_COMMIT: "${{ needs.plan.outputs.release-commit }}"
+          RELEASE_COMMIT: "${{ github.sha }}"
         run: |
           # Write and read notes from a file to avoid quoting breaking things
           echo "$ANNOUNCEMENT_BODY" > $RUNNER_TEMP/notes.txt
@@ -507,4 +402,3 @@ jobs:
         with:
           persist-credentials: false
           submodules: recursive
-          ref: ${{ needs.plan.outputs.release-commit }}

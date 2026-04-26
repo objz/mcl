@@ -1,0 +1,94 @@
+name: tag release
+
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows: ["build"]
+    branches: [master]
+    types: [completed]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tag-release
+  cancel-in-progress: false
+
+jobs:
+  tag-release:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          ref: ${{ github.event.workflow_run.head_sha || 'master' }}
+
+      - name: decide release tag
+        id: release
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          version=$(awk '
+            $0 == "[package]" { in_package = 1; next }
+            /^\[/ && in_package { exit }
+            in_package && $1 == "version" {
+              gsub(/"/, "", $3)
+              print $3
+              exit
+            }
+          ' Cargo.toml)
+
+          if [[ -z "$version" ]]; then
+            echo "failed to read package version from Cargo.toml" >&2
+            exit 1
+          fi
+
+          latest=$(
+            git tag --list \
+              | sed -nE 's/^v?([0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?)$/\1/p' \
+              | sort -V \
+              | tail -n1
+          )
+
+          should_release=false
+          if [[ -z "$latest" ]]; then
+            should_release=true
+          elif [[ "$version" != "$latest" && "$(printf '%s\n%s\n' "$latest" "$version" | sort -V | tail -n1)" == "$version" ]]; then
+            should_release=true
+          fi
+
+          tag="v${version}"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "latest=${latest}" >> "$GITHUB_OUTPUT"
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          echo "should-release=${should_release}" >> "$GITHUB_OUTPUT"
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+          if [[ "$should_release" == "true" ]]; then
+            echo "Cargo.toml version ${version} is newer than latest tag ${latest:-<none>}; creating ${tag}."
+          else
+            echo "Cargo.toml version ${version} is not newer than latest tag ${latest}; skipping release."
+          fi
+
+      - name: create release tag
+        if: ${{ steps.release.outputs.should-release == 'true' }}
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          TAG_NAME: ${{ steps.release.outputs.tag }}
+          TAG_SHA: ${{ steps.release.outputs.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${GH_TOKEN}" ]]; then
+            echo "RELEASE_TOKEN is required so the created tag can trigger the generated release workflow." >&2
+            exit 1
+          fi
+
+          gh api "repos/${{ github.repository }}/git/refs" \
+            -f "ref=refs/tags/${TAG_NAME}" \
+            -f "sha=${TAG_SHA}"
