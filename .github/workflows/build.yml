@@ -1,4 +1,4 @@
-name: build
+name: ci
 
 on:
   push:
@@ -9,9 +9,22 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
 jobs:
-  check:
-    runs-on: ubuntu-latest
+  verify:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
 
     steps:
       - uses: actions/checkout@v6
@@ -28,9 +41,17 @@ jobs:
           java-version: "21"
 
       - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.os }}
 
-      - name: check
-        run: cargo check --locked
+      - name: cargo check
+        run: cargo check --locked --all-targets
 
-      - name: clippy
+      - name: cargo clippy
         run: cargo clippy --all-targets --locked -- -D warnings
+
+      - name: cargo test
+        run: cargo test --locked --all-targets
+
+      - name: cargo build
+        run: cargo build --locked
