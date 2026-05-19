@@ -9,7 +9,7 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph},
 };
 
-use crate::config::theme::{BORDER_STYLE, THEME};
+use crate::config::{SETTINGS, theme::{BORDER_STYLE, THEME}};
 use crate::instance::models::InstanceConfig;
 use crate::tui::app::FocusedArea;
 
@@ -66,9 +66,14 @@ pub fn render(
         .add_modifier(Modifier::BOLD);
     let dim_style = Style::default().fg(theme.text_dim());
 
-    let memory_min = inst.memory_min.as_deref().unwrap_or("512M");
-    let memory_max = inst.memory_max.as_deref().unwrap_or("2G");
-    let java_path = inst.java_path.as_deref().unwrap_or("system");
+    let memory_min = inst.memory_min.as_deref().unwrap_or(&SETTINGS.defaults.memory_min);
+    let memory_max = inst.memory_max.as_deref().unwrap_or(&SETTINGS.defaults.memory_max);
+    let java_path = inst
+        .java_path
+        .as_deref()
+        .or_else(|| SETTINGS.paths.effective_java_path())
+        .unwrap_or("system");
+
     let jvm_args = if inst.jvm_args.is_empty() {
         "none".to_string()
     } else {
