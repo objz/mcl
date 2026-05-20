@@ -1,9 +1,9 @@
 [paths]
 # where instances are stored
-instances_dir = "~/.local/share/mcl/instances"
+instances_dir = "~/.local/share/rmcl/instances"
 
 # metadata, cache, whatever else ends up there
-meta_dir = "~/.local/share/mcl/meta"
+meta_dir = "~/.local/share/rmcl/meta"
 
 # optional java override (empty = uses JAVA_HOME)
 java_path = ""
