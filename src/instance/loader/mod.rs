@@ -253,4 +253,46 @@ mod tests {
         // resolved at launch time via maven_coord_to_path(name).
         assert!(profile.libraries[0].downloads.is_none());
     }
+
+    #[test]
+    fn raw_fabric_profile_bytes_parse_as_launch_profile() {
+        use tempfile::TempDir;
+        let tmp = TempDir::new().unwrap();
+        let meta_dir = tmp.path();
+
+        // a synthetic upstream fabric profile shape (id, mainClass,
+        // libraries with name+url, no inheritsFrom, no arguments).
+        // simulates what the install path will write verbatim.
+        let upstream_bytes = br#"{
+            "id": "fabric-loader-0.14.21-1.20.1",
+            "mainClass": "net.fabricmc.loader.impl.launch.knot.KnotClient",
+            "libraries": [
+                { "name": "net.fabricmc:fabric-loader:0.14.21", "url": "https://maven.fabricmc.net/" },
+                { "name": "net.fabricmc:intermediary:1.20.1", "url": "https://maven.fabricmc.net/" }
+            ]
+        }"#;
+
+        let profiles_dir = meta_dir.join("loader-profiles");
+        std::fs::create_dir_all(&profiles_dir).unwrap();
+        let profile_path = profiles_dir.join("fabric-1.20.1-0.14.21.json");
+        std::fs::write(&profile_path, upstream_bytes).unwrap();
+
+        let saved = std::fs::read(&profile_path).unwrap();
+        assert_eq!(saved, upstream_bytes.to_vec());
+
+        let parsed: crate::launch_profile::model::LaunchProfile =
+            serde_json::from_slice(&saved).unwrap();
+        assert_eq!(parsed.id, "fabric-loader-0.14.21-1.20.1");
+        assert_eq!(
+            parsed.main_class.as_deref(),
+            Some("net.fabricmc.loader.impl.launch.knot.KnotClient")
+        );
+        assert!(parsed.inherits_from.is_none()); // launch flow's implicit fallback handles it
+        assert!(parsed.arguments.is_none());
+        assert_eq!(parsed.libraries.len(), 2);
+        assert_eq!(
+            parsed.libraries[0].url.as_deref(),
+            Some("https://maven.fabricmc.net/")
+        );
+    }
 }

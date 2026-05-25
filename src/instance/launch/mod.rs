@@ -115,6 +115,17 @@ async fn migrate_legacy_loader_profile_if_needed(
     config: &InstanceConfig,
     instance_dir: &Path,
 ) -> Result<Option<crate::launch_profile::model::LaunchProfile>, LaunchError> {
+    // Fabric and Quilt fetch their profiles from a network endpoint at
+    // install time; there's no installer-written JSON on disk to recover
+    // from. their upstream profiles also happen to match the "legacy
+    // stripped" predicate (no inheritsFrom, no arguments), so without this
+    // early return every Fabric/Quilt launch would incorrectly fail
+    // migration. resolve() handles their lack of inheritsFrom via the
+    // implicit fallback in the launch flow.
+    if matches!(config.loader, ModLoader::Fabric | ModLoader::Quilt) {
+        return Ok(None);
+    }
+
     let is_legacy = profile.inherits_from.is_none()
         && profile.arguments.is_none()
         && profile.minecraft_arguments.is_none();
@@ -808,5 +819,65 @@ mod tests {
             && modern.arguments.is_none()
             && modern.minecraft_arguments.is_none();
         assert!(!is_legacy);
+    }
+
+    #[tokio::test]
+    async fn migrate_legacy_loader_profile_skips_fabric() {
+        // a fresh upstream Fabric profile happens to match the "legacy"
+        // shape (no inheritsFrom, no arguments, no minecraftArguments).
+        // make sure the migration helper recognises this is Fabric and
+        // returns Ok(None) instead of erroring with "reinstall Fabric".
+        use crate::launch_profile::model::LaunchProfile;
+        use chrono::Utc;
+        use tempfile::TempDir;
+
+        let tmp = TempDir::new().unwrap();
+        let instance_dir = tmp.path().join("instance");
+        std::fs::create_dir_all(&instance_dir).unwrap();
+        let profile_path = tmp.path().join("fabric-1.20.1-0.14.21.json");
+        std::fs::write(&profile_path, b"{}").unwrap();
+
+        let upstream_fabric_shape = LaunchProfile {
+            id: "fabric-loader-0.14.21-1.20.1".into(),
+            inherits_from: None,
+            main_class: Some("net.fabricmc.loader.impl.launch.knot.KnotClient".into()),
+            libraries: Vec::new(),
+            arguments: None,
+            minecraft_arguments: None,
+            asset_index: None,
+            assets: None,
+            java_version: None,
+            downloads: None,
+            release_time: None,
+            time: None,
+            type_: None,
+        };
+
+        let config = InstanceConfig {
+            name: "test".into(),
+            game_version: "1.20.1".into(),
+            loader: ModLoader::Fabric,
+            loader_version: Some("0.14.21".into()),
+            created: Utc::now(),
+            last_played: None,
+            java_path: None,
+            memory_max: None,
+            memory_min: None,
+            jvm_args: Vec::new(),
+            resolution: None,
+        };
+
+        let result = migrate_legacy_loader_profile_if_needed(
+            &profile_path,
+            &upstream_fabric_shape,
+            &config,
+            &instance_dir,
+        )
+        .await;
+
+        assert!(
+            matches!(result, Ok(None)),
+            "expected Ok(None), got {result:?}"
+        );
     }
 }
