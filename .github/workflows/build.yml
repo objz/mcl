@@ -55,3 +55,8 @@ jobs:
 
       - name: cargo build
         run: cargo build --locked
+
+      - name: cargo test --ignored (network canaries, master only)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        continue-on-error: true
+        run: cargo test --locked --all-targets -- --ignored
