@@ -266,13 +266,25 @@ pub(crate) async fn install_forge_from_profile(
     }
 
     set_action("Saving Forge profile...");
-    // write the installer's versionInfo verbatim. it already has the
+    // write the installer's versionInfo as compact JSON. it already has the
     // mainClass, the full library list (with name + url for forge-hosted
     // libs), and minecraftArguments (the legacy --tweakClass etc). the
     // launch flow parses this as a LaunchProfile and - if there's no
     // inheritsFrom field - implicitly inherits from the configured game
     // version so vanilla libraries layer in via resolve().
-    crate::instance::loader::save_profile_json(meta_dir, profile_filename, version_info)?;
+    //
+    // we use serde_json::to_vec (not the pretty-print variant via
+    // save_profile_json) so the written file is content-faithful: every
+    // field present in the installer's versionInfo round-trips. key order
+    // and whitespace may differ from the original installer JSON because
+    // the source is a serde_json::Value (which doesn't preserve order),
+    // but no field is silently dropped.
+    let profiles_dir = meta_dir.join("loader-profiles");
+    std::fs::create_dir_all(&profiles_dir)?;
+    let profile_path = profiles_dir.join(profile_filename);
+    let serialized = serde_json::to_vec(version_info)
+        .map_err(|e| NetError::Parse(format!("Failed to serialize Forge profile: {e}")))?;
+    std::fs::write(&profile_path, &serialized)?;
 
     Ok(())
 }

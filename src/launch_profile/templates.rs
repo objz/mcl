@@ -62,6 +62,15 @@ pub fn substitute(input: &str, ctx: &TemplateContext) -> String {
     out
 }
 
+// quick-play templates (`${quickPlayPath}`, `${quickPlaySingleplayer}`,
+// `${quickPlayMultiplayer}`, `${quickPlayRealms}`) are intentionally not
+// listed here. they only appear in `arguments.game` entries gated on
+// `is_quick_play_*` feature flags; since rmcl never sets those flags
+// (FeatureSet defaults to None across the board), the surrounding
+// conditional argument is filtered out by the rule evaluator before
+// template substitution even runs. if we ever expose quick-play to users,
+// add the variables here AND set the corresponding feature flags in
+// RuleContext at launch.
 fn lookup(name: &str, ctx: &TemplateContext) -> Option<String> {
     Some(match name {
         "library_directory" => ctx.library_directory.display().to_string(),

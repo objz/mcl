@@ -60,9 +60,16 @@ async fn migrate_legacy_meta_if_needed(
     );
 
     let client = crate::net::HttpClient::new();
-    let manifest = crate::net::mojang::fetch_version_manifest(&client)
-        .await
-        .map_err(|e| LaunchError::Parse(format!("Failed to fetch version manifest: {e}")))?;
+    let manifest = match crate::net::mojang::fetch_version_manifest(&client).await {
+        Ok(m) => m,
+        Err(e) => {
+            tracing::warn!(
+                "Could not reach Mojang manifest ({e}); proceeding with the cached legacy profile. \
+                 Modern features like Forge's --add-opens flags may be missing until the next online launch."
+            );
+            return Ok(None);
+        }
+    };
 
     let entry = manifest
         .versions
@@ -74,9 +81,15 @@ async fn migrate_legacy_meta_if_needed(
             ))
         })?;
 
-    let (_meta, raw) = crate::net::mojang::fetch_version_meta_with_raw(&client, entry)
-        .await
-        .map_err(|e| LaunchError::Parse(format!("Failed to re-fetch version meta: {e}")))?;
+    let (_meta, raw) = match crate::net::mojang::fetch_version_meta_with_raw(&client, entry).await {
+        Ok(ok) => ok,
+        Err(e) => {
+            tracing::warn!(
+                "Could not refetch version metadata from Mojang ({e}); proceeding with the cached legacy profile."
+            );
+            return Ok(None);
+        }
+    };
 
     tokio::fs::write(meta_path, &raw).await?;
 
@@ -123,21 +136,34 @@ async fn migrate_legacy_loader_profile_if_needed(
         return Ok(None);
     }
 
+    // tightened predicate per the spec: only treat a profile as "legacy
+    // stripped" when our old `gameArguments` field is present. that field
+    // is unique to rmcl <= 0.3.0's custom shape; no upstream profile
+    // emits it. without this gate, an upstream profile that happens to
+    // omit inheritsFrom/arguments/minecraftArguments would be mistakenly
+    // re-extracted from the installer JSON.
     let is_legacy = profile.inherits_from.is_none()
         && profile.arguments.is_none()
-        && profile.minecraft_arguments.is_none();
+        && profile.minecraft_arguments.is_none()
+        && profile.game_arguments.is_some();
     if !is_legacy {
         return Ok(None);
     }
 
-    let loader_version = config.loader_version.as_deref().unwrap_or("unknown");
+    let Some(loader_version) = config.loader_version.as_deref() else {
+        return Err(LaunchError::Parse(format!(
+            "Loader profile at {} is in an outdated format and the instance config has no \
+             loader_version recorded. Reinstall {} for this instance.",
+            profile_path.display(),
+            config.loader
+        )));
+    };
     let Some(version_dir) =
         installer_version_dir_name(config.loader, &config.game_version, loader_version)
     else {
-        // Fabric/Quilt fall through to the same path but don't have an
-        // installer-written JSON to fall back on. Phase 6 will widen
-        // those structs to capture the full upstream JSON at install
-        // time; until then, the user reinstalls.
+        // unreachable today: only Vanilla/Fabric/Quilt return None, and
+        // Vanilla doesn't pass this code path (no loader profile to
+        // migrate) while Fabric/Quilt are filtered above.
         return Err(LaunchError::Parse(format!(
             "Loader profile at {} is in an outdated format. Reinstall {} for this instance.",
             profile_path.display(),
@@ -201,17 +227,11 @@ pub async fn launch(
     };
 
     let current_features = crate::launch_profile::rules::FeatureSet::default();
+    let host_os_version = crate::launch_profile::system::mojang_os_version();
     let rule_ctx = crate::launch_profile::rules::RuleContext {
-        os_name: match std::env::consts::OS {
-            "macos" => "osx",
-            other => other,
-        },
-        arch: match std::env::consts::ARCH {
-            "x86" => "x86",
-            "x86_64" => "x86_64",
-            "aarch64" => "arm64",
-            other => other,
-        },
+        os_name: crate::launch_profile::system::mojang_os_name(),
+        os_version: &host_os_version,
+        arch: crate::launch_profile::system::mojang_arch_name(),
         features: &current_features,
     };
 
@@ -617,6 +637,7 @@ mod tests {
         let features = FeatureSet::default();
         let rule_ctx = RuleContext {
             os_name: "linux",
+            os_version: "6.0",
             arch: "x86_64",
             features: &features,
         };
@@ -642,11 +663,12 @@ mod tests {
             downloads: None,
             release_time: None,
             time: None,
+            game_arguments: None,
+
             type_: None,
         };
 
-        let (jvm, game_args) =
-            build_game_args(&profile, &rule_ctx, &template_ctx).unwrap();
+        let (jvm, game_args) = build_game_args(&profile, &rule_ctx, &template_ctx).unwrap();
         assert_eq!(jvm, vec!["-Djava.library.path=/m/natives"]);
         assert_eq!(game_args, vec!["--username", "Player"]);
     }
@@ -688,6 +710,8 @@ mod tests {
             downloads: None,
             release_time: None,
             time: None,
+            game_arguments: None,
+
             type_: None,
         };
         assert!(stripped.arguments.is_none() && stripped.minecraft_arguments.is_none());
@@ -709,6 +733,8 @@ mod tests {
             downloads: None,
             release_time: None,
             time: None,
+            game_arguments: None,
+
             type_: None,
         };
         assert!(modern.arguments.is_some());
@@ -730,6 +756,8 @@ mod tests {
             downloads: None,
             release_time: None,
             time: None,
+            game_arguments: None,
+
             type_: None,
         };
         assert!(legacy.minecraft_arguments.is_some());
@@ -774,6 +802,8 @@ mod tests {
             downloads: None,
             release_time: None,
             time: None,
+            game_arguments: None,
+
             type_: None,
         };
         let is_legacy = legacy.inherits_from.is_none()
@@ -798,6 +828,8 @@ mod tests {
             downloads: None,
             release_time: None,
             time: None,
+            game_arguments: None,
+
             type_: None,
         };
         let is_legacy = modern.inherits_from.is_none()
@@ -835,6 +867,8 @@ mod tests {
             downloads: None,
             release_time: None,
             time: None,
+            game_arguments: None,
+
             type_: None,
         };
 

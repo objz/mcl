@@ -69,12 +69,51 @@ impl HttpClient {
     }
 
     pub async fn get_json<T: DeserializeOwned>(&self, url: &str) -> Result<T, NetError> {
-        Ok(self.get(url).await?.json().await?)
+        get_with_retry(self, url, |resp| async move { Ok(resp.json().await?) }).await
     }
 
     pub async fn get_bytes(&self, url: &str) -> Result<Vec<u8>, NetError> {
-        Ok(self.get(url).await?.bytes().await?.to_vec())
+        get_with_retry(
+            self,
+            url,
+            |resp| async move { Ok(resp.bytes().await?.to_vec()) },
+        )
+        .await
     }
+}
+
+// shared retry envelope around `client.get(url).await? -> decode`. retries
+// transient failures (timeouts, connect errors, 5xx) with exponential
+// backoff. used by both get_json and get_bytes.
+async fn get_with_retry<T, F, Fut>(client: &HttpClient, url: &str, decode: F) -> Result<T, NetError>
+where
+    F: Fn(reqwest::Response) -> Fut,
+    Fut: std::future::Future<Output = Result<T, NetError>>,
+{
+    let mut last_error = None;
+    for attempt in 0..=MAX_RETRIES {
+        if attempt > 0 {
+            let delay = RETRY_BASE_DELAY_MS * 2u64.pow(attempt - 1);
+            tracing::warn!(
+                "retrying request (attempt {}/{}): {}",
+                attempt + 1,
+                MAX_RETRIES + 1,
+                url
+            );
+            tokio::time::sleep(std::time::Duration::from_millis(delay)).await;
+        }
+
+        match client.get(url).await {
+            Ok(resp) => match decode(resp).await {
+                Ok(value) => return Ok(value),
+                Err(e) if is_retryable(&e) => last_error = Some(e),
+                Err(e) => return Err(e),
+            },
+            Err(e) if is_retryable(&e) => last_error = Some(e),
+            Err(e) => return Err(e),
+        }
+    }
+    Err(last_error.unwrap())
 }
 
 const MAX_RETRIES: u32 = 3;

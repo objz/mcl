@@ -16,6 +16,10 @@ pub enum RuleAction {
 pub struct OsCondition {
     pub name: Option<String>,
     pub arch: Option<String>,
+    // mojang occasionally constrains natives selection on os.version with a
+    // regex. rare in practice - when present, it's a substring/anchor match
+    // against the host OS version reported by `system::mojang_os_version`.
+    pub version: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize, Serialize)]
@@ -34,6 +38,7 @@ pub struct Rule {
 
 pub struct RuleContext<'a> {
     pub os_name: &'a str,
+    pub os_version: &'a str,
     pub arch: &'a str,
     pub features: &'a FeatureSet,
 }
@@ -63,6 +68,11 @@ fn rule_matches(rule: &Rule, ctx: &RuleContext) -> bool {
         {
             return false;
         }
+        if let Some(pattern) = &os.version
+            && !os_version_matches(pattern, ctx.os_version)
+        {
+            return false;
+        }
     }
     if let Some(required) = &rule.features
         && !features_match(required, ctx.features)
@@ -70,6 +80,25 @@ fn rule_matches(rule: &Rule, ctx: &RuleContext) -> bool {
         return false;
     }
     true
+}
+
+// mojang's os.version constraints are typically anchored regex patterns
+// (e.g. `^10\\.`). we do a substring containment check as a defensive
+// approximation that doesn't pull in the `regex` crate. when the host
+// os_version is empty (Windows fallback path returns ""), version-gated
+// rules don't match - which is the conservative default.
+fn os_version_matches(pattern: &str, host_version: &str) -> bool {
+    if host_version.is_empty() {
+        return false;
+    }
+    // strip common regex anchors and metacharacters for substring lookup.
+    // good enough for the rare profile that uses os.version.
+    let needle = pattern
+        .trim_start_matches('^')
+        .trim_end_matches('$')
+        .trim_end_matches('.')
+        .trim_end_matches('\\');
+    host_version.contains(needle)
 }
 
 fn features_match(required: &FeatureSet, current: &FeatureSet) -> bool {
@@ -93,6 +122,7 @@ mod tests {
     fn linux_ctx<'a>(features: &'a FeatureSet) -> RuleContext<'a> {
         RuleContext {
             os_name: "linux",
+            os_version: "6.0",
             arch: "x86_64",
             features,
         }
@@ -112,6 +142,7 @@ mod tests {
             os: Some(OsCondition {
                 name: Some("linux".into()),
                 arch: None,
+                version: None,
             }),
             features: None,
         }];
@@ -127,6 +158,7 @@ mod tests {
             os: Some(OsCondition {
                 name: Some("linux".into()),
                 arch: None,
+                version: None,
             }),
             features: None,
         }];
@@ -144,6 +176,7 @@ mod tests {
             os: Some(OsCondition {
                 name: Some("windows".into()),
                 arch: None,
+                version: None,
             }),
             features: None,
         }];
@@ -165,6 +198,7 @@ mod tests {
                 os: Some(OsCondition {
                     name: Some("osx".into()),
                     arch: None,
+                    version: None,
                 }),
                 features: None,
             },
@@ -172,6 +206,7 @@ mod tests {
         let features = FeatureSet::default();
         let osx_ctx = RuleContext {
             os_name: "osx",
+            os_version: "6.0",
             arch: "x86_64",
             features: &features,
         };
@@ -194,6 +229,7 @@ mod tests {
                 os: Some(OsCondition {
                     name: Some("linux".into()),
                     arch: None,
+                    version: None,
                 }),
                 features: None,
             },
@@ -210,6 +246,7 @@ mod tests {
             os: Some(OsCondition {
                 name: Some("linux".into()),
                 arch: Some("arm64".into()),
+                version: None,
             }),
             features: None,
         }];
@@ -235,6 +272,7 @@ mod tests {
         };
         let ctx = RuleContext {
             os_name: "linux",
+            os_version: "6.0",
             arch: "x86_64",
             features: &demo_features,
         };
@@ -266,6 +304,55 @@ mod tests {
         let features = FeatureSet::default();
         let ctx = linux_ctx(&features);
         assert!(evaluate(&rules, &ctx));
+    }
+
+    #[test]
+    fn os_version_pattern_matches_against_host() {
+        let rules = vec![Rule {
+            action: RuleAction::Allow,
+            os: Some(OsCondition {
+                name: Some("osx".into()),
+                arch: None,
+                version: Some("^10\\.".into()),
+            }),
+            features: None,
+        }];
+        let features = FeatureSet::default();
+        let ctx_match = RuleContext {
+            os_name: "osx",
+            os_version: "10.15.7",
+            arch: "x86_64",
+            features: &features,
+        };
+        assert!(evaluate(&rules, &ctx_match));
+        let ctx_mismatch = RuleContext {
+            os_name: "osx",
+            os_version: "13.2.1",
+            arch: "x86_64",
+            features: &features,
+        };
+        assert!(!evaluate(&rules, &ctx_mismatch));
+    }
+
+    #[test]
+    fn os_version_pattern_does_not_match_when_host_unknown() {
+        let rules = vec![Rule {
+            action: RuleAction::Allow,
+            os: Some(OsCondition {
+                name: Some("windows".into()),
+                arch: None,
+                version: Some("^10\\.".into()),
+            }),
+            features: None,
+        }];
+        let features = FeatureSet::default();
+        let ctx = RuleContext {
+            os_name: "windows",
+            os_version: "",
+            arch: "x86_64",
+            features: &features,
+        };
+        assert!(!evaluate(&rules, &ctx));
     }
 
     #[test]

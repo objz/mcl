@@ -8,4 +8,5 @@ pub mod model;
 pub mod render;
 pub mod resolve;
 pub mod rules;
+pub mod system;
 pub mod templates;

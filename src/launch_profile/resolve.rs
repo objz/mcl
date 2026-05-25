@@ -56,6 +56,7 @@ pub fn merge_into(child: LaunchProfile, parent: LaunchProfile) -> LaunchProfile 
         downloads: child.downloads.or(parent.downloads),
         release_time: child.release_time.or(parent.release_time),
         time: child.time.or(parent.time),
+        game_arguments: None,
         type_: child.type_.or(parent.type_),
     }
 }
@@ -88,7 +89,10 @@ fn merge_libraries(
     parent: Vec<crate::launch_profile::model::Library>,
 ) -> Vec<crate::launch_profile::model::Library> {
     use std::collections::HashSet;
-    let child_keys: HashSet<String> = child.iter().map(|l| coord_key(&l.name).to_string()).collect();
+    let child_keys: HashSet<String> = child
+        .iter()
+        .map(|l| coord_key(&l.name).to_string())
+        .collect();
 
     let mut out: Vec<crate::launch_profile::model::Library> = parent
         .into_iter()
@@ -171,6 +175,7 @@ mod tests {
             downloads: None,
             release_time: None,
             time: None,
+            game_arguments: None,
             type_: None,
         }
     }
@@ -190,6 +195,7 @@ mod tests {
             os: Some(crate::launch_profile::rules::OsCondition {
                 name: Some("linux".into()),
                 arch: None,
+                version: None,
             }),
             features: None,
         }

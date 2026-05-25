@@ -126,6 +126,7 @@ mod tests {
             downloads: None,
             release_time: None,
             time: None,
+            game_arguments: None,
             type_: None,
         }
     }
@@ -140,6 +141,7 @@ mod tests {
         let features = FeatureSet::default();
         let rule_ctx = RuleContext {
             os_name: "linux",
+            os_version: "6.0",
             arch: "x86_64",
             features: &features,
         };
@@ -167,6 +169,7 @@ mod tests {
         let features = FeatureSet::default();
         let rule_ctx = RuleContext {
             os_name: "linux",
+            os_version: "6.0",
             arch: "x86_64",
             features: &features,
         };
@@ -197,6 +200,7 @@ mod tests {
         let features = FeatureSet::default();
         let rule_ctx = RuleContext {
             os_name: "linux",
+            os_version: "6.0",
             arch: "x86_64",
             features: &features,
         };
@@ -207,6 +211,7 @@ mod tests {
                 os: Some(OsCondition {
                     name: Some("osx".into()),
                     arch: None,
+                    version: None,
                 }),
                 features: None,
             }],
@@ -236,6 +241,7 @@ mod tests {
         let features = FeatureSet::default();
         let rule_ctx = RuleContext {
             os_name: "linux",
+            os_version: "6.0",
             arch: "x86_64",
             features: &features,
         };
@@ -246,6 +252,7 @@ mod tests {
                 os: Some(OsCondition {
                     name: Some("linux".into()),
                     arch: None,
+                    version: None,
                 }),
                 features: None,
             }],
@@ -278,6 +285,7 @@ mod tests {
         let features = FeatureSet::default();
         let rule_ctx = RuleContext {
             os_name: "linux",
+            os_version: "6.0",
             arch: "x86_64",
             features: &features,
         };
@@ -287,6 +295,102 @@ mod tests {
 
         let result = render_args(&profile, &rule_ctx, &template_ctx);
         assert!(matches!(result, Err(RenderError::MissingMainClass)));
+    }
+
+    #[tokio::test]
+    async fn end_to_end_resolve_then_render_modern_forge_shape() {
+        // exercises the full pipeline: load a synthetic vanilla profile
+        // from disk, load a synthetic loader profile with inheritsFrom,
+        // resolve the chain, then render args. catches integration bugs
+        // that unit tests of each layer would miss.
+        use crate::launch_profile::resolve;
+        use tempfile::TempDir;
+
+        let tmp = TempDir::new().unwrap();
+        let vanilla_path = tmp.path().join("versions").join("1.20.1").join("meta.json");
+        std::fs::create_dir_all(vanilla_path.parent().unwrap()).unwrap();
+        let vanilla_json = br#"{
+            "id": "1.20.1",
+            "mainClass": "net.minecraft.client.main.Main",
+            "libraries": [
+                {
+                    "name": "org.lwjgl:lwjgl:3.3.1",
+                    "downloads": {
+                        "artifact": {
+                            "url": "https://example.invalid/lwjgl.jar",
+                            "path": "org/lwjgl/lwjgl/3.3.1/lwjgl-3.3.1.jar",
+                            "sha1": "1111111111111111111111111111111111111111",
+                            "size": 100
+                        }
+                    }
+                }
+            ],
+            "arguments": {
+                "game": ["--username", "${auth_player_name}", "--version", "${version_name}"],
+                "jvm": ["-Djava.library.path=${natives_directory}"]
+            }
+        }"#;
+        std::fs::write(&vanilla_path, vanilla_json).unwrap();
+
+        let loader_json = r#"{
+            "id": "1.20.1-forge-47.2.0",
+            "inheritsFrom": "1.20.1",
+            "mainClass": "cpw.mods.bootstraplauncher.BootstrapLauncher",
+            "libraries": [
+                { "name": "net.minecraftforge:forge:47.2.0" }
+            ],
+            "arguments": {
+                "game": ["--launchTarget", "forge_client"],
+                "jvm": [
+                    "--add-opens", "java.base/sun.security.util=cpw.mods.securejarhandler"
+                ]
+            }
+        }"#;
+        let loader_profile: LaunchProfile = serde_json::from_str(loader_json).unwrap();
+
+        let merged = resolve::resolve(loader_profile, tmp.path()).await.unwrap();
+
+        let lib = PathBuf::from("/m/libraries");
+        let nat = PathBuf::from("/m/natives");
+        let game = PathBuf::from("/i/.minecraft");
+        let assets = PathBuf::from("/m/assets");
+        let template_ctx = template_fixture(&lib, &nat, &game, &assets);
+        let features = FeatureSet::default();
+        let rule_ctx = RuleContext {
+            os_name: "linux",
+            os_version: "6.0",
+            arch: "x86_64",
+            features: &features,
+        };
+
+        let rendered = render_args(&merged, &rule_ctx, &template_ctx).unwrap();
+
+        // child main_class wins after merge
+        assert_eq!(
+            rendered.main_class,
+            "cpw.mods.bootstraplauncher.BootstrapLauncher"
+        );
+        // game args: parent first then child
+        assert_eq!(
+            rendered.game,
+            vec![
+                "--username",
+                "Player",
+                "--version",
+                "1.20.1",
+                "--launchTarget",
+                "forge_client"
+            ]
+        );
+        // jvm args: parent first then child
+        assert_eq!(
+            rendered.jvm,
+            vec![
+                "-Djava.library.path=/m/natives",
+                "--add-opens",
+                "java.base/sun.security.util=cpw.mods.securejarhandler"
+            ]
+        );
     }
 
     #[test]
@@ -301,6 +405,7 @@ mod tests {
         let features = FeatureSet::default();
         let rule_ctx = RuleContext {
             os_name: "linux",
+            os_version: "6.0",
             arch: "x86_64",
             features: &features,
         };

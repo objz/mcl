@@ -46,20 +46,6 @@ pub trait ModLoaderInstaller: Send + Sync {
     ) -> Result<(), NetError>;
 }
 
-pub(crate) fn save_profile_json(
-    meta_dir: &Path,
-    filename: &str,
-    profile: &impl serde::Serialize,
-) -> Result<(), NetError> {
-    let profiles_dir = meta_dir.join("loader-profiles");
-    std::fs::create_dir_all(&profiles_dir)?;
-    let profile_path = profiles_dir.join(filename);
-    let json = serde_json::to_string_pretty(profile)
-        .map_err(|e| NetError::Parse(format!("Failed to serialize profile {filename}: {e}")))?;
-    std::fs::write(&profile_path, &json)?;
-    Ok(())
-}
-
 // used by forge/neoforge. their java installer drops a version json into
 // .minecraft/versions/. we copy that file byte-for-byte to our loader
 // profile cache so launch-time code sees the full upstream JSON -
@@ -214,7 +200,15 @@ mod tests {
             ]
         });
 
-        save_profile_json(&meta_dir, "forge-1.7.10-10.13.4.1614.json", &version_info).unwrap();
+        // mirror the install path: write versionInfo as compact JSON.
+        let profiles_dir = meta_dir.join("loader-profiles");
+        std::fs::create_dir_all(&profiles_dir).unwrap();
+        let serialized = serde_json::to_vec(&version_info).unwrap();
+        std::fs::write(
+            profiles_dir.join("forge-1.7.10-10.13.4.1614.json"),
+            &serialized,
+        )
+        .unwrap();
 
         let saved_bytes = std::fs::read(
             meta_dir

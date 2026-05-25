@@ -113,17 +113,10 @@ pub async fn fetch_version_manifest(client: &HttpClient) -> Result<VersionManife
     client.get_json(MANIFEST_URL).await
 }
 
-pub async fn fetch_version_meta(
-    client: &HttpClient,
-    entry: &VersionEntry,
-) -> Result<VersionMeta, NetError> {
-    client.get_json(&entry.url).await
-}
-
-// like fetch_version_meta but also returns the raw response bytes so the
-// caller can write the upstream JSON byte-for-byte to disk. used by the
-// install path so we don't lose data (e.g. arguments.jvm) by re-serializing
-// through our narrow VersionMeta struct.
+// fetches and parses a version's metadata. also returns the raw response
+// bytes so the caller can write the upstream JSON byte-for-byte to disk
+// - used by the install path so we don't lose data (e.g. arguments.jvm)
+// by re-serializing through our narrow VersionMeta struct.
 pub async fn fetch_version_meta_with_raw(
     client: &HttpClient,
     entry: &VersionEntry,
@@ -173,9 +166,11 @@ pub async fn download_libraries(
     set_action("Downloading libraries...");
 
     let features = crate::launch_profile::rules::FeatureSet::default();
+    let host_os_version = crate::launch_profile::system::mojang_os_version();
     let rule_ctx = crate::launch_profile::rules::RuleContext {
-        os_name: mojang_os_name(),
-        arch: mojang_arch_name(),
+        os_name: crate::launch_profile::system::mojang_os_name(),
+        os_version: &host_os_version,
+        arch: crate::launch_profile::system::mojang_arch_name(),
         features: &features,
     };
 
@@ -291,23 +286,6 @@ pub async fn download_assets(
     let result = run_parallel_downloads(client, downloads, true).await;
     clear();
     result
-}
-
-// mojang calls macOS "osx" because apparently it's still 2012
-fn mojang_os_name() -> &'static str {
-    match std::env::consts::OS {
-        "macos" => "osx",
-        other => other,
-    }
-}
-
-fn mojang_arch_name() -> &'static str {
-    match std::env::consts::ARCH {
-        "x86" => "x86",
-        "x86_64" => "x86_64",
-        "aarch64" => "arm64",
-        other => other,
-    }
 }
 
 // bounded parallel downloader. spawns up to MAX_CONCURRENT_DOWNLOADS tasks

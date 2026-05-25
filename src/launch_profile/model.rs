@@ -31,6 +31,13 @@ pub struct LaunchProfile {
     pub time: Option<String>,
     #[serde(rename = "type")]
     pub type_: Option<String>,
+    // present only in rmcl <= 0.3.0's stripped loader-profile shape.
+    // we deserialize it so the launch-time legacy-detection predicate
+    // can confirm "this really is our old format, not an upstream
+    // profile that happens to omit arguments". skipped on serialize so
+    // we never propagate this field outward.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub game_arguments: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize, Serialize)]
