@@ -47,11 +47,7 @@ pub fn merge_into(child: LaunchProfile, parent: LaunchProfile) -> LaunchProfile 
         id: child.id,
         inherits_from: parent.inherits_from,
         main_class: child.main_class.or(parent.main_class),
-        libraries: {
-            let mut libs = parent.libraries;
-            libs.extend(child.libraries);
-            libs
-        },
+        libraries: merge_libraries(child.libraries, parent.libraries),
         arguments: merge_arguments(child.arguments, parent.arguments),
         minecraft_arguments: child.minecraft_arguments.or(parent.minecraft_arguments),
         asset_index: child.asset_index.or(parent.asset_index),
@@ -62,6 +58,44 @@ pub fn merge_into(child: LaunchProfile, parent: LaunchProfile) -> LaunchProfile 
         time: child.time.or(parent.time),
         type_: child.type_.or(parent.type_),
     }
+}
+
+// extracts the `group:artifact` portion of a maven coordinate, dropping
+// version and any classifier. used as the dedup key when merging library
+// lists from a child profile on top of its parent.
+fn coord_key(name: &str) -> &str {
+    // mojang maven coords are `group:artifact:version[:classifier]`. take
+    // everything up to the second colon.
+    let mut count = 0;
+    for (i, b) in name.bytes().enumerate() {
+        if b == b':' {
+            count += 1;
+            if count == 2 {
+                return &name[..i];
+            }
+        }
+    }
+    name
+}
+
+// child entries take precedence over parent entries with the same
+// group:artifact. mojang and the major third-party launchers (prism,
+// multimc) all dedup this way - without it, loader overrides of vanilla
+// libraries (e.g. forge bumping log4j) would lose to vanilla because the
+// JVM picks the first classpath match.
+fn merge_libraries(
+    child: Vec<crate::launch_profile::model::Library>,
+    parent: Vec<crate::launch_profile::model::Library>,
+) -> Vec<crate::launch_profile::model::Library> {
+    use std::collections::HashSet;
+    let child_keys: HashSet<String> = child.iter().map(|l| coord_key(&l.name).to_string()).collect();
+
+    let mut out: Vec<crate::launch_profile::model::Library> = parent
+        .into_iter()
+        .filter(|l| !child_keys.contains(coord_key(&l.name)))
+        .collect();
+    out.extend(child);
+    out
 }
 
 fn merge_arguments(child: Option<Arguments>, parent: Option<Arguments>) -> Option<Arguments> {
@@ -221,6 +255,51 @@ mod tests {
         let merged = merge_into(child, parent);
         let names: Vec<_> = merged.libraries.iter().map(|l| l.name.as_str()).collect();
         assert_eq!(names, vec!["p1", "p2", "c1"]);
+    }
+
+    #[test]
+    fn child_library_supersedes_parent_with_same_group_artifact() {
+        // forge declares log4j 2.17.0; vanilla declared 2.0-beta9. without
+        // dedup, both end up on the classpath and the JVM picks the first
+        // (vanilla) match - defeating forge's override. dedup keeps child's.
+        let mut child = empty_profile("forge");
+        let mut parent = empty_profile("vanilla");
+        parent.libraries = vec![
+            lib("org.apache.logging.log4j:log4j-core:2.0-beta9"),
+            lib("org.lwjgl:lwjgl:3.3.1"),
+        ];
+        child.libraries = vec![
+            lib("org.apache.logging.log4j:log4j-core:2.17.0"),
+            lib("net.minecraftforge:forge:47.2.0"),
+        ];
+        let merged = merge_into(child, parent);
+        let names: Vec<_> = merged.libraries.iter().map(|l| l.name.as_str()).collect();
+        // parent's log4j-core is filtered (superseded by child); parent's
+        // lwjgl stays (no conflict); child's log4j and forge come last.
+        assert_eq!(
+            names,
+            vec![
+                "org.lwjgl:lwjgl:3.3.1",
+                "org.apache.logging.log4j:log4j-core:2.17.0",
+                "net.minecraftforge:forge:47.2.0",
+            ]
+        );
+    }
+
+    #[test]
+    fn coord_key_extracts_group_artifact() {
+        assert_eq!(coord_key("org.lwjgl:lwjgl:3.3.1"), "org.lwjgl:lwjgl");
+        assert_eq!(
+            coord_key("org.apache.logging.log4j:log4j-core:2.17.0"),
+            "org.apache.logging.log4j:log4j-core"
+        );
+        // with classifier
+        assert_eq!(
+            coord_key("org.lwjgl:lwjgl:3.3.1:natives-linux"),
+            "org.lwjgl:lwjgl"
+        );
+        // malformed (no colons) - return as-is
+        assert_eq!(coord_key("malformed"), "malformed");
     }
 
     #[test]

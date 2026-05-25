@@ -35,13 +35,10 @@ fn build_game_args(
     profile: &crate::launch_profile::model::LaunchProfile,
     rule_ctx: &crate::launch_profile::rules::RuleContext<'_>,
     template_ctx: &crate::launch_profile::templates::TemplateContext<'_>,
-    loader_game_args: Vec<String>,
 ) -> Result<(Vec<String>, Vec<String>), LaunchError> {
     let rendered = crate::launch_profile::render::render_args(profile, rule_ctx, template_ctx)
         .map_err(|e| LaunchError::Parse(format!("Failed to render args: {e}")))?;
-    let mut game = rendered.game;
-    game.extend(loader_game_args);
-    Ok((rendered.jvm, game))
+    Ok((rendered.jvm, rendered.game))
 }
 
 // existing installs from rmcl <= 0.3.0 have meta.json files in the
@@ -428,12 +425,8 @@ pub async fn launch(
         clientid: "0",
     };
 
-    let (upstream_jvm_args, game_args) = build_game_args(
-        &merged_profile,
-        &rule_ctx,
-        &template_ctx,
-        extra_args.clone(),
-    )?;
+    let (upstream_jvm_args, game_args) =
+        build_game_args(&merged_profile, &rule_ctx, &template_ctx)?;
 
     let mut jvm: Vec<String> = vec![
         format!("-Xms{}", config.memory_min.as_deref().unwrap_or("512M")),
@@ -652,18 +645,10 @@ mod tests {
             type_: None,
         };
 
-        let (jvm, game_args) = build_game_args(
-            &profile,
-            &rule_ctx,
-            &template_ctx,
-            vec!["--tweakClass".into(), "foo".into()],
-        )
-        .unwrap();
+        let (jvm, game_args) =
+            build_game_args(&profile, &rule_ctx, &template_ctx).unwrap();
         assert_eq!(jvm, vec!["-Djava.library.path=/m/natives"]);
-        assert_eq!(
-            game_args,
-            vec!["--username", "Player", "--tweakClass", "foo"]
-        );
+        assert_eq!(game_args, vec!["--username", "Player"]);
     }
 
     #[test]
