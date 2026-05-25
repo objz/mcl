@@ -27,20 +27,6 @@ pub enum LaunchError {
     Auth(String),
 }
 
-#[derive(serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct LoaderProfileJson {
-    main_class: String,
-    libraries: Vec<LoaderLibrary>,
-    #[serde(default)]
-    game_arguments: Vec<String>,
-}
-
-#[derive(serde::Deserialize)]
-struct LoaderLibrary {
-    name: String,
-}
-
 fn account_can_launch(has_microsoft_account: bool, account: &Account) -> bool {
     account.account_type == AccountType::Microsoft || has_microsoft_account
 }
@@ -102,6 +88,87 @@ async fn migrate_legacy_meta_if_needed(
     Ok(Some(refreshed))
 }
 
+// the forge/neoforge installer writes its version JSON to a path that's
+// loader-specific. encode the naming convention here so migration code
+// can find the original file when it needs to rebuild our cache.
+fn installer_version_dir_name(
+    loader: ModLoader,
+    game_version: &str,
+    loader_version: &str,
+) -> Option<String> {
+    match loader {
+        ModLoader::Forge => Some(format!("{game_version}-forge-{loader_version}")),
+        ModLoader::NeoForge => Some(format!("neoforge-{loader_version}")),
+        ModLoader::Vanilla | ModLoader::Fabric | ModLoader::Quilt => None,
+    }
+}
+
+// loader profiles installed by rmcl <= 0.3.0 are in our stripped
+// `{mainClass, libraries[, gameArguments]}` format, which silently drops
+// `inheritsFrom`, `arguments.jvm`, and conditional rules from upstream.
+// detect that shape (no inheritsFrom AND no arguments AND no
+// minecraftArguments - every real upstream profile has at least one) and
+// rebuild from the installer's original JSON if it's still on disk.
+async fn migrate_legacy_loader_profile_if_needed(
+    profile_path: &Path,
+    profile: &crate::launch_profile::model::LaunchProfile,
+    config: &InstanceConfig,
+    instance_dir: &Path,
+) -> Result<Option<crate::launch_profile::model::LaunchProfile>, LaunchError> {
+    let is_legacy = profile.inherits_from.is_none()
+        && profile.arguments.is_none()
+        && profile.minecraft_arguments.is_none();
+    if !is_legacy {
+        return Ok(None);
+    }
+
+    let loader_version = config.loader_version.as_deref().unwrap_or("unknown");
+    let Some(version_dir) =
+        installer_version_dir_name(config.loader, &config.game_version, loader_version)
+    else {
+        // Fabric/Quilt fall through to the same path but don't have an
+        // installer-written JSON to fall back on. Phase 6 will widen
+        // those structs to capture the full upstream JSON at install
+        // time; until then, the user reinstalls.
+        return Err(LaunchError::Parse(format!(
+            "Loader profile at {} is in an outdated format. Reinstall {} for this instance.",
+            profile_path.display(),
+            config.loader
+        )));
+    };
+
+    let installer_json_path = instance_dir
+        .join(".minecraft")
+        .join("versions")
+        .join(&version_dir)
+        .join(format!("{version_dir}.json"));
+
+    if !installer_json_path.exists() {
+        return Err(LaunchError::Parse(format!(
+            "Loader profile at {} is in an outdated format and the installer JSON at {} \
+             is missing. Reinstall {} for this instance.",
+            profile_path.display(),
+            installer_json_path.display(),
+            config.loader
+        )));
+    }
+
+    tracing::warn!(
+        "Loader profile {} is in legacy format; rebuilding from {}",
+        profile_path.display(),
+        installer_json_path.display()
+    );
+
+    let raw = tokio::fs::read(&installer_json_path).await?;
+    tokio::fs::write(profile_path, &raw).await?;
+
+    let refreshed: crate::launch_profile::model::LaunchProfile = serde_json::from_slice(&raw)
+        .map_err(|e| {
+            LaunchError::Parse(format!("Failed to parse refreshed loader profile: {e}"))
+        })?;
+    Ok(Some(refreshed))
+}
+
 pub async fn launch(
     config: &InstanceConfig,
     instances_dir: &Path,
@@ -140,10 +207,6 @@ pub async fn launch(
         features: &current_features,
     };
 
-    let vanilla_main_class = meta
-        .main_class
-        .clone()
-        .ok_or_else(|| LaunchError::Parse("meta.json missing mainClass".into()))?;
     let asset_index_id = meta
         .asset_index
         .as_ref()
@@ -151,20 +214,6 @@ pub async fn launch(
         .unwrap_or_default();
 
     let lib_dir = meta_dir.join("libraries");
-    let mut classpath: Vec<PathBuf> = meta
-        .libraries
-        .iter()
-        .filter(|l| match &l.rules {
-            Some(rules) => crate::launch_profile::rules::evaluate(rules, &rule_ctx),
-            None => true,
-        })
-        .filter_map(|l| {
-            l.downloads
-                .as_ref()
-                .and_then(|d| d.artifact.as_ref())
-                .map(|a| lib_dir.join(&a.path))
-        })
-        .collect();
 
     let lv = config.loader_version.as_deref().unwrap_or("unknown");
     let profile_filename = match config.loader {
@@ -175,43 +224,83 @@ pub async fn launch(
         ModLoader::NeoForge => Some(format!("neoforge-{}.json", lv)),
     };
 
-    // if there's a mod loader, read its profile to get the real main class,
-    // extra libraries, and any additional game arguments (e.g. --tweakClass)
-    let (main_class, loader_game_args) = if let Some(filename) = profile_filename {
-        let profile_path = meta_dir.join("loader-profiles").join(&filename);
-        if !profile_path.exists() {
-            return Err(LaunchError::MetaNotFound(
-                profile_path.display().to_string(),
-            ));
+    // load the loader profile (if any), migrate from the old stripped format
+    // if needed, and resolve `inheritsFrom` against the vanilla parent (which
+    // the vanilla meta migration above ensured is fresh on disk). when no
+    // loader is configured we use the already-loaded vanilla meta directly.
+    let merged_profile: crate::launch_profile::model::LaunchProfile =
+        if let Some(filename) = &profile_filename {
+            let profile_path = meta_dir.join("loader-profiles").join(filename);
+            if !profile_path.exists() {
+                return Err(LaunchError::MetaNotFound(
+                    profile_path.display().to_string(),
+                ));
+            }
+            let mut loader_profile: crate::launch_profile::model::LaunchProfile =
+                serde_json::from_slice(&tokio::fs::read(&profile_path).await?)?;
+
+            if let Some(refreshed) = migrate_legacy_loader_profile_if_needed(
+                &profile_path,
+                &loader_profile,
+                config,
+                &instance_dir,
+            )
+            .await?
+            {
+                loader_profile = refreshed;
+            }
+
+            // legacy installer-written profiles (and any loader profile that
+            // omits inheritsFrom) still need to be layered over vanilla. set
+            // the inherit explicitly so resolve() walks the chain.
+            if loader_profile.inherits_from.is_none() {
+                loader_profile.inherits_from = Some(config.game_version.clone());
+            }
+
+            crate::launch_profile::resolve::resolve(loader_profile, meta_dir)
+                .await
+                .map_err(|e| LaunchError::Parse(format!("Failed to resolve loader profile: {e}")))?
+        } else {
+            meta.clone()
+        };
+
+    let main_class = merged_profile
+        .main_class
+        .clone()
+        .ok_or_else(|| LaunchError::Parse("merged profile missing mainClass".into()))?;
+
+    // rebuild the classpath from the merged profile. vanilla-style libraries
+    // have `downloads.artifact.path` set and live in meta_dir/libraries/.
+    // loader-style libraries only have a maven coordinate; for forge/neoforge,
+    // the installer drops some of them into <instance>/.minecraft/libraries/
+    // so we check there first.
+    let has_local_libs = matches!(config.loader, ModLoader::Forge | ModLoader::NeoForge);
+    let local_lib_dir = minecraft_dir.join("libraries");
+
+    let mut classpath: Vec<PathBuf> = Vec::new();
+    for lib in &merged_profile.libraries {
+        if let Some(rules) = &lib.rules
+            && !crate::launch_profile::rules::evaluate(rules, &rule_ctx)
+        {
+            continue;
         }
-        let profile: LoaderProfileJson =
-            serde_json::from_slice(&tokio::fs::read(&profile_path).await?)?;
 
-        // forge/neoforge install some libs locally in the instance dir.
-        // local libs take priority so modpacks can ship patched versions
-        // (e.g. GTNH's launchwrapper patched for java 9+ compatibility)
-        let has_local_libs = matches!(config.loader, ModLoader::Forge | ModLoader::NeoForge);
-        let local_lib_dir = minecraft_dir.join("libraries");
-
-        for lib in &profile.libraries {
-            if let Some(p) = crate::net::maven_coord_to_path(&lib.name) {
-                if has_local_libs {
-                    let in_local = local_lib_dir.join(&p);
-                    let in_meta = lib_dir.join(&p);
-                    if in_local.exists() {
-                        classpath.push(in_local);
-                    } else if in_meta.exists() {
-                        classpath.push(in_meta);
-                    }
-                } else {
-                    classpath.push(lib_dir.join(p));
+        if let Some(artifact) = lib.downloads.as_ref().and_then(|d| d.artifact.as_ref()) {
+            classpath.push(lib_dir.join(&artifact.path));
+        } else if let Some(rel) = crate::net::maven_coord_to_path(&lib.name) {
+            if has_local_libs {
+                let in_local = local_lib_dir.join(&rel);
+                let in_meta = lib_dir.join(&rel);
+                if in_local.exists() {
+                    classpath.push(in_local);
+                } else if in_meta.exists() {
+                    classpath.push(in_meta);
                 }
+            } else {
+                classpath.push(lib_dir.join(rel));
             }
         }
-        (profile.main_class, profile.game_arguments)
-    } else {
-        (vanilla_main_class.clone(), Vec::new())
-    };
+    }
 
     classpath.push(
         meta_dir
@@ -328,8 +417,12 @@ pub async fn launch(
         clientid: "0",
     };
 
-    let (upstream_jvm_args, game_args) =
-        build_game_args(&meta, &rule_ctx, &template_ctx, loader_game_args)?;
+    let (upstream_jvm_args, game_args) = build_game_args(
+        &merged_profile,
+        &rule_ctx,
+        &template_ctx,
+        extra_args.clone(),
+    )?;
 
     let mut jvm: Vec<String> = vec![
         format!("-Xms{}", config.memory_min.as_deref().unwrap_or("512M")),
@@ -644,5 +737,76 @@ mod tests {
             type_: None,
         };
         assert!(legacy.minecraft_arguments.is_some());
+    }
+
+    #[test]
+    fn installer_version_dir_name_for_forge() {
+        assert_eq!(
+            installer_version_dir_name(ModLoader::Forge, "1.20.1", "47.2.0"),
+            Some("1.20.1-forge-47.2.0".to_string())
+        );
+    }
+
+    #[test]
+    fn installer_version_dir_name_for_neoforge() {
+        assert_eq!(
+            installer_version_dir_name(ModLoader::NeoForge, "1.21.1", "21.1.0"),
+            Some("neoforge-21.1.0".to_string())
+        );
+    }
+
+    #[test]
+    fn installer_version_dir_name_for_non_installer_loaders() {
+        assert!(installer_version_dir_name(ModLoader::Vanilla, "1.20.1", "v").is_none());
+        assert!(installer_version_dir_name(ModLoader::Fabric, "1.20.1", "0.14.21").is_none());
+        assert!(installer_version_dir_name(ModLoader::Quilt, "1.20.1", "0.20.0").is_none());
+    }
+
+    #[test]
+    fn loader_profile_legacy_predicate_triggers_when_all_three_absent() {
+        use crate::launch_profile::model::LaunchProfile;
+        let legacy = LaunchProfile {
+            id: "1.20.1-forge-47.2.0".into(),
+            inherits_from: None,
+            main_class: Some("cpw.mods.bootstraplauncher.BootstrapLauncher".into()),
+            libraries: Vec::new(),
+            arguments: None,
+            minecraft_arguments: None,
+            asset_index: None,
+            assets: None,
+            java_version: None,
+            downloads: None,
+            release_time: None,
+            time: None,
+            type_: None,
+        };
+        let is_legacy = legacy.inherits_from.is_none()
+            && legacy.arguments.is_none()
+            && legacy.minecraft_arguments.is_none();
+        assert!(is_legacy);
+    }
+
+    #[test]
+    fn loader_profile_legacy_predicate_skips_modern_profile_with_inherits_from() {
+        use crate::launch_profile::model::LaunchProfile;
+        let modern = LaunchProfile {
+            id: "1.20.1-forge-47.2.0".into(),
+            inherits_from: Some("1.20.1".into()),
+            main_class: Some("cpw.mods.bootstraplauncher.BootstrapLauncher".into()),
+            libraries: Vec::new(),
+            arguments: None,
+            minecraft_arguments: None,
+            asset_index: None,
+            assets: None,
+            java_version: None,
+            downloads: None,
+            release_time: None,
+            time: None,
+            type_: None,
+        };
+        let is_legacy = modern.inherits_from.is_none()
+            && modern.arguments.is_none()
+            && modern.minecraft_arguments.is_none();
+        assert!(!is_legacy);
     }
 }

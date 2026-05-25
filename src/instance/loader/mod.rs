@@ -61,8 +61,11 @@ pub(crate) fn save_profile_json(
 }
 
 // used by forge/neoforge. their java installer drops a version json into
-// .minecraft/versions/. parses that to extract the main class and library
-// list, then saves a stripped-down profile for use at launch time.
+// .minecraft/versions/. we copy that file byte-for-byte to our loader
+// profile cache so launch-time code sees the full upstream JSON -
+// inheritsFrom, arguments.jvm, library rules, all of it - instead of a
+// stripped-down version that would silently drop modern features (e.g.
+// the --add-opens flags forge 1.17+ ships for java 17+ support).
 pub(crate) fn save_installer_profile(
     instance_dir: &Path,
     meta_dir: &Path,
@@ -82,37 +85,13 @@ pub(crate) fn save_installer_profile(
         )));
     }
 
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase")]
-    struct InstallerVersionJson {
-        main_class: String,
-        #[serde(default)]
-        libraries: Vec<InstallerLib>,
-    }
-    #[derive(serde::Deserialize)]
-    struct InstallerLib {
-        name: String,
-    }
-
     let raw = std::fs::read(&ver_json_path)?;
-    let ver: InstallerVersionJson = serde_json::from_slice(&raw).map_err(|e| {
-        NetError::Parse(format!(
-            "Invalid version JSON at {}: {e}",
-            ver_json_path.display()
-        ))
-    })?;
 
-    let libs: Vec<serde_json::Value> = ver
-        .libraries
-        .iter()
-        .map(|l| serde_json::json!({"name": l.name}))
-        .collect();
-    let json_val = serde_json::json!({
-        "mainClass": ver.main_class,
-        "libraries": libs
-    });
-
-    save_profile_json(meta_dir, profile_filename, &json_val)
+    let profiles_dir = meta_dir.join("loader-profiles");
+    std::fs::create_dir_all(&profiles_dir)?;
+    let profile_path = profiles_dir.join(profile_filename);
+    std::fs::write(&profile_path, &raw)?;
+    Ok(())
 }
 
 pub fn get_installer(loader: ModLoader) -> Box<dyn ModLoaderInstaller + Send + Sync> {
@@ -164,5 +143,54 @@ mod tests {
         let versions = installer.get_game_versions(&client).await.unwrap();
         assert!(!versions.is_empty());
         assert!(versions.iter().any(|v| v.id == "1.20.1"));
+    }
+
+    #[test]
+    fn save_installer_profile_copies_raw_bytes_verbatim() {
+        use tempfile::TempDir;
+        let tmp = TempDir::new().unwrap();
+        let instance_dir = tmp.path().join("instance");
+        let meta_dir = tmp.path().join("meta");
+
+        // a synthetic installer version JSON with the modern arguments
+        // object - exactly the shape we used to strip.
+        let installer_json = br#"{
+            "id": "1.20.1-forge-47.2.0",
+            "inheritsFrom": "1.20.1",
+            "mainClass": "cpw.mods.bootstraplauncher.BootstrapLauncher",
+            "libraries": [{ "name": "net.minecraftforge:forge:47.2.0" }],
+            "arguments": {
+                "game": ["--launchTarget", "forge_client"],
+                "jvm": ["--add-opens", "java.base/sun.security.util=cpw.mods.securejarhandler"]
+            }
+        }"#;
+
+        let ver_dir = instance_dir
+            .join(".minecraft")
+            .join("versions")
+            .join("1.20.1-forge-47.2.0");
+        std::fs::create_dir_all(&ver_dir).unwrap();
+        let ver_json_path = ver_dir.join("1.20.1-forge-47.2.0.json");
+        std::fs::write(&ver_json_path, installer_json).unwrap();
+
+        save_installer_profile(
+            &instance_dir,
+            &meta_dir,
+            "1.20.1-forge-47.2.0",
+            "forge-1.20.1-47.2.0.json",
+        )
+        .unwrap();
+
+        let saved = std::fs::read(
+            meta_dir
+                .join("loader-profiles")
+                .join("forge-1.20.1-47.2.0.json"),
+        )
+        .unwrap();
+        assert_eq!(
+            saved,
+            installer_json.to_vec(),
+            "saved profile should be byte-for-byte identical to installer output"
+        );
     }
 }
