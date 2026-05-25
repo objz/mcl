@@ -2,10 +2,10 @@
 // launch profiles. consumed by the vanilla launcher, forge/neoforge,
 // fabric/quilt - anything that reads a mojang-style version JSON.
 //
-// phase 2 adds the render layer that turns a parsed profile + rule context +
-// template context into a flat argv list.
+// phase 3 adds the `resolve` module that walks `inheritsFrom` chains.
 
 pub mod model;
 pub mod render;
+pub mod resolve;
 pub mod rules;
 pub mod templates;
