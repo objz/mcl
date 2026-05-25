@@ -194,12 +194,6 @@ pub(crate) async fn install_forge_from_profile(
         .get("install")
         .ok_or_else(|| NetError::Parse("install_profile.json missing install section".into()))?;
 
-    let main_class = version_info
-        .get("mainClass")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| NetError::Parse("missing versionInfo.mainClass".into()))?
-        .to_string();
-
     let libraries = version_info
         .get("libraries")
         .and_then(|v| v.as_array())
@@ -271,76 +265,16 @@ pub(crate) async fn install_forge_from_profile(
         download_file(client, &download_url, &dest, |_, _| {}).await?;
     }
 
-    // old forge profiles store game arguments (like --tweakClass) in
-    // minecraftArguments. extract non-template args to pass at launch.
-    let game_arguments: Vec<String> = version_info
-        .get("minecraftArguments")
-        .and_then(|v| v.as_str())
-        .map(extract_extra_game_args)
-        .unwrap_or_default();
-
     set_action("Saving Forge profile...");
-    let lib_entries: Vec<serde_json::Value> = libraries
-        .iter()
-        .filter_map(|l| {
-            l.get("name")
-                .and_then(|v| v.as_str())
-                .map(|n| serde_json::json!({"name": n}))
-        })
-        .collect();
-
-    let profile_json = serde_json::json!({
-        "mainClass": main_class,
-        "libraries": lib_entries,
-        "gameArguments": game_arguments,
-    });
-
-    crate::instance::loader::save_profile_json(meta_dir, profile_filename, &profile_json)?;
+    // write the installer's versionInfo verbatim. it already has the
+    // mainClass, the full library list (with name + url for forge-hosted
+    // libs), and minecraftArguments (the legacy --tweakClass etc). the
+    // launch flow parses this as a LaunchProfile and - if there's no
+    // inheritsFrom field - implicitly inherits from the configured game
+    // version so vanilla libraries layer in via resolve().
+    crate::instance::loader::save_profile_json(meta_dir, profile_filename, version_info)?;
 
     Ok(())
-}
-
-// pulls out game arguments from old forge's minecraftArguments string that
-// the launcher doesn't already handle. skips template variables (${...})
-// and standard args like --username that we build ourselves.
-fn extract_extra_game_args(minecraft_arguments: &str) -> Vec<String> {
-    let handled = [
-        "--username",
-        "--version",
-        "--gameDir",
-        "--assetsDir",
-        "--assetIndex",
-        "--uuid",
-        "--accessToken",
-        "--userProperties",
-        "--userType",
-    ];
-
-    let tokens: Vec<&str> = minecraft_arguments.split_whitespace().collect();
-    let mut result = Vec::new();
-    let mut i = 0;
-    while i < tokens.len() {
-        let token = tokens[i];
-        if token.starts_with("--") {
-            if handled.contains(&token) {
-                // skip the flag and its value
-                i += 2;
-                continue;
-            }
-            result.push(token.to_string());
-            // if the next token is a value (not a flag or template), include it
-            if i + 1 < tokens.len() && !tokens[i + 1].starts_with("--") {
-                let val = tokens[i + 1];
-                if !val.starts_with("${") {
-                    result.push(val.to_string());
-                }
-                i += 2;
-                continue;
-            }
-        }
-        i += 1;
-    }
-    result
 }
 
 #[cfg(test)]

@@ -193,4 +193,64 @@ mod tests {
             "saved profile should be byte-for-byte identical to installer output"
         );
     }
+
+    #[test]
+    fn legacy_forge_version_info_round_trips_through_save_profile_json() {
+        use tempfile::TempDir;
+        let tmp = TempDir::new().unwrap();
+        let meta_dir = tmp.path().to_path_buf();
+
+        // synthetic versionInfo shape from a 1.7.10 forge install_profile.json.
+        // legacy forge uses minecraftArguments (the flat string format) and
+        // typically omits inheritsFrom (the launch flow's implicit fallback
+        // handles that).
+        let version_info = serde_json::json!({
+            "id": "1.7.10-Forge10.13.4.1614-1.7.10",
+            "mainClass": "net.minecraft.launchwrapper.Launch",
+            "minecraftArguments": "--username ${auth_player_name} --tweakClass cpw.mods.fml.common.launcher.FMLTweaker",
+            "libraries": [
+                { "name": "net.minecraftforge:forge:10.13.4.1614", "url": "http://files.minecraftforge.net/maven/" },
+                { "name": "net.minecraft:launchwrapper:1.9" }
+            ]
+        });
+
+        save_profile_json(&meta_dir, "forge-1.7.10-10.13.4.1614.json", &version_info).unwrap();
+
+        let saved_bytes = std::fs::read(
+            meta_dir
+                .join("loader-profiles")
+                .join("forge-1.7.10-10.13.4.1614.json"),
+        )
+        .unwrap();
+
+        // the cached profile must parse as a LaunchProfile so the launch
+        // flow's render_args + resolve pipeline can consume it.
+        let profile: crate::launch_profile::model::LaunchProfile =
+            serde_json::from_slice(&saved_bytes).unwrap();
+        assert_eq!(profile.id, "1.7.10-Forge10.13.4.1614-1.7.10");
+        assert_eq!(
+            profile.main_class.as_deref(),
+            Some("net.minecraft.launchwrapper.Launch")
+        );
+        assert!(profile.inherits_from.is_none()); // launch flow's implicit fallback adds it
+        assert!(
+            profile
+                .minecraft_arguments
+                .as_deref()
+                .unwrap()
+                .contains("--tweakClass")
+        );
+        assert_eq!(profile.libraries.len(), 2);
+        assert_eq!(
+            profile.libraries[0].name,
+            "net.minecraftforge:forge:10.13.4.1614"
+        );
+        assert_eq!(
+            profile.libraries[0].url.as_deref(),
+            Some("http://files.minecraftforge.net/maven/")
+        );
+        // legacy libs typically have no `downloads.artifact` - they're
+        // resolved at launch time via maven_coord_to_path(name).
+        assert!(profile.libraries[0].downloads.is_none());
+    }
 }
