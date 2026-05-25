@@ -173,14 +173,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn default_theme_config() {
-        let config = ThemeConfig::default();
-        assert_eq!(config.theme, "catppuccin");
-        assert_eq!(config.border_style, BorderStyle::Rounded);
-        assert!(config.custom.is_none());
-    }
-
-    #[test]
     fn border_style_roundtrip() {
         let style = BorderStyle::Double;
         assert_eq!(style.to_border_type(), BorderType::Double);

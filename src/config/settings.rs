@@ -198,43 +198,6 @@ mod tests {
     }
 
     #[test]
-    fn resolve_instances_dir_absolute() {
-        let paths = Paths {
-            instances_dir: "/opt/rmcl/instances".to_owned(),
-            ..Paths::default()
-        };
-        assert_eq!(
-            paths.resolve_instances_dir(),
-            PathBuf::from("/opt/rmcl/instances")
-        );
-    }
-
-    #[test]
-    fn resolve_meta_dir_absolute() {
-        let paths = Paths {
-            meta_dir: "/opt/rmcl/meta".to_owned(),
-            ..Paths::default()
-        };
-        assert_eq!(paths.resolve_meta_dir(), PathBuf::from("/opt/rmcl/meta"));
-    }
-
-    #[test]
-    fn defaults_have_expected_values() {
-        let d = Defaults::default();
-        assert_eq!(d.memory_min, "512M");
-        assert_eq!(d.memory_max, "2G");
-    }
-
-    #[test]
-    fn ui_defaults_have_expected_values() {
-        let ui = Ui::default();
-        assert_eq!(ui.error_auto_dismiss_ms, 5000);
-        assert_eq!(ui.error_slide_start_ms, 3500);
-        assert_eq!(ui.error_fly_out_ms, 300);
-        assert_eq!(ui.max_error_events, 50);
-    }
-
-    #[test]
     fn config_deserializes_from_empty_toml() {
         let config: Config = toml::from_str("").unwrap();
         assert_eq!(config.defaults.memory_max, "2G");

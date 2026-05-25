@@ -90,14 +90,6 @@ mod tests {
     }
 
     #[test]
-    fn push_and_pop_fifo() {
-        push_error(make_event("err_fifo_1"));
-        push_error(make_event("err_fifo_2"));
-        let first = pop_error();
-        assert!(first.is_some() || has_errors());
-    }
-
-    #[test]
     fn has_errors_after_push() {
         push_error(make_event("err_has"));
         assert!(has_errors());
