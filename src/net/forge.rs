@@ -279,13 +279,9 @@ pub(crate) async fn install_forge_from_profile(
     // and whitespace may differ from the original installer JSON because
     // the source is a serde_json::Value (which doesn't preserve order),
     // but no field is silently dropped.
-    let profiles_dir = meta_dir.join("loader-profiles");
-    std::fs::create_dir_all(&profiles_dir)?;
-    let profile_path = profiles_dir.join(profile_filename);
     let serialized = serde_json::to_vec(version_info)
         .map_err(|e| NetError::Parse(format!("Failed to serialize Forge profile: {e}")))?;
-    std::fs::write(&profile_path, &serialized)?;
-
+    crate::instance::loader::save_profile_bytes(meta_dir, profile_filename, &serialized)?;
     Ok(())
 }
 

@@ -67,16 +67,9 @@ pub fn merge_into(child: LaunchProfile, parent: LaunchProfile) -> LaunchProfile 
 fn coord_key(name: &str) -> &str {
     // mojang maven coords are `group:artifact:version[:classifier]`. take
     // everything up to the second colon.
-    let mut count = 0;
-    for (i, b) in name.bytes().enumerate() {
-        if b == b':' {
-            count += 1;
-            if count == 2 {
-                return &name[..i];
-            }
-        }
-    }
-    name
+    let mut it = name.match_indices(':').map(|(i, _)| i);
+    it.next();
+    it.next().map_or(name, |i| &name[..i])
 }
 
 // child entries take precedence over parent entries with the same
@@ -89,10 +82,7 @@ fn merge_libraries(
     parent: Vec<crate::launch_profile::model::Library>,
 ) -> Vec<crate::launch_profile::model::Library> {
     use std::collections::HashSet;
-    let child_keys: HashSet<String> = child
-        .iter()
-        .map(|l| coord_key(&l.name).to_string())
-        .collect();
+    let child_keys: HashSet<&str> = child.iter().map(|l| coord_key(&l.name)).collect();
 
     let mut out: Vec<crate::launch_profile::model::Library> = parent
         .into_iter()
@@ -164,28 +154,14 @@ mod tests {
     fn empty_profile(id: &str) -> LaunchProfile {
         LaunchProfile {
             id: id.into(),
-            inherits_from: None,
-            main_class: None,
-            libraries: Vec::new(),
-            arguments: None,
-            minecraft_arguments: None,
-            asset_index: None,
-            assets: None,
-            java_version: None,
-            downloads: None,
-            release_time: None,
-            time: None,
-            game_arguments: None,
-            type_: None,
+            ..Default::default()
         }
     }
 
     fn lib(name: &str) -> Library {
         Library {
             name: name.into(),
-            downloads: None,
-            rules: None,
-            url: None,
+            ..Default::default()
         }
     }
 
@@ -194,8 +170,7 @@ mod tests {
             action: RuleAction::Allow,
             os: Some(crate::launch_profile::rules::OsCondition {
                 name: Some("linux".into()),
-                arch: None,
-                version: None,
+                ..Default::default()
             }),
             features: None,
         }

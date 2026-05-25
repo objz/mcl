@@ -142,7 +142,7 @@ mod tests {
             os: Some(OsCondition {
                 name: Some("linux".into()),
                 arch: None,
-                version: None,
+                ..Default::default()
             }),
             features: None,
         }];
@@ -158,7 +158,7 @@ mod tests {
             os: Some(OsCondition {
                 name: Some("linux".into()),
                 arch: None,
-                version: None,
+                ..Default::default()
             }),
             features: None,
         }];
@@ -176,7 +176,7 @@ mod tests {
             os: Some(OsCondition {
                 name: Some("windows".into()),
                 arch: None,
-                version: None,
+                ..Default::default()
             }),
             features: None,
         }];
@@ -198,7 +198,7 @@ mod tests {
                 os: Some(OsCondition {
                     name: Some("osx".into()),
                     arch: None,
-                    version: None,
+                    ..Default::default()
                 }),
                 features: None,
             },
@@ -229,7 +229,7 @@ mod tests {
                 os: Some(OsCondition {
                     name: Some("linux".into()),
                     arch: None,
-                    version: None,
+                    ..Default::default()
                 }),
                 features: None,
             },

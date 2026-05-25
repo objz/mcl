@@ -80,6 +80,21 @@ impl HttpClient {
         )
         .await
     }
+
+    // fetch JSON and also keep the raw bytes. used by install paths that
+    // want both the parsed shape (for downloading libraries from it) and
+    // the original bytes (to write byte-for-byte to the loader-profiles
+    // cache, so any field we don't know about survives).
+    pub async fn get_json_with_raw<T: DeserializeOwned>(
+        &self,
+        url: &str,
+        label: &str,
+    ) -> Result<(T, Vec<u8>), NetError> {
+        let raw = self.get_bytes(url).await?;
+        let parsed: T = serde_json::from_slice(&raw)
+            .map_err(|e| NetError::Parse(format!("Failed to parse {label}: {e}")))?;
+        Ok((parsed, raw))
+    }
 }
 
 // shared retry envelope around `client.get(url).await? -> decode`. retries
@@ -183,7 +198,10 @@ async fn download_file_once(
     Ok(())
 }
 
-// body decode errors and timeouts are worth retrying, but a 404 or disk error isn't
+// body decode errors and timeouts are worth retrying, but a 404 or disk
+// error isn't. Parse errors stay non-retryable: by the time we hit one
+// the response body has fully arrived, so the failure means the upstream
+// returned malformed JSON - retrying won't fix that.
 fn is_retryable(err: &NetError) -> bool {
     match err {
         NetError::Http(e) => e.is_timeout() || e.is_body() || e.is_connect(),

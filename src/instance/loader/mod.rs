@@ -46,6 +46,20 @@ pub trait ModLoaderInstaller: Send + Sync {
     ) -> Result<(), NetError>;
 }
 
+// writes raw profile JSON bytes to meta_dir/loader-profiles/<filename>.
+// callers that already have the upstream bytes (fabric/quilt http fetch,
+// legacy forge versionInfo extract) use this directly to keep the on-disk
+// file byte-for-byte identical to the source.
+pub(crate) fn save_profile_bytes(
+    meta_dir: &Path,
+    filename: &str,
+    bytes: &[u8],
+) -> std::io::Result<()> {
+    let profiles_dir = meta_dir.join("loader-profiles");
+    std::fs::create_dir_all(&profiles_dir)?;
+    std::fs::write(profiles_dir.join(filename), bytes)
+}
+
 // used by forge/neoforge. their java installer drops a version json into
 // .minecraft/versions/. we copy that file byte-for-byte to our loader
 // profile cache so launch-time code sees the full upstream JSON -

@@ -4,16 +4,12 @@
 // the fields we care about; unknown fields are silently dropped (serde
 // default behavior) - which is fine because we write upstream JSON
 // byte-for-byte on the install side.
-//
-// no consumers yet. phase 2 wires this into the vanilla launch path;
-// phase 3 adds inheritsFrom resolution; phase 4 swaps the forge/neoforge
-// installer profile writer over to use this shape.
 
 use serde::{Deserialize, Serialize};
 
 use super::rules::Rule;
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LaunchProfile {
     pub id: String,
@@ -65,7 +61,7 @@ pub enum ArgumentValue {
     Multiple(Vec<String>),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
 pub struct Library {
     pub name: String,
     pub downloads: Option<LibraryDownloads>,
@@ -73,12 +69,12 @@ pub struct Library {
     pub url: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
 pub struct LibraryDownloads {
     pub artifact: Option<Artifact>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
 pub struct Artifact {
     pub url: String,
     pub path: String,
@@ -86,7 +82,7 @@ pub struct Artifact {
     pub size: u64,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
 pub struct AssetIndex {
     pub id: String,
     pub url: String,
@@ -95,19 +91,19 @@ pub struct AssetIndex {
     pub total_size: Option<u64>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct JavaVersion {
     pub component: Option<String>,
     pub major_version: u32,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
 pub struct VersionDownloads {
     pub client: Download,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
 pub struct Download {
     pub url: String,
     pub sha1: String,

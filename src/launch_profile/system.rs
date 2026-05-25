@@ -21,29 +21,17 @@ pub fn mojang_arch_name() -> &'static str {
 
 // the host OS version string. mojang rules occasionally constrain natives
 // selection on os.version with a regex (e.g. macOS 10.x-only natives).
-// rust's stdlib doesn't expose this directly, so we synthesise something
-// useful per-platform. on linux we read the kernel version; on macOS the
-// product version is more useful but reading it requires shelling out so
-// we fall back to the kernel version. on windows we use a similar
-// approach. real-world profiles using os.version are rare; if this helper
-// returns an empty string the rule evaluator treats version constraints
-// as non-matching (defensive default).
+// rust's stdlib doesn't expose this, so we read it where it's cheap and
+// reliable: linux via /proc/sys/kernel/osrelease, other platforms return
+// empty. when the host string is empty, version-gated rules don't match
+// (conservative default in the rule evaluator) - which is fine because
+// real-world profiles using os.version are vanishingly rare.
 pub fn mojang_os_version() -> String {
-    #[cfg(unix)]
+    #[cfg(target_os = "linux")]
     {
-        use std::process::Command;
-        if let Ok(out) = Command::new("uname").arg("-r").output()
-            && out.status.success()
-        {
-            return String::from_utf8_lossy(&out.stdout).trim().to_string();
+        if let Ok(s) = std::fs::read_to_string("/proc/sys/kernel/osrelease") {
+            return s.trim().to_string();
         }
-    }
-    #[cfg(windows)]
-    {
-        // crude - sufficient for the rare profile that needs windows version
-        // gating. real launchers use GetVersionEx via winapi; we can add
-        // that later if needed.
-        return std::env::var("OS").unwrap_or_default();
     }
     String::new()
 }

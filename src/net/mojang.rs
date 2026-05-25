@@ -121,10 +121,7 @@ pub async fn fetch_version_meta_with_raw(
     client: &HttpClient,
     entry: &VersionEntry,
 ) -> Result<(VersionMeta, Vec<u8>), NetError> {
-    let raw = client.get_bytes(&entry.url).await?;
-    let parsed: VersionMeta = serde_json::from_slice(&raw)
-        .map_err(|e| NetError::Parse(format!("Failed to parse version meta: {e}")))?;
-    Ok((parsed, raw))
+    client.get_json_with_raw(&entry.url, "version meta").await
 }
 
 pub async fn download_client_jar(

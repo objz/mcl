@@ -44,13 +44,11 @@ impl ModLoaderInstaller for FabricInstaller {
         let (profile, raw_bytes) =
             fabric_api::fetch_fabric_profile_with_raw(client, game_version, loader_version).await?;
         fabric_api::download_fabric_libraries(client, &profile, meta_dir).await?;
-
-        let profiles_dir = meta_dir.join("loader-profiles");
-        std::fs::create_dir_all(&profiles_dir)?;
-        let profile_path =
-            profiles_dir.join(format!("fabric-{game_version}-{loader_version}.json"));
-        std::fs::write(&profile_path, &raw_bytes)?;
-
+        super::save_profile_bytes(
+            meta_dir,
+            &format!("fabric-{game_version}-{loader_version}.json"),
+            &raw_bytes,
+        )?;
         Ok(())
     }
 }

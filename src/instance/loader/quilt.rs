@@ -44,12 +44,11 @@ impl ModLoaderInstaller for QuiltInstaller {
         let (profile, raw_bytes) =
             quilt_api::fetch_quilt_profile_with_raw(client, game_version, loader_version).await?;
         quilt_api::download_quilt_libraries(client, &profile, meta_dir).await?;
-
-        let profiles_dir = meta_dir.join("loader-profiles");
-        std::fs::create_dir_all(&profiles_dir)?;
-        let profile_path = profiles_dir.join(format!("quilt-{game_version}-{loader_version}.json"));
-        std::fs::write(&profile_path, &raw_bytes)?;
-
+        super::save_profile_bytes(
+            meta_dir,
+            &format!("quilt-{game_version}-{loader_version}.json"),
+            &raw_bytes,
+        )?;
         Ok(())
     }
 }

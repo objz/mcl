@@ -90,10 +90,7 @@ pub async fn fetch_fabric_profile_with_raw(
         "{}/versions/loader/{}/{}/profile/json",
         FABRIC_META_BASE, game_version, loader_version
     );
-    let raw = client.get_bytes(&url).await?;
-    let parsed: FabricProfile = serde_json::from_slice(&raw)
-        .map_err(|e| NetError::Parse(format!("Failed to parse Fabric profile: {e}")))?;
-    Ok((parsed, raw))
+    client.get_json_with_raw(&url, "Fabric profile").await
 }
 
 // each fabric library entry has a maven coordinate and a base url.

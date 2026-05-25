@@ -115,19 +115,8 @@ mod tests {
     fn minimal_profile() -> LaunchProfile {
         LaunchProfile {
             id: "test".into(),
-            inherits_from: None,
             main_class: Some("net.test.Main".into()),
-            libraries: Vec::new(),
-            arguments: None,
-            minecraft_arguments: None,
-            asset_index: None,
-            assets: None,
-            java_version: None,
-            downloads: None,
-            release_time: None,
-            time: None,
-            game_arguments: None,
-            type_: None,
+            ..Default::default()
         }
     }
 
@@ -211,7 +200,7 @@ mod tests {
                 os: Some(OsCondition {
                     name: Some("osx".into()),
                     arch: None,
-                    version: None,
+                    ..Default::default()
                 }),
                 features: None,
             }],
@@ -252,7 +241,7 @@ mod tests {
                 os: Some(OsCondition {
                     name: Some("linux".into()),
                     arch: None,
-                    version: None,
+                    ..Default::default()
                 }),
                 features: None,
             }],

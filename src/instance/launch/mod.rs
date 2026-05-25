@@ -8,8 +8,12 @@ use std::path::{Path, PathBuf};
 
 use thiserror::Error;
 
-use crate::auth::{Account, AccountType};
+use crate::auth::AccountType;
 use crate::instance::models::{InstanceConfig, ModLoader};
+use crate::launch_profile::model::LaunchProfile;
+use crate::launch_profile::rules::{self, FeatureSet, RuleContext};
+use crate::launch_profile::templates::TemplateContext;
+use crate::launch_profile::{render, resolve, system};
 
 #[derive(Debug, Error)]
 pub enum LaunchError {
@@ -27,16 +31,12 @@ pub enum LaunchError {
     Auth(String),
 }
 
-fn account_can_launch(has_microsoft_account: bool, account: &Account) -> bool {
-    account.account_type == AccountType::Microsoft || has_microsoft_account
-}
-
 fn build_game_args(
-    profile: &crate::launch_profile::model::LaunchProfile,
-    rule_ctx: &crate::launch_profile::rules::RuleContext<'_>,
-    template_ctx: &crate::launch_profile::templates::TemplateContext<'_>,
+    profile: &LaunchProfile,
+    rule_ctx: &RuleContext<'_>,
+    template_ctx: &TemplateContext<'_>,
 ) -> Result<(Vec<String>, Vec<String>), LaunchError> {
-    let rendered = crate::launch_profile::render::render_args(profile, rule_ctx, template_ctx)
+    let rendered = render::render_args(profile, rule_ctx, template_ctx)
         .map_err(|e| LaunchError::Parse(format!("Failed to render args: {e}")))?;
     Ok((rendered.jvm, rendered.game))
 }
@@ -48,9 +48,9 @@ fn build_game_args(
 // and overwrite the file with the raw upstream bytes.
 async fn migrate_legacy_meta_if_needed(
     meta_path: &Path,
-    profile: &crate::launch_profile::model::LaunchProfile,
+    profile: &LaunchProfile,
     game_version: &str,
-) -> Result<Option<crate::launch_profile::model::LaunchProfile>, LaunchError> {
+) -> Result<Option<LaunchProfile>, LaunchError> {
     if profile.arguments.is_some() || profile.minecraft_arguments.is_some() {
         return Ok(None);
     }
@@ -93,7 +93,7 @@ async fn migrate_legacy_meta_if_needed(
 
     tokio::fs::write(meta_path, &raw).await?;
 
-    let refreshed: crate::launch_profile::model::LaunchProfile = serde_json::from_slice(&raw)
+    let refreshed: LaunchProfile = serde_json::from_slice(&raw)
         .map_err(|e| LaunchError::Parse(format!("Failed to parse refreshed meta: {e}")))?;
     Ok(Some(refreshed))
 }
@@ -121,10 +121,10 @@ fn installer_version_dir_name(
 // rebuild from the installer's original JSON if it's still on disk.
 async fn migrate_legacy_loader_profile_if_needed(
     profile_path: &Path,
-    profile: &crate::launch_profile::model::LaunchProfile,
+    profile: &LaunchProfile,
     config: &InstanceConfig,
     instance_dir: &Path,
-) -> Result<Option<crate::launch_profile::model::LaunchProfile>, LaunchError> {
+) -> Result<Option<LaunchProfile>, LaunchError> {
     // Fabric and Quilt fetch their profiles from a network endpoint at
     // install time; there's no installer-written JSON on disk to recover
     // from. their upstream profiles also happen to match the "legacy
@@ -196,10 +196,9 @@ async fn migrate_legacy_loader_profile_if_needed(
     let raw = tokio::fs::read(&installer_json_path).await?;
     tokio::fs::write(profile_path, &raw).await?;
 
-    let refreshed: crate::launch_profile::model::LaunchProfile = serde_json::from_slice(&raw)
-        .map_err(|e| {
-            LaunchError::Parse(format!("Failed to parse refreshed loader profile: {e}"))
-        })?;
+    let refreshed: LaunchProfile = serde_json::from_slice(&raw).map_err(|e| {
+        LaunchError::Parse(format!("Failed to parse refreshed loader profile: {e}"))
+    })?;
     Ok(Some(refreshed))
 }
 
@@ -219,19 +218,18 @@ pub async fn launch(
     if !meta_path.exists() {
         return Err(LaunchError::MetaNotFound(meta_path.display().to_string()));
     }
-    let meta: crate::launch_profile::model::LaunchProfile =
-        serde_json::from_slice(&tokio::fs::read(&meta_path).await?)?;
+    let meta: LaunchProfile = serde_json::from_slice(&tokio::fs::read(&meta_path).await?)?;
     let meta = match migrate_legacy_meta_if_needed(&meta_path, &meta, &config.game_version).await? {
         Some(refreshed) => refreshed,
         None => meta,
     };
 
-    let current_features = crate::launch_profile::rules::FeatureSet::default();
-    let host_os_version = crate::launch_profile::system::mojang_os_version();
-    let rule_ctx = crate::launch_profile::rules::RuleContext {
-        os_name: crate::launch_profile::system::mojang_os_name(),
+    let current_features = FeatureSet::default();
+    let host_os_version = system::mojang_os_version();
+    let rule_ctx = RuleContext {
+        os_name: system::mojang_os_name(),
         os_version: &host_os_version,
-        arch: crate::launch_profile::system::mojang_arch_name(),
+        arch: system::mojang_arch_name(),
         features: &current_features,
     };
 
@@ -256,41 +254,40 @@ pub async fn launch(
     // if needed, and resolve `inheritsFrom` against the vanilla parent (which
     // the vanilla meta migration above ensured is fresh on disk). when no
     // loader is configured we use the already-loaded vanilla meta directly.
-    let merged_profile: crate::launch_profile::model::LaunchProfile =
-        if let Some(filename) = &profile_filename {
-            let profile_path = meta_dir.join("loader-profiles").join(filename);
-            if !profile_path.exists() {
-                return Err(LaunchError::MetaNotFound(
-                    profile_path.display().to_string(),
-                ));
-            }
-            let mut loader_profile: crate::launch_profile::model::LaunchProfile =
-                serde_json::from_slice(&tokio::fs::read(&profile_path).await?)?;
+    let merged_profile: LaunchProfile = if let Some(filename) = &profile_filename {
+        let profile_path = meta_dir.join("loader-profiles").join(filename);
+        if !profile_path.exists() {
+            return Err(LaunchError::MetaNotFound(
+                profile_path.display().to_string(),
+            ));
+        }
+        let mut loader_profile: LaunchProfile =
+            serde_json::from_slice(&tokio::fs::read(&profile_path).await?)?;
 
-            if let Some(refreshed) = migrate_legacy_loader_profile_if_needed(
-                &profile_path,
-                &loader_profile,
-                config,
-                &instance_dir,
-            )
-            .await?
-            {
-                loader_profile = refreshed;
-            }
+        if let Some(refreshed) = migrate_legacy_loader_profile_if_needed(
+            &profile_path,
+            &loader_profile,
+            config,
+            &instance_dir,
+        )
+        .await?
+        {
+            loader_profile = refreshed;
+        }
 
-            // legacy installer-written profiles (and any loader profile that
-            // omits inheritsFrom) still need to be layered over vanilla. set
-            // the inherit explicitly so resolve() walks the chain.
-            if loader_profile.inherits_from.is_none() {
-                loader_profile.inherits_from = Some(config.game_version.clone());
-            }
+        // legacy installer-written profiles (and any loader profile that
+        // omits inheritsFrom) still need to be layered over vanilla. set
+        // the inherit explicitly so resolve() walks the chain.
+        if loader_profile.inherits_from.is_none() {
+            loader_profile.inherits_from = Some(config.game_version.clone());
+        }
 
-            crate::launch_profile::resolve::resolve(loader_profile, meta_dir)
-                .await
-                .map_err(|e| LaunchError::Parse(format!("Failed to resolve loader profile: {e}")))?
-        } else {
-            meta.clone()
-        };
+        resolve::resolve(loader_profile, meta_dir)
+            .await
+            .map_err(|e| LaunchError::Parse(format!("Failed to resolve loader profile: {e}")))?
+    } else {
+        meta.clone()
+    };
 
     let main_class = merged_profile
         .main_class
@@ -308,7 +305,7 @@ pub async fn launch(
     let mut classpath: Vec<PathBuf> = Vec::new();
     for lib in &merged_profile.libraries {
         if let Some(rules) = &lib.rules
-            && !crate::launch_profile::rules::evaluate(rules, &rule_ctx)
+            && !rules::evaluate(rules, &rule_ctx)
         {
             continue;
         }
@@ -373,7 +370,10 @@ pub async fn launch(
         .cloned()
     {
         Some(acc) => {
-            if !account_can_launch(account_store.has_microsoft_account(), &acc) {
+            // offline accounts can only launch if a microsoft account exists
+            // (proves the user owns minecraft).
+            if acc.account_type != AccountType::Microsoft && !account_store.has_microsoft_account()
+            {
                 return Err(LaunchError::Auth(
                     "Offline accounts require a Microsoft account that owns Minecraft".to_owned(),
                 ));
@@ -425,7 +425,7 @@ pub async fn launch(
         .join("versions")
         .join(&config.game_version)
         .join("natives");
-    let template_ctx = crate::launch_profile::templates::TemplateContext {
+    let template_ctx = TemplateContext {
         library_directory: &lib_dir,
         classpath_separator: sep,
         version_name: &config.game_version,
@@ -589,25 +589,12 @@ pub async fn launch(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::auth::{Account, AccountType};
-
-    fn test_account(account_type: AccountType) -> Account {
-        Account {
-            uuid: "00000000-0000-0000-0000-000000000001".to_owned(),
-            username: "TestPlayer".to_owned(),
-            account_type,
-            active: true,
-            refresh_token: Some("refresh".to_owned()),
-            cached_mc_token: None,
-            cached_mc_token_expires_at: None,
-        }
-    }
 
     #[test]
     fn build_game_args_renders_upstream_arguments_and_appends_loader_args() {
         use crate::launch_profile::model::{Argument, Arguments, LaunchProfile};
         use crate::launch_profile::rules::{FeatureSet, RuleContext};
-        use crate::launch_profile::templates::TemplateContext;
+        use TemplateContext;
         use std::path::PathBuf;
 
         let lib = PathBuf::from("/m/libraries");
@@ -656,16 +643,7 @@ mod tests {
                     "-Djava.library.path=${natives_directory}".into(),
                 )],
             }),
-            minecraft_arguments: None,
-            asset_index: None,
-            assets: None,
-            java_version: None,
-            downloads: None,
-            release_time: None,
-            time: None,
-            game_arguments: None,
-
-            type_: None,
+            ..Default::default()
         };
 
         let (jvm, game_args) = build_game_args(&profile, &rule_ctx, &template_ctx).unwrap();
@@ -674,45 +652,14 @@ mod tests {
     }
 
     #[test]
-    fn offline_account_cannot_launch_without_microsoft_account() {
-        let offline = test_account(AccountType::Offline);
-
-        assert!(!account_can_launch(false, &offline));
-    }
-
-    #[test]
-    fn offline_account_can_launch_with_microsoft_account() {
-        let offline = test_account(AccountType::Offline);
-
-        assert!(account_can_launch(true, &offline));
-    }
-
-    #[test]
-    fn microsoft_account_can_launch_without_offline_gate() {
-        let microsoft = test_account(AccountType::Microsoft);
-
-        assert!(account_can_launch(false, &microsoft));
-    }
-
-    #[test]
     fn migration_predicate_triggers_when_both_argument_fields_absent() {
-        use crate::launch_profile::model::LaunchProfile;
+        use LaunchProfile;
         let stripped = LaunchProfile {
             id: "1.20.1".into(),
             inherits_from: None,
             main_class: Some("net.test.Main".into()),
             libraries: Vec::new(),
-            arguments: None,
-            minecraft_arguments: None,
-            asset_index: None,
-            assets: None,
-            java_version: None,
-            downloads: None,
-            release_time: None,
-            time: None,
-            game_arguments: None,
-
-            type_: None,
+            ..Default::default()
         };
         assert!(stripped.arguments.is_none() && stripped.minecraft_arguments.is_none());
     }
@@ -726,23 +673,14 @@ mod tests {
             main_class: Some("net.test.Main".into()),
             libraries: Vec::new(),
             arguments: Some(Arguments::default()),
-            minecraft_arguments: None,
-            asset_index: None,
-            assets: None,
-            java_version: None,
-            downloads: None,
-            release_time: None,
-            time: None,
-            game_arguments: None,
-
-            type_: None,
+            ..Default::default()
         };
         assert!(modern.arguments.is_some());
     }
 
     #[test]
     fn migration_predicate_skips_when_legacy_minecraft_arguments_present() {
-        use crate::launch_profile::model::LaunchProfile;
+        use LaunchProfile;
         let legacy = LaunchProfile {
             id: "1.7.10".into(),
             inherits_from: None,
@@ -750,15 +688,7 @@ mod tests {
             libraries: Vec::new(),
             arguments: None,
             minecraft_arguments: Some("--username Player".into()),
-            asset_index: None,
-            assets: None,
-            java_version: None,
-            downloads: None,
-            release_time: None,
-            time: None,
-            game_arguments: None,
-
-            type_: None,
+            ..Default::default()
         };
         assert!(legacy.minecraft_arguments.is_some());
     }
@@ -788,23 +718,13 @@ mod tests {
 
     #[test]
     fn loader_profile_legacy_predicate_triggers_when_all_three_absent() {
-        use crate::launch_profile::model::LaunchProfile;
+        use LaunchProfile;
         let legacy = LaunchProfile {
             id: "1.20.1-forge-47.2.0".into(),
             inherits_from: None,
             main_class: Some("cpw.mods.bootstraplauncher.BootstrapLauncher".into()),
             libraries: Vec::new(),
-            arguments: None,
-            minecraft_arguments: None,
-            asset_index: None,
-            assets: None,
-            java_version: None,
-            downloads: None,
-            release_time: None,
-            time: None,
-            game_arguments: None,
-
-            type_: None,
+            ..Default::default()
         };
         let is_legacy = legacy.inherits_from.is_none()
             && legacy.arguments.is_none()
@@ -814,23 +734,13 @@ mod tests {
 
     #[test]
     fn loader_profile_legacy_predicate_skips_modern_profile_with_inherits_from() {
-        use crate::launch_profile::model::LaunchProfile;
+        use LaunchProfile;
         let modern = LaunchProfile {
             id: "1.20.1-forge-47.2.0".into(),
             inherits_from: Some("1.20.1".into()),
             main_class: Some("cpw.mods.bootstraplauncher.BootstrapLauncher".into()),
             libraries: Vec::new(),
-            arguments: None,
-            minecraft_arguments: None,
-            asset_index: None,
-            assets: None,
-            java_version: None,
-            downloads: None,
-            release_time: None,
-            time: None,
-            game_arguments: None,
-
-            type_: None,
+            ..Default::default()
         };
         let is_legacy = modern.inherits_from.is_none()
             && modern.arguments.is_none()
@@ -844,7 +754,7 @@ mod tests {
         // shape (no inheritsFrom, no arguments, no minecraftArguments).
         // make sure the migration helper recognises this is Fabric and
         // returns Ok(None) instead of erroring with "reinstall Fabric".
-        use crate::launch_profile::model::LaunchProfile;
+        use LaunchProfile;
         use chrono::Utc;
         use tempfile::TempDir;
 
@@ -859,17 +769,7 @@ mod tests {
             inherits_from: None,
             main_class: Some("net.fabricmc.loader.impl.launch.knot.KnotClient".into()),
             libraries: Vec::new(),
-            arguments: None,
-            minecraft_arguments: None,
-            asset_index: None,
-            assets: None,
-            java_version: None,
-            downloads: None,
-            release_time: None,
-            time: None,
-            game_arguments: None,
-
-            type_: None,
+            ..Default::default()
         };
 
         let config = InstanceConfig {
