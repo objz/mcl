@@ -71,6 +71,10 @@ impl HttpClient {
     pub async fn get_json<T: DeserializeOwned>(&self, url: &str) -> Result<T, NetError> {
         Ok(self.get(url).await?.json().await?)
     }
+
+    pub async fn get_bytes(&self, url: &str) -> Result<Vec<u8>, NetError> {
+        Ok(self.get(url).await?.bytes().await?.to_vec())
+    }
 }
 
 const MAX_RETRIES: u32 = 3;

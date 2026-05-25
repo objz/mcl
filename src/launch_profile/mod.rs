@@ -2,9 +2,10 @@
 // launch profiles. consumed by the vanilla launcher, forge/neoforge,
 // fabric/quilt - anything that reads a mojang-style version JSON.
 //
-// phase 1 is pure additions: no consumers yet. later phases will wire
-// these primitives into the launch pipeline and the installer paths.
+// phase 2 adds the render layer that turns a parsed profile + rule context +
+// template context into a flat argv list.
 
 pub mod model;
+pub mod render;
 pub mod rules;
 pub mod templates;

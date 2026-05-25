@@ -15,6 +15,8 @@ use crate::instance::models::{InstanceConfig, ModLoader};
 pub enum LaunchError {
     #[error("Version metadata not found: {0}. Re-create the instance to fix this.")]
     MetaNotFound(String),
+    #[error("Profile error: {0}")]
+    Parse(String),
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
     #[error("JSON error: {0}")]
@@ -23,47 +25,6 @@ pub enum LaunchError {
     NotSupported(String),
     #[error("{0}")]
     Auth(String),
-}
-
-// subset of mojang's version meta json, only the bits relevant to launching
-#[derive(serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct MetaJson {
-    main_class: String,
-    asset_index: MetaAssetIndex,
-    libraries: Vec<MetaLibrary>,
-}
-
-#[derive(serde::Deserialize)]
-struct MetaAssetIndex {
-    id: String,
-}
-
-#[derive(serde::Deserialize)]
-struct MetaLibrary {
-    downloads: Option<MetaLibraryDownloads>,
-    rules: Option<Vec<MetaRule>>,
-}
-
-#[derive(serde::Deserialize)]
-struct MetaLibraryDownloads {
-    artifact: Option<MetaArtifact>,
-}
-
-#[derive(serde::Deserialize)]
-struct MetaArtifact {
-    path: String,
-}
-
-#[derive(serde::Deserialize)]
-struct MetaRule {
-    action: String,
-    os: Option<MetaOsRule>,
-}
-
-#[derive(serde::Deserialize)]
-struct MetaOsRule {
-    name: Option<String>,
 }
 
 #[derive(serde::Deserialize)]
@@ -80,78 +41,65 @@ struct LoaderLibrary {
     name: String,
 }
 
-struct GameAuth {
-    username: String,
-    uuid: String,
-    token: String,
-    user_type: String,
-}
-
 fn account_can_launch(has_microsoft_account: bool, account: &Account) -> bool {
     account.account_type == AccountType::Microsoft || has_microsoft_account
 }
 
-// mojang's library rules are a fun little state machine: each rule can allow
-// or disallow based on OS. if no rule matches the current OS, the library is
-// included only if no rule "dominated" (matched at all). yes, it's weird.
-fn lib_allowed(lib: &MetaLibrary) -> bool {
-    let Some(rules) = &lib.rules else {
-        return true;
-    };
-    let current_os = match std::env::consts::OS {
-        "macos" => "osx",
-        other => other,
-    };
-    let mut dominated = false;
-    for rule in rules {
-        let matches_os = rule
-            .os
-            .as_ref()
-            .and_then(|os| os.name.as_deref())
-            .is_none_or(|n| n == current_os);
-        if !matches_os {
-            continue;
-        }
-        dominated = true;
-        match rule.action.as_str() {
-            "disallow" => return false,
-            "allow" => return true,
-            _ => {}
-        }
-    }
-    !dominated
+fn build_game_args(
+    profile: &crate::launch_profile::model::LaunchProfile,
+    rule_ctx: &crate::launch_profile::rules::RuleContext<'_>,
+    template_ctx: &crate::launch_profile::templates::TemplateContext<'_>,
+    loader_game_args: Vec<String>,
+) -> Result<(Vec<String>, Vec<String>), LaunchError> {
+    let rendered = crate::launch_profile::render::render_args(profile, rule_ctx, template_ctx)
+        .map_err(|e| LaunchError::Parse(format!("Failed to render args: {e}")))?;
+    let mut game = rendered.game;
+    game.extend(loader_game_args);
+    Ok((rendered.jvm, game))
 }
 
-fn build_game_args(
-    config: &InstanceConfig,
-    minecraft_dir: &Path,
-    meta_dir: &Path,
-    asset_index_id: &str,
-    auth: GameAuth,
-    loader_game_args: Vec<String>,
-) -> Vec<String> {
-    let mut game_args = vec![
-        "--username".to_string(),
-        auth.username,
-        "--version".to_string(),
-        config.game_version.clone(),
-        "--gameDir".to_string(),
-        minecraft_dir.to_string_lossy().into_owned(),
-        "--assetsDir".to_string(),
-        meta_dir.join("assets").to_string_lossy().into_owned(),
-        "--assetIndex".to_string(),
-        asset_index_id.to_string(),
-        "--uuid".to_string(),
-        auth.uuid,
-        "--accessToken".to_string(),
-        auth.token,
-        "--userProperties".to_string(),
-        "{}".to_string(),
-        "--userType".to_string(),
-        auth.user_type,
-    ];
-    game_args.extend(loader_game_args);
-    game_args
+// existing installs from rmcl <= 0.3.0 have meta.json files in the
+// stripped legacy format (no `arguments`, no `minecraftArguments`). every
+// real upstream profile has at least one of those fields. on detecting the
+// stripped format, re-fetch the version metadata from mojang's manifest
+// and overwrite the file with the raw upstream bytes.
+async fn migrate_legacy_meta_if_needed(
+    meta_path: &Path,
+    profile: &crate::launch_profile::model::LaunchProfile,
+    game_version: &str,
+) -> Result<Option<crate::launch_profile::model::LaunchProfile>, LaunchError> {
+    if profile.arguments.is_some() || profile.minecraft_arguments.is_some() {
+        return Ok(None);
+    }
+
+    tracing::warn!(
+        "Cached meta.json for {game_version} is missing arguments; re-fetching from Mojang"
+    );
+
+    let client = crate::net::HttpClient::new();
+    let manifest = crate::net::mojang::fetch_version_manifest(&client)
+        .await
+        .map_err(|e| LaunchError::Parse(format!("Failed to fetch version manifest: {e}")))?;
+
+    let entry = manifest
+        .versions
+        .iter()
+        .find(|v| v.id == game_version)
+        .ok_or_else(|| {
+            LaunchError::Parse(format!(
+                "Version {game_version} not found in Mojang manifest"
+            ))
+        })?;
+
+    let (_meta, raw) = crate::net::mojang::fetch_version_meta_with_raw(&client, entry)
+        .await
+        .map_err(|e| LaunchError::Parse(format!("Failed to re-fetch version meta: {e}")))?;
+
+    tokio::fs::write(meta_path, &raw).await?;
+
+    let refreshed: crate::launch_profile::model::LaunchProfile = serde_json::from_slice(&raw)
+        .map_err(|e| LaunchError::Parse(format!("Failed to parse refreshed meta: {e}")))?;
+    Ok(Some(refreshed))
 }
 
 pub async fn launch(
@@ -170,18 +118,50 @@ pub async fn launch(
     if !meta_path.exists() {
         return Err(LaunchError::MetaNotFound(meta_path.display().to_string()));
     }
-    let meta: MetaJson = serde_json::from_slice(&tokio::fs::read(&meta_path).await?)?;
+    let meta: crate::launch_profile::model::LaunchProfile =
+        serde_json::from_slice(&tokio::fs::read(&meta_path).await?)?;
+    let meta = match migrate_legacy_meta_if_needed(&meta_path, &meta, &config.game_version).await? {
+        Some(refreshed) => refreshed,
+        None => meta,
+    };
+
+    let current_features = crate::launch_profile::rules::FeatureSet::default();
+    let rule_ctx = crate::launch_profile::rules::RuleContext {
+        os_name: match std::env::consts::OS {
+            "macos" => "osx",
+            other => other,
+        },
+        arch: match std::env::consts::ARCH {
+            "x86" => "x86",
+            "x86_64" => "x86_64",
+            "aarch64" => "arm64",
+            other => other,
+        },
+        features: &current_features,
+    };
+
+    let vanilla_main_class = meta
+        .main_class
+        .clone()
+        .ok_or_else(|| LaunchError::Parse("meta.json missing mainClass".into()))?;
+    let asset_index_id = meta
+        .asset_index
+        .as_ref()
+        .map(|ai| ai.id.clone())
+        .unwrap_or_default();
 
     let lib_dir = meta_dir.join("libraries");
     let mut classpath: Vec<PathBuf> = meta
         .libraries
         .iter()
-        .filter(|l| lib_allowed(l))
+        .filter(|l| match &l.rules {
+            Some(rules) => crate::launch_profile::rules::evaluate(rules, &rule_ctx),
+            None => true,
+        })
         .filter_map(|l| {
             l.downloads
-                .as_ref()?
-                .artifact
                 .as_ref()
+                .and_then(|d| d.artifact.as_ref())
                 .map(|a| lib_dir.join(&a.path))
         })
         .collect();
@@ -230,7 +210,7 @@ pub async fn launch(
         }
         (profile.main_class, profile.game_arguments)
     } else {
-        (meta.main_class.clone(), Vec::new())
+        (vanilla_main_class.clone(), Vec::new())
     };
 
     classpath.push(
@@ -268,13 +248,6 @@ pub async fn launch(
                 .map(str::to_owned)
         })
         .unwrap_or_else(crate::net::detect_java_path);
-
-    let mut jvm: Vec<String> = vec![
-        format!("-Xms{}", config.memory_min.as_deref().unwrap_or("512M")),
-        format!("-Xmx{}", config.memory_max.as_deref().unwrap_or("2G")),
-    ];
-    jvm.extend(patch_jvm_args);
-    jvm.extend(config.jvm_args.clone());
 
     // resolve auth credentials, refreshing the microsoft token if needed.
     let mut account_store = crate::auth::AccountStore::load();
@@ -330,19 +303,41 @@ pub async fn launch(
         None => return Err(LaunchError::Auth("No account selected".to_owned())),
     };
 
-    let game_args = build_game_args(
-        config,
-        &minecraft_dir,
-        meta_dir,
-        &meta.asset_index.id,
-        GameAuth {
-            username: mc_username,
-            uuid: mc_uuid,
-            token: mc_token,
-            user_type: mc_user_type,
-        },
-        loader_game_args,
-    );
+    let assets_root = meta_dir.join("assets");
+    let natives_dir = meta_dir
+        .join("versions")
+        .join(&config.game_version)
+        .join("natives");
+    let template_ctx = crate::launch_profile::templates::TemplateContext {
+        library_directory: &lib_dir,
+        classpath_separator: sep,
+        version_name: &config.game_version,
+        natives_directory: &natives_dir,
+        classpath: &cp_str,
+        game_directory: &minecraft_dir,
+        assets_root: &assets_root,
+        assets_index_name: &asset_index_id,
+        auth_player_name: &mc_username,
+        auth_uuid: &mc_uuid,
+        auth_access_token: &mc_token,
+        auth_xuid: "0",
+        user_type: &mc_user_type,
+        user_properties: "{}",
+        launcher_name: "rmcl",
+        launcher_version: env!("CARGO_PKG_VERSION"),
+        clientid: "0",
+    };
+
+    let (upstream_jvm_args, game_args) =
+        build_game_args(&meta, &rule_ctx, &template_ctx, loader_game_args)?;
+
+    let mut jvm: Vec<String> = vec![
+        format!("-Xms{}", config.memory_min.as_deref().unwrap_or("512M")),
+        format!("-Xmx{}", config.memory_max.as_deref().unwrap_or("2G")),
+    ];
+    jvm.extend(patch_jvm_args);
+    jvm.extend(upstream_jvm_args);
+    jvm.extend(config.jvm_args.clone());
 
     let (kill_tx, kill_rx) = tokio::sync::oneshot::channel::<()>();
     crate::running::register_kill(&name, kill_tx);
@@ -478,23 +473,6 @@ pub async fn launch(
 mod tests {
     use super::*;
     use crate::auth::{Account, AccountType};
-    use chrono::Utc;
-
-    fn test_config() -> InstanceConfig {
-        InstanceConfig {
-            name: "test".to_owned(),
-            game_version: "1.7.10".to_owned(),
-            loader: ModLoader::Forge,
-            loader_version: Some("10.13.4.1614".to_owned()),
-            created: Utc::now(),
-            last_played: None,
-            java_path: None,
-            memory_max: None,
-            memory_min: None,
-            jvm_args: Vec::new(),
-            resolution: None,
-        }
-    }
 
     fn test_account(account_type: AccountType) -> Account {
         Account {
@@ -509,32 +487,78 @@ mod tests {
     }
 
     #[test]
-    fn game_args_include_empty_user_properties() {
-        let args = build_game_args(
-            &test_config(),
-            Path::new("/instances/test/.minecraft"),
-            Path::new("/meta"),
-            "legacy",
-            GameAuth {
-                username: "TestPlayer".to_owned(),
-                uuid: "00000000-0000-0000-0000-000000000000".to_owned(),
-                token: "token".to_owned(),
-                user_type: "msa".to_owned(),
-            },
-            vec![
-                "--tweakClass".to_owned(),
-                "cpw.mods.fml.common.launcher.FMLTweaker".to_owned(),
-            ],
-        );
+    fn build_game_args_renders_upstream_arguments_and_appends_loader_args() {
+        use crate::launch_profile::model::{Argument, Arguments, LaunchProfile};
+        use crate::launch_profile::rules::{FeatureSet, RuleContext};
+        use crate::launch_profile::templates::TemplateContext;
+        use std::path::PathBuf;
 
-        let position = args
-            .iter()
-            .position(|arg| arg == "--userProperties")
-            .expect("game args should include --userProperties");
-        assert_eq!(args.get(position + 1).map(String::as_str), Some("{}"));
-        assert!(
-            args.windows(2)
-                .any(|pair| pair == ["--tweakClass", "cpw.mods.fml.common.launcher.FMLTweaker"])
+        let lib = PathBuf::from("/m/libraries");
+        let nat = PathBuf::from("/m/natives");
+        let game_dir = PathBuf::from("/i/.minecraft");
+        let assets = PathBuf::from("/m/assets");
+
+        let template_ctx = TemplateContext {
+            library_directory: &lib,
+            classpath_separator: ":",
+            version_name: "1.20.1",
+            natives_directory: &nat,
+            classpath: "a.jar:b.jar",
+            game_directory: &game_dir,
+            assets_root: &assets,
+            assets_index_name: "5",
+            auth_player_name: "Player",
+            auth_uuid: "00000000-0000-0000-0000-000000000000",
+            auth_access_token: "token",
+            auth_xuid: "0",
+            user_type: "msa",
+            user_properties: "{}",
+            launcher_name: "rmcl",
+            launcher_version: "test",
+            clientid: "0",
+        };
+        let features = FeatureSet::default();
+        let rule_ctx = RuleContext {
+            os_name: "linux",
+            arch: "x86_64",
+            features: &features,
+        };
+
+        let profile = LaunchProfile {
+            id: "1.20.1".into(),
+            inherits_from: None,
+            main_class: Some("net.minecraft.client.main.Main".into()),
+            libraries: Vec::new(),
+            arguments: Some(Arguments {
+                game: vec![
+                    Argument::Literal("--username".into()),
+                    Argument::Literal("${auth_player_name}".into()),
+                ],
+                jvm: vec![Argument::Literal(
+                    "-Djava.library.path=${natives_directory}".into(),
+                )],
+            }),
+            minecraft_arguments: None,
+            asset_index: None,
+            assets: None,
+            java_version: None,
+            downloads: None,
+            release_time: None,
+            time: None,
+            type_: None,
+        };
+
+        let (jvm, game_args) = build_game_args(
+            &profile,
+            &rule_ctx,
+            &template_ctx,
+            vec!["--tweakClass".into(), "foo".into()],
+        )
+        .unwrap();
+        assert_eq!(jvm, vec!["-Djava.library.path=/m/natives"]);
+        assert_eq!(
+            game_args,
+            vec!["--username", "Player", "--tweakClass", "foo"]
         );
     }
 
@@ -557,5 +581,68 @@ mod tests {
         let microsoft = test_account(AccountType::Microsoft);
 
         assert!(account_can_launch(false, &microsoft));
+    }
+
+    #[test]
+    fn migration_predicate_triggers_when_both_argument_fields_absent() {
+        use crate::launch_profile::model::LaunchProfile;
+        let stripped = LaunchProfile {
+            id: "1.20.1".into(),
+            inherits_from: None,
+            main_class: Some("net.test.Main".into()),
+            libraries: Vec::new(),
+            arguments: None,
+            minecraft_arguments: None,
+            asset_index: None,
+            assets: None,
+            java_version: None,
+            downloads: None,
+            release_time: None,
+            time: None,
+            type_: None,
+        };
+        assert!(stripped.arguments.is_none() && stripped.minecraft_arguments.is_none());
+    }
+
+    #[test]
+    fn migration_predicate_skips_when_modern_arguments_present() {
+        use crate::launch_profile::model::{Arguments, LaunchProfile};
+        let modern = LaunchProfile {
+            id: "1.20.1".into(),
+            inherits_from: None,
+            main_class: Some("net.test.Main".into()),
+            libraries: Vec::new(),
+            arguments: Some(Arguments::default()),
+            minecraft_arguments: None,
+            asset_index: None,
+            assets: None,
+            java_version: None,
+            downloads: None,
+            release_time: None,
+            time: None,
+            type_: None,
+        };
+        assert!(modern.arguments.is_some());
+    }
+
+    #[test]
+    fn migration_predicate_skips_when_legacy_minecraft_arguments_present() {
+        use crate::launch_profile::model::LaunchProfile;
+        let legacy = LaunchProfile {
+            id: "1.7.10".into(),
+            inherits_from: None,
+            main_class: Some("net.test.Main".into()),
+            libraries: Vec::new(),
+            arguments: None,
+            minecraft_arguments: Some("--username Player".into()),
+            asset_index: None,
+            assets: None,
+            java_version: None,
+            downloads: None,
+            release_time: None,
+            time: None,
+            type_: None,
+        };
+        assert!(legacy.minecraft_arguments.is_some());
     }
 }

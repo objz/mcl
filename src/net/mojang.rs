@@ -76,7 +76,7 @@ pub struct Download {
 pub struct Library {
     pub name: String,
     pub downloads: LibraryDownloads,
-    pub rules: Option<Vec<Rule>>,
+    pub rules: Option<Vec<crate::launch_profile::rules::Rule>>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -90,17 +90,6 @@ pub struct Artifact {
     pub path: String,
     pub sha1: String,
     pub size: u64,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct Rule {
-    pub action: String,
-    pub os: Option<OsRule>,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct OsRule {
-    pub name: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -129,6 +118,20 @@ pub async fn fetch_version_meta(
     entry: &VersionEntry,
 ) -> Result<VersionMeta, NetError> {
     client.get_json(&entry.url).await
+}
+
+// like fetch_version_meta but also returns the raw response bytes so the
+// caller can write the upstream JSON byte-for-byte to disk. used by the
+// install path so we don't lose data (e.g. arguments.jvm) by re-serializing
+// through our narrow VersionMeta struct.
+pub async fn fetch_version_meta_with_raw(
+    client: &HttpClient,
+    entry: &VersionEntry,
+) -> Result<(VersionMeta, Vec<u8>), NetError> {
+    let raw = client.get_bytes(&entry.url).await?;
+    let parsed: VersionMeta = serde_json::from_slice(&raw)
+        .map_err(|e| NetError::Parse(format!("Failed to parse version meta: {e}")))?;
+    Ok((parsed, raw))
 }
 
 pub async fn download_client_jar(
@@ -169,9 +172,18 @@ pub async fn download_libraries(
 ) -> Result<(), NetError> {
     set_action("Downloading libraries...");
 
+    let features = crate::launch_profile::rules::FeatureSet::default();
+    let rule_ctx = crate::launch_profile::rules::RuleContext {
+        os_name: mojang_os_name(),
+        arch: mojang_arch_name(),
+        features: &features,
+    };
+
     let mut downloads = Vec::new();
     for library in &meta.libraries {
-        if !library_allowed_for_current_os(library) {
+        if let Some(rules) = &library.rules
+            && !crate::launch_profile::rules::evaluate(rules, &rule_ctx)
+        {
             continue;
         }
 
@@ -281,47 +293,19 @@ pub async fn download_assets(
     result
 }
 
-// mojang's rule system is a bit quirky: no rules means "allow everywhere",
-// and rules are evaluated in order where the last matching rule wins.
-// a "disallow" for the current OS is an immediate reject though.
-fn library_allowed_for_current_os(library: &Library) -> bool {
-    let rules = match &library.rules {
-        Some(rules) => rules,
-        None => return true,
-    };
-
-    let current_os = mojang_os_name();
-    let mut allowed = false;
-
-    for rule in rules {
-        let matches_os = match &rule.os {
-            Some(os_rule) => match &os_rule.name {
-                Some(name) => name == current_os,
-                None => true,
-            },
-            None => true,
-        };
-
-        if !matches_os {
-            continue;
-        }
-
-        if rule.action == "disallow" {
-            return false;
-        }
-
-        if rule.action == "allow" {
-            allowed = true;
-        }
-    }
-
-    allowed
-}
-
 // mojang calls macOS "osx" because apparently it's still 2012
 fn mojang_os_name() -> &'static str {
     match std::env::consts::OS {
         "macos" => "osx",
+        other => other,
+    }
+}
+
+fn mojang_arch_name() -> &'static str {
+    match std::env::consts::ARCH {
+        "x86" => "x86",
+        "x86_64" => "x86_64",
+        "aarch64" => "arm64",
         other => other,
     }
 }
