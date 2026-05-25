@@ -95,6 +95,7 @@ mod tests {
             library_directory,
             classpath_separator: ":",
             version_name: "1.20.1",
+            version_type: "release",
             natives_directory,
             classpath: "a.jar:b.jar",
             game_directory,

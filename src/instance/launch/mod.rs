@@ -456,8 +456,6 @@ pub async fn launch(
         launcher_name: "rmcl",
         launcher_version: env!("CARGO_PKG_VERSION"),
         clientid: "0",
-        resolution_width: "",
-        resolution_height: "",
     };
 
     let (upstream_jvm_args, game_args) =
@@ -636,8 +634,6 @@ mod tests {
             launcher_version: "test",
             clientid: "0",
             version_type: "release",
-            resolution_width: "",
-            resolution_height: "",
         };
         let features = FeatureSet::default();
         let rule_ctx = RuleContext {

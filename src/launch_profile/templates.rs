@@ -14,6 +14,7 @@ pub struct TemplateContext<'a> {
     pub library_directory: &'a Path,
     pub classpath_separator: &'a str,
     pub version_name: &'a str,
+    pub version_type: &'a str,
     pub natives_directory: &'a Path,
     pub classpath: &'a str,
     pub game_directory: &'a Path,
@@ -76,6 +77,7 @@ fn lookup(name: &str, ctx: &TemplateContext) -> Option<String> {
         "library_directory" => ctx.library_directory.display().to_string(),
         "classpath_separator" => ctx.classpath_separator.to_string(),
         "version_name" => ctx.version_name.to_string(),
+        "version_type" => ctx.version_type.to_string(),
         "natives_directory" => ctx.natives_directory.display().to_string(),
         "classpath" => ctx.classpath.to_string(),
         "game_directory" => ctx.game_directory.display().to_string(),
@@ -109,6 +111,7 @@ mod tests {
             library_directory,
             classpath_separator: ":",
             version_name: "1.20.1",
+            version_type: "release",
             natives_directory,
             classpath: "a.jar:b.jar",
             game_directory,
@@ -237,6 +240,7 @@ mod tests {
             launcher_name: "rmcl",
             launcher_version: "0.3.0",
             clientid: "0",
+            version_type: "release",
         };
         assert_eq!(substitute("${user_properties}", &ctx), "${version_name}");
     }

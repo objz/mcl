@@ -27,6 +27,15 @@ pub struct OsCondition {
 pub struct FeatureSet {
     pub is_demo_user: Option<bool>,
     pub has_custom_resolution: Option<bool>,
+    // quick-play feature flags (1.20+). rmcl never sets these, so any rule
+    // gated on them is filtered out by features_match. listing them
+    // explicitly is what makes that filter work: without the fields,
+    // serde would silently drop them during deserialization, leaving a
+    // FeatureSet::default that matches everything.
+    pub has_quick_plays_support: Option<bool>,
+    pub is_quick_play_singleplayer: Option<bool>,
+    pub is_quick_play_multiplayer: Option<bool>,
+    pub is_quick_play_realms: Option<bool>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
@@ -102,17 +111,27 @@ fn os_version_matches(pattern: &str, host_version: &str) -> bool {
 }
 
 fn features_match(required: &FeatureSet, current: &FeatureSet) -> bool {
-    if let Some(want) = required.is_demo_user
-        && current.is_demo_user.unwrap_or(false) != want
-    {
-        return false;
-    }
-    if let Some(want) = required.has_custom_resolution
-        && current.has_custom_resolution.unwrap_or(false) != want
-    {
-        return false;
-    }
-    true
+    let pairs = [
+        (required.is_demo_user, current.is_demo_user),
+        (required.has_custom_resolution, current.has_custom_resolution),
+        (
+            required.has_quick_plays_support,
+            current.has_quick_plays_support,
+        ),
+        (
+            required.is_quick_play_singleplayer,
+            current.is_quick_play_singleplayer,
+        ),
+        (
+            required.is_quick_play_multiplayer,
+            current.is_quick_play_multiplayer,
+        ),
+        (required.is_quick_play_realms, current.is_quick_play_realms),
+    ];
+    pairs.iter().all(|(req, cur)| match req {
+        Some(want) => cur.unwrap_or(false) == *want,
+        None => true,
+    })
 }
 
 #[cfg(test)]
@@ -263,12 +282,12 @@ mod tests {
             os: None,
             features: Some(FeatureSet {
                 is_demo_user: Some(true),
-                has_custom_resolution: None,
+                ..Default::default()
             }),
         }];
         let demo_features = FeatureSet {
             is_demo_user: Some(true),
-            has_custom_resolution: None,
+            ..Default::default()
         };
         let ctx = RuleContext {
             os_name: "linux",
@@ -286,7 +305,7 @@ mod tests {
             os: None,
             features: Some(FeatureSet {
                 is_demo_user: Some(true),
-                has_custom_resolution: None,
+                ..Default::default()
             }),
         }];
         let features = FeatureSet::default();
