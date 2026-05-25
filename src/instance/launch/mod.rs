@@ -310,21 +310,32 @@ pub async fn launch(
             continue;
         }
 
-        if let Some(artifact) = lib.downloads.as_ref().and_then(|d| d.artifact.as_ref()) {
-            classpath.push(lib_dir.join(&artifact.path));
-        } else if let Some(rel) = crate::net::maven_coord_to_path(&lib.name) {
-            if has_local_libs {
-                let in_local = local_lib_dir.join(&rel);
-                let in_meta = lib_dir.join(&rel);
-                if in_local.exists() {
-                    classpath.push(in_local);
-                } else if in_meta.exists() {
-                    classpath.push(in_meta);
-                }
-            } else {
-                classpath.push(lib_dir.join(rel));
+        // resolve a relative path for this library. prefer downloads.artifact.path
+        // when present (vanilla-style), fall back to maven_coord_to_path(name)
+        // for loader-style entries that only have a coord.
+        let rel: PathBuf = match lib
+            .downloads
+            .as_ref()
+            .and_then(|d| d.artifact.as_ref())
+            .map(|a| PathBuf::from(&a.path))
+            .or_else(|| crate::net::maven_coord_to_path(&lib.name).map(PathBuf::from))
+        {
+            Some(p) => p,
+            None => continue,
+        };
+
+        // for forge/neoforge, the installer drops some libs (notably the
+        // bootstrap library) into <instance>/.minecraft/libraries/ rather
+        // than the shared meta cache. check there first regardless of
+        // whether the lib has a downloads.artifact entry.
+        if has_local_libs {
+            let in_local = local_lib_dir.join(&rel);
+            if in_local.exists() {
+                classpath.push(in_local);
+                continue;
             }
         }
+        classpath.push(lib_dir.join(rel));
     }
 
     classpath.push(
@@ -425,10 +436,12 @@ pub async fn launch(
         .join("versions")
         .join(&config.game_version)
         .join("natives");
+    let version_type = merged_profile.type_.as_deref().unwrap_or("release");
     let template_ctx = TemplateContext {
         library_directory: &lib_dir,
         classpath_separator: sep,
         version_name: &config.game_version,
+        version_type,
         natives_directory: &natives_dir,
         classpath: &cp_str,
         game_directory: &minecraft_dir,
@@ -443,6 +456,8 @@ pub async fn launch(
         launcher_name: "rmcl",
         launcher_version: env!("CARGO_PKG_VERSION"),
         clientid: "0",
+        resolution_width: "",
+        resolution_height: "",
     };
 
     let (upstream_jvm_args, game_args) =
@@ -620,6 +635,9 @@ mod tests {
             launcher_name: "rmcl",
             launcher_version: "test",
             clientid: "0",
+            version_type: "release",
+            resolution_width: "",
+            resolution_height: "",
         };
         let features = FeatureSet::default();
         let rule_ctx = RuleContext {
