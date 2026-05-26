@@ -19,8 +19,6 @@ fn setup_subdir(tmp: &Path, instance: &str, sub: &str) -> PathBuf {
 // without panicking even though it can't actually unpack metadata.
 const ZIP_HEADER: &[u8] = b"PK\x03\x04";
 
-// ---------- shaders ----------
-
 #[test]
 fn shaders_empty_dir_returns_empty() {
     let tmp = tempfile::tempdir().unwrap();
@@ -68,7 +66,6 @@ fn shaders_ignores_non_shader_files() {
     assert_eq!(scan_shaders(tmp.path(), "inst").len(), 1);
 }
 
-// ---------- worlds ----------
 // worlds are always directories (no zip form), so the test shape differs.
 
 #[test]
@@ -132,8 +129,6 @@ fn worlds_sorted_case_insensitive() {
     let names: Vec<&str> = worlds.iter().map(|w| w.name.as_str()).collect();
     assert_eq!(names, vec!["alpha", "Beta", "Zeta"]);
 }
-
-// ---------- resource packs ----------
 
 #[test]
 fn resource_packs_empty_dir_returns_empty() {

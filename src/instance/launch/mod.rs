@@ -202,13 +202,45 @@ async fn migrate_legacy_loader_profile_if_needed(
     Ok(Some(refreshed))
 }
 
-pub async fn launch(
+// resolved auth credentials passed into the launch-invocation builder.
+// keeping these as borrowed strs lets callers pass owned strings or string
+// slices without forcing allocation.
+#[derive(Debug, Clone)]
+pub struct LaunchAuth<'a> {
+    pub username: &'a str,
+    pub uuid: &'a str,
+    pub token: &'a str,
+    // "msa" for Microsoft, "legacy" for offline; mirrors Mojang's user_type.
+    pub user_type: &'a str,
+}
+
+// everything the spawner needs to construct the java command. assembled by
+// build_launch_invocation, consumed by launch(). exposed so integration tests
+// can assert on the rendered invocation without spawning a real process.
+#[derive(Debug, Clone)]
+pub struct LaunchInvocation {
+    pub java: String,
+    pub jvm_args: Vec<String>,
+    pub classpath: Vec<PathBuf>,
+    pub classpath_string: String,
+    pub main_class: String,
+    pub extra_args: Vec<String>,
+    pub game_args: Vec<String>,
+    pub working_dir: PathBuf,
+}
+
+// builds a fully-resolved java invocation for the given instance. reads
+// meta.json and the loader profile from disk, migrates legacy formats if
+// needed (may hit Mojang to refetch), resolves inheritsFrom, applies
+// loader-specific patches, and renders all template arguments. all I/O
+// except auth resolution and process spawning happens here.
+pub async fn build_launch_invocation(
     config: &InstanceConfig,
     instances_dir: &Path,
     meta_dir: &Path,
-) -> Result<(), LaunchError> {
-    let name = config.name.clone();
-    let instance_dir = instances_dir.join(&name);
+    auth: &LaunchAuth<'_>,
+) -> Result<LaunchInvocation, LaunchError> {
+    let instance_dir = instances_dir.join(&config.name);
     let minecraft_dir = instance_dir.join(".minecraft");
 
     let meta_path = meta_dir
@@ -374,63 +406,6 @@ pub async fn launch(
         })
         .unwrap_or_else(crate::net::detect_java_path);
 
-    // resolve auth credentials, refreshing the microsoft token if needed.
-    let mut account_store = crate::auth::AccountStore::load();
-    let (mc_username, mc_uuid, mc_token, mc_user_type) = match account_store
-        .active_account()
-        .cloned()
-    {
-        Some(acc) => {
-            // offline accounts can only launch if a microsoft account exists
-            // (proves the user owns minecraft).
-            if acc.account_type != AccountType::Microsoft && !account_store.has_microsoft_account()
-            {
-                return Err(LaunchError::Auth(
-                    "Offline accounts require a Microsoft account that owns Minecraft".to_owned(),
-                ));
-            }
-            let (token, new_refresh, new_expires) = match acc.account_type {
-                AccountType::Microsoft => match crate::auth::refresh_and_get_token(&acc).await {
-                    Ok(triple) => triple,
-                    Err(e) => {
-                        return Err(LaunchError::Auth(format!("Authentication failed: {e}")));
-                    }
-                },
-                AccountType::Offline => ("0".to_string(), None, None),
-            };
-            if let Some(stored) = account_store
-                .accounts
-                .iter_mut()
-                .find(|a| a.uuid == acc.uuid)
-            {
-                let mut changed = false;
-                if let Some(new_rt) = new_refresh {
-                    stored.refresh_token = Some(new_rt);
-                    changed = true;
-                }
-                if let Some(expires) = new_expires {
-                    stored.cached_mc_token = Some(token.clone());
-                    stored.cached_mc_token_expires_at = Some(expires);
-                    changed = true;
-                }
-                if changed {
-                    account_store.save();
-                }
-            }
-            let user_type = match acc.account_type {
-                AccountType::Microsoft => "msa",
-                AccountType::Offline => "legacy",
-            };
-            (
-                acc.username.clone(),
-                acc.uuid.clone(),
-                token,
-                user_type.to_string(),
-            )
-        }
-        None => return Err(LaunchError::Auth("No account selected".to_owned())),
-    };
-
     let assets_root = meta_dir.join("assets");
     let natives_dir = meta_dir
         .join("versions")
@@ -447,11 +422,11 @@ pub async fn launch(
         game_directory: &minecraft_dir,
         assets_root: &assets_root,
         assets_index_name: &asset_index_id,
-        auth_player_name: &mc_username,
-        auth_uuid: &mc_uuid,
-        auth_access_token: &mc_token,
+        auth_player_name: auth.username,
+        auth_uuid: auth.uuid,
+        auth_access_token: auth.token,
         auth_xuid: "0",
-        user_type: &mc_user_type,
+        user_type: auth.user_type,
         user_properties: "{}",
         launcher_name: "rmcl",
         launcher_version: env!("CARGO_PKG_VERSION"),
@@ -461,13 +436,92 @@ pub async fn launch(
     let (upstream_jvm_args, game_args) =
         build_game_args(&merged_profile, &rule_ctx, &template_ctx)?;
 
-    let mut jvm: Vec<String> = vec![
+    let mut jvm_args: Vec<String> = vec![
         format!("-Xms{}", config.memory_min.as_deref().unwrap_or("512M")),
         format!("-Xmx{}", config.memory_max.as_deref().unwrap_or("2G")),
     ];
-    jvm.extend(patch_jvm_args);
-    jvm.extend(upstream_jvm_args);
-    jvm.extend(config.jvm_args.clone());
+    jvm_args.extend(patch_jvm_args);
+    jvm_args.extend(upstream_jvm_args);
+    jvm_args.extend(config.jvm_args.clone());
+
+    Ok(LaunchInvocation {
+        java,
+        jvm_args,
+        classpath,
+        classpath_string: cp_str,
+        main_class,
+        extra_args,
+        game_args,
+        working_dir: minecraft_dir,
+    })
+}
+
+// resolves auth credentials, then builds the launch invocation and spawns
+// the java process. only thin wrapper logic lives here: token refresh,
+// process spawn, child supervision. all the heavy lifting (profile loading,
+// classpath assembly, template rendering) sits behind build_launch_invocation.
+pub async fn launch(
+    config: &InstanceConfig,
+    instances_dir: &Path,
+    meta_dir: &Path,
+) -> Result<(), LaunchError> {
+    let name = config.name.clone();
+
+    // resolve auth credentials, refreshing the microsoft token if needed.
+    let mut account_store = crate::auth::AccountStore::load();
+    let Some(acc) = account_store.active_account().cloned() else {
+        return Err(LaunchError::Auth("No account selected".to_owned()));
+    };
+
+    // offline accounts can only launch if a microsoft account exists
+    // (proves the user owns minecraft).
+    if acc.account_type != AccountType::Microsoft && !account_store.has_microsoft_account() {
+        return Err(LaunchError::Auth(
+            "Offline accounts require a Microsoft account that owns Minecraft".to_owned(),
+        ));
+    }
+
+    let (token, new_refresh, new_expires) = match acc.account_type {
+        AccountType::Microsoft => match crate::auth::refresh_and_get_token(&acc).await {
+            Ok(triple) => triple,
+            Err(e) => return Err(LaunchError::Auth(format!("Authentication failed: {e}"))),
+        },
+        AccountType::Offline => ("0".to_string(), None, None),
+    };
+
+    if let Some(stored) = account_store
+        .accounts
+        .iter_mut()
+        .find(|a| a.uuid == acc.uuid)
+    {
+        let mut changed = false;
+        if let Some(new_rt) = new_refresh {
+            stored.refresh_token = Some(new_rt);
+            changed = true;
+        }
+        if let Some(expires) = new_expires {
+            stored.cached_mc_token = Some(token.clone());
+            stored.cached_mc_token_expires_at = Some(expires);
+            changed = true;
+        }
+        if changed {
+            account_store.save();
+        }
+    }
+
+    let user_type = match acc.account_type {
+        AccountType::Microsoft => "msa",
+        AccountType::Offline => "legacy",
+    };
+
+    let auth = LaunchAuth {
+        username: &acc.username,
+        uuid: &acc.uuid,
+        token: &token,
+        user_type,
+    };
+
+    let invocation = build_launch_invocation(config, instances_dir, meta_dir, &auth).await?;
 
     let (kill_tx, kill_rx) = tokio::sync::oneshot::channel::<()>();
     crate::running::register_kill(&name, kill_tx);
@@ -479,26 +533,27 @@ pub async fn launch(
         config.loader
     );
 
-    tracing::info!("[{}] Java: {}", name, java);
-    tracing::info!("[{}] JVM args: {:?}", name, jvm);
+    tracing::info!("[{}] Java: {}", name, invocation.java);
+    tracing::info!("[{}] JVM args: {:?}", name, invocation.jvm_args);
     tracing::info!(
         "[{}] Classpath:\n{}",
         name,
-        classpath
+        invocation
+            .classpath
             .iter()
             .map(|p| p.display().to_string())
             .collect::<Vec<_>>()
             .join("\n")
     );
-    tracing::info!("[{}] Main class: {}", name, main_class);
+    tracing::info!("[{}] Main class: {}", name, invocation.main_class);
 
-    let mut cmd = tokio::process::Command::new(&java);
-    cmd.args(&jvm);
-    cmd.arg("-cp").arg(&cp_str);
-    cmd.arg(&main_class);
-    cmd.args(&extra_args);
-    cmd.args(&game_args);
-    cmd.current_dir(&minecraft_dir);
+    let mut cmd = tokio::process::Command::new(&invocation.java);
+    cmd.args(&invocation.jvm_args);
+    cmd.arg("-cp").arg(&invocation.classpath_string);
+    cmd.arg(&invocation.main_class);
+    cmd.args(&invocation.extra_args);
+    cmd.args(&invocation.game_args);
+    cmd.current_dir(&invocation.working_dir);
     cmd.stdout(std::process::Stdio::piped());
     cmd.stderr(std::process::Stdio::piped());
 
