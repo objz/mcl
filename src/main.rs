@@ -1,7 +1,5 @@
 #[tokio::main]
 async fn main() {
-    // Run before logging::init() so the cache rename isn't blocked by a
-    // freshly-created ~/.cache/rmcl/ directory.
     rmcl::migrate_legacy_rename();
 
     // Guard must stay in scope to keep the log file writer alive
