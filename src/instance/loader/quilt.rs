@@ -41,15 +41,14 @@ impl ModLoaderInstaller for QuiltInstaller {
         _instance_dir: &Path,
         meta_dir: &Path,
     ) -> Result<(), NetError> {
-        let profile = quilt_api::fetch_quilt_profile(client, game_version, loader_version).await?;
+        let (profile, raw_bytes) =
+            quilt_api::fetch_quilt_profile_with_raw(client, game_version, loader_version).await?;
         quilt_api::download_quilt_libraries(client, &profile, meta_dir).await?;
-
-        super::save_profile_json(
+        super::save_profile_bytes(
             meta_dir,
             &format!("quilt-{game_version}-{loader_version}.json"),
-            &profile,
+            &raw_bytes,
         )?;
-
         Ok(())
     }
 }

@@ -115,8 +115,8 @@ impl InstanceManager {
             }
         };
 
-        let version_meta =
-            crate::net::mojang::fetch_version_meta(&self.client, version_entry).await?;
+        let (version_meta, raw_meta_bytes) =
+            crate::net::mojang::fetch_version_meta_with_raw(&self.client, version_entry).await?;
 
         crate::net::mojang::download_client_jar(&self.client, &version_meta, &self.meta_dir)
             .await?;
@@ -126,15 +126,13 @@ impl InstanceManager {
             .join("versions")
             .join(game_version)
             .join("meta.json");
-        match serde_json::to_string_pretty(&version_meta) {
-            Ok(json) => {
-                if let Err(e) = std::fs::write(&meta_json_path, &json) {
-                    tracing::warn!("Failed to save version meta: {}", e);
-                }
-            }
-            Err(e) => {
-                tracing::warn!("Failed to serialize version meta: {}", e);
-            }
+        if let Some(parent) = meta_json_path.parent()
+            && let Err(e) = std::fs::create_dir_all(parent)
+        {
+            tracing::warn!("Failed to ensure meta dir exists: {}", e);
+        }
+        if let Err(e) = std::fs::write(&meta_json_path, &raw_meta_bytes) {
+            tracing::warn!("Failed to save version meta: {}", e);
         }
 
         crate::net::mojang::download_libraries(&self.client, &version_meta, &self.meta_dir).await?;

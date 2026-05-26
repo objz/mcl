@@ -41,16 +41,14 @@ impl ModLoaderInstaller for FabricInstaller {
         _instance_dir: &Path,
         meta_dir: &Path,
     ) -> Result<(), NetError> {
-        let profile =
-            fabric_api::fetch_fabric_profile(client, game_version, loader_version).await?;
+        let (profile, raw_bytes) =
+            fabric_api::fetch_fabric_profile_with_raw(client, game_version, loader_version).await?;
         fabric_api::download_fabric_libraries(client, &profile, meta_dir).await?;
-
-        super::save_profile_json(
+        super::save_profile_bytes(
             meta_dir,
             &format!("fabric-{game_version}-{loader_version}.json"),
-            &profile,
+            &raw_bytes,
         )?;
-
         Ok(())
     }
 }

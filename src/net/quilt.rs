@@ -74,6 +74,22 @@ pub async fn fetch_quilt_profile(
     client.get_json(&url).await
 }
 
+// like fetch_quilt_profile but also returns the raw response bytes so the
+// caller can write the upstream JSON byte-for-byte to disk. used by the
+// install path so we don't lose data (e.g. any future arguments field) by
+// re-serializing through our narrow QuiltProfile struct.
+pub async fn fetch_quilt_profile_with_raw(
+    client: &HttpClient,
+    game_version: &str,
+    loader_version: &str,
+) -> Result<(QuiltProfile, Vec<u8>), NetError> {
+    let url = format!(
+        "{}/versions/loader/{}/{}/profile/json",
+        QUILT_META_BASE, game_version, loader_version
+    );
+    client.get_json_with_raw(&url, "Quilt profile").await
+}
+
 pub async fn download_quilt_libraries(
     client: &HttpClient,
     profile: &QuiltProfile,

@@ -77,6 +77,22 @@ pub async fn fetch_fabric_profile(
     client.get_json(&url).await
 }
 
+// like fetch_fabric_profile but also returns the raw response bytes so the
+// caller can write the upstream JSON byte-for-byte to disk. used by the
+// install path so we don't lose data (e.g. any future arguments field) by
+// re-serializing through our narrow FabricProfile struct.
+pub async fn fetch_fabric_profile_with_raw(
+    client: &HttpClient,
+    game_version: &str,
+    loader_version: &str,
+) -> Result<(FabricProfile, Vec<u8>), NetError> {
+    let url = format!(
+        "{}/versions/loader/{}/{}/profile/json",
+        FABRIC_META_BASE, game_version, loader_version
+    );
+    client.get_json_with_raw(&url, "Fabric profile").await
+}
+
 // each fabric library entry has a maven coordinate and a base url.
 // the coordinate gets resolved to a path and combined with the url to download.
 pub async fn download_fabric_libraries(

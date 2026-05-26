@@ -3,6 +3,7 @@ mod cli;
 pub mod config;
 pub mod instance;
 pub mod instance_logs;
+pub mod launch_profile;
 mod migrate;
 pub mod net;
 pub mod running;

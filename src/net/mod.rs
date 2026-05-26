@@ -69,8 +69,66 @@ impl HttpClient {
     }
 
     pub async fn get_json<T: DeserializeOwned>(&self, url: &str) -> Result<T, NetError> {
-        Ok(self.get(url).await?.json().await?)
+        get_with_retry(self, url, |resp| async move { Ok(resp.json().await?) }).await
     }
+
+    pub async fn get_bytes(&self, url: &str) -> Result<Vec<u8>, NetError> {
+        get_with_retry(
+            self,
+            url,
+            |resp| async move { Ok(resp.bytes().await?.to_vec()) },
+        )
+        .await
+    }
+
+    // fetch JSON and also keep the raw bytes. used by install paths that
+    // want both the parsed shape (for downloading libraries from it) and
+    // the original bytes (to write byte-for-byte to the loader-profiles
+    // cache, so any field we don't know about survives).
+    pub async fn get_json_with_raw<T: DeserializeOwned>(
+        &self,
+        url: &str,
+        label: &str,
+    ) -> Result<(T, Vec<u8>), NetError> {
+        let raw = self.get_bytes(url).await?;
+        let parsed: T = serde_json::from_slice(&raw)
+            .map_err(|e| NetError::Parse(format!("Failed to parse {label}: {e}")))?;
+        Ok((parsed, raw))
+    }
+}
+
+// shared retry envelope around `client.get(url).await? -> decode`. retries
+// transient failures (timeouts, connect errors, 5xx) with exponential
+// backoff. used by both get_json and get_bytes.
+async fn get_with_retry<T, F, Fut>(client: &HttpClient, url: &str, decode: F) -> Result<T, NetError>
+where
+    F: Fn(reqwest::Response) -> Fut,
+    Fut: std::future::Future<Output = Result<T, NetError>>,
+{
+    let mut last_error = None;
+    for attempt in 0..=MAX_RETRIES {
+        if attempt > 0 {
+            let delay = RETRY_BASE_DELAY_MS * 2u64.pow(attempt - 1);
+            tracing::warn!(
+                "retrying request (attempt {}/{}): {}",
+                attempt + 1,
+                MAX_RETRIES + 1,
+                url
+            );
+            tokio::time::sleep(std::time::Duration::from_millis(delay)).await;
+        }
+
+        match client.get(url).await {
+            Ok(resp) => match decode(resp).await {
+                Ok(value) => return Ok(value),
+                Err(e) if is_retryable(&e) => last_error = Some(e),
+                Err(e) => return Err(e),
+            },
+            Err(e) if is_retryable(&e) => last_error = Some(e),
+            Err(e) => return Err(e),
+        }
+    }
+    Err(last_error.unwrap())
 }
 
 const MAX_RETRIES: u32 = 3;
@@ -140,7 +198,10 @@ async fn download_file_once(
     Ok(())
 }
 
-// body decode errors and timeouts are worth retrying, but a 404 or disk error isn't
+// body decode errors and timeouts are worth retrying, but a 404 or disk
+// error isn't. Parse errors stay non-retryable: by the time we hit one
+// the response body has fully arrived, so the failure means the upstream
+// returned malformed JSON - retrying won't fix that.
 fn is_retryable(err: &NetError) -> bool {
     match err {
         NetError::Http(e) => e.is_timeout() || e.is_body() || e.is_connect(),
