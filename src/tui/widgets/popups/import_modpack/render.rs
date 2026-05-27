@@ -238,3 +238,45 @@ fn step_keybinds(state: &ImportWizardState) -> Line<'static> {
         ImportStep::Confirm => keybind_line(&[("h", " back"), ("Enter", " import")]),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ratatui::Terminal;
+    use ratatui::backend::TestBackend;
+
+    // serialise against parallel tests of the same global IMPORT_STATE.
+    static TEST_SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn reset_import_state(step: ImportStep) {
+        let mut guard = IMPORT_STATE.lock().expect("IMPORT_STATE lock");
+        *guard = ImportWizardState::default();
+        guard.step = step;
+    }
+
+    #[test]
+    fn import_modpack_renders_input_step() {
+        let _serial = TEST_SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+        reset_import_state(ImportStep::Input);
+
+        let backend = TestBackend::new(60, 12);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal
+            .draw(|f| render(f, f.area(), FocusedArea::ImportPopup))
+            .unwrap();
+        insta::assert_snapshot!(terminal.backend());
+    }
+
+    #[test]
+    fn import_modpack_renders_fetching_step() {
+        let _serial = TEST_SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+        reset_import_state(ImportStep::Fetching);
+
+        let backend = TestBackend::new(60, 12);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal
+            .draw(|f| render(f, f.area(), FocusedArea::ImportPopup))
+            .unwrap();
+        insta::assert_snapshot!(terminal.backend());
+    }
+}

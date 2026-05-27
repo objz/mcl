@@ -324,3 +324,51 @@ fn render_confirm_step(state: &WizardState, area: Rect, buf: &mut ratatui::buffe
     .wrap(Wrap { trim: true })
     .render(area, buf);
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ratatui::Terminal;
+    use ratatui::backend::TestBackend;
+
+    // WIZARD_STATE is a process-global static; without serialisation, parallel
+    // tests would race when each test sets the step and then renders, since
+    // render re-acquires the WIZARD_STATE mutex internally. this guard mutex
+    // ensures only one wizard snapshot test runs at a time.
+    static TEST_SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn reset_wizard_state(step: WizardStep) {
+        let mut guard = WIZARD_STATE.lock().expect("WIZARD_STATE lock");
+        *guard = WizardState::default();
+        guard.step = step;
+    }
+
+    #[test]
+    fn new_instance_renders_name_step() {
+        let _serial = TEST_SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+        // Name is the default step; render touches no network helpers.
+        reset_wizard_state(WizardStep::Name);
+
+        let backend = TestBackend::new(60, 12);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal
+            .draw(|f| render(f, f.area(), FocusedArea::Popup))
+            .unwrap();
+        insta::assert_snapshot!(terminal.backend());
+    }
+
+    #[test]
+    fn new_instance_renders_loader_step() {
+        let _serial = TEST_SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+        // Loader step is reached after Name; render just paints the hardcoded
+        // loader list, no network.
+        reset_wizard_state(WizardStep::Loader);
+
+        let backend = TestBackend::new(60, 12);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal
+            .draw(|f| render(f, f.area(), FocusedArea::Popup))
+            .unwrap();
+        insta::assert_snapshot!(terminal.backend());
+    }
+}
