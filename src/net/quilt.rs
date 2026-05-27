@@ -84,9 +84,18 @@ pub async fn fetch_quilt_profile(
     game_version: &str,
     loader_version: &str,
 ) -> Result<QuiltProfile, NetError> {
+    fetch_quilt_profile_from(client, QUILT_META_BASE, game_version, loader_version).await
+}
+
+pub async fn fetch_quilt_profile_from(
+    client: &HttpClient,
+    meta_base: &str,
+    game_version: &str,
+    loader_version: &str,
+) -> Result<QuiltProfile, NetError> {
     let url = format!(
         "{}/versions/loader/{}/{}/profile/json",
-        QUILT_META_BASE, game_version, loader_version
+        meta_base, game_version, loader_version
     );
     client.get_json(&url).await
 }
@@ -100,9 +109,18 @@ pub async fn fetch_quilt_profile_with_raw(
     game_version: &str,
     loader_version: &str,
 ) -> Result<(QuiltProfile, Vec<u8>), NetError> {
+    fetch_quilt_profile_with_raw_from(client, QUILT_META_BASE, game_version, loader_version).await
+}
+
+pub async fn fetch_quilt_profile_with_raw_from(
+    client: &HttpClient,
+    meta_base: &str,
+    game_version: &str,
+    loader_version: &str,
+) -> Result<(QuiltProfile, Vec<u8>), NetError> {
     let url = format!(
         "{}/versions/loader/{}/{}/profile/json",
-        QUILT_META_BASE, game_version, loader_version
+        meta_base, game_version, loader_version
     );
     client.get_json_with_raw(&url, "Quilt profile").await
 }

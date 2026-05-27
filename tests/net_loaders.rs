@@ -8,10 +8,14 @@ use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use rmcl::net::HttpClient;
-use rmcl::net::fabric::{fetch_fabric_game_versions_from, fetch_fabric_versions_from};
+use rmcl::net::fabric::{
+    fetch_fabric_game_versions_from, fetch_fabric_profile_from, fetch_fabric_versions_from,
+};
 use rmcl::net::forge::{fetch_forge_game_versions_from, fetch_forge_versions_from};
 use rmcl::net::neoforge::fetch_neoforge_versions_from;
-use rmcl::net::quilt::{fetch_quilt_game_versions_from, fetch_quilt_versions_from};
+use rmcl::net::quilt::{
+    fetch_quilt_game_versions_from, fetch_quilt_profile_from, fetch_quilt_versions_from,
+};
 
 // ---------- forge ----------
 
@@ -111,6 +115,32 @@ async fn fabric_fetch_versions_parses_loader_entries() {
     assert_eq!(versions[0].loader.version, "0.15.0");
 }
 
+#[tokio::test]
+async fn fabric_fetch_profile_parses_libraries() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/versions/loader/1.20.1/0.15.0/profile/json"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "id": "fabric-loader-0.15.0-1.20.1",
+            "mainClass": "net.fabricmc.loader.impl.launch.knot.KnotClient",
+            "libraries": [
+                { "name": "net.fabricmc:fabric-loader:0.15.0", "url": "https://maven.fabricmc.net/" }
+            ]
+        })))
+        .mount(&server)
+        .await;
+
+    let profile =
+        fetch_fabric_profile_from(&HttpClient::new(), &server.uri(), "1.20.1", "0.15.0")
+            .await
+            .expect("fabric profile");
+
+    assert_eq!(profile.id, "fabric-loader-0.15.0-1.20.1");
+    assert_eq!(profile.main_class, "net.fabricmc.loader.impl.launch.knot.KnotClient");
+    assert_eq!(profile.libraries.len(), 1);
+    assert_eq!(profile.libraries[0].url, "https://maven.fabricmc.net/");
+}
+
 // ---------- quilt ----------
 
 #[tokio::test]
@@ -145,6 +175,30 @@ async fn quilt_fetch_versions_parses_loader_entries() {
         .await
         .expect("quilt versions");
     assert_eq!(versions[0].loader.version, "0.23.0");
+}
+
+#[tokio::test]
+async fn quilt_fetch_profile_parses_libraries() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/versions/loader/1.20.1/0.23.0/profile/json"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "id": "quilt-loader-0.23.0-1.20.1",
+            "mainClass": "org.quiltmc.loader.impl.launch.knot.KnotClient",
+            "libraries": [
+                { "name": "org.quiltmc:quilt-loader:0.23.0", "url": "https://maven.quiltmc.org/repository/release/" }
+            ]
+        })))
+        .mount(&server)
+        .await;
+
+    let profile =
+        fetch_quilt_profile_from(&HttpClient::new(), &server.uri(), "1.20.1", "0.23.0")
+            .await
+            .expect("quilt profile");
+
+    assert_eq!(profile.id, "quilt-loader-0.23.0-1.20.1");
+    assert_eq!(profile.libraries[0].url, "https://maven.quiltmc.org/repository/release/");
 }
 
 // ---------- neoforge ----------

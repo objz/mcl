@@ -157,6 +157,20 @@ pub fn parse_mrpack(path: &std::path::Path) -> Result<MrpackIndex, String> {
 mod tests {
     use super::*;
 
+    // covers each branch of url_encode: unreserved bytes pass through; the
+    // reserved set + spaces + non-ascii bytes get percent-encoded. emoji
+    // exercises multi-byte UTF-8 since the encoder operates on bytes, not
+    // chars, so each byte of the codepoint encodes separately.
+    #[rstest::rstest]
+    #[case::ascii_unreserved("abcXYZ0-9_.~", "abcXYZ0-9_.~")]
+    #[case::space("hello world", "hello%20world")]
+    #[case::reserved("/?&=#", "%2F%3F%26%3D%23")]
+    #[case::utf8_emoji("\u{2603}", "%E2%98%83")]
+    #[case::empty("", "")]
+    fn url_encode_handles(#[case] input: &str, #[case] expected: &str) {
+        assert_eq!(url_encode(input), expected);
+    }
+
     #[test]
     fn loader_from_fabric_deps() {
         let mut deps = HashMap::new();

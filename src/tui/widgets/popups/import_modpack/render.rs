@@ -355,4 +355,39 @@ mod tests {
             .unwrap();
         insta::assert_snapshot!(terminal.backend());
     }
+
+    // Confirm step with loader_version=None: covers the branch where the
+    // pack didn't declare a loader version (rare upstream, but happens for
+    // older mmc packs). render_confirm_step has to handle the Option.
+    #[test]
+    fn import_modpack_renders_confirm_step_without_loader_version() {
+        use crate::instance::import::{ImportSummary, PackFormat};
+        use crate::instance::models::ModLoader;
+        use std::path::PathBuf;
+
+        let _serial = TEST_SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+        {
+            let mut guard = IMPORT_STATE.lock().expect("IMPORT_STATE lock");
+            *guard = ImportWizardState::default();
+            guard.step = ImportStep::Confirm;
+            guard.summary = Some(ImportSummary {
+                name: "Vanilla Pack".into(),
+                pack_version: "2.0".into(),
+                game_version: "1.20.1".into(),
+                loader: ModLoader::Vanilla,
+                loader_version: None,
+                mod_count: 0,
+                override_count: 12,
+                format: PackFormat::Mmc,
+                archive_path: PathBuf::from("/tmp/vanilla.zip"),
+            });
+        }
+
+        let backend = TestBackend::new(60, 14);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal
+            .draw(|f| render(f, f.area(), FocusedArea::ImportPopup))
+            .unwrap();
+        insta::assert_snapshot!(terminal.backend());
+    }
 }
