@@ -199,10 +199,6 @@ mod tests {
         }
     }
 
-    fn dummy_account(name: &str) -> Account {
-        create_offline_account(name)
-    }
-
     fn microsoft_account(name: &str) -> Account {
         Account {
             uuid: format!("00000000-0000-0000-0000-{:012}", name.len()),
@@ -219,7 +215,7 @@ mod tests {
     fn store_add_first_becomes_active() {
         let tmp = tempfile::tempdir().unwrap();
         let mut store = make_store(tmp.path());
-        store.add(dummy_account("Alice"));
+        store.add(create_offline_account("Alice"));
         assert_eq!(store.accounts.len(), 1);
         assert!(store.accounts[0].active);
     }
@@ -228,8 +224,8 @@ mod tests {
     fn store_add_second_stays_inactive() {
         let tmp = tempfile::tempdir().unwrap();
         let mut store = make_store(tmp.path());
-        store.add(dummy_account("Alice"));
-        store.add(dummy_account("Bob"));
+        store.add(create_offline_account("Alice"));
+        store.add(create_offline_account("Bob"));
         assert_eq!(store.accounts.len(), 2);
         assert!(store.accounts[0].active);
         assert!(!store.accounts[1].active);
@@ -239,8 +235,8 @@ mod tests {
     fn store_add_duplicate_uuid_replaces() {
         let tmp = tempfile::tempdir().unwrap();
         let mut store = make_store(tmp.path());
-        store.add(dummy_account("Alice"));
-        let mut dup = dummy_account("Alice");
+        store.add(create_offline_account("Alice"));
+        let mut dup = create_offline_account("Alice");
         dup.username = "AliceRenamed".to_owned();
         dup.uuid = store.accounts[0].uuid.clone();
         store.add(dup);
@@ -259,7 +255,7 @@ mod tests {
     fn store_has_microsoft_account_when_one_exists() {
         let tmp = tempfile::tempdir().unwrap();
         let mut store = make_store(tmp.path());
-        store.add(dummy_account("Offline"));
+        store.add(create_offline_account("Offline"));
         assert!(!store.has_microsoft_account());
 
         store.add(microsoft_account("Owner"));
@@ -270,8 +266,8 @@ mod tests {
     fn store_active_account_returns_active() {
         let tmp = tempfile::tempdir().unwrap();
         let mut store = make_store(tmp.path());
-        store.add(dummy_account("Alice"));
-        store.add(dummy_account("Bob"));
+        store.add(create_offline_account("Alice"));
+        store.add(create_offline_account("Bob"));
         let active = store.active_account().unwrap();
         assert_eq!(active.username, "Alice");
     }
@@ -280,8 +276,8 @@ mod tests {
     fn store_set_active_changes_active() {
         let tmp = tempfile::tempdir().unwrap();
         let mut store = make_store(tmp.path());
-        store.add(dummy_account("Alice"));
-        store.add(dummy_account("Bob"));
+        store.add(create_offline_account("Alice"));
+        store.add(create_offline_account("Bob"));
         store.set_active(1);
         assert!(!store.accounts[0].active);
         assert!(store.accounts[1].active);
@@ -291,8 +287,8 @@ mod tests {
     fn store_remove_activates_first_remaining() {
         let tmp = tempfile::tempdir().unwrap();
         let mut store = make_store(tmp.path());
-        store.add(dummy_account("Alice"));
-        store.add(dummy_account("Bob"));
+        store.add(create_offline_account("Alice"));
+        store.add(create_offline_account("Bob"));
         store.remove(0);
         assert_eq!(store.accounts.len(), 1);
         assert_eq!(store.accounts[0].username, "Bob");
@@ -303,7 +299,7 @@ mod tests {
     fn store_remove_out_of_bounds_noop() {
         let tmp = tempfile::tempdir().unwrap();
         let mut store = make_store(tmp.path());
-        store.add(dummy_account("Alice"));
+        store.add(create_offline_account("Alice"));
         store.remove(5);
         assert_eq!(store.accounts.len(), 1);
     }
@@ -312,8 +308,8 @@ mod tests {
     fn store_save_and_reload() {
         let tmp = tempfile::tempdir().unwrap();
         let mut store = make_store(tmp.path());
-        store.add(dummy_account("Alice"));
-        store.add(dummy_account("Bob"));
+        store.add(create_offline_account("Alice"));
+        store.add(create_offline_account("Bob"));
         store.save();
 
         let reloaded = AccountStore {

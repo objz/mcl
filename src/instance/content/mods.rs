@@ -567,7 +567,6 @@ mod tests {
 
     use std::io::Write as _;
 
-    // helper to create a jar (zip) file with the given entries
     fn make_jar(dir: &Path, name: &str, entries: &[(&str, &[u8])]) {
         let path = dir.join(name);
         let file = std::fs::File::create(&path).unwrap();
@@ -776,9 +775,9 @@ description = "A neoforge mod"
         );
         let mods = scan_mods(tmp.path(), "inst");
         assert_eq!(mods.len(), 1);
-        // metadata name is empty, so scan_one_mod falls back to the file stem
+        // file-stem fallback when metadata name is empty - covered here
+        // because no other test exercises an empty-name + present-logo combo.
         assert_eq!(mods[0].name, "lib-only");
-        // the icon path from logoFile must resolve to the in-jar entry
         assert_eq!(mods[0].icon_bytes.as_deref(), Some(png_bytes.as_slice()));
     }
 
@@ -786,14 +785,11 @@ description = "A neoforge mod"
     fn scan_mods_fallback_icon_paths() {
         let tmp = tempfile::tempdir().unwrap();
         let dir = setup_mods_dir(tmp.path(), "inst");
-        // jar with no metadata but has logo.png
         let png_bytes = b"\x89PNG fake";
         make_jar(&dir, "no-meta.jar", &[("logo.png", png_bytes)]);
         let mods = scan_mods(tmp.path(), "inst");
         assert_eq!(mods.len(), 1);
-        // should use filename as name since no metadata
         assert_eq!(mods[0].name, "no-meta");
-        // icon_bytes should contain the logo.png content
         assert_eq!(mods[0].icon_bytes.as_deref(), Some(png_bytes.as_slice()));
     }
 

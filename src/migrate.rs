@@ -171,27 +171,12 @@ fn sanitize(name: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
-    use std::sync::atomic::{AtomicU64, Ordering};
-
-    static COUNTER: AtomicU64 = AtomicU64::new(0);
-
-    fn unique_tmp(label: &str) -> PathBuf {
-        let n = COUNTER.fetch_add(1, Ordering::SeqCst);
-        let nanos = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_nanos())
-            .unwrap_or(0);
-        let p = std::env::temp_dir().join(format!("rmcl_migrate_test_{label}_{nanos}_{n}"));
-        std::fs::create_dir_all(&p).unwrap();
-        p
-    }
 
     #[test]
     fn rename_top_level_moves_when_only_old_exists() {
-        let root = unique_tmp("only_old");
-        let old = root.join("mcl");
-        let new = root.join("rmcl");
+        let tmp = tempfile::tempdir().unwrap();
+        let old = tmp.path().join("mcl");
+        let new = tmp.path().join("rmcl");
         fs::create_dir_all(old.join("sub")).unwrap();
         fs::write(old.join("sub").join("f.txt"), b"hi").unwrap();
 
@@ -204,9 +189,9 @@ mod tests {
 
     #[test]
     fn rename_top_level_skips_when_only_new_exists() {
-        let root = unique_tmp("only_new");
-        let old = root.join("mcl");
-        let new = root.join("rmcl");
+        let tmp = tempfile::tempdir().unwrap();
+        let old = tmp.path().join("mcl");
+        let new = tmp.path().join("rmcl");
         fs::create_dir_all(&new).unwrap();
         fs::write(new.join("marker.txt"), b"keep").unwrap();
 
@@ -218,9 +203,9 @@ mod tests {
 
     #[test]
     fn rename_top_level_skips_when_both_exist() {
-        let root = unique_tmp("both");
-        let old = root.join("mcl");
-        let new = root.join("rmcl");
+        let tmp = tempfile::tempdir().unwrap();
+        let old = tmp.path().join("mcl");
+        let new = tmp.path().join("rmcl");
         fs::create_dir_all(&old).unwrap();
         fs::create_dir_all(&new).unwrap();
         fs::write(old.join("a"), b"old").unwrap();
@@ -236,9 +221,9 @@ mod tests {
 
     #[test]
     fn rename_top_level_noop_when_neither_exists() {
-        let root = unique_tmp("neither");
-        let old = root.join("mcl");
-        let new = root.join("rmcl");
+        let tmp = tempfile::tempdir().unwrap();
+        let old = tmp.path().join("mcl");
+        let new = tmp.path().join("rmcl");
 
         rename_top_level(&old, &new);
 
@@ -248,7 +233,8 @@ mod tests {
 
     #[test]
     fn cleanup_instance_leftovers_removes_shim_and_log4j() {
-        let instances = unique_tmp("inst").join("instances");
+        let tmp = tempfile::tempdir().unwrap();
+        let instances = tmp.path().join("instances");
         let mc = instances.join("Test").join(".minecraft");
         fs::create_dir_all(&mc).unwrap();
         fs::write(mc.join(".mcl-shim.jar"), b"jar").unwrap();
@@ -265,8 +251,8 @@ mod tests {
     #[test]
     #[cfg(target_os = "linux")]
     fn rewrite_linux_desktop_entries_renames_and_rewrites_exec() {
-        let root = unique_tmp("linux_desk");
-        let data = root.clone();
+        let tmp = tempfile::tempdir().unwrap();
+        let data = tmp.path();
         let instances = data.join("rmcl").join("instances");
         let apps = data.join("applications");
         fs::create_dir_all(instances.join("MyPack")).unwrap();
@@ -278,7 +264,7 @@ mod tests {
         )
         .unwrap();
 
-        rewrite_linux_desktop_entries(&data, &instances);
+        rewrite_linux_desktop_entries(data, &instances);
 
         let new_entry = apps.join("rmcl-MyPack.desktop");
         assert!(!old_entry.exists(), "old .desktop should be removed");
@@ -289,9 +275,9 @@ mod tests {
 
     #[test]
     fn copy_dir_recursive_copies_nested_tree() {
-        let root = unique_tmp("copy");
-        let src = root.join("a");
-        let dst = root.join("b");
+        let tmp = tempfile::tempdir().unwrap();
+        let src = tmp.path().join("a");
+        let dst = tmp.path().join("b");
         fs::create_dir_all(src.join("nested")).unwrap();
         fs::write(src.join("top.txt"), b"top").unwrap();
         fs::write(src.join("nested").join("inner.txt"), b"inner").unwrap();

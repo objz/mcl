@@ -1,5 +1,5 @@
-//! verifies the lib/main split worked: integration tests can see crate items
-//! through the public API.
+// verifies the lib/main split worked: integration tests can see crate items
+// through the public API.
 
 #[test]
 fn lib_target_is_importable() {
