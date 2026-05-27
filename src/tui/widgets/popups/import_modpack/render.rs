@@ -279,4 +279,80 @@ mod tests {
             .unwrap();
         insta::assert_snapshot!(terminal.backend());
     }
+
+    // Version step: pre-populate versions as LoadState::Loaded with synthetic
+    // VersionInfo entries so render walks the list path without triggering
+    // any network helpers.
+    #[test]
+    fn import_modpack_renders_version_step() {
+        use crate::net::modrinth::VersionInfo;
+
+        let _serial = TEST_SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+        {
+            let mut guard = IMPORT_STATE.lock().expect("IMPORT_STATE lock");
+            *guard = ImportWizardState::default();
+            guard.step = ImportStep::Version;
+            guard.project_title = Some("Synthetic Pack".into());
+            guard.versions = LoadState::Loaded(vec![
+                VersionInfo {
+                    id: "v1".into(),
+                    name: "1.0.0".into(),
+                    version_number: "1.0.0".into(),
+                    game_versions: vec!["1.20.1".into()],
+                    loaders: vec!["fabric".into()],
+                    files: vec![],
+                },
+                VersionInfo {
+                    id: "v2".into(),
+                    name: "0.9.0".into(),
+                    version_number: "0.9.0".into(),
+                    game_versions: vec!["1.20.1".into()],
+                    loaders: vec!["fabric".into()],
+                    files: vec![],
+                },
+            ]);
+        }
+
+        let backend = TestBackend::new(60, 14);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal
+            .draw(|f| render(f, f.area(), FocusedArea::ImportPopup))
+            .unwrap();
+        insta::assert_snapshot!(terminal.backend());
+    }
+
+    // Confirm step: needs a populated ImportSummary so the render path
+    // doesn't bail. ImportSummary is constructed manually with synthetic
+    // values; archive_path is a fake tempdir-ish path that never gets read.
+    #[test]
+    fn import_modpack_renders_confirm_step() {
+        use crate::instance::import::{ImportSummary, PackFormat};
+        use crate::instance::models::ModLoader;
+        use std::path::PathBuf;
+
+        let _serial = TEST_SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+        {
+            let mut guard = IMPORT_STATE.lock().expect("IMPORT_STATE lock");
+            *guard = ImportWizardState::default();
+            guard.step = ImportStep::Confirm;
+            guard.summary = Some(ImportSummary {
+                name: "Synthetic Pack".into(),
+                pack_version: "1.0.0".into(),
+                game_version: "1.20.1".into(),
+                loader: ModLoader::Fabric,
+                loader_version: Some("0.15.0".into()),
+                mod_count: 42,
+                override_count: 3,
+                format: PackFormat::Mrpack,
+                archive_path: PathBuf::from("/tmp/synthetic.mrpack"),
+            });
+        }
+
+        let backend = TestBackend::new(60, 14);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal
+            .draw(|f| render(f, f.area(), FocusedArea::ImportPopup))
+            .unwrap();
+        insta::assert_snapshot!(terminal.backend());
+    }
 }

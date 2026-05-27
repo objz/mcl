@@ -1,0 +1,18 @@
+---
+source: src/tui/widgets/popups/new_instance/render.rs
+expression: terminal.backend()
+---
+"╭New Instance──────────────────────────────────────────────╮"
+"│▶ 1.20.1                                                  │"
+"│  1.19.4                                                  │"
+"│  1.18.2                                                  │"
+"│                                                          │"
+"│                                                          │"
+"│                                                          │"
+"│                                                          │"
+"│                                                          │"
+"│                                                          │"
+"│                                                          │"
+"│                                                          │"
+"│                                                          │"
+"╰────────────[/] search  [s] snap  [h] back  [Enter] select╯"

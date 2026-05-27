@@ -1,0 +1,18 @@
+---
+source: src/tui/widgets/popups/import_modpack/render.rs
+expression: terminal.backend()
+---
+"╭Import Modpack────────────────────────────────────────────╮"
+"│▶ 1.0.0  1.20.1  fabric                                   │"
+"│  0.9.0  1.20.1  fabric                                   │"
+"│                                                          │"
+"│                                                          │"
+"│                                                          │"
+"│                                                          │"
+"│                                                          │"
+"│                                                          │"
+"│                                                          │"
+"│                                                          │"
+"│                                                          │"
+"│                                                          │"
+"╰──────────────────────[/] search  [h] back  [Enter] select╯"
