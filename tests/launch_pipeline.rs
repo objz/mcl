@@ -602,3 +602,82 @@ async fn loader_profile_missing_returns_error() {
     );
 }
 
+#[tokio::test]
+async fn merged_profile_missing_main_class_fails() {
+    // a meta.json that deserialises cleanly but lacks the required mainClass
+    // must surface as a Parse error; otherwise the launcher would try to
+    // unwrap None and crash later.
+    let mut meta = modern_vanilla_meta("1.20.1");
+    meta.as_object_mut().unwrap().remove("mainClass");
+    let fx = Fixture::new("nomc", "1.20.1", meta);
+    let config = make_config("nomc", "1.20.1", ModLoader::Vanilla);
+
+    let err = build_launch_invocation(&config, &fx.instances_dir, &fx.meta_dir, &test_auth())
+        .await
+        .unwrap_err();
+    let msg = format!("{err:?}");
+    assert!(
+        matches!(err, LaunchError::Parse(_)) && msg.contains("mainClass"),
+        "expected Parse error mentioning mainClass, got: {err:?}"
+    );
+}
+
+#[tokio::test]
+async fn legacy_loader_profile_missing_loader_version_errors() {
+    // an instance with no loader_version recorded must error out cleanly
+    // when its loader profile is in the legacy stripped shape (no
+    // inheritsFrom, no arguments, no minecraftArguments, but has the rmcl
+    // 0.3.0-era gameArguments field).
+    let fx = Fixture::new("nolv", "1.20.1", modern_vanilla_meta("1.20.1"));
+    fx.write_loader_profile(
+        "forge-1.20.1-unknown.json",
+        json!({
+            "id": "1.20.1-forge",
+            "mainClass": "cpw.mods.bootstraplauncher.BootstrapLauncher",
+            "libraries": [],
+            "gameArguments": ["--launchTarget", "forge_client"]
+        }),
+    );
+
+    let mut config = make_config("nolv", "1.20.1", ModLoader::Forge);
+    config.loader_version = None;
+
+    let err = build_launch_invocation(&config, &fx.instances_dir, &fx.meta_dir, &test_auth())
+        .await
+        .unwrap_err();
+    let msg = format!("{err:?}");
+    assert!(
+        matches!(err, LaunchError::Parse(_)) && msg.contains("Reinstall"),
+        "expected Parse error asking for reinstall, got: {err:?}"
+    );
+}
+
+#[tokio::test]
+async fn legacy_loader_profile_missing_installer_json_errors() {
+    // legacy stripped profile + loader_version, but the installer JSON the
+    // migration would copy from isn't present on disk. Parse error.
+    let fx = Fixture::new("noinst", "1.20.1", modern_vanilla_meta("1.20.1"));
+    fx.write_loader_profile(
+        "forge-1.20.1-47.2.0.json",
+        json!({
+            "id": "1.20.1-forge-47.2.0",
+            "mainClass": "cpw.mods.bootstraplauncher.BootstrapLauncher",
+            "libraries": [],
+            "gameArguments": ["--launchTarget", "forge_client"]
+        }),
+    );
+
+    let config = make_config_with("noinst", "1.20.1", ModLoader::Forge, Some("47.2.0"));
+
+    let err = build_launch_invocation(&config, &fx.instances_dir, &fx.meta_dir, &test_auth())
+        .await
+        .unwrap_err();
+    let msg = format!("{err:?}");
+    assert!(
+        matches!(err, LaunchError::Parse(_))
+            && msg.contains("installer JSON")
+            && msg.contains("missing"),
+        "expected Parse error about missing installer JSON, got: {err:?}"
+    );
+}
+

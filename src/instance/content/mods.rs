@@ -701,6 +701,88 @@ description = "A neoforge mod"
     }
 
     #[test]
+    fn scan_mods_prefers_quilt_over_forge() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = setup_mods_dir(tmp.path(), "inst");
+        let quilt = r#"{"quilt_loader":{"id":"x","version":"1","metadata":{"name":"Quilt Name","description":"quilt desc"}}}"#;
+        let forge = "[[mods]]\ndisplayName = \"Forge Name\"\ndescription = \"forge desc\"\n";
+        make_jar(
+            &dir,
+            "quilt-over-forge.jar",
+            &[
+                ("quilt.mod.json", quilt.as_bytes()),
+                ("META-INF/mods.toml", forge.as_bytes()),
+            ],
+        );
+        let mods = scan_mods(tmp.path(), "inst");
+        assert_eq!(mods[0].name, "Quilt Name");
+    }
+
+    #[test]
+    fn scan_mods_prefers_forge_toml_over_mcmod_info() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = setup_mods_dir(tmp.path(), "inst");
+        let forge = "[[mods]]\ndisplayName = \"Forge Name\"\ndescription = \"forge desc\"\n";
+        let mcmod = r#"[{"modid":"legacy","name":"Legacy Name","description":"legacy desc"}]"#;
+        make_jar(
+            &dir,
+            "forge-over-legacy.jar",
+            &[
+                ("META-INF/mods.toml", forge.as_bytes()),
+                ("mcmod.info", mcmod.as_bytes()),
+            ],
+        );
+        let mods = scan_mods(tmp.path(), "inst");
+        assert_eq!(mods[0].name, "Forge Name");
+    }
+
+    // when both neoforge.mods.toml and mods.toml exist in the same jar (the
+    // shape a dual-format mod might ship), the neoforge one wins because
+    // read_forge_toml_meta tries it first via .or_else.
+    #[test]
+    fn scan_mods_prefers_neoforge_toml_over_forge_toml() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = setup_mods_dir(tmp.path(), "inst");
+        let neoforge = "[[mods]]\ndisplayName = \"NeoForge Name\"\ndescription = \"neoforge desc\"\n";
+        let forge = "[[mods]]\ndisplayName = \"Forge Name\"\ndescription = \"forge desc\"\n";
+        make_jar(
+            &dir,
+            "neoforge-over-forge.jar",
+            &[
+                ("META-INF/neoforge.mods.toml", neoforge.as_bytes()),
+                ("META-INF/mods.toml", forge.as_bytes()),
+            ],
+        );
+        let mods = scan_mods(tmp.path(), "inst");
+        assert_eq!(mods[0].name, "NeoForge Name");
+    }
+
+    // a mods.toml with logoFile but no [[mods]] array (e.g. a dependency-only
+    // library jar) should still surface as a scanned mod with empty name +
+    // description but with the icon resolved.
+    #[test]
+    fn scan_mods_reads_mods_toml_without_mods_array() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = setup_mods_dir(tmp.path(), "inst");
+        let mods_toml = "logoFile = \"icon.png\"\n";
+        let png_bytes = b"\x89PNG fake icon";
+        make_jar(
+            &dir,
+            "lib-only.jar",
+            &[
+                ("META-INF/mods.toml", mods_toml.as_bytes()),
+                ("icon.png", png_bytes),
+            ],
+        );
+        let mods = scan_mods(tmp.path(), "inst");
+        assert_eq!(mods.len(), 1);
+        // metadata name is empty, so scan_one_mod falls back to the file stem
+        assert_eq!(mods[0].name, "lib-only");
+        // the icon path from logoFile must resolve to the in-jar entry
+        assert_eq!(mods[0].icon_bytes.as_deref(), Some(png_bytes.as_slice()));
+    }
+
+    #[test]
     fn scan_mods_fallback_icon_paths() {
         let tmp = tempfile::tempdir().unwrap();
         let dir = setup_mods_dir(tmp.path(), "inst");

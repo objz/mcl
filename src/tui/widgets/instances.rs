@@ -337,3 +337,33 @@ pub fn render(frame: &mut Frame, area: Rect, focused: FocusedArea, state: &mut S
         &mut state.scrollbar_state,
     );
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn format_last_played_none_returns_never_played() {
+        assert_eq!(format_last_played(None), "Never played");
+    }
+
+    // each #[case] picks a "seconds ago" value that lands in exactly one
+    // bucket of the match. mutating any bucket boundary (e.g. 3600 to 3601,
+    // or "minutes" to "seconds") makes one of these cases fail.
+    #[rstest::rstest]
+    #[case::just_now(0, "Just now")]
+    #[case::just_now_upper(59, "Just now")]
+    #[case::minutes(60, "1 minutes ago")]
+    #[case::minutes_upper(3599, "59 minutes ago")]
+    #[case::hours(3600, "1 hours ago")]
+    #[case::hours_upper(86_399, "23 hours ago")]
+    #[case::days(86_400, "1 days ago")]
+    #[case::days_upper(2_591_999, "29 days ago")]
+    #[case::months(2_592_000, "1 months ago")]
+    #[case::months_upper(31_535_999, "12 months ago")]
+    #[case::over_a_year(31_536_000, "Over a year ago")]
+    fn format_last_played_buckets(#[case] seconds_ago: i64, #[case] expected: &str) {
+        let dt = chrono::Utc::now() - chrono::Duration::seconds(seconds_ago);
+        assert_eq!(format_last_played(Some(dt)), expected);
+    }
+}

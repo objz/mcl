@@ -419,4 +419,98 @@ mod tests {
         assert!(matches!(result, Err(InstanceError::NotFound(_))));
         std::fs::remove_dir_all(&tmp).ok();
     }
+
+    fn dummy_config(name: &str) -> InstanceConfig {
+        InstanceConfig {
+            name: name.to_string(),
+            game_version: "1.20.1".to_string(),
+            loader: ModLoader::Vanilla,
+            loader_version: None,
+            created: chrono::Utc::now(),
+            last_played: None,
+            java_path: None,
+            memory_max: None,
+            memory_min: None,
+            jvm_args: vec![],
+            resolution: None,
+        }
+    }
+
+    #[test]
+    fn rename_moves_dir_and_updates_config_name() {
+        let (manager, tmp) = test_manager();
+        let old_dir = tmp.join("old-name");
+        std::fs::create_dir_all(&old_dir).ok();
+        manager.save(&dummy_config("old-name")).expect("save");
+
+        manager.rename("old-name", "new-name").expect("rename");
+
+        assert!(!old_dir.exists(), "old dir should be gone");
+        let new_dir = tmp.join("new-name");
+        assert!(new_dir.exists(), "new dir should exist");
+        let reloaded = manager.load_one("new-name").expect("load_one new-name");
+        assert_eq!(reloaded.name, "new-name");
+        std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn rename_to_same_name_is_noop() {
+        let (manager, tmp) = test_manager();
+        let dir = tmp.join("same");
+        std::fs::create_dir_all(&dir).ok();
+        manager.save(&dummy_config("same")).expect("save");
+        manager.rename("same", "same").expect("noop rename");
+        assert!(dir.exists());
+        std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn rename_empty_target_rejects() {
+        let (manager, tmp) = test_manager();
+        std::fs::create_dir_all(tmp.join("orig")).ok();
+        manager.save(&dummy_config("orig")).expect("save");
+        let err = manager.rename("orig", "   ").unwrap_err();
+        assert!(matches!(err, InstanceError::InvalidName(_)));
+        std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn rename_missing_source_errors() {
+        let (manager, tmp) = test_manager();
+        let err = manager.rename("ghost", "anything").unwrap_err();
+        assert!(matches!(err, InstanceError::NotFound(_)));
+        std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn rename_target_exists_errors() {
+        let (manager, tmp) = test_manager();
+        std::fs::create_dir_all(tmp.join("source")).ok();
+        std::fs::create_dir_all(tmp.join("collision")).ok();
+        manager.save(&dummy_config("source")).expect("save src");
+        manager.save(&dummy_config("collision")).expect("save dst");
+        let err = manager.rename("source", "collision").unwrap_err();
+        assert!(matches!(err, InstanceError::AlreadyExists(_)));
+        std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn touch_last_played_updates_field() {
+        let (manager, tmp) = test_manager();
+        std::fs::create_dir_all(tmp.join("ticker")).ok();
+        manager.save(&dummy_config("ticker")).expect("save");
+        // sanity: last_played starts as None
+        assert!(manager.load_one("ticker").unwrap().last_played.is_none());
+
+        manager.touch_last_played("ticker").expect("touch");
+        let reloaded = manager.load_one("ticker").unwrap();
+        let stamp = reloaded.last_played.expect("last_played should be Some now");
+        // and it must be recent (within 5 seconds of now)
+        let age = chrono::Utc::now() - stamp;
+        assert!(
+            age.num_seconds().abs() < 5,
+            "last_played should be roughly now, got age {age:?}"
+        );
+        std::fs::remove_dir_all(&tmp).ok();
+    }
 }
