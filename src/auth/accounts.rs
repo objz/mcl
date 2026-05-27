@@ -186,7 +186,10 @@ mod tests {
         assert_eq!(acc.account_type, AccountType::Offline);
         assert!(!acc.active);
         assert!(acc.refresh_token.is_none());
-        assert!(!acc.uuid.is_empty());
+        // pin the uuid to the deterministic offline_uuid output so a regression
+        // in the uuid derivation (e.g. salt change) would fail this test, not
+        // just a non-empty-string check that any garbage would pass.
+        assert_eq!(acc.uuid, offline_uuid("TestPlayer"));
     }
 
     fn make_store(dir: &std::path::Path) -> AccountStore {

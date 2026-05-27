@@ -659,7 +659,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn build_game_args_renders_upstream_arguments_and_appends_loader_args() {
+    fn build_game_args_renders_upstream_arguments() {
         use crate::launch_profile::model::{Argument, Arguments, LaunchProfile};
         use crate::launch_profile::rules::{FeatureSet, RuleContext};
         use TemplateContext;
@@ -720,46 +720,39 @@ mod tests {
         assert_eq!(game_args, vec!["--username", "Player"]);
     }
 
-    #[test]
-    fn migration_predicate_triggers_when_both_argument_fields_absent() {
-        use LaunchProfile;
-        let stripped = LaunchProfile {
-            id: "1.20.1".into(),
-            inherits_from: None,
-            main_class: Some("net.test.Main".into()),
-            libraries: Vec::new(),
-            ..Default::default()
-        };
-        assert!(stripped.arguments.is_none() && stripped.minecraft_arguments.is_none());
-    }
-
-    #[test]
-    fn migration_predicate_skips_when_modern_arguments_present() {
+    // exercises the early-return branch of migrate_legacy_meta_if_needed.
+    // a profile with either arguments or minecraftArguments is not legacy
+    // and must produce Ok(None) without touching the network. covers both
+    // shapes in one parameterised test so a regression that drops one of
+    // the two predicate conditions is caught.
+    #[rstest::rstest]
+    #[case::modern_arguments(true, false)]
+    #[case::legacy_minecraft_arguments(false, true)]
+    #[tokio::test]
+    async fn migrate_legacy_meta_skips_when_arguments_present(
+        #[case] modern: bool,
+        #[case] legacy: bool,
+    ) {
         use crate::launch_profile::model::{Arguments, LaunchProfile};
-        let modern = LaunchProfile {
-            id: "1.20.1".into(),
-            inherits_from: None,
-            main_class: Some("net.test.Main".into()),
-            libraries: Vec::new(),
-            arguments: Some(Arguments::default()),
-            ..Default::default()
-        };
-        assert!(modern.arguments.is_some());
-    }
+        use tempfile::TempDir;
 
-    #[test]
-    fn migration_predicate_skips_when_legacy_minecraft_arguments_present() {
-        use LaunchProfile;
-        let legacy = LaunchProfile {
-            id: "1.7.10".into(),
-            inherits_from: None,
+        let tmp = TempDir::new().unwrap();
+        let meta_path = tmp.path().join("meta.json");
+        std::fs::write(&meta_path, b"{}").unwrap();
+
+        let profile = LaunchProfile {
+            id: "1.20.1".into(),
             main_class: Some("net.test.Main".into()),
-            libraries: Vec::new(),
-            arguments: None,
-            minecraft_arguments: Some("--username Player".into()),
+            arguments: modern.then(Arguments::default),
+            minecraft_arguments: legacy.then(|| "--username Player".into()),
             ..Default::default()
         };
-        assert!(legacy.minecraft_arguments.is_some());
+
+        let result = migrate_legacy_meta_if_needed(&meta_path, &profile, "1.20.1").await;
+        assert!(
+            matches!(result, Ok(None)),
+            "expected Ok(None) for non-legacy profile, got {result:?}"
+        );
     }
 
     #[test]
@@ -785,36 +778,48 @@ mod tests {
         assert!(installer_version_dir_name(ModLoader::Quilt, "1.20.1", "0.20.0").is_none());
     }
 
-    #[test]
-    fn loader_profile_legacy_predicate_triggers_when_all_three_absent() {
+    // exercises the modern-profile early-return in
+    // migrate_legacy_loader_profile_if_needed. any of inheritsFrom,
+    // arguments, minecraftArguments present (or game_arguments absent)
+    // means "not legacy" and the function must return Ok(None) without
+    // touching the installer JSON path.
+    #[tokio::test]
+    async fn migrate_legacy_loader_profile_skips_modern_with_inherits_from() {
         use LaunchProfile;
-        let legacy = LaunchProfile {
-            id: "1.20.1-forge-47.2.0".into(),
-            inherits_from: None,
-            main_class: Some("cpw.mods.bootstraplauncher.BootstrapLauncher".into()),
-            libraries: Vec::new(),
-            ..Default::default()
-        };
-        let is_legacy = legacy.inherits_from.is_none()
-            && legacy.arguments.is_none()
-            && legacy.minecraft_arguments.is_none();
-        assert!(is_legacy);
-    }
+        use chrono::Utc;
+        use tempfile::TempDir;
 
-    #[test]
-    fn loader_profile_legacy_predicate_skips_modern_profile_with_inherits_from() {
-        use LaunchProfile;
+        let tmp = TempDir::new().unwrap();
+        let instance_dir = tmp.path().join("instance");
+        std::fs::create_dir_all(&instance_dir).unwrap();
+        let profile_path = tmp.path().join("forge-1.20.1-47.2.0.json");
+        std::fs::write(&profile_path, b"{}").unwrap();
+
         let modern = LaunchProfile {
             id: "1.20.1-forge-47.2.0".into(),
             inherits_from: Some("1.20.1".into()),
             main_class: Some("cpw.mods.bootstraplauncher.BootstrapLauncher".into()),
-            libraries: Vec::new(),
             ..Default::default()
         };
-        let is_legacy = modern.inherits_from.is_none()
-            && modern.arguments.is_none()
-            && modern.minecraft_arguments.is_none();
-        assert!(!is_legacy);
+
+        let config = InstanceConfig {
+            name: "test".into(),
+            game_version: "1.20.1".into(),
+            loader: ModLoader::Forge,
+            loader_version: Some("47.2.0".into()),
+            created: Utc::now(),
+            last_played: None,
+            java_path: None,
+            memory_max: None,
+            memory_min: None,
+            jvm_args: Vec::new(),
+            resolution: None,
+        };
+
+        let result =
+            migrate_legacy_loader_profile_if_needed(&profile_path, &modern, &config, &instance_dir)
+                .await;
+        assert!(matches!(result, Ok(None)), "expected Ok(None), got {result:?}");
     }
 
     #[tokio::test]

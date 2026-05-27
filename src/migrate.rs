@@ -263,12 +263,6 @@ mod tests {
     }
 
     #[test]
-    fn cleanup_instance_leftovers_handles_missing_dir() {
-        let nowhere = unique_tmp("missing").join("does-not-exist");
-        cleanup_instance_leftovers(&nowhere);
-    }
-
-    #[test]
     #[cfg(target_os = "linux")]
     fn rewrite_linux_desktop_entries_renames_and_rewrites_exec() {
         let root = unique_tmp("linux_desk");

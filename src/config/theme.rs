@@ -172,10 +172,15 @@ pub static BORDER_STYLE: LazyLock<BorderStyle> =
 mod tests {
     use super::*;
 
-    #[test]
-    fn border_style_roundtrip() {
-        let style = BorderStyle::Double;
-        assert_eq!(style.to_border_type(), BorderType::Double);
+    // cover every BorderStyle variant. a mutation that swaps two arms of the
+    // match (e.g. Rounded -> Plain) would slip past testing just one variant.
+    #[rstest::rstest]
+    #[case::plain(BorderStyle::Plain, BorderType::Plain)]
+    #[case::rounded(BorderStyle::Rounded, BorderType::Rounded)]
+    #[case::double(BorderStyle::Double, BorderType::Double)]
+    #[case::thick(BorderStyle::Thick, BorderType::Thick)]
+    fn border_style_roundtrip(#[case] style: BorderStyle, #[case] expected: BorderType) {
+        assert_eq!(style.to_border_type(), expected);
     }
 
     #[test]

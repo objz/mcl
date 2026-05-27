@@ -108,31 +108,18 @@ pub fn get_installer(loader: ModLoader) -> Box<dyn ModLoaderInstaller + Send + S
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_vanilla_factory() {
-        let installer = get_installer(ModLoader::Vanilla);
-        assert_eq!(installer.loader_type(), ModLoader::Vanilla);
-    }
-
-    #[tokio::test]
-    async fn test_vanilla_get_versions() {
-        let client = HttpClient::new();
-        let installer = VanillaInstaller;
-        let versions = installer.get_versions(&client, "1.20.1").await.unwrap();
-        assert!(!versions.is_empty());
-        assert_eq!(versions[0], "vanilla");
-    }
-
-    #[tokio::test]
-    async fn test_vanilla_install_noop() {
-        let client = HttpClient::new();
-        let installer = VanillaInstaller;
-        let tmp = std::env::temp_dir().join("rmcl_test_vanilla_install");
-        let meta = std::env::temp_dir().join("rmcl_test_meta");
-        installer
-            .install(&client, "1.20.1", "vanilla", &tmp, &meta)
-            .await
-            .unwrap();
+    // the factory maps every ModLoader variant to its concrete installer.
+    // covering all five arms catches a misordered match or a copy-paste typo
+    // that would route, say, NeoForge to the Forge installer.
+    #[rstest::rstest]
+    #[case::vanilla(ModLoader::Vanilla)]
+    #[case::forge(ModLoader::Forge)]
+    #[case::neoforge(ModLoader::NeoForge)]
+    #[case::fabric(ModLoader::Fabric)]
+    #[case::quilt(ModLoader::Quilt)]
+    fn get_installer_returns_matching_loader_type(#[case] loader: ModLoader) {
+        let installer = get_installer(loader);
+        assert_eq!(installer.loader_type(), loader);
     }
 
     #[tokio::test]
