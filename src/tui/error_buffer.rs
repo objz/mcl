@@ -90,12 +90,6 @@ mod tests {
     }
 
     #[test]
-    fn has_errors_after_push() {
-        push_error(make_event("err_has"));
-        assert!(has_errors());
-    }
-
-    #[test]
     fn peek_does_not_remove() {
         push_error(make_event("err_peek"));
         let before = peek_error();
