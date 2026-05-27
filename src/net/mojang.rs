@@ -110,7 +110,17 @@ pub struct AssetObject {
 }
 
 pub async fn fetch_version_manifest(client: &HttpClient) -> Result<VersionManifest, NetError> {
-    client.get_json(MANIFEST_URL).await
+    fetch_version_manifest_from(client, MANIFEST_URL).await
+}
+
+// same as fetch_version_manifest but lets the caller pick the URL. exists so
+// integration tests can point at a wiremock server; production callers go
+// through fetch_version_manifest with the upstream Mojang URL.
+pub async fn fetch_version_manifest_from(
+    client: &HttpClient,
+    url: &str,
+) -> Result<VersionManifest, NetError> {
+    client.get_json(url).await
 }
 
 // fetches and parses a version's metadata. also returns the raw response
