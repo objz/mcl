@@ -37,6 +37,15 @@ pub async fn fetch_neoforge_versions(
     client: &HttpClient,
     game_version: &str,
 ) -> Result<Vec<String>, NetError> {
+    fetch_neoforge_versions_from(client, NEOFORGE_API_BASE, game_version).await
+}
+
+// same as fetch_neoforge_versions but lets tests point at a wiremock server.
+pub async fn fetch_neoforge_versions_from(
+    client: &HttpClient,
+    api_url: &str,
+    game_version: &str,
+) -> Result<Vec<String>, NetError> {
     let prefix = match game_version_to_neoforge_prefix(game_version) {
         Some(p) => p,
         None => {
@@ -47,7 +56,7 @@ pub async fn fetch_neoforge_versions(
         }
     };
 
-    let maven_versions: NeoForgeMavenVersions = client.get_json(NEOFORGE_API_BASE).await?;
+    let maven_versions: NeoForgeMavenVersions = client.get_json(api_url).await?;
 
     let versions: Vec<String> = maven_versions
         .versions

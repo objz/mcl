@@ -26,7 +26,16 @@ pub async fn fetch_forge_versions(
     client: &HttpClient,
     game_version: &str,
 ) -> Result<Vec<String>, NetError> {
-    let promotions: ForgePromotions = client.get_json(FORGE_PROMOTIONS_URL).await?;
+    fetch_forge_versions_from(client, FORGE_PROMOTIONS_URL, game_version).await
+}
+
+// same as fetch_forge_versions but lets tests point at a wiremock server.
+pub async fn fetch_forge_versions_from(
+    client: &HttpClient,
+    promotions_url: &str,
+    game_version: &str,
+) -> Result<Vec<String>, NetError> {
+    let promotions: ForgePromotions = client.get_json(promotions_url).await?;
 
     let prefix = format!("{}-", game_version);
     let mut versions: Vec<String> = promotions
@@ -44,7 +53,14 @@ pub async fn fetch_forge_versions(
 // extracts unique game versions from the promotion keys by splitting off
 // the "-recommended"/"-latest" suffix
 pub async fn fetch_forge_game_versions(client: &HttpClient) -> Result<Vec<GameVersion>, NetError> {
-    let promos: ForgePromotions = client.get_json(FORGE_PROMOTIONS_URL).await?;
+    fetch_forge_game_versions_from(client, FORGE_PROMOTIONS_URL).await
+}
+
+pub async fn fetch_forge_game_versions_from(
+    client: &HttpClient,
+    promotions_url: &str,
+) -> Result<Vec<GameVersion>, NetError> {
+    let promos: ForgePromotions = client.get_json(promotions_url).await?;
 
     let mut game_versions: Vec<String> = promos
         .promos
