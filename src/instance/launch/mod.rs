@@ -755,27 +755,25 @@ mod tests {
         );
     }
 
-    #[test]
-    fn installer_version_dir_name_for_forge() {
+    // each loader maps to a distinct directory-naming branch. one rstest
+    // exercises every variant so a regression that misorders the match
+    // arms in installer_version_dir_name is caught.
+    #[rstest::rstest]
+    #[case::forge(ModLoader::Forge, "1.20.1", "47.2.0", Some("1.20.1-forge-47.2.0"))]
+    #[case::neoforge(ModLoader::NeoForge, "1.21.1", "21.1.0", Some("neoforge-21.1.0"))]
+    #[case::vanilla(ModLoader::Vanilla, "1.20.1", "v", None)]
+    #[case::fabric(ModLoader::Fabric, "1.20.1", "0.14.21", None)]
+    #[case::quilt(ModLoader::Quilt, "1.20.1", "0.20.0", None)]
+    fn installer_version_dir_name_per_loader(
+        #[case] loader: ModLoader,
+        #[case] game_version: &str,
+        #[case] loader_version: &str,
+        #[case] expected: Option<&str>,
+    ) {
         assert_eq!(
-            installer_version_dir_name(ModLoader::Forge, "1.20.1", "47.2.0"),
-            Some("1.20.1-forge-47.2.0".to_string())
+            installer_version_dir_name(loader, game_version, loader_version),
+            expected.map(str::to_owned)
         );
-    }
-
-    #[test]
-    fn installer_version_dir_name_for_neoforge() {
-        assert_eq!(
-            installer_version_dir_name(ModLoader::NeoForge, "1.21.1", "21.1.0"),
-            Some("neoforge-21.1.0".to_string())
-        );
-    }
-
-    #[test]
-    fn installer_version_dir_name_for_non_installer_loaders() {
-        assert!(installer_version_dir_name(ModLoader::Vanilla, "1.20.1", "v").is_none());
-        assert!(installer_version_dir_name(ModLoader::Fabric, "1.20.1", "0.14.21").is_none());
-        assert!(installer_version_dir_name(ModLoader::Quilt, "1.20.1", "0.20.0").is_none());
     }
 
     // exercises the modern-profile early-return in

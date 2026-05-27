@@ -101,158 +101,84 @@ mod tests {
     use super::*;
     use std::path::PathBuf;
 
-    fn ctx_fixture<'a>(
-        library_directory: &'a Path,
-        natives_directory: &'a Path,
-        game_directory: &'a Path,
-        assets_root: &'a Path,
-    ) -> TemplateContext<'a> {
-        TemplateContext {
-            library_directory,
-            classpath_separator: ":",
-            version_name: "1.20.1",
-            version_type: "release",
-            natives_directory,
-            classpath: "a.jar:b.jar",
-            game_directory,
-            assets_root,
-            assets_index_name: "5",
-            auth_player_name: "Player",
-            auth_uuid: "00000000-0000-0000-0000-000000000000",
-            auth_access_token: "token",
-            auth_xuid: "0",
-            user_type: "msa",
-            user_properties: "{}",
-            launcher_name: "rmcl",
-            launcher_version: "0.3.0",
-            clientid: "0",
+    // owns the path buffers so tests don't have to declare them inline; the
+    // ctx() method borrows from self to build a TemplateContext with the
+    // standard set of values. windows() returns a fixture with backslash
+    // paths so the OS-independence test stays self-contained.
+    struct Fixture {
+        lib: PathBuf,
+        nat: PathBuf,
+        game: PathBuf,
+        assets: PathBuf,
+        user_properties: String,
+    }
+
+    impl Fixture {
+        fn unix() -> Self {
+            Self {
+                lib: PathBuf::from("/m/libraries"),
+                nat: PathBuf::from("/m/natives"),
+                game: PathBuf::from("/i/.minecraft"),
+                assets: PathBuf::from("/m/assets"),
+                user_properties: "{}".to_string(),
+            }
+        }
+
+        fn windows() -> Self {
+            Self {
+                lib: PathBuf::from(r"C:\Users\test\.minecraft\libraries"),
+                nat: PathBuf::from(r"C:\Users\test\.minecraft\natives"),
+                game: PathBuf::from(r"C:\Users\test\.minecraft"),
+                assets: PathBuf::from(r"C:\Users\test\.minecraft\assets"),
+                user_properties: "{}".to_string(),
+            }
+        }
+
+        fn ctx(&self) -> TemplateContext<'_> {
+            TemplateContext {
+                library_directory: &self.lib,
+                classpath_separator: ":",
+                version_name: "1.20.1",
+                version_type: "release",
+                natives_directory: &self.nat,
+                classpath: "a.jar:b.jar",
+                game_directory: &self.game,
+                assets_root: &self.assets,
+                assets_index_name: "5",
+                auth_player_name: "Player",
+                auth_uuid: "00000000-0000-0000-0000-000000000000",
+                auth_access_token: "token",
+                auth_xuid: "0",
+                user_type: "msa",
+                user_properties: &self.user_properties,
+                launcher_name: "rmcl",
+                launcher_version: "0.3.0",
+                clientid: "0",
+            }
         }
     }
 
-    #[test]
-    fn no_placeholders_unchanged() {
-        let lib = PathBuf::from("/m/libraries");
-        let nat = PathBuf::from("/m/natives");
-        let game = PathBuf::from("/i/.minecraft");
-        let assets = PathBuf::from("/m/assets");
-        let ctx = ctx_fixture(&lib, &nat, &game, &assets);
-        assert_eq!(
-            substitute("--add-modules ALL-MODULE-PATH", &ctx),
-            "--add-modules ALL-MODULE-PATH"
-        );
-    }
-
-    #[test]
-    fn single_known_substitution() {
-        let lib = PathBuf::from("/m/libraries");
-        let nat = PathBuf::from("/m/natives");
-        let game = PathBuf::from("/i/.minecraft");
-        let assets = PathBuf::from("/m/assets");
-        let ctx = ctx_fixture(&lib, &nat, &game, &assets);
-        assert_eq!(substitute("v=${version_name}", &ctx), "v=1.20.1");
-    }
-
-    #[test]
-    fn unknown_placeholder_left_as_is() {
-        let lib = PathBuf::from("/m/libraries");
-        let nat = PathBuf::from("/m/natives");
-        let game = PathBuf::from("/i/.minecraft");
-        let assets = PathBuf::from("/m/assets");
-        let ctx = ctx_fixture(&lib, &nat, &game, &assets);
-        assert_eq!(
-            substitute("x=${not_a_real_var}y", &ctx),
-            "x=${not_a_real_var}y"
-        );
-    }
-
-    #[test]
-    fn unclosed_placeholder_left_as_is() {
-        let lib = PathBuf::from("/m/libraries");
-        let nat = PathBuf::from("/m/natives");
-        let game = PathBuf::from("/i/.minecraft");
-        let assets = PathBuf::from("/m/assets");
-        let ctx = ctx_fixture(&lib, &nat, &game, &assets);
-        assert_eq!(
-            substitute("--prefix ${unclosed", &ctx),
-            "--prefix ${unclosed"
-        );
-    }
-
-    #[test]
-    fn dollar_without_brace_is_literal() {
-        let lib = PathBuf::from("/m/libraries");
-        let nat = PathBuf::from("/m/natives");
-        let game = PathBuf::from("/i/.minecraft");
-        let assets = PathBuf::from("/m/assets");
-        let ctx = ctx_fixture(&lib, &nat, &game, &assets);
-        assert_eq!(substitute("$$ literal $5 $", &ctx), "$$ literal $5 $");
-    }
-
-    #[test]
-    fn multiple_substitutions() {
-        let lib = PathBuf::from("/m/libraries");
-        let nat = PathBuf::from("/m/natives");
-        let game = PathBuf::from("/i/.minecraft");
-        let assets = PathBuf::from("/m/assets");
-        let ctx = ctx_fixture(&lib, &nat, &game, &assets);
-        assert_eq!(
-            substitute("${version_name}-${auth_player_name}", &ctx),
-            "1.20.1-Player"
-        );
-    }
-
-    #[test]
-    fn path_substitution() {
-        let lib = PathBuf::from("/m/libraries");
-        let nat = PathBuf::from("/m/natives");
-        let game = PathBuf::from("/i/.minecraft");
-        let assets = PathBuf::from("/m/assets");
-        let ctx = ctx_fixture(&lib, &nat, &game, &assets);
-        assert_eq!(
-            substitute("-DlibraryDirectory=${library_directory}", &ctx),
-            "-DlibraryDirectory=/m/libraries"
-        );
+    #[rstest::rstest]
+    #[case::no_placeholders("--add-modules ALL-MODULE-PATH", "--add-modules ALL-MODULE-PATH")]
+    #[case::single_known("v=${version_name}", "v=1.20.1")]
+    #[case::unknown_placeholder("x=${not_a_real_var}y", "x=${not_a_real_var}y")]
+    #[case::unclosed_placeholder("--prefix ${unclosed", "--prefix ${unclosed")]
+    #[case::dollar_without_brace("$$ literal $5 $", "$$ literal $5 $")]
+    #[case::multiple("${version_name}-${auth_player_name}", "1.20.1-Player")]
+    #[case::path("-DlibraryDirectory=${library_directory}", "-DlibraryDirectory=/m/libraries")]
+    #[case::empty_input("", "")]
+    fn substitute_handles(#[case] input: &str, #[case] expected: &str) {
+        let fx = Fixture::unix();
+        assert_eq!(substitute(input, &fx.ctx()), expected);
     }
 
     #[test]
     fn substituted_value_is_not_recursively_substituted() {
-        // simulate a `user_properties` value that happens to contain a `${...}`
+        // simulate a user_properties value that happens to contain a ${...}
         // pattern. it should NOT trigger another substitution pass.
-        let lib = PathBuf::from("/m/libraries");
-        let nat = PathBuf::from("/m/natives");
-        let game = PathBuf::from("/i/.minecraft");
-        let assets = PathBuf::from("/m/assets");
-        let ctx = TemplateContext {
-            library_directory: &lib,
-            classpath_separator: ":",
-            version_name: "1.20.1",
-            natives_directory: &nat,
-            classpath: "a.jar:b.jar",
-            game_directory: &game,
-            assets_root: &assets,
-            assets_index_name: "5",
-            auth_player_name: "Player",
-            auth_uuid: "00000000-0000-0000-0000-000000000000",
-            auth_access_token: "token",
-            auth_xuid: "0",
-            user_type: "msa",
-            user_properties: "${version_name}",
-            launcher_name: "rmcl",
-            launcher_version: "0.3.0",
-            clientid: "0",
-            version_type: "release",
-        };
-        assert_eq!(substitute("${user_properties}", &ctx), "${version_name}");
-    }
-
-    #[test]
-    fn empty_input_is_empty() {
-        let lib = PathBuf::from("/m/libraries");
-        let nat = PathBuf::from("/m/natives");
-        let game = PathBuf::from("/i/.minecraft");
-        let assets = PathBuf::from("/m/assets");
-        let ctx = ctx_fixture(&lib, &nat, &game, &assets);
-        assert_eq!(substitute("", &ctx), "");
+        let mut fx = Fixture::unix();
+        fx.user_properties = "${version_name}".to_string();
+        assert_eq!(substitute("${user_properties}", &fx.ctx()), "${version_name}");
     }
 
     #[test]
@@ -261,12 +187,8 @@ mod tests {
         // backslashes. the substitution must not interpret backslashes as
         // escape sequences or do anything else clever - it just copies the
         // value into the output.
-        let lib = PathBuf::from(r"C:\Users\test\.minecraft\libraries");
-        let nat = PathBuf::from(r"C:\Users\test\.minecraft\natives");
-        let game = PathBuf::from(r"C:\Users\test\.minecraft");
-        let assets = PathBuf::from(r"C:\Users\test\.minecraft\assets");
-        let ctx = ctx_fixture(&lib, &nat, &game, &assets);
-        let result = substitute("-Dpath=${library_directory}", &ctx);
+        let fx = Fixture::windows();
+        let result = substitute("-Dpath=${library_directory}", &fx.ctx());
         assert!(
             result.contains(r"C:\Users\test\.minecraft\libraries"),
             "expected backslashes preserved, got: {result}"
