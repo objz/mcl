@@ -801,10 +801,10 @@ description = "A neoforge mod"
 
     #[test]
     fn icon_path_from_value_map() {
+        // serde_json::Map is a BTreeMap, so iteration is sorted by key.
+        // "128" sorts before "64" lexicographically, so the first value wins.
         let val = serde_json::json!({"64": "icon_64.png", "128": "icon_128.png"});
-        let result = icon_path_from_value(&val);
-        // should return one of the values
-        assert!(result == "icon_64.png" || result == "icon_128.png");
+        assert_eq!(icon_path_from_value(&val), "icon_128.png");
     }
 
     #[test]

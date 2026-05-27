@@ -91,47 +91,33 @@ use super::utils::{require_instance, required_arg};
 mod tests {
     use super::resolve_log_path;
 
-    fn unique_temp_dir() -> std::path::PathBuf {
-        std::env::temp_dir().join(format!(
-            "rmcl_cli_log_test_{}",
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .expect("time should work")
-                .as_nanos()
-        ))
-    }
-
     #[test]
     fn resolves_latest_log_when_no_file_is_given() {
-        let root = unique_temp_dir();
-        let dir = root.join("demo/.minecraft/logs/launches");
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("demo/.minecraft/logs/launches");
         std::fs::create_dir_all(&dir).expect("log directory should exist");
         std::fs::write(dir.join("2024-01-02_03-04-05.log"), "newer").expect("write newer log");
         std::fs::write(dir.join("2024-01-01_03-04-05.log"), "older").expect("write older log");
 
-        let path = resolve_log_path(&root, "demo", None).expect("latest log should resolve");
+        let path = resolve_log_path(tmp.path(), "demo", None).expect("latest log should resolve");
         assert_eq!(
             path.file_name().and_then(|name| name.to_str()),
             Some("2024-01-02_03-04-05.log")
         );
-
-        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
     fn resolves_named_log_file() {
-        let root = unique_temp_dir();
-        let dir = root.join("demo/.minecraft/logs/launches");
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("demo/.minecraft/logs/launches");
         std::fs::create_dir_all(&dir).expect("log directory should exist");
         std::fs::write(dir.join("latest.log"), "hello").expect("write named log");
 
-        let path =
-            resolve_log_path(&root, "demo", Some("latest.log")).expect("named log should resolve");
+        let path = resolve_log_path(tmp.path(), "demo", Some("latest.log"))
+            .expect("named log should resolve");
         assert_eq!(
             path.file_name().and_then(|name| name.to_str()),
             Some("latest.log")
         );
-
-        let _ = std::fs::remove_dir_all(&root);
     }
 }

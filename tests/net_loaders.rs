@@ -12,7 +12,7 @@ use rmcl::net::fabric::{
     fetch_fabric_game_versions_from, fetch_fabric_profile_from, fetch_fabric_versions_from,
 };
 use rmcl::net::forge::{fetch_forge_game_versions_from, fetch_forge_versions_from};
-use rmcl::net::neoforge::fetch_neoforge_versions_from;
+use rmcl::net::neoforge::{fetch_neoforge_game_versions_from, fetch_neoforge_versions_from};
 use rmcl::net::quilt::{
     fetch_quilt_game_versions_from, fetch_quilt_profile_from, fetch_quilt_versions_from,
 };
@@ -227,6 +227,38 @@ async fn neoforge_fetch_versions_filters_by_prefix() {
 
     // game version "1.20.4" maps to prefix "20.4." and beta/alpha are excluded
     assert_eq!(versions, vec!["20.4.190", "20.4.150"]);
+}
+
+#[tokio::test]
+async fn neoforge_fetch_game_versions_reverse_engineers_mc_versions() {
+    // neoforge "21.0.x" maps back to MC 1.21 (minor=0 strips the suffix);
+    // "20.4.x" maps to MC 1.20.4. beta/alpha suffixes don't affect the
+    // reverse mapping since the major/minor extraction happens first.
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/maven-api"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "versions": [
+                "21.0.10",
+                "21.0.5",
+                "20.4.190",
+                "20.4.150"
+            ]
+        })))
+        .mount(&server)
+        .await;
+
+    let url = format!("{}/maven-api", server.uri());
+    let versions = fetch_neoforge_game_versions_from(&HttpClient::new(), &url)
+        .await
+        .expect("neoforge game versions");
+    let ids: Vec<&str> = versions.iter().map(|v| v.id.as_str()).collect();
+    // dedup keeps the first occurrence, output is reversed, so the
+    // resulting list is in upstream maven-version order, deduped.
+    assert!(ids.contains(&"1.21"));
+    assert!(ids.contains(&"1.20.4"));
+    // both versions should be marked stable (no snapshot flag in maven)
+    assert!(versions.iter().all(|v| v.stable));
 }
 
 #[tokio::test]

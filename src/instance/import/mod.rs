@@ -136,6 +136,86 @@ pub async fn execute_import(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Write;
+
+    fn make_pack_zip(tmp: &Path, name: &str, entries: &[(&str, &[u8])]) -> std::path::PathBuf {
+        let path = tmp.join(name);
+        let file = std::fs::File::create(&path).unwrap();
+        let mut zip = zip::ZipWriter::new(file);
+        let opts: zip::write::SimpleFileOptions = Default::default();
+        for (filename, bytes) in entries {
+            zip.start_file(*filename, opts).unwrap();
+            zip.write_all(bytes).unwrap();
+        }
+        zip.finish().unwrap();
+        path
+    }
+
+    #[test]
+    fn detect_format_recognises_mrpack() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = make_pack_zip(
+            tmp.path(),
+            "pack.mrpack",
+            &[("modrinth.index.json", b"{}")],
+        );
+        assert_eq!(detect_format(&path), Ok(PackFormat::Mrpack));
+    }
+
+    #[test]
+    fn detect_format_recognises_mmc_flat() {
+        // mmc-pack.json at the zip root - the flat layout that some mmc
+        // archives use.
+        let tmp = tempfile::tempdir().unwrap();
+        let path = make_pack_zip(tmp.path(), "pack.zip", &[("mmc-pack.json", b"{}")]);
+        assert_eq!(detect_format(&path), Ok(PackFormat::Mmc));
+    }
+
+    #[test]
+    fn detect_format_recognises_mmc_nested() {
+        // mmc-pack.json one directory deep - the more common layout where
+        // the archive wraps everything in a named directory.
+        let tmp = tempfile::tempdir().unwrap();
+        let path = make_pack_zip(
+            tmp.path(),
+            "pack.zip",
+            &[("MyPack/mmc-pack.json", b"{}")],
+        );
+        assert_eq!(detect_format(&path), Ok(PackFormat::Mmc));
+    }
+
+    #[test]
+    fn detect_format_prefers_mrpack_when_both_markers_present() {
+        // a zip with both markers should resolve to Mrpack since the
+        // detector checks modrinth.index.json first.
+        let tmp = tempfile::tempdir().unwrap();
+        let path = make_pack_zip(
+            tmp.path(),
+            "weird.zip",
+            &[
+                ("modrinth.index.json", b"{}"),
+                ("mmc-pack.json", b"{}"),
+            ],
+        );
+        assert_eq!(detect_format(&path), Ok(PackFormat::Mrpack));
+    }
+
+    #[test]
+    fn detect_format_errors_on_unknown_archive() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = make_pack_zip(tmp.path(), "random.zip", &[("readme.txt", b"hello")]);
+        let err = detect_format(&path).unwrap_err();
+        assert!(
+            err.contains("Unknown pack format"),
+            "expected unknown format error, got: {err}"
+        );
+    }
+
+    #[test]
+    fn detect_format_errors_on_missing_file() {
+        let err = detect_format(Path::new("/nonexistent/pack.zip")).unwrap_err();
+        assert!(err.contains("Cannot open"), "got: {err}");
+    }
 
     #[test]
     fn unique_name_no_collision() {

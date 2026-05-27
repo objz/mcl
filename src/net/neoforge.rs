@@ -72,7 +72,14 @@ pub async fn fetch_neoforge_versions_from(
 pub async fn fetch_neoforge_game_versions(
     client: &HttpClient,
 ) -> Result<Vec<GameVersion>, NetError> {
-    let maven: NeoForgeMavenVersions = client.get_json(NEOFORGE_API_BASE).await?;
+    fetch_neoforge_game_versions_from(client, NEOFORGE_API_BASE).await
+}
+
+pub async fn fetch_neoforge_game_versions_from(
+    client: &HttpClient,
+    api_url: &str,
+) -> Result<Vec<GameVersion>, NetError> {
+    let maven: NeoForgeMavenVersions = client.get_json(api_url).await?;
 
     let mut game_versions: Vec<String> = Vec::new();
     for version in &maven.versions {

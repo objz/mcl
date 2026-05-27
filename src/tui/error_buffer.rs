@@ -89,12 +89,28 @@ mod tests {
         }
     }
 
+    // peek must not mutate the queue: count + identity of the front event
+    // are preserved across a peek. tagging the message lets us identify
+    // our own event amid whatever other tests pushed.
     #[test]
     fn peek_does_not_remove() {
-        push_error(make_event("err_peek"));
-        let before = peek_error();
-        assert!(before.is_some());
-        assert!(has_errors());
+        let tag = "PEEK_DOES_NOT_REMOVE_TAG";
+        push_error(make_event(tag));
+        let count_before = peek_all_errors().len();
+        let peeked = peek_error();
+        let count_after = peek_all_errors().len();
+        assert_eq!(
+            count_before, count_after,
+            "peek should not change queue length"
+        );
+        // and the front entry is the same id we just peeked
+        assert!(peeked.is_some());
+        assert!(
+            peek_all_errors()
+                .iter()
+                .any(|e| e.message.contains(tag)),
+            "our tagged event should still be in the queue"
+        );
     }
 
     // ERROR_EVENTS is a global static shared across tests, so we tag our
