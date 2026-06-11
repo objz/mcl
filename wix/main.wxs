@@ -69,7 +69,7 @@
 
         <Package Id='*'
             Keywords='Installer'
-            Description='A fully featured Minecraft launcher TUI'
+            Description='A fully featured Minecraft TUI launcher'
             Manufacturer='objz'
             InstallerVersion='450'
             Languages='1033'
