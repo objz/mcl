@@ -26,7 +26,16 @@ pub async fn fetch_forge_versions(
     client: &HttpClient,
     game_version: &str,
 ) -> Result<Vec<String>, NetError> {
-    let promotions: ForgePromotions = client.get_json(FORGE_PROMOTIONS_URL).await?;
+    fetch_forge_versions_from(client, FORGE_PROMOTIONS_URL, game_version).await
+}
+
+// same as fetch_forge_versions but lets tests point at a wiremock server.
+pub async fn fetch_forge_versions_from(
+    client: &HttpClient,
+    promotions_url: &str,
+    game_version: &str,
+) -> Result<Vec<String>, NetError> {
+    let promotions: ForgePromotions = client.get_json(promotions_url).await?;
 
     let prefix = format!("{}-", game_version);
     let mut versions: Vec<String> = promotions
@@ -44,7 +53,14 @@ pub async fn fetch_forge_versions(
 // extracts unique game versions from the promotion keys by splitting off
 // the "-recommended"/"-latest" suffix
 pub async fn fetch_forge_game_versions(client: &HttpClient) -> Result<Vec<GameVersion>, NetError> {
-    let promos: ForgePromotions = client.get_json(FORGE_PROMOTIONS_URL).await?;
+    fetch_forge_game_versions_from(client, FORGE_PROMOTIONS_URL).await
+}
+
+pub async fn fetch_forge_game_versions_from(
+    client: &HttpClient,
+    promotions_url: &str,
+) -> Result<Vec<GameVersion>, NetError> {
+    let promos: ForgePromotions = client.get_json(promotions_url).await?;
 
     let mut game_versions: Vec<String> = promos
         .promos
@@ -316,5 +332,58 @@ mod tests {
             }
             Err(e) => panic!("fetch_forge_game_versions failed: {}", e),
         }
+    }
+
+    // builds an in-memory zip in a tempdir with the given json as
+    // install_profile.json. lets the legacy-install-profile detector be
+    // tested without an actual forge installer.
+    fn make_installer_zip(tmp: &std::path::Path, json: &serde_json::Value) -> std::path::PathBuf {
+        use std::io::Write;
+        let path = tmp.join("installer.jar");
+        let file = std::fs::File::create(&path).unwrap();
+        let mut zip = zip::ZipWriter::new(file);
+        let opts: zip::write::SimpleFileOptions = Default::default();
+        zip.start_file("install_profile.json", opts).unwrap();
+        zip.write_all(serde_json::to_string(json).unwrap().as_bytes())
+            .unwrap();
+        zip.finish().unwrap();
+        path
+    }
+
+    #[test]
+    fn has_legacy_install_profile_true_when_version_info_present() {
+        let tmp = tempfile::tempdir().unwrap();
+        let jar = make_installer_zip(
+            tmp.path(),
+            &serde_json::json!({
+                "install": {},
+                "versionInfo": {
+                    "id": "1.7.10-Forge10.13.4.1614-1.7.10",
+                    "mainClass": "net.minecraft.launchwrapper.Launch"
+                }
+            }),
+        );
+        assert!(has_legacy_install_profile(&jar));
+    }
+
+    #[test]
+    fn has_legacy_install_profile_false_when_version_info_absent() {
+        let tmp = tempfile::tempdir().unwrap();
+        let jar = make_installer_zip(
+            tmp.path(),
+            &serde_json::json!({
+                "spec": 1,
+                "minecraft": "1.20.1",
+                "data": {}
+            }),
+        );
+        assert!(!has_legacy_install_profile(&jar));
+    }
+
+    #[test]
+    fn has_legacy_install_profile_false_for_missing_jar() {
+        assert!(!has_legacy_install_profile(std::path::Path::new(
+            "/nonexistent/installer.jar"
+        )));
     }
 }

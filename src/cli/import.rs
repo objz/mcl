@@ -95,7 +95,7 @@ pub async fn handle_import(matches: &ArgMatches) -> CliResult {
     }
 
     println!(
-        "Importing '{}' — {} {} ({} mods, {} overrides)",
+        "Importing '{}' - {} {} ({} mods, {} overrides)",
         summary.name,
         summary.game_version,
         summary.loader,

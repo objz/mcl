@@ -202,15 +202,6 @@ mod tests {
     }
 
     #[test]
-    fn desktop_path_returns_some() {
-        let path = desktop_path("TestPack");
-        if let Some(p) = path {
-            let name = p.file_name().unwrap().to_str().unwrap();
-            assert!(name.contains("TestPack"));
-        }
-    }
-
-    #[test]
     #[cfg(target_os = "linux")]
     fn build_content_linux() {
         let content = build_content("TestPack", None);

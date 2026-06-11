@@ -124,7 +124,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_instance_config_roundtrip() {
+    fn instance_config_roundtrips_through_json() {
         let config = InstanceConfig {
             name: "test".to_string(),
             game_version: "1.20.1".to_string(),

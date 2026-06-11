@@ -73,3 +73,7 @@ lto = "thin"
 
 [dev-dependencies]
 tempfile = "3"
+insta = "1"
+wiremock = "0.6"
+rstest = "0.23"
+image = { version = "0.25", default-features = false, features = ["png"] }

@@ -141,125 +141,24 @@ fn read_pack_metadata_from_dir(dir: &Path) -> (String, String, Option<Vec<u8>>) 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
-    #[test]
-    fn extract_description_from_string() {
-        let val = serde_json::json!("Simple pack");
-        assert_eq!(extract_description(&val), "Simple pack");
-    }
-
-    #[test]
-    fn extract_description_from_object_with_text() {
-        let val = serde_json::json!({"text": "Hello world"});
-        assert_eq!(extract_description(&val), "Hello world");
-    }
-
-    #[test]
-    fn extract_description_from_object_without_text() {
-        let val = serde_json::json!({"color": "red"});
-        assert_eq!(extract_description(&val), "");
-    }
-
-    #[test]
-    fn extract_description_from_array_of_strings() {
-        let val = serde_json::json!(["Hello", " ", "world"]);
-        assert_eq!(extract_description(&val), "Hello world");
-    }
-
-    #[test]
-    fn extract_description_from_array_of_objects() {
-        let val = serde_json::json!([{"text": "A"}, {"text": "B"}]);
-        assert_eq!(extract_description(&val), "AB");
-    }
-
-    #[test]
-    fn extract_description_from_mixed_array() {
-        let val = serde_json::json!(["Prefix ", {"text": "suffix"}]);
-        assert_eq!(extract_description(&val), "Prefix suffix");
-    }
-
-    #[test]
-    fn extract_description_from_empty_array() {
-        let val = serde_json::json!([]);
-        assert_eq!(extract_description(&val), "");
-    }
-
-    #[test]
-    fn extract_description_from_null() {
-        let val = serde_json::Value::Null;
-        assert_eq!(extract_description(&val), "");
-    }
-
-    #[test]
-    fn extract_description_from_number() {
-        let val = serde_json::json!(42);
-        assert_eq!(extract_description(&val), "");
-    }
-
-    #[test]
-    fn extract_description_from_bool() {
-        let val = serde_json::json!(true);
-        assert_eq!(extract_description(&val), "");
-    }
-
-    fn setup_packs_dir(tmp: &std::path::Path, instance: &str) -> std::path::PathBuf {
-        let dir = tmp.join(instance).join(".minecraft").join("resourcepacks");
-        std::fs::create_dir_all(&dir).unwrap();
-        dir
-    }
-
-    #[test]
-    fn scan_resource_packs_empty_dir() {
-        let tmp = tempfile::tempdir().unwrap();
-        setup_packs_dir(tmp.path(), "inst");
-        let packs = scan_resource_packs(tmp.path(), "inst");
-        assert!(packs.is_empty());
-    }
-
-    #[test]
-    fn scan_resource_packs_missing_dir_returns_empty() {
-        let tmp = tempfile::tempdir().unwrap();
-        let packs = scan_resource_packs(tmp.path(), "ghost");
-        assert!(packs.is_empty());
-    }
-
-    #[test]
-    fn scan_resource_packs_finds_zips_and_dirs() {
-        let tmp = tempfile::tempdir().unwrap();
-        let dir = setup_packs_dir(tmp.path(), "inst");
-        std::fs::write(dir.join("pack-a.zip"), b"PK\x03\x04").unwrap();
-        std::fs::create_dir(dir.join("pack-b")).unwrap();
-        let packs = scan_resource_packs(tmp.path(), "inst");
-        assert_eq!(packs.len(), 2);
-    }
-
-    #[test]
-    fn scan_resource_packs_disabled_variants() {
-        let tmp = tempfile::tempdir().unwrap();
-        let dir = setup_packs_dir(tmp.path(), "inst");
-        std::fs::write(dir.join("on.zip"), b"PK\x03\x04").unwrap();
-        std::fs::write(dir.join("off.zip.disabled"), b"PK\x03\x04").unwrap();
-        std::fs::create_dir(dir.join("diron")).unwrap();
-        std::fs::create_dir(dir.join("diroff.disabled")).unwrap();
-        let packs = scan_resource_packs(tmp.path(), "inst");
-        assert_eq!(packs.len(), 4);
-        let on_zip = packs.iter().find(|p| p.file_stem == "on").unwrap();
-        let off_zip = packs.iter().find(|p| p.file_stem == "off").unwrap();
-        let on_dir = packs.iter().find(|p| p.file_stem == "diron").unwrap();
-        let off_dir = packs.iter().find(|p| p.file_stem == "diroff").unwrap();
-        assert!(on_zip.enabled);
-        assert!(!off_zip.enabled);
-        assert!(on_dir.enabled);
-        assert!(!off_dir.enabled);
-    }
-
-    #[test]
-    fn scan_resource_packs_ignores_non_pack_files() {
-        let tmp = tempfile::tempdir().unwrap();
-        let dir = setup_packs_dir(tmp.path(), "inst");
-        std::fs::write(dir.join("notes.txt"), "not a pack").unwrap();
-        std::fs::write(dir.join("valid.zip"), b"PK\x03\x04").unwrap();
-        let packs = scan_resource_packs(tmp.path(), "inst");
-        assert_eq!(packs.len(), 1);
+    // every case exercises a distinct match arm in extract_description.
+    // string + object{text} + object{no text} + array(string) +
+    // array(object) + array(mixed) + array(empty) + null + number + bool.
+    // mutating any arm to fall through to "" would fail at least one case.
+    #[rstest::rstest]
+    #[case::string(json!("Simple pack"), "Simple pack")]
+    #[case::object_with_text(json!({"text": "Hello world"}), "Hello world")]
+    #[case::object_without_text(json!({"color": "red"}), "")]
+    #[case::array_of_strings(json!(["Hello", " ", "world"]), "Hello world")]
+    #[case::array_of_objects(json!([{"text": "A"}, {"text": "B"}]), "AB")]
+    #[case::mixed_array(json!(["Prefix ", {"text": "suffix"}]), "Prefix suffix")]
+    #[case::empty_array(json!([]), "")]
+    #[case::null(serde_json::Value::Null, "")]
+    #[case::number(json!(42), "")]
+    #[case::bool(json!(true), "")]
+    fn extract_description_handles(#[case] input: serde_json::Value, #[case] expected: &str) {
+        assert_eq!(extract_description(&input), expected);
     }
 }

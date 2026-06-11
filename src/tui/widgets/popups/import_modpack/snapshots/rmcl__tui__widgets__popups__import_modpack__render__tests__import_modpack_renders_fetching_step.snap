@@ -1,0 +1,16 @@
+---
+source: src/tui/widgets/popups/import_modpack/render.rs
+expression: terminal.backend()
+---
+"╭Import Modpack────────────────────────────────────────────╮"
+"│Fetching modpack info...                                  │"
+"│                                                          │"
+"│                                                          │"
+"│                                                          │"
+"│                                                          │"
+"│                                                          │"
+"│                                                          │"
+"│                                                          │"
+"│                                                          │"
+"│                                                          │"
+"╰──────────────────────────────────────────────[Esc] cancel╯"

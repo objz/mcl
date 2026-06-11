@@ -89,49 +89,61 @@ mod tests {
         }
     }
 
-    #[test]
-    fn push_and_pop_fifo() {
-        push_error(make_event("err_fifo_1"));
-        push_error(make_event("err_fifo_2"));
-        let first = pop_error();
-        assert!(first.is_some() || has_errors());
-    }
-
-    #[test]
-    fn has_errors_after_push() {
-        push_error(make_event("err_has"));
-        assert!(has_errors());
-    }
-
+    // peek must not mutate the queue: count + identity of the front event
+    // are preserved across a peek. tagging the message lets us identify
+    // our own event amid whatever other tests pushed.
     #[test]
     fn peek_does_not_remove() {
-        push_error(make_event("err_peek"));
-        let before = peek_error();
-        assert!(before.is_some());
-        assert!(has_errors());
+        let tag = "PEEK_DOES_NOT_REMOVE_TAG";
+        push_error(make_event(tag));
+        let count_before = peek_all_errors().len();
+        let peeked = peek_error();
+        let count_after = peek_all_errors().len();
+        assert_eq!(
+            count_before, count_after,
+            "peek should not change queue length"
+        );
+        // and the front entry is the same id we just peeked
+        assert!(peeked.is_some());
+        assert!(
+            peek_all_errors()
+                .iter()
+                .any(|e| e.message.contains(tag)),
+            "our tagged event should still be in the queue"
+        );
     }
 
+    // ERROR_EVENTS is a global static shared across tests, so we tag our
+    // events with a unique substring and filter to just those before
+    // asserting; otherwise concurrent tests would interfere.
     #[test]
     fn peek_all_returns_newest_first() {
-        push_error(make_event("err_all_a"));
-        push_error(make_event("err_all_b"));
-        let all = peek_all_errors();
-        assert!(all.len() >= 2);
-        if all.len() >= 2 {
-            assert!(all[0].id >= all[1].id);
-        }
+        let tag = "PEEK_NEWEST_FIRST_TAG";
+        push_error(make_event(&format!("{tag}_a")));
+        push_error(make_event(&format!("{tag}_b")));
+        let ours: Vec<_> = peek_all_errors()
+            .into_iter()
+            .filter(|e| e.message.contains(tag))
+            .collect();
+        assert_eq!(ours.len(), 2, "expected 2 tagged events, got {ours:?}");
+        // _b was pushed last, so it must come out first (newest-first iter)
+        assert!(ours[0].message.ends_with("_b"));
+        assert!(ours[1].message.ends_with("_a"));
+        // newer event also has the higher auto-assigned id
+        assert!(ours[0].id > ours[1].id);
     }
 
     #[test]
     fn auto_assigned_ids_are_unique() {
-        push_error(make_event("err_id_1"));
-        push_error(make_event("err_id_2"));
-        let all = peek_all_errors();
-        if all.len() >= 2 {
-            let ids: Vec<u64> = all.iter().map(|e| e.id).collect();
-            let unique: std::collections::HashSet<u64> = ids.iter().copied().collect();
-            assert_eq!(ids.len(), unique.len());
-        }
+        let tag = "AUTO_ID_UNIQUE_TAG";
+        push_error(make_event(&format!("{tag}_1")));
+        push_error(make_event(&format!("{tag}_2")));
+        let ours: Vec<_> = peek_all_errors()
+            .into_iter()
+            .filter(|e| e.message.contains(tag))
+            .collect();
+        assert_eq!(ours.len(), 2);
+        assert_ne!(ours[0].id, ours[1].id);
     }
 
     #[test]

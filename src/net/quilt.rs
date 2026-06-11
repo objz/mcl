@@ -42,7 +42,16 @@ pub struct QuiltLibrary {
 }
 
 pub async fn fetch_quilt_game_versions(client: &HttpClient) -> Result<Vec<GameVersion>, NetError> {
-    let url = format!("{}/versions/game", QUILT_META_BASE);
+    fetch_quilt_game_versions_from(client, QUILT_META_BASE).await
+}
+
+// same as fetch_quilt_game_versions but lets tests point at a wiremock
+// server. quilt mirrors the fabric API shape.
+pub async fn fetch_quilt_game_versions_from(
+    client: &HttpClient,
+    meta_base: &str,
+) -> Result<Vec<GameVersion>, NetError> {
+    let url = format!("{}/versions/game", meta_base);
     let versions: Vec<QuiltGameVersion> = client.get_json(&url).await?;
 
     Ok(versions
@@ -58,7 +67,15 @@ pub async fn fetch_quilt_versions(
     client: &HttpClient,
     game_version: &str,
 ) -> Result<Vec<QuiltLoaderVersion>, NetError> {
-    let url = format!("{}/versions/loader/{}", QUILT_META_BASE, game_version);
+    fetch_quilt_versions_from(client, QUILT_META_BASE, game_version).await
+}
+
+pub async fn fetch_quilt_versions_from(
+    client: &HttpClient,
+    meta_base: &str,
+    game_version: &str,
+) -> Result<Vec<QuiltLoaderVersion>, NetError> {
+    let url = format!("{}/versions/loader/{}", meta_base, game_version);
     client.get_json(&url).await
 }
 
@@ -67,9 +84,18 @@ pub async fn fetch_quilt_profile(
     game_version: &str,
     loader_version: &str,
 ) -> Result<QuiltProfile, NetError> {
+    fetch_quilt_profile_from(client, QUILT_META_BASE, game_version, loader_version).await
+}
+
+pub async fn fetch_quilt_profile_from(
+    client: &HttpClient,
+    meta_base: &str,
+    game_version: &str,
+    loader_version: &str,
+) -> Result<QuiltProfile, NetError> {
     let url = format!(
         "{}/versions/loader/{}/{}/profile/json",
-        QUILT_META_BASE, game_version, loader_version
+        meta_base, game_version, loader_version
     );
     client.get_json(&url).await
 }
@@ -83,9 +109,18 @@ pub async fn fetch_quilt_profile_with_raw(
     game_version: &str,
     loader_version: &str,
 ) -> Result<(QuiltProfile, Vec<u8>), NetError> {
+    fetch_quilt_profile_with_raw_from(client, QUILT_META_BASE, game_version, loader_version).await
+}
+
+pub async fn fetch_quilt_profile_with_raw_from(
+    client: &HttpClient,
+    meta_base: &str,
+    game_version: &str,
+    loader_version: &str,
+) -> Result<(QuiltProfile, Vec<u8>), NetError> {
     let url = format!(
         "{}/versions/loader/{}/{}/profile/json",
-        QUILT_META_BASE, game_version, loader_version
+        meta_base, game_version, loader_version
     );
     client.get_json_with_raw(&url, "Quilt profile").await
 }

@@ -45,7 +45,17 @@ pub struct FabricLibrary {
 }
 
 pub async fn fetch_fabric_game_versions(client: &HttpClient) -> Result<Vec<GameVersion>, NetError> {
-    let url = format!("{}/versions/game", FABRIC_META_BASE);
+    fetch_fabric_game_versions_from(client, FABRIC_META_BASE).await
+}
+
+// same as fetch_fabric_game_versions but lets tests point at a wiremock
+// server. fabric's API is hierarchical, so we take the base URL and append
+// the rest of the path inside.
+pub async fn fetch_fabric_game_versions_from(
+    client: &HttpClient,
+    meta_base: &str,
+) -> Result<Vec<GameVersion>, NetError> {
+    let url = format!("{}/versions/game", meta_base);
     let versions: Vec<FabricGameVersion> = client.get_json(&url).await?;
 
     Ok(versions
@@ -61,7 +71,15 @@ pub async fn fetch_fabric_versions(
     client: &HttpClient,
     game_version: &str,
 ) -> Result<Vec<FabricLoaderVersion>, NetError> {
-    let url = format!("{}/versions/loader/{}", FABRIC_META_BASE, game_version);
+    fetch_fabric_versions_from(client, FABRIC_META_BASE, game_version).await
+}
+
+pub async fn fetch_fabric_versions_from(
+    client: &HttpClient,
+    meta_base: &str,
+    game_version: &str,
+) -> Result<Vec<FabricLoaderVersion>, NetError> {
+    let url = format!("{}/versions/loader/{}", meta_base, game_version);
     client.get_json(&url).await
 }
 
@@ -70,9 +88,18 @@ pub async fn fetch_fabric_profile(
     game_version: &str,
     loader_version: &str,
 ) -> Result<FabricProfile, NetError> {
+    fetch_fabric_profile_from(client, FABRIC_META_BASE, game_version, loader_version).await
+}
+
+pub async fn fetch_fabric_profile_from(
+    client: &HttpClient,
+    meta_base: &str,
+    game_version: &str,
+    loader_version: &str,
+) -> Result<FabricProfile, NetError> {
     let url = format!(
         "{}/versions/loader/{}/{}/profile/json",
-        FABRIC_META_BASE, game_version, loader_version
+        meta_base, game_version, loader_version
     );
     client.get_json(&url).await
 }
@@ -86,9 +113,19 @@ pub async fn fetch_fabric_profile_with_raw(
     game_version: &str,
     loader_version: &str,
 ) -> Result<(FabricProfile, Vec<u8>), NetError> {
+    fetch_fabric_profile_with_raw_from(client, FABRIC_META_BASE, game_version, loader_version)
+        .await
+}
+
+pub async fn fetch_fabric_profile_with_raw_from(
+    client: &HttpClient,
+    meta_base: &str,
+    game_version: &str,
+    loader_version: &str,
+) -> Result<(FabricProfile, Vec<u8>), NetError> {
     let url = format!(
         "{}/versions/loader/{}/{}/profile/json",
-        FABRIC_META_BASE, game_version, loader_version
+        meta_base, game_version, loader_version
     );
     client.get_json_with_raw(&url, "Fabric profile").await
 }

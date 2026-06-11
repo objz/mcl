@@ -181,7 +181,7 @@ fn instance_name_from_cfg(path: &Path) -> Option<String> {
     None
 }
 
-// finds the prefix for the archive — empty for flat zips, "DirName/" for nested
+// finds the prefix for the archive: empty for flat zips, "DirName/" for nested
 fn find_archive_prefix(archive: &zip::ZipArchive<std::fs::File>) -> String {
     for name in archive.file_names() {
         if name.ends_with("mmc-pack.json") {
@@ -268,5 +268,53 @@ mod tests {
         }"#;
         let pack: MmcPack = serde_json::from_str(json).unwrap();
         assert!(pack.loader().0.is_none());
+    }
+
+    // builds an in-memory mmc-style pack zip and verifies that
+    // extract_mmc_archive copies only the .minecraft/ subtree into the
+    // destination, preserving relative paths and skipping siblings.
+    #[test]
+    fn extract_mmc_archive_copies_minecraft_subtree() {
+        use std::io::Write;
+
+        let tmp = tempfile::tempdir().unwrap();
+        let archive_path = tmp.path().join("pack.zip");
+        let dest = tmp.path().join("instance/.minecraft");
+        std::fs::create_dir_all(&dest).unwrap();
+
+        // Pack/ is the prefix; only .minecraft/ entries should land in dest.
+        // mmc-style pack: a root dir "Pack/" wrapping the .minecraft tree
+        // plus a sibling mmc-pack.json that should NOT be extracted.
+        {
+            let file = std::fs::File::create(&archive_path).unwrap();
+            let mut zip = zip::ZipWriter::new(file);
+            let opts: zip::write::SimpleFileOptions = Default::default();
+
+            zip.start_file("Pack/mmc-pack.json", opts).unwrap();
+            zip.write_all(b"{}").unwrap();
+
+            zip.start_file("Pack/.minecraft/options.txt", opts).unwrap();
+            zip.write_all(b"lang:en_us").unwrap();
+
+            zip.start_file("Pack/.minecraft/mods/test-mod.jar", opts)
+                .unwrap();
+            zip.write_all(b"jar-bytes").unwrap();
+
+            zip.finish().unwrap();
+        }
+
+        extract_mmc_archive(&archive_path, &dest).expect("extract");
+
+        // .minecraft/ entries must have been copied with their relative paths
+        let options = std::fs::read(dest.join("options.txt")).expect("options.txt");
+        assert_eq!(options, b"lang:en_us");
+        let modjar = std::fs::read(dest.join("mods/test-mod.jar")).expect("mods/test-mod.jar");
+        assert_eq!(modjar, b"jar-bytes");
+
+        // and the sibling outside .minecraft/ must not have been copied
+        assert!(
+            !dest.join("mmc-pack.json").exists(),
+            "mmc-pack.json should not land in the instance dir"
+        );
     }
 }

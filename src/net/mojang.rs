@@ -110,7 +110,17 @@ pub struct AssetObject {
 }
 
 pub async fn fetch_version_manifest(client: &HttpClient) -> Result<VersionManifest, NetError> {
-    client.get_json(MANIFEST_URL).await
+    fetch_version_manifest_from(client, MANIFEST_URL).await
+}
+
+// same as fetch_version_manifest but lets the caller pick the URL. exists so
+// integration tests can point at a wiremock server; production callers go
+// through fetch_version_manifest with the upstream Mojang URL.
+pub async fn fetch_version_manifest_from(
+    client: &HttpClient,
+    url: &str,
+) -> Result<VersionManifest, NetError> {
+    client.get_json(url).await
 }
 
 // fetches and parses a version's metadata. also returns the raw response
@@ -209,6 +219,17 @@ pub async fn download_assets(
     meta: &VersionMeta,
     meta_dir: &Path,
 ) -> Result<(), NetError> {
+    download_assets_from(client, meta, meta_dir, ASSETS_BASE_URL).await
+}
+
+// same as download_assets but lets tests point at a wiremock server for the
+// per-asset CDN downloads. the asset index URL still comes from meta.
+pub async fn download_assets_from(
+    client: &HttpClient,
+    meta: &VersionMeta,
+    meta_dir: &Path,
+    assets_base: &str,
+) -> Result<(), NetError> {
     set_action("Downloading assets...");
 
     let asset_index: AssetIndexContent = match client.get_json(&meta.asset_index.url).await {
@@ -260,7 +281,7 @@ pub async fn download_assets(
         }
 
         let prefix = &object.hash[..2];
-        let url = format!("{}/{}/{}", ASSETS_BASE_URL, prefix, object.hash);
+        let url = format!("{}/{}/{}", assets_base, prefix, object.hash);
         let destination = meta_dir
             .join("assets")
             .join("objects")

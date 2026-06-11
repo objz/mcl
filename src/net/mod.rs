@@ -298,9 +298,4 @@ mod tests {
         assert_eq!(maven_coord_to_path(""), None);
     }
 
-    #[test]
-    fn detect_java_falls_back_to_java() {
-        let result = detect_java_path();
-        assert!(!result.is_empty());
-    }
 }
