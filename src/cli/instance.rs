@@ -134,7 +134,6 @@ async fn launch_instance(matches: &ArgMatches) -> CliResult {
     let meta_dir = crate::config::SETTINGS.paths.resolve_meta_dir();
     let config = manager.load_one(name)?;
 
-    println!("Launching '{}'...", name);
     crate::instance::launch::launch(&config, &instances_dir, &meta_dir)
         .await
         .map_err(|error| io::Error::other(format!("Launch failed: {}", error)))?;
