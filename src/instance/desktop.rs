@@ -20,7 +20,7 @@ pub fn desktop_path(name: &str) -> Option<PathBuf> {
 
     #[cfg(target_os = "windows")]
     {
-        dirs::desktop_dir().map(|d| d.join(format!("Minecraft - {sanitized}.bat")))
+        dirs::desktop_dir().map(|d| d.join(format!("Minecraft - {sanitized}.vbs")))
     }
 
     #[cfg(target_os = "macos")]
@@ -141,7 +141,7 @@ fn build_content(name: &str, icon: Option<&Path>) -> String {
 fn build_linux_desktop(name: &str, icon: Option<&Path>) -> String {
     let mut out = String::new();
     out.push_str("[Desktop Entry]\n");
-    out.push_str("Version=1.0\n");
+    out.push_str("Version=0.3.1\n");
     out.push_str("Type=Application\n");
     out.push_str(&format!("Name=Minecraft - {name}\n"));
     out.push_str(&format!("Comment=Launch {name} Minecraft instance\n"));
@@ -149,18 +149,21 @@ fn build_linux_desktop(name: &str, icon: Option<&Path>) -> String {
     if let Some(icon) = icon {
         out.push_str(&format!("Icon={}\n", icon.display()));
     }
-    out.push_str("Terminal=true\n");
+    out.push_str("Terminal=false\n");
     out.push_str("Categories=Game;\n");
     out
 }
 
 #[cfg(target_os = "windows")]
 fn build_windows_shortcut(name: &str) -> String {
+    let escaped_name = name.replace('"', "\"\"");
+
     let mut out = String::new();
-    out.push_str("@echo off\r\n");
-    out.push_str(&format!("title Minecraft - {name}\r\n"));
-    out.push_str(&format!("rmcl instance launch \"{name}\"\r\n"));
-    out.push_str("pause\r\n");
+    out.push_str("Set shell = CreateObject(\"WScript.Shell\")\r\n");
+    out.push_str(&format!(
+        "shell.Run \"rmcl instance launch \"\"{}\"\"\", 0, False\r\n",
+        escaped_name
+    ));
     out
 }
 
@@ -207,7 +210,7 @@ mod tests {
         let content = build_content("TestPack", None);
         assert!(content.contains("Name=Minecraft - TestPack"));
         assert!(content.contains("Exec=rmcl instance launch \"TestPack\""));
-        assert!(content.contains("Terminal=true"));
+        assert!(content.contains("Terminal=false"));
         assert!(content.contains("Categories=Game;"));
     }
 

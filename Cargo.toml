@@ -1,9 +1,9 @@
 [package]
 name = "rmcl"
-version = "0.3.0"
+version = "0.3.1"
 authors = ["objz"]
 edition = "2024"
-description = "A fully featured Minecraft launcher TUI"
+description = "A fully featured Minecraft TUI launcher"
 repository = "https://github.com/objz/rmcl"
 homepage = "https://github.com/objz/rmcl"
 license = "GPL-3.0-only"

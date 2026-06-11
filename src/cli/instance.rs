@@ -143,16 +143,15 @@ async fn launch_instance(matches: &ArgMatches) -> CliResult {
     loop {
         match crate::running::get(name) {
             Some(RunState::Crashed(Some(code))) => {
-                println!("Game exited with status {}.", code);
+                println!("Game exited with status {}", code);
                 break;
             }
             Some(RunState::Crashed(None)) => {
-                println!("Game was terminated.");
+                println!("Game was terminated");
                 break;
             }
             Some(_) => tokio::time::sleep(Duration::from_millis(500)).await,
             None => {
-                println!("Game exited with status 0.");
                 break;
             }
         }
