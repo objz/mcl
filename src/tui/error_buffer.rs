@@ -32,7 +32,9 @@ pub fn push_error(event: ErrorEvent) {
         Ok(mut events) => {
             let mut event = event;
             event.id = NEXT_ERROR_ID.fetch_add(1, Ordering::Relaxed);
+
             events.push_back(event);
+
             while events.len() > MAX_ERROR_EVENTS {
                 events.pop_front();
             }
@@ -79,6 +81,13 @@ pub fn peek_all_errors() -> Vec<ErrorEvent> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
+
+    static TEST_LOCK: Mutex<()> = Mutex::new(());
+
+    fn clear_errors_for_test() {
+        ERROR_EVENTS.lock().unwrap().clear();
+    }
 
     fn make_event(msg: &str) -> ErrorEvent {
         ErrorEvent {
@@ -89,69 +98,73 @@ mod tests {
         }
     }
 
-    // peek must not mutate the queue: count + identity of the front event
-    // are preserved across a peek. tagging the message lets us identify
-    // our own event amid whatever other tests pushed.
     #[test]
     fn peek_does_not_remove() {
-        let tag = "PEEK_DOES_NOT_REMOVE_TAG";
-        push_error(make_event(tag));
+        let _guard = TEST_LOCK.lock().unwrap();
+        clear_errors_for_test();
+
+        push_error(make_event("peek-test"));
+
         let count_before = peek_all_errors().len();
         let peeked = peek_error();
         let count_after = peek_all_errors().len();
+
         assert_eq!(
             count_before, count_after,
             "peek should not change queue length"
         );
-        // and the front entry is the same id we just peeked
+
         assert!(peeked.is_some());
-        assert!(
-            peek_all_errors()
-                .iter()
-                .any(|e| e.message.contains(tag)),
-            "our tagged event should still be in the queue"
-        );
+        assert_eq!(peeked.unwrap().message, "peek-test");
     }
 
-    // ERROR_EVENTS is a global static shared across tests, so we tag our
-    // events with a unique substring and filter to just those before
-    // asserting; otherwise concurrent tests would interfere.
     #[test]
     fn peek_all_returns_newest_first() {
-        let tag = "PEEK_NEWEST_FIRST_TAG";
-        push_error(make_event(&format!("{tag}_a")));
-        push_error(make_event(&format!("{tag}_b")));
-        let ours: Vec<_> = peek_all_errors()
-            .into_iter()
-            .filter(|e| e.message.contains(tag))
-            .collect();
-        assert_eq!(ours.len(), 2, "expected 2 tagged events, got {ours:?}");
-        // _b was pushed last, so it must come out first (newest-first iter)
-        assert!(ours[0].message.ends_with("_b"));
-        assert!(ours[1].message.ends_with("_a"));
-        // newer event also has the higher auto-assigned id
-        assert!(ours[0].id > ours[1].id);
+        let _guard = TEST_LOCK.lock().unwrap();
+        clear_errors_for_test();
+
+        push_error(make_event("newest_a"));
+        push_error(make_event("newest_b"));
+
+        let all = peek_all_errors();
+
+        assert_eq!(all.len(), 2);
+        assert!(all[0].message.ends_with("_b"));
+        assert!(all[1].message.ends_with("_a"));
+        assert!(all[0].id > all[1].id);
     }
 
     #[test]
     fn auto_assigned_ids_are_unique() {
-        let tag = "AUTO_ID_UNIQUE_TAG";
-        push_error(make_event(&format!("{tag}_1")));
-        push_error(make_event(&format!("{tag}_2")));
-        let ours: Vec<_> = peek_all_errors()
-            .into_iter()
-            .filter(|e| e.message.contains(tag))
-            .collect();
-        assert_eq!(ours.len(), 2);
-        assert_ne!(ours[0].id, ours[1].id);
+        let _guard = TEST_LOCK.lock().unwrap();
+        clear_errors_for_test();
+
+        push_error(make_event("unique_1"));
+        push_error(make_event("unique_2"));
+
+        let all = peek_all_errors();
+
+        assert_eq!(all.len(), 2);
+        assert_ne!(all[0].id, all[1].id);
     }
 
     #[test]
     fn overflow_drops_oldest() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        clear_errors_for_test();
+
         for i in 0..(MAX_ERROR_EVENTS + 10) {
             push_error(make_event(&format!("overflow_{i}")));
         }
+
         let all = peek_all_errors();
-        assert!(all.len() <= MAX_ERROR_EVENTS);
+
+        assert_eq!(all.len(), MAX_ERROR_EVENTS);
+
+        assert!(!all.iter().any(|e| e.message == "overflow_0"));
+        assert!(!all.iter().any(|e| e.message == "overflow_9"));
+
+        assert!(all.iter().any(|e| e.message == "overflow_10"));
+        assert!(all.iter().any(|e| e.message == "overflow_59"));
     }
 }
