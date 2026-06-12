@@ -24,6 +24,8 @@ we all love TUIs. and we all know the official Minecraft launcher is not exactly
 
 it does everything you'd expect from a launcher. multiple instances, mod loaders, modpack imports, Microsoft auth, content management, launching. all from a TUI or from the command line. the TUI is the main thing though, the CLI is there for scripting and automation.
 
+![shocase](assets/showcase.gif)
+
 ## features
 
 | | |
@@ -31,10 +33,9 @@ it does everything you'd expect from a launcher. multiple instances, mod loaders
 | **instances** | create and manage multiple instances, each with their own version, loader, mods, and settings |
 | **mod loaders** | vanilla, Fabric, Quilt, Forge, NeoForge. more might show up later |
 | **content** | browse and toggle mods, shaders, resource packs. view worlds, screenshots, and logs |
-| **modpack import** | import from Modrinth via `.mrpack` file, URL, or slug |
+| **modpack import** | import from Modrinth or MultiMC or GTNH via file, URL, or slug |
 | **accounts** | multiple Microsoft accounts and offline players, switch between them |
 | **launching** | launch directly from the TUI or generate a desktop shortcut for any instance |
-| **desktop shortcuts** | click it and Minecraft starts, no need to open rmcl or type anything |
 | **CLI** | every feature the TUI has is also available as a subcommand |
 | **theming** | 10 built-in themes, custom themes, color overrides |
 
