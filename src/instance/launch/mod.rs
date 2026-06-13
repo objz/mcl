@@ -2,6 +2,7 @@
 // handles classpath assembly, auth token injection, and log capture.
 // loader-specific patches live in submodules (e.g. patches.rs for lwjgl3ify).
 
+pub(crate) mod parser;
 mod patches;
 
 use std::path::{Path, PathBuf};
@@ -580,63 +581,113 @@ pub async fn launch(
         use std::io::Write;
         use std::sync::{Arc, Mutex};
         use tokio::io::AsyncBufReadExt;
+        use tokio::sync::mpsc;
+        use tokio::time::{Duration, sleep};
+
+        use crate::instance::launch::parser::{LogStream, MinecraftLogParser};
 
         let log_writer: Arc<Mutex<Option<std::fs::File>>> = Arc::new(Mutex::new(
             log_file_path.and_then(|p| std::fs::File::create(p).ok()),
         ));
 
+        let (log_tx, mut log_rx) = mpsc::channel::<(LogStream, String)>(1024);
+        let parser_name = name_for_task.clone();
+        let parser_task = tokio::spawn(async move {
+            let mut parser = MinecraftLogParser::new();
+            let idle_flush = Duration::from_millis(150);
+
+            loop {
+                tokio::select! {
+                    maybe_line = log_rx.recv() => {
+                        match maybe_line {
+                            Some((stream, line)) => {
+                                for event in parser.push_line(stream, line) {
+                                    emit_parsed_instance_log(&parser_name, event);
+                                }
+                            }
+                            None => break,
+                        }
+                    }
+                    _ = sleep(idle_flush), if parser.has_pending() => {
+                        if let Some(event) = parser.flush() {
+                            emit_parsed_instance_log(&parser_name, event);
+                        }
+                    }
+                }
+            }
+
+            if let Some(event) = parser.flush() {
+                emit_parsed_instance_log(&parser_name, event);
+            }
+        });
+
         if let Some(stdout) = child.stdout.take() {
-            let n = name_for_task.clone();
             let w = log_writer.clone();
+            let tx = log_tx.clone();
             let mut lines = tokio::io::BufReader::new(stdout).lines();
             tokio::spawn(async move {
                 while let Ok(Some(line)) = lines.next_line().await {
-                    tracing::info!(target: "mc_instance", "[{}] {}", n, line);
-                    crate::instance_logs::push(&n, &line);
                     if let Ok(mut f) = w.lock()
                         && let Some(f) = f.as_mut()
                     {
                         let _ = writeln!(f, "{}", line);
+                    }
+                    if tx.send((LogStream::Stdout, line)).await.is_err() {
+                        break;
                     }
                 }
             });
         }
 
         if let Some(stderr) = child.stderr.take() {
-            let n = name_for_task.clone();
             let w = log_writer.clone();
+            let tx = log_tx.clone();
             let mut lines = tokio::io::BufReader::new(stderr).lines();
             tokio::spawn(async move {
                 while let Ok(Some(line)) = lines.next_line().await {
-                    tracing::warn!(target: "mc_instance", "[{}] {}", n, line);
-                    crate::instance_logs::push(&n, &line);
                     if let Ok(mut f) = w.lock()
                         && let Some(f) = f.as_mut()
                     {
-                        let _ = writeln!(f, "[STDERR] {}", line);
+                        let _ = writeln!(f, "{}", line);
+                    }
+                    if tx.send((LogStream::Stderr, line)).await.is_err() {
+                        break;
                     }
                 }
             });
         }
+        drop(log_tx);
 
         // wait for either the process to exit naturally or a kill signal from the TUI
-        let code = tokio::select! {
+        let (code, killed_by_user) = tokio::select! {
             _ = kill_rx => {
                 tracing::info!("[{}] Kill requested, terminating process", name_for_task);
                 let _ = child.kill().await;
                 let _ = child.wait().await;
-                None
+                (None, true)
             }
             result = child.wait() => {
-                result.ok().and_then(|s| s.code())
+                (result.ok().and_then(|s| s.code()), false)
             }
         };
+        let _ = parser_task.await;
         tracing::info!("[{}] Exited with code {:?}", name_for_task, code);
 
-        if code == Some(0) {
+        if code == Some(0) || killed_by_user {
             crate::running::remove(&name_for_task);
         } else {
             crate::running::set_state(&name_for_task, crate::running::RunState::Crashed(code));
+            crate::tui::error_buffer::push_error(crate::tui::error_buffer::ErrorEvent {
+                id: 0,
+                level: tracing::Level::ERROR,
+                message: match code {
+                    Some(code) => {
+                        format!("Minecraft '{name_for_task}' crashed with exit code {code}")
+                    }
+                    None => format!("Minecraft '{name_for_task}' crashed without an exit code"),
+                },
+                pushed_at: std::time::Instant::now(),
+            });
         }
 
         let manager = crate::instance::InstanceManager::new(instances_dir_owned, meta_dir_owned);
@@ -652,6 +703,31 @@ pub async fn launch(
     });
 
     Ok(())
+}
+
+fn emit_parsed_instance_log(
+    instance_name: &str,
+    event: crate::instance::launch::parser::ParsedLogEvent,
+) {
+    let text = event.lines.join("\n");
+    match event.level {
+        crate::instance::launch::parser::LogLevel::Error => {
+            tracing::error!(target: "mc_instance", "[{}] {}", instance_name, text);
+        }
+        crate::instance::launch::parser::LogLevel::Warn => {
+            tracing::warn!(target: "mc_instance", "[{}] {}", instance_name, text);
+        }
+        crate::instance::launch::parser::LogLevel::Info => {
+            tracing::info!(target: "mc_instance", "[{}] {}", instance_name, text);
+        }
+        crate::instance::launch::parser::LogLevel::Debug => {
+            tracing::debug!(target: "mc_instance", "[{}] {}", instance_name, text);
+        }
+        crate::instance::launch::parser::LogLevel::Trace => {
+            tracing::trace!(target: "mc_instance", "[{}] {}", instance_name, text);
+        }
+    }
+    crate::instance_logs::push_event(instance_name, event);
 }
 
 #[cfg(test)]
@@ -817,7 +893,10 @@ mod tests {
         let result =
             migrate_legacy_loader_profile_if_needed(&profile_path, &modern, &config, &instance_dir)
                 .await;
-        assert!(matches!(result, Ok(None)), "expected Ok(None), got {result:?}");
+        assert!(
+            matches!(result, Ok(None)),
+            "expected Ok(None), got {result:?}"
+        );
     }
 
     #[tokio::test]
