@@ -17,6 +17,7 @@ use ratatui::{
 use tui_widget_list::{ListBuilder, ListState as TuiListState, ListView};
 
 use crate::config::theme::{BORDER_STYLE, THEME};
+use crate::instance::launch::parser::LogLevel;
 use crate::instance::log_files::{LogFileEntry, read_log_file, scan_log_files};
 
 type PendingLogs = Arc<Mutex<Option<(String, Vec<LogFileEntry>)>>>;
@@ -96,12 +97,7 @@ impl LogsState {
     }
 
     pub fn drain_pending(&mut self) {
-        // when the instance stops while viewing the live log, transition
-        // to the on-disk log file so the viewer doesn't go blank
         let live_now = self.has_live();
-        if self.was_live && !live_now && self.list_state.selected == Some(0) {
-            self.load_selected_content();
-        }
         self.was_live = live_now;
 
         let taken = match self.pending.lock() {
@@ -161,12 +157,15 @@ impl LogsState {
         });
     }
 
-    // when an instance is running, a synthetic "Live" entry is injected at index 0
+    // when an instance is active or has just crashed, a synthetic "Live" entry
+    // is injected at index 0 so parsed live log styling is retained.
     fn has_live(&self) -> bool {
         let name = self.loaded_for.as_deref().unwrap_or("");
         matches!(
             crate::running::get(name),
-            Some(crate::running::RunState::Running) | Some(crate::running::RunState::Starting)
+            Some(crate::running::RunState::Running)
+                | Some(crate::running::RunState::Starting)
+                | Some(crate::running::RunState::Crashed(_))
         )
     }
 
@@ -515,16 +514,27 @@ fn render_viewer(
     let theme = THEME.as_ref();
     let is_live = has_live && state.list_state.selected == Some(0);
 
-    let all_lines: Vec<String> = if is_live {
+    let all_lines: Vec<ViewerLine> = if is_live {
         let name = state.loaded_for.as_deref().unwrap_or("");
-        crate::instance_logs::get_all(name)
+        crate::instance_logs::get_entries(name)
+            .into_iter()
+            .map(|line| ViewerLine {
+                text: line.text,
+                level: Some(line.level),
+            })
+            .collect()
     } else {
-        state.viewer_lines.clone()
+        state
+            .viewer_lines
+            .iter()
+            .cloned()
+            .map(|text| ViewerLine { text, level: None })
+            .collect()
     };
 
-    let lines: Vec<&String> = all_lines
+    let lines: Vec<&ViewerLine> = all_lines
         .iter()
-        .filter(|l| state.viewer_search.matches(l))
+        .filter(|l| state.viewer_search.matches(&l.text))
         .collect();
 
     let visible_height = area.height as usize;
@@ -548,7 +558,14 @@ fn render_viewer(
         .iter()
         .skip(state.viewer_scroll)
         .take(visible_height)
-        .map(|line| search.highlight_line(line, line_level_style(line)))
+        .map(|line| {
+            search.highlight_line(
+                &line.text,
+                line.level
+                    .map(log_level_style)
+                    .unwrap_or_else(|| line_level_style(&line.text)),
+            )
+        })
         .collect();
 
     frame.render_widget(Paragraph::new(styled_lines), area);
@@ -574,6 +591,21 @@ fn render_viewer(
         scrollbar_area,
         &mut state.viewer_scrollbar_state,
     );
+}
+
+struct ViewerLine {
+    text: String,
+    level: Option<LogLevel>,
+}
+
+fn log_level_style(level: LogLevel) -> Style {
+    let theme = THEME.as_ref();
+    match level {
+        LogLevel::Error => Style::default().fg(theme.error()),
+        LogLevel::Warn => Style::default().fg(theme.warning()),
+        LogLevel::Debug | LogLevel::Trace => Style::default().fg(theme.text_dim()),
+        LogLevel::Info => Style::default().fg(theme.text()),
+    }
 }
 
 // color-code log lines by severity so errors actually stand out

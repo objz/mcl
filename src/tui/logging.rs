@@ -121,7 +121,7 @@ impl<S: Subscriber> Layer<S> for StatusLayer {
         let now = chrono::Local::now().format("%H:%M:%S");
         push_app_log(format!("{now}:{level_str}:{target}: {}", visitor.message));
 
-        if level <= Level::WARN {
+        if level <= Level::WARN && target != "mc_instance" {
             error_buffer::push_error(ErrorEvent {
                 id: 0,
                 level,

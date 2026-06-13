@@ -1054,6 +1054,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dd2e7510819d6fbf51a5545c8f922716ecfb14df168a3242f7d33e0239efe6a1"
 
 [[package]]
+name = "fast-strip-ansi"
+version = "0.13.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c3086ffd0a7160f58f988c74173a002e255da505a114e2f5425acb1eaab2b8ac"
+dependencies = [
+ "vt-push-parser",
+]
+
+[[package]]
 name = "fastrand"
 version = "2.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1242,6 +1251,16 @@ dependencies = [
  "memchr",
  "pin-project-lite",
  "slab",
+]
+
+[[package]]
+name = "gdb-command"
+version = "0.7.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "73b2762e2f2c0768e1137b33e9f7cf31599994e96496f4e020cc16e0d4e66319"
+dependencies = [
+ "regex",
+ "wait-timeout",
 ]
 
 [[package]]
@@ -1928,6 +1947,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "kodama"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f868feceed4703c842925c14232667c5f29c8059d0354154b2d06ec3bf9daf82"
+
+[[package]]
 name = "kqueue"
 version = "1.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1976,6 +2001,19 @@ name = "libc"
 version = "0.2.186"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "68ab91017fe16c622486840e4c83c9a37afeff978bd239b5293d61ece587de66"
+
+[[package]]
+name = "libcasr"
+version = "2.13.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "159cff1fadbb464709c30306774c57171e98cc1ea41e7767df5c63819743a453"
+dependencies = [
+ "chrono",
+ "gdb-command",
+ "kodama",
+ "regex",
+ "thiserror 2.0.18",
+]
 
 [[package]]
 name = "libm"
@@ -3167,8 +3205,10 @@ dependencies = [
  "crossterm 0.29.0",
  "dirs",
  "dirs-next",
+ "fast-strip-ansi",
  "image",
  "insta",
+ "libcasr",
  "log",
  "minecraft-msa-auth",
  "notify",
@@ -3178,6 +3218,7 @@ dependencies = [
  "ratatui-image",
  "ratatui-textarea",
  "ratatui-themekit",
+ "regex",
  "reqwest",
  "rstest",
  "serde",
@@ -4332,12 +4373,31 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5c3082ca00d5a5ef149bb8b555a72ae84c9c59f7250f013ac822ac2e49b19c64"
 
 [[package]]
+name = "vt-push-parser"
+version = "0.13.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cdbf39d53c5a50cad8119d9cde929ecd208764e8d8d1626486b8929cbcd5f0e7"
+dependencies = [
+ "hex",
+ "smallvec",
+]
+
+[[package]]
 name = "vtparse"
 version = "0.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6d9b2acfb050df409c972a37d3b8e08cdea3bddb0c09db9d53137e504cfabed0"
 dependencies = [
  "utf8parse",
+]
+
+[[package]]
+name = "wait-timeout"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "09ac3b126d3914f9849036f826e054cbabdc8519970b8998ddaf3b5bd3c65f11"
+dependencies = [
+ "libc",
 ]
 
 [[package]]
