@@ -84,6 +84,30 @@ paru -S rmcl-bin
 paru -S rmcl-git
 ```
 
+### Nix
+
+```sh
+nix run github:objz/rmcl
+nix profile install github:objz/rmcl
+```
+
+a home manager module is also available. add the flake as an input and enable it:
+
+```nix
+{
+  inputs = {
+    nixpkgs.url = "github:nixos/nixpkgs/nixpkgs-unstable";
+    rmcl.url = "github:objz/rmcl";
+  };
+
+  outputs = { rmcl, ... }: {
+    homeManagerModules.default = rmcl.homeManagerModules.default;
+  };
+}
+```
+
+see `flake.nix` for available options (`programs.rmcl.*`).
+
 ### Cargo
 
 ```sh
@@ -102,6 +126,7 @@ package managers:
 [![Homebrew tap](https://img.shields.io/badge/homebrew-objz%2Ftap-FBB040?style=for-the-badge&logo=homebrew)](https://github.com/objz/homebrew-tap)
 [![WinGet](https://img.shields.io/badge/winget-Objz.Rmcl-0078D4?style=for-the-badge&logo=windows11)](https://winstall.app/apps/Objz.Rmcl)
 [![Chocolatey](https://img.shields.io/chocolatey/v/rmcl?style=for-the-badge&logo=chocolatey)](https://community.chocolatey.org/packages/rmcl)
+[![Nix](https://img.shields.io/badge/nix-5277C4?style=for-the-badge&logo=nixos)](https://github.com/objz/rmcl)
 
 aur:
 
