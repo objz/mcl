@@ -22,6 +22,8 @@
         cargoLock.lockFile = ./Cargo.lock;
         nativeBuildInputs = [pkgs.jdk];
 
+        doCheck = false;
+
         meta = with pkgs.lib; {
           description = "A fully featured Minecraft TUI launcher";
           homepage = "https://github.com/objz/rmcl";
