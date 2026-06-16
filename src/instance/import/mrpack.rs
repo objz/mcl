@@ -144,15 +144,14 @@ async fn download_mod_files(
                 .to_string();
             let completed = completed.clone();
             tasks.spawn(async move {
-                if let Some(parent) = dest.parent() {
-                    if let Err(e) = tokio::fs::create_dir_all(parent).await {
+                if let Some(parent) = dest.parent()
+                    && let Err(e) = tokio::fs::create_dir_all(parent).await {
                         tracing::warn!(
                             "Failed to create mod download directory {}: {}",
                             parent.display(),
                             e
                         );
                     }
-                }
                 progress::set_sub_action(filename);
                 tracing::trace!("Downloading .mrpack file to {}", dest.display());
                 crate::net::download_file(&client, &url, &dest, |_, _| {}).await?;
@@ -183,15 +182,14 @@ async fn download_mod_files(
             .to_string();
         let completed = completed.clone();
         tasks.spawn(async move {
-            if let Some(parent) = dest.parent() {
-                if let Err(e) = tokio::fs::create_dir_all(parent).await {
+            if let Some(parent) = dest.parent()
+                && let Err(e) = tokio::fs::create_dir_all(parent).await {
                     tracing::warn!(
                         "Failed to create mod download directory {}: {}",
                         parent.display(),
                         e
                     );
                 }
-            }
             progress::set_sub_action(filename);
             tracing::trace!("Downloading .mrpack file to {}", dest.display());
             crate::net::download_file(&client, &url, &dest, |_, _| {}).await?;
