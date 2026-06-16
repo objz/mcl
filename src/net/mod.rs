@@ -222,6 +222,7 @@ async fn download_file_once(
         downloaded += chunk.len() as u64;
         progress_cb(downloaded, total);
     }
+    file.flush().await?;
 
     Ok(())
 }
