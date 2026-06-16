@@ -164,6 +164,7 @@ fn modern_vanilla_meta(id: &str) -> serde_json::Value {
     })
 }
 
+#[cfg(unix)]
 fn modern_vanilla_meta_with_java(id: &str, java_major: u32) -> serde_json::Value {
     let mut meta = modern_vanilla_meta(id);
     meta["javaVersion"] = json!({
