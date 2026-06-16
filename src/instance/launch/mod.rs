@@ -28,6 +28,22 @@ pub enum LaunchError {
     Json(#[from] serde_json::Error),
     #[error("{0} launch is not yet supported")]
     NotSupported(String),
+    #[error(
+        "This instance requires Java {required}, but rmcl is using Java {detected}: {java}"
+    )]
+    JavaTooOld {
+        java: String,
+        required: u32,
+        detected: u32,
+    },
+    #[error(
+        "This instance requires Java {required}, but rmcl could not check {java}: {reason}"
+    )]
+    JavaCheckFailed {
+        java: String,
+        required: u32,
+        reason: String,
+    },
     #[error("{0}")]
     Auth(String),
 }
@@ -40,6 +56,68 @@ fn build_game_args(
     let rendered = render::render_args(profile, rule_ctx, template_ctx)
         .map_err(|e| LaunchError::Parse(format!("Failed to render args: {e}")))?;
     Ok((rendered.jvm, rendered.game))
+}
+
+fn parse_java_major_version(text: &str) -> Option<u32> {
+    let quoted = text
+        .split_once('"')
+        .and_then(|(_, rest)| rest.split_once('"').map(|(version, _)| version));
+
+    let token = quoted.or_else(|| {
+        let start = text.find(|c: char| c.is_ascii_digit())?;
+        Some(&text[start..])
+    })?;
+
+    let parts: Vec<u32> = token
+        .split(|c: char| !c.is_ascii_digit())
+        .filter(|part| !part.is_empty())
+        .filter_map(|part| part.parse::<u32>().ok())
+        .collect();
+
+    match parts.as_slice() {
+        [1, legacy_major, ..] => Some(*legacy_major),
+        [major, ..] => Some(*major),
+        [] => None,
+    }
+}
+
+async fn check_java_version(java: &str, required: Option<u32>) -> Result<(), LaunchError> {
+    let Some(required) = required.filter(|major| *major > 0) else {
+        return Ok(());
+    };
+
+    let output = tokio::process::Command::new(java)
+        .arg("-version")
+        .output()
+        .await
+        .map_err(|e| LaunchError::JavaCheckFailed {
+            java: java.to_owned(),
+            required,
+            reason: e.to_string(),
+        })?;
+
+    let version_text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let detected =
+        parse_java_major_version(&version_text).ok_or_else(|| LaunchError::JavaCheckFailed {
+            java: java.to_owned(),
+            required,
+            reason: format!("could not parse `java -version` output: {version_text:?}"),
+        })?;
+
+    if detected < required {
+        return Err(LaunchError::JavaTooOld {
+            java: java.to_owned(),
+            required,
+            detected,
+        });
+    }
+
+    Ok(())
 }
 
 // existing installs from rmcl <= 0.3.0 have meta.json files in the
@@ -407,6 +485,15 @@ pub async fn build_launch_invocation(
         })
         .unwrap_or_else(crate::net::detect_java_path);
 
+    check_java_version(
+        &java,
+        merged_profile
+            .java_version
+            .as_ref()
+            .map(|version| version.major_version),
+    )
+    .await?;
+
     let assets_root = meta_dir.join("assets");
     let natives_dir = meta_dir
         .join("versions")
@@ -760,6 +847,18 @@ fn emit_parsed_instance_log(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[rstest::rstest]
+    #[case("openjdk version \"25.0.3\" 2026-04-21", Some(25))]
+    #[case("openjdk version \"21.0.11\" 2026-04-21", Some(21))]
+    #[case("java version \"1.8.0_402\"", Some(8))]
+    #[case("garbage", None)]
+    fn parse_java_major_version_handles_common_outputs(
+        #[case] output: &str,
+        #[case] expected: Option<u32>,
+    ) {
+        assert_eq!(parse_java_major_version(output), expected);
+    }
 
     #[test]
     fn build_game_args_renders_upstream_arguments() {

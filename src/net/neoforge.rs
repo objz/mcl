@@ -20,8 +20,10 @@ struct NeoForgeMavenVersions {
     versions: Vec<String>,
 }
 
-// neoforge dropped the "1." from minecraft versions in their scheme,
-// so "1.20.4" becomes prefix "20.4." and "1.21" becomes "21.0."
+// neoforge historically dropped the "1." from minecraft versions in
+// their scheme, so "1.20.4" becomes prefix "20.4." and "1.21" becomes
+// "21.0.". newer minecraft versions such as "26.1.2" keep their full
+// version at the start of the neoforge coordinate: "26.1.2.76".
 fn game_version_to_neoforge_prefix(game_version: &str) -> Option<String> {
     let parts: Vec<&str> = game_version.split('.').collect();
     match parts.as_slice() {
@@ -29,8 +31,43 @@ fn game_version_to_neoforge_prefix(game_version: &str) -> Option<String> {
         ["1", minor] => Some(format!("{}.0.", minor)),
         // "1.20.4" → prefix "20.4."
         ["1", minor, patch] => Some(format!("{}.{}.", minor, patch)),
+        // "26.1.2" → prefix "26.1.2."
+        [major, minor, patch] if leading_u32(major).is_some_and(|major| major >= 26) => {
+            Some(format!("{major}.{minor}.{patch}."))
+        }
+        // "26.1" → prefix "26.1."
+        [major, minor] if leading_u32(major).is_some_and(|major| major >= 26) => {
+            Some(format!("{major}.{minor}."))
+        }
         _ => None,
     }
+}
+
+fn leading_u32(raw: &str) -> Option<u32> {
+    let digits: String = raw.chars().take_while(|c| c.is_ascii_digit()).collect();
+    if digits.is_empty() {
+        None
+    } else {
+        digits.parse().ok()
+    }
+}
+
+fn neoforge_version_to_game_version(version: &str) -> Option<String> {
+    let parts: Vec<&str> = version.split('.').collect();
+    let major = leading_u32(parts.first()?)?;
+
+    if major >= 26 {
+        let minor = leading_u32(parts.get(1)?)?;
+        let patch = leading_u32(parts.get(2)?)?;
+        return Some(format!("{major}.{minor}.{patch}"));
+    }
+
+    let minor = leading_u32(parts.get(1)?)?;
+    Some(if minor == 0 {
+        format!("1.{major}")
+    } else {
+        format!("1.{major}.{minor}")
+    })
 }
 
 pub async fn fetch_neoforge_versions(
@@ -89,19 +126,10 @@ pub async fn fetch_neoforge_game_versions_from(
 
     let mut game_versions: Vec<String> = Vec::new();
     for version in &maven.versions {
-        let parts: Vec<&str> = version.split('.').collect();
-        if parts.len() >= 2
-            && let (Ok(major), Ok(minor)) = (parts[0].parse::<u32>(), parts[1].parse::<u32>())
+        if let Some(mc_version) = neoforge_version_to_game_version(version)
+            && !game_versions.contains(&mc_version)
         {
-            let mc_version = if minor == 0 {
-                format!("1.{}", major)
-            } else {
-                format!("1.{}.{}", major, minor)
-            };
-
-            if !game_versions.contains(&mc_version) {
-                game_versions.push(mc_version);
-            }
+            game_versions.push(mc_version);
         }
     }
     game_versions.reverse();
@@ -233,6 +261,10 @@ mod tests {
         assert_eq!(
             game_version_to_neoforge_prefix("1.21.1"),
             Some("21.1.".to_string())
+        );
+        assert_eq!(
+            game_version_to_neoforge_prefix("26.1.2"),
+            Some("26.1.2.".to_string())
         );
         assert_eq!(game_version_to_neoforge_prefix("invalid"), None);
     }
