@@ -333,7 +333,6 @@ pub async fn download_assets_from(
             .join(&object.hash);
 
         if destination.exists() {
-            tracing::trace!("Asset already cached: {}", object.hash);
             continue;
         }
 
