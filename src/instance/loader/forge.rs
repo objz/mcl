@@ -6,7 +6,7 @@ use std::path::Path;
 
 use async_trait::async_trait;
 
-use super::{GameVersion, ModLoaderInstaller};
+use super::{GameVersion, InstallError, ModLoaderInstaller};
 use crate::instance::models::ModLoader;
 use crate::net::{HttpClient, NetError, forge as forge_api};
 
@@ -44,7 +44,7 @@ impl ModLoaderInstaller for ForgeInstaller {
         loader_version: &str,
         instance_dir: &Path,
         meta_dir: &Path,
-    ) -> Result<(), NetError> {
+    ) -> Result<(), InstallError> {
         let installer_jar = instance_dir.join(".minecraft").join("forge-installer.jar");
         tracing::info!(
             "Installing Forge {} for Minecraft {}",
@@ -70,7 +70,6 @@ impl ModLoaderInstaller for ForgeInstaller {
             .await
             {
                 let _ = tokio::fs::remove_file(&installer_jar).await;
-                tracing::error!("Legacy Forge installation failed: {}", e);
                 return Err(e);
             }
         } else {
@@ -85,12 +84,12 @@ impl ModLoaderInstaller for ForgeInstaller {
                 forge_api::run_forge_installer(&installer_jar, instance_dir, &java_path).await
             {
                 let _ = tokio::fs::remove_file(&installer_jar).await;
-                tracing::error!("Modern Forge installer failed: {}", e);
-                return Err(e);
+                return Err(InstallError::Installer(e));
             }
 
             // extract the profile from what the installer just wrote to disk
-            save_forge_profile(instance_dir, meta_dir, game_version, loader_version)?;
+            save_forge_profile(instance_dir, meta_dir, game_version, loader_version)
+                .map_err(InstallError::Installer)?;
         }
 
         if let Err(e) = tokio::fs::remove_file(&installer_jar).await {
@@ -111,7 +110,7 @@ fn save_forge_profile(
     meta_dir: &Path,
     game_version: &str,
     loader_version: &str,
-) -> Result<(), NetError> {
+) -> Result<(), super::InstallerError> {
     let version_dir_name = format!("{game_version}-forge-{loader_version}");
     let profile_filename = format!("forge-{game_version}-{loader_version}.json");
     super::save_installer_profile(instance_dir, meta_dir, &version_dir_name, &profile_filename)

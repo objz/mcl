@@ -5,7 +5,7 @@ use std::path::Path;
 
 use async_trait::async_trait;
 
-use super::{GameVersion, ModLoaderInstaller};
+use super::{GameVersion, InstallError, ModLoaderInstaller};
 use crate::instance::models::ModLoader;
 use crate::net::{HttpClient, NetError, neoforge as neoforge_api};
 
@@ -43,7 +43,7 @@ impl ModLoaderInstaller for NeoForgeInstaller {
         loader_version: &str,
         instance_dir: &Path,
         meta_dir: &Path,
-    ) -> Result<(), NetError> {
+    ) -> Result<(), InstallError> {
         let installer_jar = instance_dir
             .join(".minecraft")
             .join("neoforge-installer.jar");
@@ -62,15 +62,15 @@ impl ModLoaderInstaller for NeoForgeInstaller {
             neoforge_api::run_neoforge_installer(&installer_jar, instance_dir, &java_path).await
         {
             let _ = tokio::fs::remove_file(&installer_jar).await;
-            tracing::error!("NeoForge installer failed: {}", e);
-            return Err(e);
+            return Err(InstallError::Installer(e));
         }
 
         if let Err(e) = tokio::fs::remove_file(&installer_jar).await {
             tracing::warn!("Failed to remove NeoForge installer JAR: {}", e);
         }
 
-        save_neoforge_profile(instance_dir, meta_dir, loader_version)?;
+        save_neoforge_profile(instance_dir, meta_dir, loader_version)
+            .map_err(InstallError::Installer)?;
 
         tracing::debug!("Installed NeoForge {}", loader_version);
         Ok(())
@@ -81,7 +81,7 @@ fn save_neoforge_profile(
     instance_dir: &Path,
     meta_dir: &Path,
     loader_version: &str,
-) -> Result<(), NetError> {
+) -> Result<(), super::InstallerError> {
     let version_dir_name = format!("neoforge-{loader_version}");
     let profile_filename = format!("neoforge-{loader_version}.json");
     super::save_installer_profile(instance_dir, meta_dir, &version_dir_name, &profile_filename)
