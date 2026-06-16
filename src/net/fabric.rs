@@ -113,8 +113,7 @@ pub async fn fetch_fabric_profile_with_raw(
     game_version: &str,
     loader_version: &str,
 ) -> Result<(FabricProfile, Vec<u8>), NetError> {
-    fetch_fabric_profile_with_raw_from(client, FABRIC_META_BASE, game_version, loader_version)
-        .await
+    fetch_fabric_profile_with_raw_from(client, FABRIC_META_BASE, game_version, loader_version).await
 }
 
 pub async fn fetch_fabric_profile_with_raw_from(

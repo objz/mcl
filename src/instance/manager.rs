@@ -468,7 +468,9 @@ mod tests {
 
         manager.touch_last_played("ticker").expect("touch");
         let reloaded = manager.load_one("ticker").unwrap();
-        let stamp = reloaded.last_played.expect("last_played should be Some now");
+        let stamp = reloaded
+            .last_played
+            .expect("last_played should be Some now");
         let age = chrono::Utc::now() - stamp;
         assert!(
             age.num_seconds().abs() < 5,

@@ -165,7 +165,10 @@ mod tests {
     #[case::unclosed_placeholder("--prefix ${unclosed", "--prefix ${unclosed")]
     #[case::dollar_without_brace("$$ literal $5 $", "$$ literal $5 $")]
     #[case::multiple("${version_name}-${auth_player_name}", "1.20.1-Player")]
-    #[case::path("-DlibraryDirectory=${library_directory}", "-DlibraryDirectory=/m/libraries")]
+    #[case::path(
+        "-DlibraryDirectory=${library_directory}",
+        "-DlibraryDirectory=/m/libraries"
+    )]
     #[case::empty_input("", "")]
     fn substitute_handles(#[case] input: &str, #[case] expected: &str) {
         let fx = Fixture::unix();
@@ -178,7 +181,10 @@ mod tests {
         // pattern. it should NOT trigger another substitution pass.
         let mut fx = Fixture::unix();
         fx.user_properties = "${version_name}".to_string();
-        assert_eq!(substitute("${user_properties}", &fx.ctx()), "${version_name}");
+        assert_eq!(
+            substitute("${user_properties}", &fx.ctx()),
+            "${version_name}"
+        );
     }
 
     #[test]

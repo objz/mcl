@@ -11,11 +11,8 @@ pub mod models;
 pub mod screenshots;
 
 pub use content::{
-    ContentEntry, toggle_entry,
-    scan_mods, scan_one_mod,
-    scan_resource_packs, scan_one_resource_pack,
-    scan_shaders, scan_one_shader,
-    scan_worlds, scan_one_world,
+    ContentEntry, scan_mods, scan_one_mod, scan_one_resource_pack, scan_one_shader, scan_one_world,
+    scan_resource_packs, scan_shaders, scan_worlds, toggle_entry,
 };
 pub use launch::LaunchError;
 pub use loader::{GameVersion, ModLoaderInstaller, VanillaInstaller, get_installer};

@@ -297,5 +297,4 @@ mod tests {
     fn maven_empty_string() {
         assert_eq!(maven_coord_to_path(""), None);
     }
-
 }

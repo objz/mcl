@@ -92,9 +92,7 @@ impl ContentListState {
                     received = true;
                     let pos = self
                         .entries
-                        .binary_search_by(|e| {
-                            e.name.to_lowercase().cmp(&entry.name.to_lowercase())
-                        })
+                        .binary_search_by(|e| e.name.to_lowercase().cmp(&entry.name.to_lowercase()))
                         .unwrap_or_else(|i| i);
                     self.entries.insert(pos, entry);
                 }
@@ -160,8 +158,7 @@ impl ContentListState {
             if self.entries.is_empty() {
                 self.list_state.selected = None;
             } else {
-                self.list_state.selected =
-                    Some(sel.min(self.entries.len().saturating_sub(1)));
+                self.list_state.selected = Some(sel.min(self.entries.len().saturating_sub(1)));
             }
         }
 
@@ -235,11 +232,7 @@ impl ContentListState {
                         for (stem, (old_path, old_enabled)) in known_map.iter() {
                             if let Some((disk_path, disk_enabled)) = on_disk.get(stem) {
                                 if *disk_enabled != *old_enabled || *disk_path != *old_path {
-                                    toggled.push((
-                                        stem.clone(),
-                                        *disk_enabled,
-                                        disk_path.clone(),
-                                    ));
+                                    toggled.push((stem.clone(), *disk_enabled, disk_path.clone()));
                                 }
                             } else {
                                 removed.push(stem.clone());
@@ -366,16 +359,16 @@ impl ContentListState {
                         continue;
                     };
 
-                    let (enabled, file_stem) =
-                        if let Some(stem) = fname.strip_suffix(&disabled_ext) {
-                            (false, stem.to_owned())
-                        } else if let Some(stem) = fname.strip_suffix(ext) {
-                            (true, stem.to_owned())
-                        } else if path.is_dir() {
-                            crate::instance::content::parse_enabled_stem_dir(fname)
-                        } else {
-                            continue;
-                        };
+                    let (enabled, file_stem) = if let Some(stem) = fname.strip_suffix(&disabled_ext)
+                    {
+                        (false, stem.to_owned())
+                    } else if let Some(stem) = fname.strip_suffix(ext) {
+                        (true, stem.to_owned())
+                    } else if path.is_dir() {
+                        crate::instance::content::parse_enabled_stem_dir(fname)
+                    } else {
+                        continue;
+                    };
 
                     let entry = scan_one_fn(&path, &file_stem, enabled);
                     if tx.send(entry).is_err() {
@@ -879,10 +872,7 @@ fn icon_spans(icon_pixels: Option<&Vec<Vec<IconCell>>>, row: usize) -> Vec<Span<
 // used both by watch_dir to initialize known state and by the watcher
 // thread to detect changes. when ext is empty (worlds), only directories
 // are included.
-fn read_dir_stems(
-    dir: &std::path::Path,
-    ext: &str,
-) -> HashMap<String, (std::path::PathBuf, bool)> {
+fn read_dir_stems(dir: &std::path::Path, ext: &str) -> HashMap<String, (std::path::PathBuf, bool)> {
     let mut map = HashMap::new();
     let Ok(read_dir) = std::fs::read_dir(dir) else {
         return map;

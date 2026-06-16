@@ -113,7 +113,10 @@ fn os_version_matches(pattern: &str, host_version: &str) -> bool {
 fn features_match(required: &FeatureSet, current: &FeatureSet) -> bool {
     let pairs = [
         (required.is_demo_user, current.is_demo_user),
-        (required.has_custom_resolution, current.has_custom_resolution),
+        (
+            required.has_custom_resolution,
+            current.has_custom_resolution,
+        ),
         (
             required.has_quick_plays_support,
             current.has_quick_plays_support,

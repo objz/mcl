@@ -89,4 +89,3 @@ fn read_shader_metadata_from_dir(dir: &Path) -> (String, Option<Vec<u8>>) {
 
     (description, icon_bytes)
 }
-

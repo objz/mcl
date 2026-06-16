@@ -742,7 +742,8 @@ description = "A neoforge mod"
     fn scan_mods_prefers_neoforge_toml_over_forge_toml() {
         let tmp = tempfile::tempdir().unwrap();
         let dir = setup_mods_dir(tmp.path(), "inst");
-        let neoforge = "[[mods]]\ndisplayName = \"NeoForge Name\"\ndescription = \"neoforge desc\"\n";
+        let neoforge =
+            "[[mods]]\ndisplayName = \"NeoForge Name\"\ndescription = \"neoforge desc\"\n";
         let forge = "[[mods]]\ndisplayName = \"Forge Name\"\ndescription = \"forge desc\"\n";
         make_jar(
             &dir,

@@ -154,11 +154,7 @@ mod tests {
     #[test]
     fn detect_format_recognises_mrpack() {
         let tmp = tempfile::tempdir().unwrap();
-        let path = make_pack_zip(
-            tmp.path(),
-            "pack.mrpack",
-            &[("modrinth.index.json", b"{}")],
-        );
+        let path = make_pack_zip(tmp.path(), "pack.mrpack", &[("modrinth.index.json", b"{}")]);
         assert_eq!(detect_format(&path), Ok(PackFormat::Mrpack));
     }
 
@@ -176,11 +172,7 @@ mod tests {
         // mmc-pack.json one directory deep - the more common layout where
         // the archive wraps everything in a named directory.
         let tmp = tempfile::tempdir().unwrap();
-        let path = make_pack_zip(
-            tmp.path(),
-            "pack.zip",
-            &[("MyPack/mmc-pack.json", b"{}")],
-        );
+        let path = make_pack_zip(tmp.path(), "pack.zip", &[("MyPack/mmc-pack.json", b"{}")]);
         assert_eq!(detect_format(&path), Ok(PackFormat::Mmc));
     }
 
@@ -192,10 +184,7 @@ mod tests {
         let path = make_pack_zip(
             tmp.path(),
             "weird.zip",
-            &[
-                ("modrinth.index.json", b"{}"),
-                ("mmc-pack.json", b"{}"),
-            ],
+            &[("modrinth.index.json", b"{}"), ("mmc-pack.json", b"{}")],
         );
         assert_eq!(detect_format(&path), Ok(PackFormat::Mrpack));
     }
