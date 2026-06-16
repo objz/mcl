@@ -178,6 +178,7 @@ pub async fn run_neoforge_installer(
     set_action("Running NeoForge installer...");
 
     let output = match Command::new(java_path)
+        .arg(format!("-Duser.home={}", instance_dir.display()))
         .arg("-jar")
         .arg(installer_path)
         .arg("--installClient")

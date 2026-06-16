@@ -412,6 +412,7 @@ pub async fn build_launch_invocation(
     // so we check there first.
     let has_local_libs = matches!(config.loader, ModLoader::Forge | ModLoader::NeoForge);
     let local_lib_dir = minecraft_dir.join("libraries");
+    let library_directory = if has_local_libs { &local_lib_dir } else { &lib_dir };
 
     let mut classpath: Vec<PathBuf> = Vec::new();
     for lib in &merged_profile.libraries {
@@ -501,7 +502,7 @@ pub async fn build_launch_invocation(
         .join("natives");
     let version_type = merged_profile.type_.as_deref().unwrap_or("release");
     let template_ctx = TemplateContext {
-        library_directory: &lib_dir,
+        library_directory,
         classpath_separator: sep,
         version_name: &config.game_version,
         version_type,
