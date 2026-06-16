@@ -26,7 +26,14 @@ impl ModLoaderInstaller for NeoForgeInstaller {
         client: &HttpClient,
         game_version: &str,
     ) -> Result<Vec<String>, NetError> {
-        neoforge_api::fetch_neoforge_versions(client, game_version).await
+        tracing::debug!("Fetching NeoForge versions for Minecraft {}", game_version);
+        let versions = neoforge_api::fetch_neoforge_versions(client, game_version).await?;
+        tracing::debug!(
+            "Fetched {} NeoForge version(s) for Minecraft {}",
+            versions.len(),
+            game_version
+        );
+        Ok(versions)
     }
 
     async fn install(
@@ -40,6 +47,8 @@ impl ModLoaderInstaller for NeoForgeInstaller {
         let installer_jar = instance_dir
             .join(".minecraft")
             .join("neoforge-installer.jar");
+        tracing::info!("Installing NeoForge {}", loader_version);
+        tracing::debug!("NeoForge installer path: {}", installer_jar.display());
 
         neoforge_api::download_neoforge_installer(client, loader_version, &installer_jar).await?;
 
@@ -48,10 +57,12 @@ impl ModLoaderInstaller for NeoForgeInstaller {
             .effective_java_path()
             .map(str::to_owned)
             .unwrap_or_else(crate::net::detect_java_path);
+        tracing::debug!("Running NeoForge installer with Java {}", java_path);
         if let Err(e) =
             neoforge_api::run_neoforge_installer(&installer_jar, instance_dir, &java_path).await
         {
             let _ = tokio::fs::remove_file(&installer_jar).await;
+            tracing::error!("NeoForge installer failed: {}", e);
             return Err(e);
         }
 
@@ -61,6 +72,7 @@ impl ModLoaderInstaller for NeoForgeInstaller {
 
         save_neoforge_profile(instance_dir, meta_dir, loader_version)?;
 
+        tracing::debug!("Installed NeoForge {}", loader_version);
         Ok(())
     }
 }

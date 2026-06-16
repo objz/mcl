@@ -33,11 +33,17 @@ pub struct InstanceManager {
 
 impl InstanceManager {
     pub fn new(instances_dir: impl Into<PathBuf>, meta_dir: impl Into<PathBuf>) -> Self {
-        InstanceManager {
+        let manager = InstanceManager {
             instances_dir: instances_dir.into(),
             meta_dir: meta_dir.into(),
             client: crate::net::HttpClient::new(),
-        }
+        };
+        tracing::trace!(
+            "Created InstanceManager with instances_dir={} meta_dir={}",
+            manager.instances_dir.display(),
+            manager.meta_dir.display()
+        );
+        manager
     }
 
     pub async fn create(
@@ -51,13 +57,31 @@ impl InstanceManager {
 
         let instance_dir = self.instances_dir.join(name);
         let instance_json = instance_dir.join("instance.json");
+        tracing::info!(
+            "Creating instance '{}' (Minecraft {}, loader {}, loader_version={})",
+            name,
+            game_version,
+            loader,
+            loader_version.unwrap_or("<none>")
+        );
+        tracing::debug!("Instance directory: {}", instance_dir.display());
 
         if instance_json.exists() {
+            tracing::warn!(
+                "Cannot create instance '{}': {} already exists",
+                name,
+                instance_json.display()
+            );
             return Err(InstanceError::AlreadyExists(name.to_string()));
         }
 
         // leftover directory without config = botched previous creation, nuke it
         if instance_dir.exists() && !instance_json.exists() {
+            tracing::warn!(
+                "Removing incomplete instance directory before recreating '{}': {}",
+                name,
+                instance_dir.display()
+            );
             std::fs::remove_dir_all(&instance_dir)?;
         }
 
@@ -68,8 +92,20 @@ impl InstanceManager {
             .await;
 
         // clean up on failure so there's no half-baked instance left around
-        if result.is_err() {
-            let _ = std::fs::remove_dir_all(&instance_dir);
+        if let Err(e) = &result {
+            tracing::error!("Instance '{}' creation failed: {}", name, e);
+            if let Err(cleanup_error) = std::fs::remove_dir_all(&instance_dir) {
+                tracing::warn!(
+                    "Failed to clean up incomplete instance directory {}: {}",
+                    instance_dir.display(),
+                    cleanup_error
+                );
+            } else {
+                tracing::debug!(
+                    "Cleaned up incomplete instance directory {}",
+                    instance_dir.display()
+                );
+            }
         }
 
         result
@@ -84,14 +120,26 @@ impl InstanceManager {
         instance_dir: &std::path::Path,
     ) -> Result<InstanceConfig, InstanceError> {
         let minecraft_dir = instance_dir.join(".minecraft");
+        tracing::debug!(
+            "Preparing Minecraft directory for '{}': {}",
+            name,
+            minecraft_dir.display()
+        );
         for subdir in &["mods", "config", "resourcepacks", "shaderpacks", "saves"] {
-            std::fs::create_dir_all(minecraft_dir.join(subdir))?;
+            let path = minecraft_dir.join(subdir);
+            std::fs::create_dir_all(&path)?;
+            tracing::trace!("Ensured instance subdirectory {}", path.display());
         }
 
         // forge insists on this file existing, even if it's empty json. thanks forge.
         let launcher_profiles_path = minecraft_dir.join("launcher_profiles.json");
         if !launcher_profiles_path.exists() {
             std::fs::write(&launcher_profiles_path, "{}")?;
+            tracing::debug!(
+                "Created launcher_profiles.json for '{}': {}",
+                name,
+                launcher_profiles_path.display()
+            );
         }
 
         for meta_subdir in &[
@@ -101,13 +149,33 @@ impl InstanceManager {
             self.meta_dir.join("assets").join("indexes"),
         ] {
             std::fs::create_dir_all(meta_subdir)?;
+            tracing::trace!("Ensured metadata directory {}", meta_subdir.display());
         }
 
+        tracing::debug!("Fetching Mojang version manifest for '{}'", name);
         let manifest = crate::net::mojang::fetch_version_manifest(&self.client).await?;
+        tracing::debug!(
+            "Loaded Mojang manifest with {} version(s); latest release={} snapshot={}",
+            manifest.versions.len(),
+            manifest.latest.release,
+            manifest.latest.snapshot
+        );
 
         let version_entry = match manifest.versions.iter().find(|v| v.id == game_version) {
-            Some(v) => v,
+            Some(v) => {
+                tracing::debug!(
+                    "Resolved Minecraft version '{}' as {} entry",
+                    game_version,
+                    v.version_type
+                );
+                v
+            }
             None => {
+                tracing::warn!(
+                    "Minecraft version '{}' not found in manifest with {} entries",
+                    game_version,
+                    manifest.versions.len()
+                );
                 return Err(InstanceError::InvalidName(format!(
                     "Minecraft version '{}' not found in manifest",
                     game_version
@@ -117,6 +185,12 @@ impl InstanceManager {
 
         let (version_meta, raw_meta_bytes) =
             crate::net::mojang::fetch_version_meta_with_raw(&self.client, version_entry).await?;
+        tracing::debug!(
+            "Fetched version meta '{}' with {} libraries and asset index {}",
+            version_meta.id,
+            version_meta.libraries.len(),
+            version_meta.asset_index.id
+        );
 
         crate::net::mojang::download_client_jar(&self.client, &version_meta, &self.meta_dir)
             .await?;
@@ -129,10 +203,20 @@ impl InstanceManager {
         if let Some(parent) = meta_json_path.parent()
             && let Err(e) = std::fs::create_dir_all(parent)
         {
-            tracing::warn!("Failed to ensure meta dir exists: {}", e);
+            tracing::warn!(
+                "Failed to ensure meta dir {} exists: {}",
+                parent.display(),
+                e
+            );
         }
         if let Err(e) = std::fs::write(&meta_json_path, &raw_meta_bytes) {
-            tracing::warn!("Failed to save version meta: {}", e);
+            tracing::warn!(
+                "Failed to save version meta {}: {}",
+                meta_json_path.display(),
+                e
+            );
+        } else {
+            tracing::debug!("Saved version meta to {}", meta_json_path.display());
         }
 
         crate::net::mojang::download_libraries(&self.client, &version_meta, &self.meta_dir).await?;
@@ -150,6 +234,12 @@ impl InstanceManager {
                 )));
             }
         };
+        tracing::debug!(
+            "Installing loader {} {} for instance '{}'",
+            loader,
+            effective_loader_version,
+            name
+        );
         installer
             .install(
                 &self.client,
@@ -175,6 +265,7 @@ impl InstanceManager {
         };
 
         self.save(&config)?;
+        tracing::info!("Created instance '{}'", name);
 
         crate::tui::progress::clear();
         Ok(config)
@@ -183,8 +274,14 @@ impl InstanceManager {
     pub fn delete(&self, name: &str) -> Result<(), InstanceError> {
         let instance_dir = self.instances_dir.join(name);
         if !instance_dir.exists() {
+            tracing::warn!(
+                "Cannot delete missing instance '{}': {}",
+                name,
+                instance_dir.display()
+            );
             return Err(InstanceError::NotFound(name.to_string()));
         }
+        tracing::info!("Deleting instance '{}' at {}", name, instance_dir.display());
         std::fs::remove_dir_all(&instance_dir)?;
         if let Err(e) = crate::instance::desktop::remove(name) {
             tracing::warn!("Failed to remove desktop shortcut for '{}': {}", name, e);
@@ -200,16 +297,29 @@ impl InstanceManager {
             ));
         }
         if old_name == new_name {
+            tracing::debug!("Ignoring no-op instance rename '{}'", old_name);
             return Ok(());
         }
         let old_dir = self.instances_dir.join(old_name);
         let new_dir = self.instances_dir.join(new_name);
         if !old_dir.exists() {
+            tracing::warn!(
+                "Cannot rename missing instance '{}': {}",
+                old_name,
+                old_dir.display()
+            );
             return Err(InstanceError::NotFound(old_name.to_string()));
         }
         if new_dir.exists() {
+            tracing::warn!(
+                "Cannot rename instance '{}' to '{}': destination exists at {}",
+                old_name,
+                new_name,
+                new_dir.display()
+            );
             return Err(InstanceError::AlreadyExists(new_name.to_string()));
         }
+        tracing::info!("Renaming instance '{}' to '{}'", old_name, new_name);
         std::fs::rename(&old_dir, &new_dir)?;
 
         let config_path = new_dir.join("instance.json");
@@ -223,6 +333,11 @@ impl InstanceManager {
             if let Err(e) = crate::instance::desktop::rename(old_name, &config) {
                 tracing::warn!("Failed to rename desktop shortcut: {}", e);
             }
+        } else {
+            tracing::warn!(
+                "Renamed instance directory but could not update config at {}",
+                config_path.display()
+            );
         }
 
         Ok(())
@@ -230,10 +345,15 @@ impl InstanceManager {
 
     pub fn load_all(&self) -> Vec<InstanceConfig> {
         let mut instances = vec![];
+        tracing::debug!("Loading instances from {}", self.instances_dir.display());
         let read_dir = match std::fs::read_dir(&self.instances_dir) {
             Ok(rd) => rd,
             Err(e) => {
-                tracing::error!("Failed to read instances directory: {}", e);
+                tracing::error!(
+                    "Failed to read instances directory {}: {}",
+                    self.instances_dir.display(),
+                    e
+                );
                 return instances;
             }
         };
@@ -247,6 +367,7 @@ impl InstanceManager {
             };
             let config_path = entry.path().join("instance.json");
             if !config_path.exists() {
+                tracing::trace!("Skipping non-instance directory {}", entry.path().display());
                 continue;
             }
             let contents = match std::fs::read_to_string(&config_path) {
@@ -263,6 +384,7 @@ impl InstanceManager {
                 }
             }
         }
+        tracing::debug!("Loaded {} instance(s)", instances.len());
         instances
     }
 
@@ -271,9 +393,15 @@ impl InstanceManager {
 
         let config_path = self.instances_dir.join(name).join("instance.json");
         if !config_path.exists() {
+            tracing::warn!(
+                "Instance '{}' config is missing at {}",
+                name,
+                config_path.display()
+            );
             return Err(InstanceError::NotFound(name.to_string()));
         }
 
+        tracing::debug!("Loading instance '{}' from {}", name, config_path.display());
         let contents = std::fs::read_to_string(&config_path)?;
         Ok(serde_json::from_str::<InstanceConfig>(&contents)?)
     }
@@ -283,12 +411,18 @@ impl InstanceManager {
         let config_path = instance_dir.join("instance.json");
         let json = serde_json::to_string_pretty(instance)?;
         std::fs::write(&config_path, &json)?;
+        tracing::debug!(
+            "Saved instance '{}' config to {}",
+            instance.name,
+            config_path.display()
+        );
         Ok(())
     }
 
     pub fn touch_last_played(&self, name: &str) -> Result<(), InstanceError> {
         let mut config = self.load_one(name)?;
         config.last_played = Some(chrono::Utc::now());
+        tracing::debug!("Updating last_played for '{}'", name);
         self.save(&config)
     }
 }

@@ -8,6 +8,7 @@ use std::sync::{Arc, Mutex};
 use tracing::field::{Field, Visit};
 use tracing::{Level, Subscriber};
 use tracing_appender::non_blocking::WorkerGuard;
+use tracing_subscriber::filter::filter_fn;
 use tracing_subscriber::layer::Context;
 use tracing_subscriber::prelude::*;
 use tracing_subscriber::{EnvFilter, Layer};
@@ -15,6 +16,9 @@ use tracing_subscriber::{EnvFilter, Layer};
 use std::sync::LazyLock;
 
 use crate::tui::error_buffer::{self, ErrorEvent};
+
+const MINECRAFT_LOG_TARGET: &str = "mc_instance";
+const DEFAULT_FILE_FILTER: &str = "warn,rmcl=trace";
 
 // capped at 5000 lines so it doesn't eat all the ram if something goes haywire
 static APP_LOG_LINES: LazyLock<Arc<Mutex<Vec<String>>>> =
@@ -58,10 +62,10 @@ pub fn init() -> WorkerGuard {
     let file_appender = tracing_appender::rolling::never(&log_dir, format!("rmcl_{now}.log"));
     let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
 
-    let env_filter = EnvFilter::builder()
-        .with_default_directive(Level::INFO.into())
-        .from_env_lossy()
-        .add_directive("mc_instance=off".parse().unwrap());
+    let file_filter =
+        EnvFilter::try_from_env("RUST_LOG").unwrap_or_else(|_| EnvFilter::new(DEFAULT_FILE_FILTER));
+    let file_filter =
+        file_filter.add_directive(format!("{MINECRAFT_LOG_TARGET}=off").parse().unwrap());
 
     let rust_log = std::env::var("RUST_LOG").unwrap_or_default().to_lowercase();
     let tui_level = if rust_log.contains("debug") || rust_log.contains("trace") {
@@ -83,9 +87,13 @@ pub fn init() -> WorkerGuard {
             tracing_subscriber::fmt::layer()
                 .with_writer(non_blocking)
                 .with_ansi(false)
-                .with_filter(env_filter),
+                .with_filter(file_filter),
         )
-        .with(tui_logger::TuiTracingSubscriberLayer)
+        .with(
+            tui_logger::TuiTracingSubscriberLayer.with_filter(filter_fn(|metadata| {
+                should_record_app_log(metadata.target())
+            })),
+        )
         .with(StatusLayer::new(error_buffer::ERROR_EVENTS.clone()))
         .init();
 
@@ -119,9 +127,11 @@ impl<S: Subscriber> Layer<S> for StatusLayer {
             Level::TRACE => "TRACE",
         };
         let now = chrono::Local::now().format("%H:%M:%S");
-        push_app_log(format!("{now}:{level_str}:{target}: {}", visitor.message));
+        if should_record_app_log(target) {
+            push_app_log(format!("{now}:{level_str}:{target}: {}", visitor.message));
+        }
 
-        if level <= Level::WARN && target != "mc_instance" {
+        if level <= Level::WARN && should_record_app_log(target) {
             error_buffer::push_error(ErrorEvent {
                 id: 0,
                 level,
@@ -130,6 +140,10 @@ impl<S: Subscriber> Layer<S> for StatusLayer {
             });
         }
     }
+}
+
+fn should_record_app_log(target: &str) -> bool {
+    target != MINECRAFT_LOG_TARGET
 }
 
 #[derive(Default)]
@@ -155,5 +169,20 @@ impl Visit for MessageVisitor {
                 .unwrap_or(&formatted)
                 .to_string();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn minecraft_events_are_not_general_app_logs() {
+        assert!(!should_record_app_log(MINECRAFT_LOG_TARGET));
+    }
+
+    #[test]
+    fn rmcl_events_are_general_app_logs() {
+        assert!(should_record_app_log("rmcl::instance::manager"));
     }
 }

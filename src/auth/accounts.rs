@@ -39,9 +39,27 @@ impl AccountStore {
     pub fn load() -> Self {
         let path = account_store_path();
         let accounts = match std::fs::read_to_string(&path) {
-            Ok(content) => serde_json::from_str(&content).unwrap_or_default(),
-            Err(_) => Vec::new(),
+            Ok(content) => match serde_json::from_str(&content) {
+                Ok(accounts) => accounts,
+                Err(e) => {
+                    tracing::warn!("Failed to parse accounts file {}: {}", path.display(), e);
+                    Vec::new()
+                }
+            },
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                tracing::debug!("No accounts file at {}", path.display());
+                Vec::new()
+            }
+            Err(e) => {
+                tracing::warn!("Failed to read accounts file {}: {}", path.display(), e);
+                Vec::new()
+            }
         };
+        tracing::debug!(
+            "Loaded {} account(s) from {}",
+            accounts.len(),
+            path.display()
+        );
         Self { accounts, path }
     }
 
@@ -55,7 +73,17 @@ impl AccountStore {
         match serde_json::to_string_pretty(&self.accounts) {
             Ok(json) => {
                 if let Err(e) = std::fs::write(&self.path, json) {
-                    tracing::error!("Failed to write accounts file: {}", e);
+                    tracing::error!(
+                        "Failed to write accounts file {}: {}",
+                        self.path.display(),
+                        e
+                    );
+                } else {
+                    tracing::debug!(
+                        "Saved {} account(s) to {}",
+                        self.accounts.len(),
+                        self.path.display()
+                    );
                 }
             }
             Err(e) => tracing::error!("Failed to serialize accounts: {}", e),
@@ -73,8 +101,17 @@ impl AccountStore {
     }
 
     pub fn set_active(&mut self, index: usize) {
+        let username = self
+            .accounts
+            .get(index)
+            .map(|account| account.username.clone());
         for (i, acc) in self.accounts.iter_mut().enumerate() {
             acc.active = i == index;
+        }
+        if let Some(username) = username {
+            tracing::info!("Selected account '{}'", username);
+        } else {
+            tracing::warn!("Tried to select missing account index {}", index);
         }
         self.save();
     }
@@ -83,22 +120,38 @@ impl AccountStore {
     // first account added auto-becomes active so there's always a selection.
     pub fn add(&mut self, account: Account) {
         let uuid = &account.uuid;
+        let replaced = self.accounts.iter().any(|a| a.uuid == *uuid);
+        let account_type = account.account_type.clone();
+        let username = account.username.clone();
         self.accounts.retain(|a| a.uuid != *uuid);
         let mut account = account;
         if self.accounts.is_empty() {
             account.active = true;
         }
         self.accounts.push(account);
+        tracing::info!(
+            "{} {:?} account '{}'",
+            if replaced { "Updated" } else { "Added" },
+            account_type,
+            username
+        );
         self.save();
     }
 
     pub fn remove(&mut self, index: usize) {
         if index >= self.accounts.len() {
+            tracing::warn!("Tried to remove missing account index {}", index);
             return;
         }
         let account = self.accounts.remove(index);
+        tracing::info!(
+            "Removed {:?} account '{}'",
+            account.account_type,
+            account.username
+        );
         if account.active && !self.accounts.is_empty() {
             self.accounts[0].active = true;
+            tracing::debug!("Activated fallback account '{}'", self.accounts[0].username);
         }
         self.save();
     }

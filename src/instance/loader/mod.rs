@@ -79,18 +79,32 @@ pub(crate) fn save_installer_profile(
         .join(format!("{version_dir_name}.json"));
 
     if !ver_json_path.exists() {
+        tracing::error!(
+            "Installer profile JSON missing: {}",
+            ver_json_path.display()
+        );
         return Err(NetError::Parse(format!(
             "Version JSON not found at {}",
             ver_json_path.display()
         )));
     }
 
+    tracing::debug!(
+        "Saving installer profile {} from {}",
+        profile_filename,
+        ver_json_path.display()
+    );
     let raw = std::fs::read(&ver_json_path)?;
 
     let profiles_dir = meta_dir.join("loader-profiles");
     std::fs::create_dir_all(&profiles_dir)?;
     let profile_path = profiles_dir.join(profile_filename);
     std::fs::write(&profile_path, &raw)?;
+    tracing::debug!(
+        "Saved installer profile to {} ({} bytes)",
+        profile_path.display(),
+        raw.len()
+    );
     Ok(())
 }
 

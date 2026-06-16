@@ -47,6 +47,11 @@ pub async fn fetch_forge_versions_from(
 
     versions.sort();
     versions.dedup();
+    tracing::debug!(
+        "Resolved {} Forge version(s) for Minecraft {} from promotions",
+        versions.len(),
+        game_version
+    );
     Ok(versions)
 }
 
@@ -70,6 +75,10 @@ pub async fn fetch_forge_game_versions_from(
     game_versions.sort();
     game_versions.dedup();
     game_versions.reverse();
+    tracing::debug!(
+        "Resolved {} Forge game version(s) from promotions",
+        game_versions.len()
+    );
 
     Ok(game_versions
         .into_iter()
@@ -104,13 +113,20 @@ pub async fn download_forge_installer(
     let mut last_err = None;
     for slug in &slugs {
         let url = format!("{}/{slug}/forge-{slug}-installer.jar", FORGE_MAVEN_BASE,);
+        tracing::debug!("Trying Forge installer slug '{}'", slug);
         match download_file(client, &url, dest, |downloaded, total| {
             crate::tui::progress::set_progress(downloaded, total);
         })
         .await
         {
-            Ok(()) => return Ok(()),
-            Err(e) => last_err = Some(e),
+            Ok(()) => {
+                tracing::debug!("Downloaded Forge installer using slug '{}'", slug);
+                return Ok(());
+            }
+            Err(e) => {
+                tracing::debug!("Forge installer slug '{}' failed: {}", slug, e);
+                last_err = Some(e);
+            }
         }
     }
 
@@ -140,6 +156,12 @@ pub async fn run_forge_installer(
     {
         Ok(o) => o,
         Err(e) => {
+            tracing::error!(
+                "Failed to spawn Forge installer {} with Java {}: {}",
+                installer_path.display(),
+                java_path,
+                e
+            );
             return Err(NetError::Io(e));
         }
     };
@@ -151,9 +173,16 @@ pub async fn run_forge_installer(
         } else {
             stderr.lines().last().unwrap_or("unknown error").to_string()
         };
+        tracing::error!(
+            "Forge installer {} failed with status {:?}: {}",
+            installer_path.display(),
+            output.status.code(),
+            detail
+        );
         return Err(NetError::InstallerFailed(detail));
     }
 
+    tracing::debug!("Forge installer completed successfully");
     Ok(())
 }
 
@@ -190,6 +219,11 @@ pub(crate) async fn install_forge_from_profile(
     use std::io::Read;
 
     set_action("Installing legacy Forge from profile...");
+    tracing::debug!(
+        "Installing legacy Forge from {} into {}",
+        installer_path.display(),
+        meta_dir.display()
+    );
 
     let file = std::fs::File::open(installer_path)?;
     let mut archive = zip::ZipArchive::new(file)
@@ -248,6 +282,11 @@ pub(crate) async fn install_forge_from_profile(
         let mut buf = Vec::new();
         entry.read_to_end(&mut buf)?;
         std::fs::write(&universal_dest, &buf)?;
+        tracing::debug!(
+            "Extracted legacy Forge universal JAR to {} ({} bytes)",
+            universal_dest.display(),
+            buf.len()
+        );
     }
 
     // download libraries needed by this forge version. libs with a url field
@@ -267,6 +306,7 @@ pub(crate) async fn install_forge_from_profile(
 
         let dest = libraries_dir.join(&maven_path);
         if dest.exists() {
+            tracing::trace!("Legacy Forge library already cached: {}", name);
             continue;
         }
 
@@ -278,6 +318,7 @@ pub(crate) async fn install_forge_from_profile(
         let download_url = format!("{base_url}/{maven_path}");
 
         set_sub_action(name);
+        tracing::debug!("Downloading legacy Forge library {}", name);
         download_file(client, &download_url, &dest, |_, _| {}).await?;
     }
 

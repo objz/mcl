@@ -85,11 +85,13 @@ impl ContentListState {
         };
 
         let mut received = false;
+        let mut received_count = 0usize;
         let mut finished = false;
         loop {
             match rx.try_recv() {
                 Ok(entry) => {
                     received = true;
+                    received_count += 1;
                     let pos = self
                         .entries
                         .binary_search_by(|e| e.name.to_lowercase().cmp(&entry.name.to_lowercase()))
@@ -107,6 +109,20 @@ impl ContentListState {
 
         if received || finished {
             self.loading = false;
+            if received_count > 0 {
+                tracing::trace!(
+                    "Drained {} streamed content entries for {}",
+                    received_count,
+                    self.loaded_for.as_deref().unwrap_or("<unknown>")
+                );
+            }
+            if finished {
+                tracing::debug!(
+                    "Finished content scan for {} with {} entries",
+                    self.loaded_for.as_deref().unwrap_or("<unknown>"),
+                    self.entries.len()
+                );
+            }
             if self.list_state.selected.is_none() && !self.entries.is_empty() {
                 self.list_state.selected = Some(0);
             }
@@ -131,6 +147,13 @@ impl ContentListState {
         };
 
         // apply toggles (enabled/path changes)
+        tracing::debug!(
+            "Applying content watcher diff for {}: toggled={} removed={} added={}",
+            self.loaded_for.as_deref().unwrap_or("<unknown>"),
+            diff.toggled.len(),
+            diff.removed.len(),
+            diff.added.len()
+        );
         for (stem, enabled, path) in &diff.toggled {
             if let Some(entry) = self.entries.iter_mut().find(|e| &e.file_stem == stem) {
                 entry.enabled = *enabled;
@@ -189,7 +212,12 @@ impl ContentListState {
 
         let watch_dir = dir.clone();
         let watcher = notify::recommended_watcher(move |res: Result<notify::Event, _>| {
-            if res.is_err() {
+            if let Err(e) = &res {
+                tracing::warn!(
+                    "Content watcher event error for {}: {}",
+                    watch_dir.display(),
+                    e
+                );
                 return;
             }
 
@@ -274,6 +302,7 @@ impl ContentListState {
                 if let Err(e) = w.watch(&dir, RecursiveMode::NonRecursive) {
                     tracing::warn!("Failed to watch {}: {e}", dir.display());
                 } else {
+                    tracing::debug!("Watching content directory {}", dir.display());
                     self._watcher = Some(w);
                 }
             }
@@ -313,6 +342,11 @@ impl ContentListState {
         if let Some(prev) = self.loaded_for.take()
             && !self.entries.is_empty()
         {
+            tracing::trace!(
+                "Caching {} content entries for {}",
+                self.entries.len(),
+                prev
+            );
             self.cache.insert(
                 prev,
                 CachedList {
@@ -330,6 +364,11 @@ impl ContentListState {
             self.stream_rx = None;
             self.loaded_for = Some(instance_name.to_string());
             self.update_scrollbar();
+            tracing::debug!(
+                "Restored {} cached content entries for {}",
+                self.entries.len(),
+                instance_name
+            );
             return;
         }
 
@@ -344,18 +383,30 @@ impl ContentListState {
         self.stream_rx = Some(rx);
 
         let dir = content_dir.to_path_buf();
+        tracing::debug!(
+            "Starting content scan for {} in {}",
+            instance_name,
+            content_dir.display()
+        );
 
         tokio::spawn(async move {
             let _ = tokio::task::spawn_blocking(move || {
                 let read_dir = match std::fs::read_dir(&dir) {
                     Ok(rd) => rd,
-                    Err(_) => return,
+                    Err(e) => {
+                        tracing::warn!("Failed to read content directory {}: {}", dir.display(), e);
+                        return;
+                    }
                 };
                 let disabled_ext = format!("{ext}.disabled");
 
                 for dir_entry in read_dir.flatten() {
                     let path = dir_entry.path();
                     let Some(fname) = path.file_name().and_then(|n| n.to_str()) else {
+                        tracing::trace!(
+                            "Skipping content path with invalid filename: {}",
+                            path.display()
+                        );
                         continue;
                     };
 
@@ -367,6 +418,10 @@ impl ContentListState {
                     } else if path.is_dir() {
                         crate::instance::content::parse_enabled_stem_dir(fname)
                     } else {
+                        tracing::trace!(
+                            "Skipping content path with unsupported extension: {}",
+                            path.display()
+                        );
                         continue;
                     };
 
@@ -422,7 +477,13 @@ impl ContentListState {
                 entry.path = new_path;
             }
             Err(e) => {
-                tracing::error!("Failed to toggle '{}': {}", entry.file_stem, e);
+                tracing::error!(
+                    "Failed to toggle '{}' from {} to {}: {}",
+                    entry.file_stem,
+                    entry.path.display(),
+                    new_path.display(),
+                    e
+                );
             }
         }
     }

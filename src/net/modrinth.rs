@@ -66,9 +66,16 @@ pub fn loader_from_dependencies(
     ];
     for (key, loader) in &loaders {
         if let Some(version) = deps.get(*key) {
+            tracing::trace!(
+                "Resolved Modrinth loader dependency {}={} as {}",
+                key,
+                version,
+                loader
+            );
             return (Some(*loader), Some(version.clone()));
         }
     }
+    tracing::trace!("No Modrinth loader dependency found; treating pack as vanilla");
     (None, None)
 }
 
@@ -101,7 +108,14 @@ pub async fn fetch_project(
     slug_or_id: &str,
 ) -> Result<ProjectInfo, crate::net::NetError> {
     let url = format!("{}/project/{}", API_BASE, url_encode(slug_or_id));
-    client.get_json(&url).await
+    tracing::debug!("Fetching Modrinth project '{}'", slug_or_id);
+    let project: ProjectInfo = client.get_json(&url).await?;
+    tracing::debug!(
+        "Fetched Modrinth project '{}' ({})",
+        project.slug,
+        project.id
+    );
+    Ok(project)
 }
 
 pub async fn fetch_versions(
@@ -113,7 +127,14 @@ pub async fn fetch_versions(
         API_BASE,
         url_encode(slug_or_id)
     );
-    client.get_json(&url).await
+    tracing::debug!("Fetching Modrinth versions for project '{}'", slug_or_id);
+    let versions: Vec<VersionInfo> = client.get_json(&url).await?;
+    tracing::debug!(
+        "Fetched {} Modrinth version(s) for project '{}'",
+        versions.len(),
+        slug_or_id
+    );
+    Ok(versions)
 }
 
 pub async fn fetch_version(
@@ -121,7 +142,15 @@ pub async fn fetch_version(
     version_id: &str,
 ) -> Result<VersionInfo, crate::net::NetError> {
     let url = format!("{}/version/{}", API_BASE, url_encode(version_id));
-    client.get_json(&url).await
+    tracing::debug!("Fetching Modrinth version '{}'", version_id);
+    let version: VersionInfo = client.get_json(&url).await?;
+    tracing::debug!(
+        "Fetched Modrinth version '{}' ({}) with {} file(s)",
+        version.name,
+        version.id,
+        version.files.len()
+    );
+    Ok(version)
 }
 
 // grabs the primary file from a version, falling back to the first file
@@ -135,22 +164,44 @@ pub async fn download_mrpack(
         .files
         .iter()
         .find(|f| f.primary)
-        .or_else(|| version.files.first())
+        .or_else(|| {
+            tracing::warn!(
+                "Modrinth version '{}' has no primary file; using first file",
+                version.id
+            );
+            version.files.first()
+        })
         .ok_or_else(|| crate::net::NetError::Parse("No files in version".to_string()))?;
 
     let mrpack_path = dest.join(&file.filename);
+    tracing::info!(
+        "Downloading Modrinth pack file '{}' for version '{}' to {}",
+        file.filename,
+        version.id,
+        mrpack_path.display()
+    );
     crate::net::download_file(client, &file.url, &mrpack_path, |_, _| {}).await?;
     Ok(mrpack_path)
 }
 
 // .mrpack is just a zip with modrinth.index.json at the root
 pub fn parse_mrpack(path: &std::path::Path) -> Result<MrpackIndex, String> {
+    tracing::debug!("Parsing .mrpack manifest from {}", path.display());
     let file = std::fs::File::open(path).map_err(|e| format!("Cannot open .mrpack: {e}"))?;
     let mut archive = zip::ZipArchive::new(file).map_err(|e| format!("Invalid ZIP: {e}"))?;
     let entry = archive
         .by_name("modrinth.index.json")
         .map_err(|_| "Missing modrinth.index.json in .mrpack".to_string())?;
-    serde_json::from_reader(entry).map_err(|e| format!("Invalid manifest JSON: {e}"))
+    let index: MrpackIndex =
+        serde_json::from_reader(entry).map_err(|e| format!("Invalid manifest JSON: {e}"))?;
+    tracing::debug!(
+        "Parsed .mrpack '{}' version_id={} files={} deps={}",
+        index.name,
+        index.version_id,
+        index.files.len(),
+        index.dependencies.len()
+    );
+    Ok(index)
 }
 
 #[cfg(test)]

@@ -27,7 +27,14 @@ impl ModLoaderInstaller for ForgeInstaller {
         client: &HttpClient,
         game_version: &str,
     ) -> Result<Vec<String>, NetError> {
-        forge_api::fetch_forge_versions(client, game_version).await
+        tracing::debug!("Fetching Forge versions for Minecraft {}", game_version);
+        let versions = forge_api::fetch_forge_versions(client, game_version).await?;
+        tracing::debug!(
+            "Fetched {} Forge version(s) for Minecraft {}",
+            versions.len(),
+            game_version
+        );
+        Ok(versions)
     }
 
     async fn install(
@@ -39,6 +46,12 @@ impl ModLoaderInstaller for ForgeInstaller {
         meta_dir: &Path,
     ) -> Result<(), NetError> {
         let installer_jar = instance_dir.join(".minecraft").join("forge-installer.jar");
+        tracing::info!(
+            "Installing Forge {} for Minecraft {}",
+            loader_version,
+            game_version
+        );
+        tracing::debug!("Forge installer path: {}", installer_jar.display());
 
         forge_api::download_forge_installer(client, game_version, loader_version, &installer_jar)
             .await?;
@@ -47,6 +60,7 @@ impl ModLoaderInstaller for ForgeInstaller {
 
         if forge_api::has_legacy_install_profile(&installer_jar) {
             // old forge: no --installClient support, extract directly from jar
+            tracing::debug!("Forge installer uses legacy install_profile.json path");
             if let Err(e) = forge_api::install_forge_from_profile(
                 client,
                 &installer_jar,
@@ -56,6 +70,7 @@ impl ModLoaderInstaller for ForgeInstaller {
             .await
             {
                 let _ = tokio::fs::remove_file(&installer_jar).await;
+                tracing::error!("Legacy Forge installation failed: {}", e);
                 return Err(e);
             }
         } else {
@@ -65,10 +80,12 @@ impl ModLoaderInstaller for ForgeInstaller {
                 .effective_java_path()
                 .map(str::to_owned)
                 .unwrap_or_else(crate::net::detect_java_path);
+            tracing::debug!("Running Forge installer with Java {}", java_path);
             if let Err(e) =
                 forge_api::run_forge_installer(&installer_jar, instance_dir, &java_path).await
             {
                 let _ = tokio::fs::remove_file(&installer_jar).await;
+                tracing::error!("Modern Forge installer failed: {}", e);
                 return Err(e);
             }
 
@@ -80,6 +97,11 @@ impl ModLoaderInstaller for ForgeInstaller {
             tracing::warn!("Failed to remove Forge installer JAR: {}", e);
         }
 
+        tracing::debug!(
+            "Installed Forge {} for Minecraft {}",
+            loader_version,
+            game_version
+        );
         Ok(())
     }
 }

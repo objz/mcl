@@ -12,6 +12,13 @@ use super::{ImportSummary, PackFormat};
 
 pub fn build_summary(path: &Path) -> Result<ImportSummary, String> {
     let index = crate::net::modrinth::parse_mrpack(path)?;
+    tracing::debug!(
+        "Parsed .mrpack '{}' version_id={} files={} deps={}",
+        index.name,
+        index.version_id,
+        index.files.len(),
+        index.dependencies.len()
+    );
 
     let game_version = crate::net::modrinth::game_version_from_dependencies(&index.dependencies)
         .ok_or_else(|| "Manifest missing minecraft dependency".to_string())?;
@@ -21,6 +28,13 @@ pub fn build_summary(path: &Path) -> Result<ImportSummary, String> {
     let loader = loader_opt.unwrap_or(ModLoader::Vanilla);
 
     let override_count = count_overrides(path).unwrap_or(0);
+    tracing::trace!(
+        ".mrpack summary: game_version={} loader={:?} loader_version={:?} overrides={}",
+        game_version,
+        loader,
+        loader_version,
+        override_count
+    );
 
     Ok(ImportSummary {
         name: index.name.clone(),
@@ -54,6 +68,11 @@ pub async fn execute_import(
     manager: &InstanceManager,
 ) -> Result<crate::instance::InstanceConfig, Box<dyn std::error::Error + Send + Sync>> {
     let name = super::unique_instance_name(&summary.name, &manager.instances_dir);
+    tracing::info!(
+        "Importing Modrinth pack '{}' as instance '{}'",
+        summary.name,
+        name
+    );
 
     progress::set_action(format!("Importing '{name}'..."));
     progress::set_sub_action(format!("{} {}", summary.game_version, summary.loader));
@@ -78,6 +97,7 @@ pub async fn execute_import(
     extract_overrides(&summary.archive_path, &minecraft_dir)?;
 
     progress::clear();
+    tracing::info!("Imported Modrinth pack '{}' as '{}'", summary.name, name);
     Ok(config)
 }
 
@@ -93,6 +113,12 @@ async fn download_mod_files(
     let client = crate::net::HttpClient::new();
     let total = index.files.len();
     let completed = Arc::new(AtomicUsize::new(0));
+    tracing::debug!(
+        "Downloading {} file(s) from .mrpack '{}' into {}",
+        total,
+        index.name,
+        minecraft_dir.display()
+    );
 
     progress::set_action(format!("Downloading mods... 0/{total}"));
 
@@ -107,6 +133,9 @@ async fn download_mod_files(
             let client = client.clone();
             let dest = minecraft_dir.join(&file.path);
             let url = file.downloads.first().cloned().unwrap_or_default();
+            if url.is_empty() {
+                tracing::warn!(".mrpack file '{}' has no download URL", file.path);
+            }
             let filename = file
                 .path
                 .rsplit('/')
@@ -116,9 +145,16 @@ async fn download_mod_files(
             let completed = completed.clone();
             tasks.spawn(async move {
                 if let Some(parent) = dest.parent() {
-                    let _ = tokio::fs::create_dir_all(parent).await;
+                    if let Err(e) = tokio::fs::create_dir_all(parent).await {
+                        tracing::warn!(
+                            "Failed to create mod download directory {}: {}",
+                            parent.display(),
+                            e
+                        );
+                    }
                 }
                 progress::set_sub_action(filename);
+                tracing::trace!("Downloading .mrpack file to {}", dest.display());
                 crate::net::download_file(&client, &url, &dest, |_, _| {}).await?;
                 let done = completed.fetch_add(1, Ordering::Relaxed) + 1;
                 progress::set_action(format!("Downloading mods... {done}/{total}"));
@@ -136,6 +172,9 @@ async fn download_mod_files(
         let client = client.clone();
         let dest = minecraft_dir.join(&file.path);
         let url = file.downloads.first().cloned().unwrap_or_default();
+        if url.is_empty() {
+            tracing::warn!(".mrpack file '{}' has no download URL", file.path);
+        }
         let filename = file
             .path
             .rsplit('/')
@@ -145,9 +184,16 @@ async fn download_mod_files(
         let completed = completed.clone();
         tasks.spawn(async move {
             if let Some(parent) = dest.parent() {
-                let _ = tokio::fs::create_dir_all(parent).await;
+                if let Err(e) = tokio::fs::create_dir_all(parent).await {
+                    tracing::warn!(
+                        "Failed to create mod download directory {}: {}",
+                        parent.display(),
+                        e
+                    );
+                }
             }
             progress::set_sub_action(filename);
+            tracing::trace!("Downloading .mrpack file to {}", dest.display());
             crate::net::download_file(&client, &url, &dest, |_, _| {}).await?;
             let done = completed.fetch_add(1, Ordering::Relaxed) + 1;
             progress::set_action(format!("Downloading mods... {done}/{total}"));
@@ -175,6 +221,8 @@ fn extract_overrides(
 
     let file = std::fs::File::open(mrpack_path)?;
     let mut archive = zip::ZipArchive::new(file)?;
+    let mut extracted = 0usize;
+    let mut dirs = 0usize;
 
     for i in 0..archive.len() {
         let mut entry = archive.by_index(i)?;
@@ -191,6 +239,7 @@ fn extract_overrides(
         if relative.is_empty() || entry_name.ends_with('/') {
             let dir = minecraft_dir.join(relative);
             std::fs::create_dir_all(dir)?;
+            dirs += 1;
             continue;
         }
 
@@ -201,8 +250,21 @@ fn extract_overrides(
 
         let mut buf = Vec::new();
         entry.read_to_end(&mut buf)?;
+        tracing::trace!(
+            "Extracting .mrpack override {} to {} ({} bytes)",
+            entry_name,
+            dest.display(),
+            buf.len()
+        );
         std::fs::write(&dest, &buf)?;
+        extracted += 1;
     }
 
+    tracing::debug!(
+        "Extracted {} override files and {} directories from {}",
+        extracted,
+        dirs,
+        mrpack_path.display()
+    );
     Ok(())
 }

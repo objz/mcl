@@ -64,6 +64,12 @@ pub async fn fetch_neoforge_versions_from(
         .filter(|v| v.starts_with(&prefix) && !v.contains("-beta") && !v.contains("-alpha"))
         .collect();
 
+    tracing::debug!(
+        "Resolved {} NeoForge version(s) for Minecraft {} with prefix {}",
+        versions.len(),
+        game_version,
+        prefix
+    );
     Ok(versions)
 }
 
@@ -99,6 +105,7 @@ pub async fn fetch_neoforge_game_versions_from(
         }
     }
     game_versions.reverse();
+    tracing::debug!("Resolved {} NeoForge game version(s)", game_versions.len());
 
     Ok(game_versions
         .into_iter()
@@ -120,6 +127,11 @@ pub async fn download_neoforge_installer(
     );
 
     set_action(format!("Downloading NeoForge {}...", neoforge_version));
+    tracing::info!(
+        "Downloading NeoForge installer {} to {}",
+        neoforge_version,
+        dest.display()
+    );
 
     download_file(client, &url, dest, |downloaded, total| {
         crate::tui::progress::set_progress(downloaded, total);
@@ -146,17 +158,32 @@ pub async fn run_neoforge_installer(
     {
         Ok(o) => o,
         Err(e) => {
+            tracing::error!(
+                "Failed to spawn NeoForge installer {} with Java {}: {}",
+                installer_path.display(),
+                java_path,
+                e
+            );
             return Err(NetError::Io(e));
         }
     };
 
     if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let detail = stderr.lines().last().unwrap_or("").trim();
+        tracing::error!(
+            "NeoForge installer {} failed with status {:?}: {}",
+            installer_path.display(),
+            output.status.code(),
+            detail
+        );
         return Err(NetError::InstallerFailed(format!(
             "NeoForge installer exited with {:?}",
             output.status.code()
         )));
     }
 
+    tracing::debug!("NeoForge installer completed successfully");
     Ok(())
 }
 

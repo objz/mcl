@@ -42,14 +42,19 @@ impl Default for HttpClient {
 
 impl HttpClient {
     pub fn new() -> Self {
+        let user_agent = format!("rmcl/{} (Minecraft Launcher)", env!("CARGO_PKG_VERSION"));
         let client = Client::builder()
-            .user_agent(format!(
-                "rmcl/{} (Minecraft Launcher)",
-                env!("CARGO_PKG_VERSION")
-            ))
+            .user_agent(user_agent.clone())
             .timeout(std::time::Duration::from_secs(30))
             .build()
-            .unwrap_or_else(|_| Client::new());
+            .unwrap_or_else(|e| {
+                tracing::warn!(
+                    "Failed to build configured HTTP client, falling back to reqwest default: {}",
+                    e
+                );
+                Client::new()
+            });
+        tracing::trace!("Created HTTP client with user-agent '{}'", user_agent);
         Self { inner: client }
     }
 
@@ -58,13 +63,20 @@ impl HttpClient {
     }
 
     pub async fn get(&self, url: &str) -> Result<reqwest::Response, NetError> {
+        tracing::trace!("HTTP GET {}", url);
         let response = self.inner.get(url).send().await?;
         if !response.status().is_success() {
+            tracing::warn!(
+                "HTTP GET {} returned non-success status {}",
+                url,
+                response.status()
+            );
             return Err(NetError::StatusError {
                 status: response.status().as_u16(),
                 url: url.to_string(),
             });
         }
+        tracing::trace!("HTTP GET {} succeeded with {}", url, response.status());
         Ok(response)
     }
 
@@ -90,7 +102,9 @@ impl HttpClient {
         url: &str,
         label: &str,
     ) -> Result<(T, Vec<u8>), NetError> {
+        tracing::debug!("Fetching {} JSON from {}", label, url);
         let raw = self.get_bytes(url).await?;
+        tracing::trace!("Fetched {} byte(s) for {}", raw.len(), label);
         let parsed: T = serde_json::from_slice(&raw)
             .map_err(|e| NetError::Parse(format!("Failed to parse {label}: {e}")))?;
         Ok((parsed, raw))
@@ -110,7 +124,8 @@ where
         if attempt > 0 {
             let delay = RETRY_BASE_DELAY_MS * 2u64.pow(attempt - 1);
             tracing::warn!(
-                "retrying request (attempt {}/{}): {}",
+                "retrying request after {}ms (attempt {}/{}): {}",
+                delay,
                 attempt + 1,
                 MAX_RETRIES + 1,
                 url
@@ -121,10 +136,16 @@ where
         match client.get(url).await {
             Ok(resp) => match decode(resp).await {
                 Ok(value) => return Ok(value),
-                Err(e) if is_retryable(&e) => last_error = Some(e),
+                Err(e) if is_retryable(&e) => {
+                    tracing::warn!("Retryable decode/request error for {}: {}", url, e);
+                    last_error = Some(e);
+                }
                 Err(e) => return Err(e),
             },
-            Err(e) if is_retryable(&e) => last_error = Some(e),
+            Err(e) if is_retryable(&e) => {
+                tracing::warn!("Retryable request error for {}: {}", url, e);
+                last_error = Some(e);
+            }
             Err(e) => return Err(e),
         }
     }
@@ -144,12 +165,14 @@ pub async fn download_file(
     progress_cb: impl Fn(u64, u64),
 ) -> Result<(), NetError> {
     let mut last_error = None;
+    tracing::debug!("Downloading {} to {}", url, dest.display());
 
     for attempt in 0..=MAX_RETRIES {
         if attempt > 0 {
             let delay = RETRY_BASE_DELAY_MS * 2u64.pow(attempt - 1);
             tracing::warn!(
-                "retrying download (attempt {}/{}): {}",
+                "retrying download after {}ms (attempt {}/{}): {}",
+                delay,
                 attempt + 1,
                 MAX_RETRIES + 1,
                 url
@@ -158,8 +181,12 @@ pub async fn download_file(
         }
 
         match download_file_once(client, url, dest, &progress_cb).await {
-            Ok(()) => return Ok(()),
+            Ok(()) => {
+                tracing::debug!("Downloaded {} to {}", url, dest.display());
+                return Ok(());
+            }
             Err(e) if is_retryable(&e) => {
+                tracing::warn!("Retryable download error for {}: {}", url, e);
                 last_error = Some(e);
             }
             Err(e) => return Err(e),
@@ -180,6 +207,7 @@ async fn download_file_once(
 
     let response = client.get(url).await?;
     let total = response.content_length().unwrap_or(0);
+    tracing::trace!("Download content length for {}: {}", url, total);
 
     if let Some(parent) = dest.parent() {
         tokio::fs::create_dir_all(parent).await?;
@@ -217,12 +245,28 @@ pub fn detect_java_path() -> String {
         let java_name = if cfg!(windows) { "java.exe" } else { "java" };
         let bin = std::path::Path::new(&java_home).join("bin").join(java_name);
         if bin.exists() {
+            tracing::debug!("Detected Java from JAVA_HOME: {}", bin.display());
             return bin.to_string_lossy().to_string();
         }
+        tracing::warn!(
+            "JAVA_HOME is set to {}, but {} does not exist",
+            java_home,
+            bin.display()
+        );
     }
-    which::which("java")
-        .map(|p| p.to_string_lossy().to_string())
-        .unwrap_or_else(|_| "java".to_string())
+    match which::which("java") {
+        Ok(path) => {
+            tracing::debug!("Detected Java from PATH: {}", path.display());
+            path.to_string_lossy().to_string()
+        }
+        Err(e) => {
+            tracing::warn!(
+                "Could not find java on PATH, falling back to literal 'java': {}",
+                e
+            );
+            "java".to_string()
+        }
+    }
 }
 
 // converts maven coordinates like "org.example:artifact:1.0" into a

@@ -23,14 +23,30 @@ fn ensure_config_exists() -> PathBuf {
     let config_path = get_config_path().join("config.toml");
     if !config_path.exists() {
         if let Some(parent) = config_path.parent() {
-            let _ = fs::create_dir_all(parent);
+            if let Err(e) = fs::create_dir_all(parent) {
+                tracing::warn!(
+                    "Failed to create config directory {}: {}",
+                    parent.display(),
+                    e
+                );
+            }
         }
-        let _ = fs::write(&config_path, include_str!("../../assets/config.toml"));
+        match fs::write(&config_path, include_str!("../../assets/config.toml")) {
+            Ok(()) => tracing::debug!("Wrote default config to {}", config_path.display()),
+            Err(e) => tracing::warn!(
+                "Failed to write default config to {}: {}",
+                config_path.display(),
+                e
+            ),
+        }
+    } else {
+        tracing::trace!("Using existing config at {}", config_path.display());
     }
     config_path
 }
 
 pub fn load_config(config_path: &std::path::Path) -> Result<Config, ConfigError> {
+    tracing::debug!("Loading config from {}", config_path.display());
     ConfigLoader::builder()
         .add_source(File::from(config_path).required(false))
         .build()?

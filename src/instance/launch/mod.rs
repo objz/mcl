@@ -523,6 +523,16 @@ pub async fn launch(
     };
 
     let invocation = build_launch_invocation(config, instances_dir, meta_dir, &auth).await?;
+    tracing::debug!(
+        "[{}] Prepared launch invocation: working_dir={} classpath_entries={} jvm_args={} extra_args={} game_args={} main_class={}",
+        name,
+        invocation.working_dir.display(),
+        invocation.classpath.len(),
+        invocation.jvm_args.len(),
+        invocation.extra_args.len(),
+        invocation.game_args.len(),
+        invocation.main_class
+    );
 
     let (kill_tx, kill_rx) = tokio::sync::oneshot::channel::<()>();
     crate::running::register_kill(&name, kill_tx);
@@ -563,13 +573,23 @@ pub async fn launch(
         Err(e) => {
             crate::running::cleanup_kill_sender(&name);
             crate::running::remove(&name);
+            tracing::error!("[{}] Failed to spawn Minecraft process: {}", name, e);
             return Err(LaunchError::Io(e));
         }
     };
+    tracing::debug!("[{}] Spawned Minecraft process", name);
 
     crate::running::set_state(&name, crate::running::RunState::Running);
 
     let log_file_path = crate::instance::log_files::create_log_file(instances_dir, &name);
+    match &log_file_path {
+        Some(path) => tracing::debug!(
+            "[{}] Writing Minecraft process log to {}",
+            name,
+            path.display()
+        ),
+        None => tracing::warn!("[{}] Could not create Minecraft process log file", name),
+    }
 
     let name_for_task = name.clone();
     let instances_dir_owned = instances_dir.to_path_buf();
@@ -636,6 +656,7 @@ pub async fn launch(
                         break;
                     }
                 }
+                tracing::trace!("Minecraft stdout capture task ended");
             });
         }
 
@@ -654,6 +675,7 @@ pub async fn launch(
                         break;
                     }
                 }
+                tracing::trace!("Minecraft stderr capture task ended");
             });
         }
         drop(log_tx);
@@ -675,6 +697,11 @@ pub async fn launch(
 
         if code == Some(0) || killed_by_user {
             crate::running::remove(&name_for_task);
+            tracing::debug!(
+                "[{}] Cleared running state after normal exit (killed_by_user={})",
+                name_for_task,
+                killed_by_user
+            );
         } else {
             crate::running::set_state(&name_for_task, crate::running::RunState::Crashed(code));
             crate::tui::error_buffer::push_error(crate::tui::error_buffer::ErrorEvent {

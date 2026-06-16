@@ -120,7 +120,15 @@ pub async fn fetch_version_manifest_from(
     client: &HttpClient,
     url: &str,
 ) -> Result<VersionManifest, NetError> {
-    client.get_json(url).await
+    tracing::debug!("Fetching Mojang version manifest from {}", url);
+    let manifest: VersionManifest = client.get_json(url).await?;
+    tracing::debug!(
+        "Fetched Mojang manifest with {} version(s); latest release={} snapshot={}",
+        manifest.versions.len(),
+        manifest.latest.release,
+        manifest.latest.snapshot
+    );
+    Ok(manifest)
 }
 
 // fetches and parses a version's metadata. also returns the raw response
@@ -131,6 +139,11 @@ pub async fn fetch_version_meta_with_raw(
     client: &HttpClient,
     entry: &VersionEntry,
 ) -> Result<(VersionMeta, Vec<u8>), NetError> {
+    tracing::debug!(
+        "Fetching Mojang version meta '{}' from {}",
+        entry.id,
+        entry.url
+    );
     client.get_json_with_raw(&entry.url, "version meta").await
 }
 
@@ -146,10 +159,16 @@ pub async fn download_client_jar(
 
     if jar_path.exists() {
         tracing::info!("Client JAR already cached: {}", meta.id);
+        tracing::trace!("Cached client JAR path: {}", jar_path.display());
         return Ok(());
     }
 
     set_action(format!("Downloading Minecraft {}...", meta.id));
+    tracing::info!(
+        "Downloading Minecraft client JAR {} to {}",
+        meta.id,
+        jar_path.display()
+    );
 
     let result = download_file(
         client,
@@ -171,6 +190,11 @@ pub async fn download_libraries(
     meta_dir: &Path,
 ) -> Result<(), NetError> {
     set_action("Downloading libraries...");
+    tracing::debug!(
+        "Resolving {} libraries for Minecraft {}",
+        meta.libraries.len(),
+        meta.id
+    );
 
     let features = crate::launch_profile::rules::FeatureSet::default();
     let host_os_version = crate::launch_profile::system::mojang_os_version();
@@ -186,17 +210,25 @@ pub async fn download_libraries(
         if let Some(rules) = &library.rules
             && !crate::launch_profile::rules::evaluate(rules, &rule_ctx)
         {
+            tracing::trace!("Skipping library {} due to platform rules", library.name);
             continue;
         }
 
         let artifact = match &library.downloads.artifact {
             Some(artifact) => artifact,
-            None => continue,
+            None => {
+                tracing::trace!(
+                    "Skipping library {} without artifact download",
+                    library.name
+                );
+                continue;
+            }
         };
 
         let destination = meta_dir.join("libraries").join(&artifact.path);
 
         if destination.exists() {
+            tracing::trace!("Library already cached: {}", artifact.path);
             continue;
         }
 
@@ -209,6 +241,7 @@ pub async fn download_libraries(
         return Ok(());
     }
 
+    tracing::debug!("Downloading {} missing libraries", downloads.len());
     let result = run_parallel_downloads(client, downloads, false).await;
     clear();
     result
@@ -231,6 +264,11 @@ pub async fn download_assets_from(
     assets_base: &str,
 ) -> Result<(), NetError> {
     set_action("Downloading assets...");
+    tracing::debug!(
+        "Fetching asset index {} from {}",
+        meta.asset_index.id,
+        meta.asset_index.url
+    );
 
     let asset_index: AssetIndexContent = match client.get_json(&meta.asset_index.url).await {
         Ok(index) => index,
@@ -256,9 +294,15 @@ pub async fn download_assets_from(
                     }
                 }
                 match tokio::fs::write(&index_path, json).await {
-                    Ok(_) => {}
+                    Ok(_) => {
+                        tracing::debug!("Saved asset index to {}", index_path.display());
+                    }
                     Err(e) => {
-                        tracing::error!("Failed to write asset index: {}", e);
+                        tracing::error!(
+                            "Failed to write asset index {}: {}",
+                            index_path.display(),
+                            e
+                        );
                     }
                 }
             }
@@ -289,6 +333,7 @@ pub async fn download_assets_from(
             .join(&object.hash);
 
         if destination.exists() {
+            tracing::trace!("Asset already cached: {}", object.hash);
             continue;
         }
 
@@ -301,6 +346,11 @@ pub async fn download_assets_from(
         return Ok(());
     }
 
+    tracing::debug!(
+        "Downloading {} missing asset(s) from index {}",
+        downloads.len(),
+        meta.asset_index.id
+    );
     let result = run_parallel_downloads(client, downloads, true).await;
     clear();
     result
@@ -315,6 +365,11 @@ async fn run_parallel_downloads(
     report_count_progress: bool,
 ) -> Result<(), NetError> {
     let total_downloads = downloads.len() as u64;
+    tracing::debug!(
+        "Starting {} parallel download job(s), max_concurrent={}",
+        total_downloads,
+        MAX_CONCURRENT_DOWNLOADS
+    );
     let completed = Arc::new(AtomicU64::new(0));
     let mut queue = downloads.into_iter();
     let mut set = JoinSet::new();
@@ -376,8 +431,16 @@ fn spawn_download_task(
     let task_client = client.clone();
 
     set.spawn(async move {
+        tracing::trace!(
+            "Starting parallel download '{}' to {}",
+            label,
+            destination.display()
+        );
         let result = download_file(&task_client, &url, &destination, |_current, _total| {}).await;
-        result.map(|()| label)
+        result.map(|()| {
+            tracing::trace!("Finished parallel download '{}'", label);
+            label
+        })
     });
 }
 
