@@ -76,9 +76,7 @@ impl App {
                             Ok(_) => {
                                 self.instances_state.remove_instance(&name);
                             }
-                            Err(e) => {
-                                tracing::error!("Failed to delete instance '{}': {}", name, e);
-                            }
+                            Err(_) => {}
                         }
                     }
                     confirm_popup::clear_pending();
@@ -203,9 +201,7 @@ impl App {
                                             inst.name = new_name.trim().to_owned();
                                         }
                                     }
-                                    Err(e) => {
-                                        tracing::error!("Rename failed: {}", e);
-                                    }
+                                    Err(_) => {}
                                 }
                             }
                         }

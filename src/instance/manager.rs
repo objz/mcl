@@ -92,8 +92,11 @@ impl InstanceManager {
             .await;
 
         // clean up on failure so there's no half-baked instance left around
-        if let Err(e) = &result {
-            tracing::error!("Instance '{}' creation failed: {}", name, e);
+        if result.is_err() {
+            tracing::debug!(
+                "Cleaning up incomplete instance '{}' after creation failed",
+                name
+            );
             if let Err(cleanup_error) = std::fs::remove_dir_all(&instance_dir) {
                 tracing::warn!(
                     "Failed to clean up incomplete instance directory {}: {}",
@@ -171,14 +174,10 @@ impl InstanceManager {
                 v
             }
             None => {
-                tracing::warn!(
+                return Err(InstanceError::InvalidName(format!(
                     "Minecraft version '{}' not found in manifest with {} entries",
                     game_version,
                     manifest.versions.len()
-                );
-                return Err(InstanceError::InvalidName(format!(
-                    "Minecraft version '{}' not found in manifest",
-                    game_version
                 )));
             }
         };
@@ -282,7 +281,14 @@ impl InstanceManager {
             return Err(InstanceError::NotFound(name.to_string()));
         }
         tracing::info!("Deleting instance '{}' at {}", name, instance_dir.display());
-        std::fs::remove_dir_all(&instance_dir)?;
+        if let Err(e) = std::fs::remove_dir_all(&instance_dir) {
+            tracing::error!(
+                "Failed to delete instance directory {}: {}",
+                instance_dir.display(),
+                e
+            );
+            return Err(e.into());
+        }
         if let Err(e) = crate::instance::desktop::remove(name) {
             tracing::warn!("Failed to remove desktop shortcut for '{}': {}", name, e);
         }
@@ -292,6 +298,7 @@ impl InstanceManager {
     pub fn rename(&self, old_name: &str, new_name: &str) -> Result<(), InstanceError> {
         let new_name = new_name.trim();
         if new_name.is_empty() {
+            tracing::warn!("Cannot rename instance '{}': new name is empty", old_name);
             return Err(InstanceError::InvalidName(
                 "Name cannot be empty".to_string(),
             ));
@@ -320,7 +327,15 @@ impl InstanceManager {
             return Err(InstanceError::AlreadyExists(new_name.to_string()));
         }
         tracing::info!("Renaming instance '{}' to '{}'", old_name, new_name);
-        std::fs::rename(&old_dir, &new_dir)?;
+        if let Err(e) = std::fs::rename(&old_dir, &new_dir) {
+            tracing::error!(
+                "Failed to rename instance directory {} to {}: {}",
+                old_dir.display(),
+                new_dir.display(),
+                e
+            );
+            return Err(e.into());
+        }
 
         let config_path = new_dir.join("instance.json");
         if let Ok(data) = std::fs::read_to_string(&config_path)
@@ -402,8 +417,30 @@ impl InstanceManager {
         }
 
         tracing::debug!("Loading instance '{}' from {}", name, config_path.display());
-        let contents = std::fs::read_to_string(&config_path)?;
-        Ok(serde_json::from_str::<InstanceConfig>(&contents)?)
+        let contents = match std::fs::read_to_string(&config_path) {
+            Ok(contents) => contents,
+            Err(e) => {
+                tracing::error!(
+                    "Failed to read instance '{}' config {}: {}",
+                    name,
+                    config_path.display(),
+                    e
+                );
+                return Err(e.into());
+            }
+        };
+        match serde_json::from_str::<InstanceConfig>(&contents) {
+            Ok(config) => Ok(config),
+            Err(e) => {
+                tracing::error!(
+                    "Failed to parse instance '{}' config {}: {}",
+                    name,
+                    config_path.display(),
+                    e
+                );
+                Err(e.into())
+            }
+        }
     }
 
     pub fn save(&self, instance: &InstanceConfig) -> Result<(), InstanceError> {

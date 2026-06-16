@@ -70,7 +70,6 @@ impl ModLoaderInstaller for ForgeInstaller {
             .await
             {
                 let _ = tokio::fs::remove_file(&installer_jar).await;
-                tracing::error!("Legacy Forge installation failed: {}", e);
                 return Err(e);
             }
         } else {
@@ -85,7 +84,6 @@ impl ModLoaderInstaller for ForgeInstaller {
                 forge_api::run_forge_installer(&installer_jar, instance_dir, &java_path).await
             {
                 let _ = tokio::fs::remove_file(&installer_jar).await;
-                tracing::error!("Modern Forge installer failed: {}", e);
                 return Err(e);
             }
 

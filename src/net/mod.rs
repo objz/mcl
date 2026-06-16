@@ -66,7 +66,7 @@ impl HttpClient {
         tracing::trace!("HTTP GET {}", url);
         let response = self.inner.get(url).send().await?;
         if !response.status().is_success() {
-            tracing::warn!(
+            tracing::debug!(
                 "HTTP GET {} returned non-success status {}",
                 url,
                 response.status()
@@ -119,41 +119,46 @@ where
     F: Fn(reqwest::Response) -> Fut,
     Fut: std::future::Future<Output = Result<T, NetError>>,
 {
-    let mut last_error = None;
     for attempt in 0..=MAX_RETRIES {
-        if attempt > 0 {
-            let delay = RETRY_BASE_DELAY_MS * 2u64.pow(attempt - 1);
-            tracing::warn!(
-                "retrying request after {}ms (attempt {}/{}): {}",
-                delay,
-                attempt + 1,
-                MAX_RETRIES + 1,
-                url
-            );
-            tokio::time::sleep(std::time::Duration::from_millis(delay)).await;
-        }
-
         match client.get(url).await {
             Ok(resp) => match decode(resp).await {
                 Ok(value) => return Ok(value),
                 Err(e) if is_retryable(&e) => {
-                    tracing::warn!("Retryable decode/request error for {}: {}", url, e);
-                    last_error = Some(e);
+                    if attempt == MAX_RETRIES {
+                        return Err(e);
+                    }
+                    sleep_before_retry("request", url, attempt, &e).await;
                 }
                 Err(e) => return Err(e),
             },
             Err(e) if is_retryable(&e) => {
-                tracing::warn!("Retryable request error for {}: {}", url, e);
-                last_error = Some(e);
+                if attempt == MAX_RETRIES {
+                    return Err(e);
+                }
+                sleep_before_retry("request", url, attempt, &e).await;
             }
             Err(e) => return Err(e),
         }
     }
-    Err(last_error.unwrap())
+    unreachable!("retry loop returns on success or final error")
 }
 
 const MAX_RETRIES: u32 = 3;
 const RETRY_BASE_DELAY_MS: u64 = 500;
+
+async fn sleep_before_retry(kind: &str, url: &str, attempt: u32, err: &NetError) {
+    let delay = RETRY_BASE_DELAY_MS * 2u64.pow(attempt);
+    tracing::warn!(
+        "{} failed, retrying after {}ms (attempt {}/{}): {}: {}",
+        kind,
+        delay,
+        attempt + 2,
+        MAX_RETRIES + 1,
+        url,
+        err
+    );
+    tokio::time::sleep(std::time::Duration::from_millis(delay)).await;
+}
 
 // streams a file to disk in chunks, calling progress_cb(downloaded, total) along the way.
 // total will be 0 if the server doesn't send content-length, so callers
@@ -164,36 +169,25 @@ pub async fn download_file(
     dest: &Path,
     progress_cb: impl Fn(u64, u64),
 ) -> Result<(), NetError> {
-    let mut last_error = None;
     tracing::debug!("Downloading {} to {}", url, dest.display());
 
     for attempt in 0..=MAX_RETRIES {
-        if attempt > 0 {
-            let delay = RETRY_BASE_DELAY_MS * 2u64.pow(attempt - 1);
-            tracing::warn!(
-                "retrying download after {}ms (attempt {}/{}): {}",
-                delay,
-                attempt + 1,
-                MAX_RETRIES + 1,
-                url
-            );
-            tokio::time::sleep(std::time::Duration::from_millis(delay)).await;
-        }
-
         match download_file_once(client, url, dest, &progress_cb).await {
             Ok(()) => {
                 tracing::debug!("Downloaded {} to {}", url, dest.display());
                 return Ok(());
             }
             Err(e) if is_retryable(&e) => {
-                tracing::warn!("Retryable download error for {}: {}", url, e);
-                last_error = Some(e);
+                if attempt == MAX_RETRIES {
+                    return Err(e);
+                }
+                sleep_before_retry("download", url, attempt, &e).await;
             }
             Err(e) => return Err(e),
         }
     }
 
-    Err(last_error.unwrap())
+    unreachable!("retry loop returns on success or final error")
 }
 
 // single attempt at downloading a file to disk

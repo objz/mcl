@@ -254,7 +254,6 @@ impl App {
         let instance = match self.instance_manager.load_one(&instance.name) {
             Ok(config) => config,
             Err(e) => {
-                tracing::error!("Failed to load instance '{}': {}", instance.name, e);
                 error_buffer::push_error(error_buffer::ErrorEvent {
                     id: 0,
                     level: tracing::Level::ERROR,

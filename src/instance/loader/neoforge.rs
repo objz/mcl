@@ -62,7 +62,6 @@ impl ModLoaderInstaller for NeoForgeInstaller {
             neoforge_api::run_neoforge_installer(&installer_jar, instance_dir, &java_path).await
         {
             let _ = tokio::fs::remove_file(&installer_jar).await;
-            tracing::error!("NeoForge installer failed: {}", e);
             return Err(e);
         }
 
