@@ -71,14 +71,10 @@ impl App {
             match key_event.code {
                 KeyCode::Enter | KeyCode::Char('y') | KeyCode::Char('Y') => {
                     let name = confirm_popup::pending_delete_name();
-                    if !name.is_empty() {
-                        match self.instance_manager.delete(&name) {
-                            Ok(_) => {
-                                self.instances_state.remove_instance(&name);
-                            }
-                            Err(_) => {}
+                    if !name.is_empty()
+                        && let Ok(_) = self.instance_manager.delete(&name) {
+                            self.instances_state.remove_instance(&name);
                         }
-                    }
                     confirm_popup::clear_pending();
                     self.focused = FocusedArea::Instances;
                     return Ok(());
@@ -190,19 +186,15 @@ impl App {
                             let new_name = self.instances_state.renaming.take().unwrap_or_default();
                             if let Some(inst) = self.instances_state.selected_instance() {
                                 let old_name = inst.name.clone();
-                                match self.instance_manager.rename(&old_name, &new_name) {
-                                    Ok(()) => {
-                                        if let Some(inst) = self
-                                            .instances_state
-                                            .instances
-                                            .iter_mut()
-                                            .find(|i| i.name == old_name)
-                                        {
-                                            inst.name = new_name.trim().to_owned();
-                                        }
+                                if let Ok(()) = self.instance_manager.rename(&old_name, &new_name)
+                                    && let Some(inst) = self
+                                        .instances_state
+                                        .instances
+                                        .iter_mut()
+                                        .find(|i| i.name == old_name)
+                                    {
+                                        inst.name = new_name.trim().to_owned();
                                     }
-                                    Err(_) => {}
-                                }
                             }
                         }
                         KeyCode::Esc => {

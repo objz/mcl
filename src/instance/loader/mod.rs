@@ -12,9 +12,28 @@ mod vanilla;
 use std::path::Path;
 
 use async_trait::async_trait;
+use thiserror::Error;
 
 use crate::instance::models::ModLoader;
 use crate::net::{HttpClient, NetError};
+
+#[derive(Debug, Error)]
+pub enum InstallerError {
+    #[error("IO error: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("Process failed: {0}")]
+    ProcessFailed(String),
+    #[error("Profile error: {0}")]
+    Profile(String),
+}
+
+#[derive(Debug, Error)]
+pub enum InstallError {
+    #[error("Download error: {0}")]
+    Download(#[from] NetError),
+    #[error("Installer error: {0}")]
+    Installer(#[from] InstallerError),
+}
 
 pub use vanilla::VanillaInstaller;
 
@@ -43,7 +62,7 @@ pub trait ModLoaderInstaller: Send + Sync {
         loader_version: &str,
         instance_dir: &Path,
         meta_dir: &Path,
-    ) -> Result<(), NetError>;
+    ) -> Result<(), InstallError>;
 }
 
 // writes raw profile JSON bytes to meta_dir/loader-profiles/<filename>.
@@ -71,7 +90,7 @@ pub(crate) fn save_installer_profile(
     meta_dir: &Path,
     version_dir_name: &str,
     profile_filename: &str,
-) -> Result<(), NetError> {
+) -> Result<(), InstallerError> {
     let ver_json_path = instance_dir
         .join(".minecraft")
         .join("versions")
@@ -79,11 +98,11 @@ pub(crate) fn save_installer_profile(
         .join(format!("{version_dir_name}.json"));
 
     if !ver_json_path.exists() {
-        tracing::error!(
+        tracing::debug!(
             "Installer profile JSON missing: {}",
             ver_json_path.display()
         );
-        return Err(NetError::Parse(format!(
+        return Err(InstallerError::Profile(format!(
             "Version JSON not found at {}",
             ver_json_path.display()
         )));

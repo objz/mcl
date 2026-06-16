@@ -6,6 +6,8 @@ use std::path::PathBuf;
 use chrono::Utc;
 use thiserror::Error;
 
+use crate::instance::loader::InstallError;
+use crate::instance::loader::InstallerError;
 use crate::instance::models::{InstanceConfig, ModLoader};
 
 #[derive(Debug, Error)]
@@ -20,6 +22,8 @@ pub enum InstanceError {
     Json(#[from] serde_json::Error),
     #[error("Download error: {0}")]
     Download(#[from] crate::net::NetError),
+    #[error("Installer error: {0}")]
+    InstallerError(#[from] InstallerError),
     #[error("Invalid instance name: {0}")]
     InvalidName(String),
 }
@@ -247,7 +251,11 @@ impl InstanceManager {
                 instance_dir,
                 &self.meta_dir,
             )
-            .await?;
+            .await
+            .map_err(|e| match e {
+                InstallError::Download(net_error) => InstanceError::Download(net_error),
+                InstallError::Installer(installer_error) => InstanceError::InstallerError(installer_error),
+            })?;
 
         let config = InstanceConfig {
             name: name.to_string(),

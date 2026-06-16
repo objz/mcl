@@ -5,7 +5,7 @@ use std::path::Path;
 
 use async_trait::async_trait;
 
-use super::{GameVersion, ModLoaderInstaller};
+use super::{GameVersion, InstallError, InstallerError, ModLoaderInstaller};
 use crate::instance::models::ModLoader;
 use crate::net::{HttpClient, NetError, fabric as fabric_api};
 
@@ -49,7 +49,7 @@ impl ModLoaderInstaller for FabricInstaller {
         loader_version: &str,
         _instance_dir: &Path,
         meta_dir: &Path,
-    ) -> Result<(), NetError> {
+    ) -> Result<(), InstallError> {
         tracing::info!(
             "Installing Fabric {} for Minecraft {}",
             loader_version,
@@ -67,7 +67,8 @@ impl ModLoaderInstaller for FabricInstaller {
             meta_dir,
             &format!("fabric-{game_version}-{loader_version}.json"),
             &raw_bytes,
-        )?;
+        )
+        .map_err(InstallerError::from)?;
         tracing::debug!(
             "Saved Fabric profile for Minecraft {} loader {}",
             game_version,

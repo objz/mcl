@@ -8,6 +8,7 @@ use std::path::Path;
 use serde::Deserialize;
 
 use crate::instance::loader::GameVersion;
+use crate::instance::loader::InstallerError;
 use crate::net::{HttpClient, NetError, download_file};
 use crate::tui::progress::set_action;
 
@@ -171,7 +172,7 @@ pub async fn run_neoforge_installer(
     installer_path: &Path,
     instance_dir: &Path,
     java_path: &str,
-) -> Result<(), NetError> {
+) -> Result<(), InstallerError> {
     use tokio::process::Command;
 
     set_action("Running NeoForge installer...");
@@ -186,26 +187,26 @@ pub async fn run_neoforge_installer(
     {
         Ok(o) => o,
         Err(e) => {
-            tracing::error!(
+            tracing::debug!(
                 "Failed to spawn NeoForge installer {} with Java {}: {}",
                 installer_path.display(),
                 java_path,
                 e
             );
-            return Err(NetError::Io(e));
+            return Err(InstallerError::Io(e));
         }
     };
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         let detail = stderr.lines().last().unwrap_or("").trim();
-        tracing::error!(
+        tracing::debug!(
             "NeoForge installer {} failed with status {:?}: {}",
             installer_path.display(),
             output.status.code(),
             detail
         );
-        return Err(NetError::InstallerFailed(format!(
+        return Err(InstallerError::ProcessFailed(format!(
             "NeoForge installer exited with {:?}",
             output.status.code()
         )));

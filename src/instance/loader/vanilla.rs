@@ -6,7 +6,7 @@ use std::path::Path;
 
 use async_trait::async_trait;
 
-use super::{GameVersion, ModLoaderInstaller};
+use super::{GameVersion, InstallError, ModLoaderInstaller};
 use crate::instance::models::ModLoader;
 use crate::net::{HttpClient, NetError, mojang};
 
@@ -45,7 +45,7 @@ impl ModLoaderInstaller for VanillaInstaller {
         _loader_version: &str,
         _instance_dir: &Path,
         _meta_dir: &Path,
-    ) -> Result<(), NetError> {
+    ) -> Result<(), InstallError> {
         Ok(())
     }
 }

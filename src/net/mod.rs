@@ -23,8 +23,6 @@ pub enum NetError {
     Parse(String),
     #[error("Server returned error status {status}: {url}")]
     StatusError { status: u16, url: String },
-    #[error("Installer process failed: {0}")]
-    InstallerFailed(String),
     #[error("Task failed: {0}")]
     TaskFailed(String),
 }

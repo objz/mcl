@@ -289,7 +289,7 @@ pub async fn download_assets_from(
                     match tokio::fs::create_dir_all(parent).await {
                         Ok(_) => {}
                         Err(e) => {
-                            tracing::error!("Failed to create asset index dir: {}", e);
+                            tracing::debug!("Failed to create asset index dir: {}", e);
                         }
                     }
                 }
@@ -298,7 +298,7 @@ pub async fn download_assets_from(
                         tracing::debug!("Saved asset index to {}", index_path.display());
                     }
                     Err(e) => {
-                        tracing::error!(
+                        tracing::debug!(
                             "Failed to write asset index {}: {}",
                             index_path.display(),
                             e
@@ -307,7 +307,7 @@ pub async fn download_assets_from(
                 }
             }
             Err(e) => {
-                tracing::error!("Failed to serialize asset index: {}", e);
+                tracing::debug!("Failed to serialize asset index: {}", e);
             }
         }
     }
@@ -394,13 +394,13 @@ async fn run_parallel_downloads(
                 set_sub_action(label);
             }
             Ok(Err(e)) => {
-                tracing::error!("Download failed: {}", e);
+                tracing::debug!("Download failed: {}", e);
                 if first_error.is_none() {
                     first_error = Some(e);
                 }
             }
             Err(e) => {
-                tracing::error!("Task panicked: {}", e);
+                tracing::debug!("Task panicked: {}", e);
                 if first_error.is_none() {
                     first_error = Some(NetError::TaskFailed(format!("Join error: {}", e)));
                 }
