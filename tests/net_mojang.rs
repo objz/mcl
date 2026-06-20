@@ -10,7 +10,7 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use rmcl::net::HttpClient;
 use rmcl::net::mojang::{
-    AssetIndex, Artifact, Download, JavaVersion, Library, LibraryDownloads, VersionDownloads,
+    Artifact, AssetIndex, Download, JavaVersion, Library, LibraryDownloads, VersionDownloads,
     VersionEntry, VersionMeta, download_assets, download_assets_from, download_libraries,
     fetch_version_manifest_from, fetch_version_meta_with_raw,
 };
@@ -226,9 +226,7 @@ async fn download_assets_from_writes_index_and_assets() {
         .await;
     // asset hash starts with "ab" so the per-asset URL is /<base>/ab/<hash>.
     Mock::given(method("GET"))
-        .and(path(
-            "/cdn/ab/ab1234567890abcdef1234567890abcdef123456",
-        ))
+        .and(path("/cdn/ab/ab1234567890abcdef1234567890abcdef123456"))
         .respond_with(ResponseTemplate::new(200).set_body_bytes(b"asset-bytes".to_vec()))
         .expect(1)
         .mount(&server)
@@ -272,7 +270,10 @@ async fn download_assets_writes_index_when_objects_is_empty() {
         .expect("download_assets index-only");
 
     let index_path = tmp.path().join("assets/indexes/5.json");
-    assert!(index_path.exists(), "expected asset index at {index_path:?}");
+    assert!(
+        index_path.exists(),
+        "expected asset index at {index_path:?}"
+    );
     let body: serde_json::Value =
         serde_json::from_slice(&std::fs::read(&index_path).unwrap()).unwrap();
     assert!(body.get("objects").is_some());

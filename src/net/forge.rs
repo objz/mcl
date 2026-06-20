@@ -7,7 +7,7 @@ use std::path::Path;
 
 use serde::Deserialize;
 
-use crate::instance::loader::GameVersion;
+use crate::instance::loader::{GameVersion, InstallError, InstallerError};
 use crate::net::{HttpClient, NetError, download_file};
 use crate::tui::progress::{set_action, set_sub_action};
 
@@ -47,6 +47,11 @@ pub async fn fetch_forge_versions_from(
 
     versions.sort();
     versions.dedup();
+    tracing::debug!(
+        "Resolved {} Forge version(s) for Minecraft {} from promotions",
+        versions.len(),
+        game_version
+    );
     Ok(versions)
 }
 
@@ -70,6 +75,10 @@ pub async fn fetch_forge_game_versions_from(
     game_versions.sort();
     game_versions.dedup();
     game_versions.reverse();
+    tracing::debug!(
+        "Resolved {} Forge game version(s) from promotions",
+        game_versions.len()
+    );
 
     Ok(game_versions
         .into_iter()
@@ -104,13 +113,20 @@ pub async fn download_forge_installer(
     let mut last_err = None;
     for slug in &slugs {
         let url = format!("{}/{slug}/forge-{slug}-installer.jar", FORGE_MAVEN_BASE,);
+        tracing::debug!("Trying Forge installer slug '{}'", slug);
         match download_file(client, &url, dest, |downloaded, total| {
             crate::tui::progress::set_progress(downloaded, total);
         })
         .await
         {
-            Ok(()) => return Ok(()),
-            Err(e) => last_err = Some(e),
+            Ok(()) => {
+                tracing::debug!("Downloaded Forge installer using slug '{}'", slug);
+                return Ok(());
+            }
+            Err(e) => {
+                tracing::debug!("Forge installer slug '{}' failed: {}", slug, e);
+                last_err = Some(e);
+            }
         }
     }
 
@@ -125,7 +141,7 @@ pub async fn run_forge_installer(
     installer_path: &Path,
     instance_dir: &Path,
     java_path: &str,
-) -> Result<(), NetError> {
+) -> Result<(), InstallerError> {
     use tokio::process::Command;
 
     set_action("Running Forge installer...");
@@ -140,7 +156,13 @@ pub async fn run_forge_installer(
     {
         Ok(o) => o,
         Err(e) => {
-            return Err(NetError::Io(e));
+            tracing::debug!(
+                "Failed to spawn Forge installer {} with Java {}: {}",
+                installer_path.display(),
+                java_path,
+                e
+            );
+            return Err(InstallerError::Io(e));
         }
     };
 
@@ -151,9 +173,16 @@ pub async fn run_forge_installer(
         } else {
             stderr.lines().last().unwrap_or("unknown error").to_string()
         };
-        return Err(NetError::InstallerFailed(detail));
+        tracing::debug!(
+            "Forge installer {} failed with status {:?}: {}",
+            installer_path.display(),
+            output.status.code(),
+            detail
+        );
+        return Err(InstallerError::ProcessFailed(detail));
     }
 
+    tracing::debug!("Forge installer completed successfully");
     Ok(())
 }
 
@@ -186,68 +215,83 @@ pub(crate) async fn install_forge_from_profile(
     installer_path: &Path,
     meta_dir: &Path,
     profile_filename: &str,
-) -> Result<(), NetError> {
+) -> Result<(), InstallError> {
     use std::io::Read;
 
     set_action("Installing legacy Forge from profile...");
+    tracing::debug!(
+        "Installing legacy Forge from {} into {}",
+        installer_path.display(),
+        meta_dir.display()
+    );
 
-    let file = std::fs::File::open(installer_path)?;
+    let file = std::fs::File::open(installer_path)
+        .map_err(|e| InstallError::Installer(InstallerError::Io(e)))?;
     let mut archive = zip::ZipArchive::new(file)
-        .map_err(|e| NetError::Parse(format!("Failed to open installer as ZIP: {e}")))?;
+        .map_err(|e| InstallError::Installer(InstallerError::Profile(format!("Failed to open installer as ZIP: {e}"))))?;
 
     let profile_data: serde_json::Value = {
         let entry = archive.by_name("install_profile.json").map_err(|e| {
-            NetError::Parse(format!("install_profile.json not found in installer: {e}"))
+            InstallError::Installer(InstallerError::Profile(format!("install_profile.json not found in installer: {e}")))
         })?;
         serde_json::from_reader(entry)
-            .map_err(|e| NetError::Parse(format!("Failed to parse install_profile.json: {e}")))?
+            .map_err(|e| InstallError::Installer(InstallerError::Profile(format!("Failed to parse install_profile.json: {e}"))))?
     };
 
     let version_info = profile_data
         .get("versionInfo")
-        .ok_or_else(|| NetError::Parse("install_profile.json missing versionInfo".into()))?;
+        .ok_or_else(|| InstallError::Installer(InstallerError::Profile("install_profile.json missing versionInfo".into())))?;
     let install_info = profile_data
         .get("install")
-        .ok_or_else(|| NetError::Parse("install_profile.json missing install section".into()))?;
+        .ok_or_else(|| InstallError::Installer(InstallerError::Profile("install_profile.json missing install section".into())))?;
 
     let libraries = version_info
         .get("libraries")
         .and_then(|v| v.as_array())
-        .ok_or_else(|| NetError::Parse("missing versionInfo.libraries".into()))?;
+        .ok_or_else(|| InstallError::Installer(InstallerError::Profile("missing versionInfo.libraries".into())))?;
 
     let file_path = install_info
         .get("filePath")
         .and_then(|v| v.as_str())
-        .ok_or_else(|| NetError::Parse("missing install.filePath".into()))?;
+        .ok_or_else(|| InstallError::Installer(InstallerError::Profile("missing install.filePath".into())))?;
 
     let install_path_coord = install_info
         .get("path")
         .and_then(|v| v.as_str())
-        .ok_or_else(|| NetError::Parse("missing install.path".into()))?;
+        .ok_or_else(|| InstallError::Installer(InstallerError::Profile("missing install.path".into())))?;
 
     // extract the universal jar to the correct maven location
     let universal_maven_path =
         crate::net::maven_coord_to_path(install_path_coord).ok_or_else(|| {
-            NetError::Parse(format!(
+            InstallError::Installer(InstallerError::Profile(format!(
                 "Invalid maven coord in install.path: {install_path_coord}"
-            ))
+            )))
         })?;
 
     set_sub_action("Extracting universal JAR...");
     let universal_dest = meta_dir.join("libraries").join(&universal_maven_path);
     if let Some(parent) = universal_dest.parent() {
-        std::fs::create_dir_all(parent)?;
+        std::fs::create_dir_all(parent)
+            .map_err(|e| InstallError::Installer(InstallerError::Io(e)))?;
     }
 
     {
         let mut entry = archive.by_name(file_path).map_err(|e| {
-            NetError::Parse(format!(
+            InstallError::Installer(InstallerError::Profile(format!(
                 "Universal JAR '{file_path}' not found in installer: {e}"
-            ))
+            )))
         })?;
         let mut buf = Vec::new();
-        entry.read_to_end(&mut buf)?;
-        std::fs::write(&universal_dest, &buf)?;
+        entry
+            .read_to_end(&mut buf)
+            .map_err(|e| InstallError::Installer(InstallerError::Io(e)))?;
+        std::fs::write(&universal_dest, &buf)
+            .map_err(|e| InstallError::Installer(InstallerError::Io(e)))?;
+        tracing::debug!(
+            "Extracted legacy Forge universal JAR to {} ({} bytes)",
+            universal_dest.display(),
+            buf.len()
+        );
     }
 
     // download libraries needed by this forge version. libs with a url field
@@ -256,17 +300,18 @@ pub(crate) async fn install_forge_from_profile(
     // in mojang's modern version metadata, so we fetch those too.
     let libraries_dir = meta_dir.join("libraries");
     for lib in libraries {
-        let name = lib.get("name").and_then(|v| v.as_str()).unwrap_or_default();
+            let name = lib.get("name").and_then(|v| v.as_str()).unwrap_or_default();
 
         let maven_path = match crate::net::maven_coord_to_path(name) {
             Some(p) => p,
             None => {
-                return Err(NetError::Parse(format!("Invalid Maven coordinate: {name}")));
+                return Err(InstallError::Installer(InstallerError::Profile(format!("Invalid Maven coordinate: {name}"))));
             }
         };
 
         let dest = libraries_dir.join(&maven_path);
         if dest.exists() {
+            tracing::trace!("Legacy Forge library already cached: {}", name);
             continue;
         }
 
@@ -278,6 +323,7 @@ pub(crate) async fn install_forge_from_profile(
         let download_url = format!("{base_url}/{maven_path}");
 
         set_sub_action(name);
+        tracing::debug!("Downloading legacy Forge library {}", name);
         download_file(client, &download_url, &dest, |_, _| {}).await?;
     }
 
@@ -296,8 +342,9 @@ pub(crate) async fn install_forge_from_profile(
     // the source is a serde_json::Value (which doesn't preserve order),
     // but no field is silently dropped.
     let serialized = serde_json::to_vec(version_info)
-        .map_err(|e| NetError::Parse(format!("Failed to serialize Forge profile: {e}")))?;
-    crate::instance::loader::save_profile_bytes(meta_dir, profile_filename, &serialized)?;
+        .map_err(|e| InstallError::Installer(InstallerError::Profile(format!("Failed to serialize Forge profile: {e}"))))?;
+    crate::instance::loader::save_profile_bytes(meta_dir, profile_filename, &serialized)
+        .map_err(|e| InstallError::Installer(InstallerError::Io(e)))?;
     Ok(())
 }
 

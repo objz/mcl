@@ -33,6 +33,7 @@ pub fn parse_import_input(input: &str) -> ImportInput {
         || input.starts_with('/')
         || input.starts_with("~/")
     {
+        tracing::debug!("Import input resolved as local file: {}", input);
         return ImportInput::LocalFile(input.to_string());
     }
 
@@ -41,7 +42,7 @@ pub fn parse_import_input(input: &str) -> ImportInput {
         .or_else(|| input.strip_prefix("http://modrinth.com/modpack/"))
     {
         let parts: Vec<&str> = rest.split('/').filter(|s| !s.is_empty()).collect();
-        return match parts.as_slice() {
+        let parsed = match parts.as_slice() {
             [slug, "version", version_id, ..] => ImportInput::VersionId {
                 slug: slug.to_string(),
                 version_id: version_id.to_string(),
@@ -49,8 +50,11 @@ pub fn parse_import_input(input: &str) -> ImportInput {
             [slug, ..] => ImportInput::ProjectSlug(slug.to_string()),
             [] => ImportInput::ProjectSlug(String::new()),
         };
+        tracing::debug!("Import input resolved as Modrinth URL: {:?}", parsed);
+        return parsed;
     }
 
+    tracing::debug!("Import input resolved as Modrinth project slug: {}", input);
     ImportInput::ProjectSlug(input.to_string())
 }
 
@@ -70,12 +74,14 @@ pub struct ImportSummary {
 // peeks inside a zip to figure out what format it is.
 // checks for modrinth.index.json first, then mmc-pack.json.
 pub fn detect_format(path: &Path) -> Result<PackFormat, String> {
+    tracing::debug!("Detecting modpack format for {}", path.display());
     let file =
         std::fs::File::open(path).map_err(|e| format!("Cannot open '{}': {e}", path.display()))?;
     let archive =
         zip::ZipArchive::new(file).map_err(|e| format!("Invalid ZIP '{}': {e}", path.display()))?;
 
     if archive.file_names().any(|n| n == "modrinth.index.json") {
+        tracing::debug!("Detected Modrinth .mrpack archive: {}", path.display());
         return Ok(PackFormat::Mrpack);
     }
 
@@ -84,21 +90,36 @@ pub fn detect_format(path: &Path) -> Result<PackFormat, String> {
         .file_names()
         .any(|n| n == "mmc-pack.json" || n.ends_with("/mmc-pack.json"))
     {
+        tracing::debug!("Detected MultiMC/Prism archive: {}", path.display());
         return Ok(PackFormat::Mmc);
     }
 
+    tracing::warn!("Unknown modpack archive format: {}", path.display());
     Err("Unknown pack format: no modrinth.index.json or mmc-pack.json found".to_string())
 }
 
 pub fn build_summary(path: &Path) -> Result<ImportSummary, String> {
     if !path.exists() {
+        tracing::warn!("Cannot import missing file {}", path.display());
         return Err(format!("File not found: {}", path.display()));
     }
     let format = detect_format(path)?;
-    match format {
+    let summary = match format {
         PackFormat::Mrpack => mrpack::build_summary(path),
         PackFormat::Mmc => mmc::build_summary(path),
-    }
+    }?;
+    tracing::debug!(
+        "Built import summary for {}: name='{}' format={:?} mc={} loader={} loader_version={:?} mods={} overrides={}",
+        path.display(),
+        summary.name,
+        summary.format,
+        summary.game_version,
+        summary.loader,
+        summary.loader_version,
+        summary.mod_count,
+        summary.override_count
+    );
+    Ok(summary)
 }
 
 pub fn unique_instance_name(base: &str, instances_dir: &Path) -> String {
@@ -108,6 +129,7 @@ pub fn unique_instance_name(base: &str, instances_dir: &Path) -> String {
         .join("instance.json")
         .exists()
     {
+        tracing::trace!("Import instance name '{}' is available", candidate);
         return candidate;
     }
     for n in 2..100 {
@@ -117,9 +139,18 @@ pub fn unique_instance_name(base: &str, instances_dir: &Path) -> String {
             .join("instance.json")
             .exists()
         {
+            tracing::debug!(
+                "Import instance name '{}' collided; using '{}'",
+                base,
+                candidate
+            );
             return candidate;
         }
     }
+    tracing::warn!(
+        "Import instance name '{}' had many collisions; using fallback suffix",
+        base
+    );
     format!("{base} (import)")
 }
 
@@ -127,6 +158,12 @@ pub async fn execute_import(
     summary: &ImportSummary,
     manager: &InstanceManager,
 ) -> Result<crate::instance::InstanceConfig, Box<dyn std::error::Error + Send + Sync>> {
+    tracing::info!(
+        "Executing {:?} import '{}' from {}",
+        summary.format,
+        summary.name,
+        summary.archive_path.display()
+    );
     match summary.format {
         PackFormat::Mrpack => mrpack::execute_import(summary, manager).await,
         PackFormat::Mmc => mmc::execute_import(summary, manager).await,
@@ -154,11 +191,7 @@ mod tests {
     #[test]
     fn detect_format_recognises_mrpack() {
         let tmp = tempfile::tempdir().unwrap();
-        let path = make_pack_zip(
-            tmp.path(),
-            "pack.mrpack",
-            &[("modrinth.index.json", b"{}")],
-        );
+        let path = make_pack_zip(tmp.path(), "pack.mrpack", &[("modrinth.index.json", b"{}")]);
         assert_eq!(detect_format(&path), Ok(PackFormat::Mrpack));
     }
 
@@ -176,11 +209,7 @@ mod tests {
         // mmc-pack.json one directory deep - the more common layout where
         // the archive wraps everything in a named directory.
         let tmp = tempfile::tempdir().unwrap();
-        let path = make_pack_zip(
-            tmp.path(),
-            "pack.zip",
-            &[("MyPack/mmc-pack.json", b"{}")],
-        );
+        let path = make_pack_zip(tmp.path(), "pack.zip", &[("MyPack/mmc-pack.json", b"{}")]);
         assert_eq!(detect_format(&path), Ok(PackFormat::Mmc));
     }
 
@@ -192,10 +221,7 @@ mod tests {
         let path = make_pack_zip(
             tmp.path(),
             "weird.zip",
-            &[
-                ("modrinth.index.json", b"{}"),
-                ("mmc-pack.json", b"{}"),
-            ],
+            &[("modrinth.index.json", b"{}"), ("mmc-pack.json", b"{}")],
         );
         assert_eq!(detect_format(&path), Ok(PackFormat::Mrpack));
     }

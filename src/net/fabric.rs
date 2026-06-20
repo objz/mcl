@@ -56,7 +56,9 @@ pub async fn fetch_fabric_game_versions_from(
     meta_base: &str,
 ) -> Result<Vec<GameVersion>, NetError> {
     let url = format!("{}/versions/game", meta_base);
+    tracing::debug!("Fetching Fabric game versions from {}", url);
     let versions: Vec<FabricGameVersion> = client.get_json(&url).await?;
+    tracing::debug!("Fetched {} Fabric game version(s)", versions.len());
 
     Ok(versions
         .into_iter()
@@ -80,7 +82,14 @@ pub async fn fetch_fabric_versions_from(
     game_version: &str,
 ) -> Result<Vec<FabricLoaderVersion>, NetError> {
     let url = format!("{}/versions/loader/{}", meta_base, game_version);
-    client.get_json(&url).await
+    tracing::debug!("Fetching Fabric loader versions for {}", game_version);
+    let versions: Vec<FabricLoaderVersion> = client.get_json(&url).await?;
+    tracing::debug!(
+        "Fetched {} Fabric loader version(s) for {}",
+        versions.len(),
+        game_version
+    );
+    Ok(versions)
 }
 
 pub async fn fetch_fabric_profile(
@@ -101,6 +110,11 @@ pub async fn fetch_fabric_profile_from(
         "{}/versions/loader/{}/{}/profile/json",
         meta_base, game_version, loader_version
     );
+    tracing::debug!(
+        "Fetching Fabric profile for Minecraft {} loader {}",
+        game_version,
+        loader_version
+    );
     client.get_json(&url).await
 }
 
@@ -113,8 +127,7 @@ pub async fn fetch_fabric_profile_with_raw(
     game_version: &str,
     loader_version: &str,
 ) -> Result<(FabricProfile, Vec<u8>), NetError> {
-    fetch_fabric_profile_with_raw_from(client, FABRIC_META_BASE, game_version, loader_version)
-        .await
+    fetch_fabric_profile_with_raw_from(client, FABRIC_META_BASE, game_version, loader_version).await
 }
 
 pub async fn fetch_fabric_profile_with_raw_from(
@@ -127,6 +140,11 @@ pub async fn fetch_fabric_profile_with_raw_from(
         "{}/versions/loader/{}/{}/profile/json",
         meta_base, game_version, loader_version
     );
+    tracing::debug!(
+        "Fetching raw Fabric profile for Minecraft {} loader {}",
+        game_version,
+        loader_version
+    );
     client.get_json_with_raw(&url, "Fabric profile").await
 }
 
@@ -138,6 +156,11 @@ pub async fn download_fabric_libraries(
     meta_dir: &Path,
 ) -> Result<(), NetError> {
     let libraries_dir = meta_dir.join("libraries");
+    tracing::debug!(
+        "Resolving {} Fabric libraries into {}",
+        profile.libraries.len(),
+        libraries_dir.display()
+    );
 
     for lib in &profile.libraries {
         let maven_path = match crate::net::maven_coord_to_path(&lib.name) {
@@ -162,10 +185,12 @@ pub async fn download_fabric_libraries(
 
         set_sub_action(&lib.name);
         tracing::info!("Downloading Fabric library: {}", lib.name);
+        tracing::trace!("Fabric library destination: {}", dest.display());
 
         download_file(client, &download_url, &dest, |_, _| {}).await?;
     }
 
+    tracing::debug!("Fabric library resolution complete for {}", profile.id);
     Ok(())
 }
 

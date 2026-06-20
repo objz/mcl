@@ -6,7 +6,7 @@ use std::path::Path;
 
 use async_trait::async_trait;
 
-use super::{GameVersion, ModLoaderInstaller};
+use super::{GameVersion, InstallError, ModLoaderInstaller};
 use crate::instance::models::ModLoader;
 use crate::net::{HttpClient, NetError, forge as forge_api};
 
@@ -27,7 +27,14 @@ impl ModLoaderInstaller for ForgeInstaller {
         client: &HttpClient,
         game_version: &str,
     ) -> Result<Vec<String>, NetError> {
-        forge_api::fetch_forge_versions(client, game_version).await
+        tracing::debug!("Fetching Forge versions for Minecraft {}", game_version);
+        let versions = forge_api::fetch_forge_versions(client, game_version).await?;
+        tracing::debug!(
+            "Fetched {} Forge version(s) for Minecraft {}",
+            versions.len(),
+            game_version
+        );
+        Ok(versions)
     }
 
     async fn install(
@@ -37,8 +44,14 @@ impl ModLoaderInstaller for ForgeInstaller {
         loader_version: &str,
         instance_dir: &Path,
         meta_dir: &Path,
-    ) -> Result<(), NetError> {
+    ) -> Result<(), InstallError> {
         let installer_jar = instance_dir.join(".minecraft").join("forge-installer.jar");
+        tracing::info!(
+            "Installing Forge {} for Minecraft {}",
+            loader_version,
+            game_version
+        );
+        tracing::debug!("Forge installer path: {}", installer_jar.display());
 
         forge_api::download_forge_installer(client, game_version, loader_version, &installer_jar)
             .await?;
@@ -47,6 +60,7 @@ impl ModLoaderInstaller for ForgeInstaller {
 
         if forge_api::has_legacy_install_profile(&installer_jar) {
             // old forge: no --installClient support, extract directly from jar
+            tracing::debug!("Forge installer uses legacy install_profile.json path");
             if let Err(e) = forge_api::install_forge_from_profile(
                 client,
                 &installer_jar,
@@ -65,21 +79,28 @@ impl ModLoaderInstaller for ForgeInstaller {
                 .effective_java_path()
                 .map(str::to_owned)
                 .unwrap_or_else(crate::net::detect_java_path);
+            tracing::debug!("Running Forge installer with Java {}", java_path);
             if let Err(e) =
                 forge_api::run_forge_installer(&installer_jar, instance_dir, &java_path).await
             {
                 let _ = tokio::fs::remove_file(&installer_jar).await;
-                return Err(e);
+                return Err(InstallError::Installer(e));
             }
 
             // extract the profile from what the installer just wrote to disk
-            save_forge_profile(instance_dir, meta_dir, game_version, loader_version)?;
+            save_forge_profile(instance_dir, meta_dir, game_version, loader_version)
+                .map_err(InstallError::Installer)?;
         }
 
         if let Err(e) = tokio::fs::remove_file(&installer_jar).await {
             tracing::warn!("Failed to remove Forge installer JAR: {}", e);
         }
 
+        tracing::debug!(
+            "Installed Forge {} for Minecraft {}",
+            loader_version,
+            game_version
+        );
         Ok(())
     }
 }
@@ -89,7 +110,7 @@ fn save_forge_profile(
     meta_dir: &Path,
     game_version: &str,
     loader_version: &str,
-) -> Result<(), NetError> {
+) -> Result<(), super::InstallerError> {
     let version_dir_name = format!("{game_version}-forge-{loader_version}");
     let profile_filename = format!("forge-{game_version}-{loader_version}.json");
     super::save_installer_profile(instance_dir, meta_dir, &version_dir_name, &profile_filename)

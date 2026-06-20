@@ -45,4 +45,3 @@ pub fn scan_screenshots(instances_dir: &Path, instance_name: &str) -> Vec<Screen
     entries.sort_by(|a, b| b.name.cmp(&a.name));
     entries
 }
-

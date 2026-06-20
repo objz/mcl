@@ -28,6 +28,22 @@ pub enum LaunchError {
     Json(#[from] serde_json::Error),
     #[error("{0} launch is not yet supported")]
     NotSupported(String),
+    #[error(
+        "This instance requires Java {required}, but rmcl is using Java {detected}: {java}"
+    )]
+    JavaTooOld {
+        java: String,
+        required: u32,
+        detected: u32,
+    },
+    #[error(
+        "This instance requires Java {required}, but rmcl could not check {java}: {reason}"
+    )]
+    JavaCheckFailed {
+        java: String,
+        required: u32,
+        reason: String,
+    },
     #[error("{0}")]
     Auth(String),
 }
@@ -40,6 +56,68 @@ fn build_game_args(
     let rendered = render::render_args(profile, rule_ctx, template_ctx)
         .map_err(|e| LaunchError::Parse(format!("Failed to render args: {e}")))?;
     Ok((rendered.jvm, rendered.game))
+}
+
+fn parse_java_major_version(text: &str) -> Option<u32> {
+    let quoted = text
+        .split_once('"')
+        .and_then(|(_, rest)| rest.split_once('"').map(|(version, _)| version));
+
+    let token = quoted.or_else(|| {
+        let start = text.find(|c: char| c.is_ascii_digit())?;
+        Some(&text[start..])
+    })?;
+
+    let parts: Vec<u32> = token
+        .split(|c: char| !c.is_ascii_digit())
+        .filter(|part| !part.is_empty())
+        .filter_map(|part| part.parse::<u32>().ok())
+        .collect();
+
+    match parts.as_slice() {
+        [1, legacy_major, ..] => Some(*legacy_major),
+        [major, ..] => Some(*major),
+        [] => None,
+    }
+}
+
+async fn check_java_version(java: &str, required: Option<u32>) -> Result<(), LaunchError> {
+    let Some(required) = required.filter(|major| *major > 0) else {
+        return Ok(());
+    };
+
+    let output = tokio::process::Command::new(java)
+        .arg("-version")
+        .output()
+        .await
+        .map_err(|e| LaunchError::JavaCheckFailed {
+            java: java.to_owned(),
+            required,
+            reason: e.to_string(),
+        })?;
+
+    let version_text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let detected =
+        parse_java_major_version(&version_text).ok_or_else(|| LaunchError::JavaCheckFailed {
+            java: java.to_owned(),
+            required,
+            reason: format!("could not parse `java -version` output: {version_text:?}"),
+        })?;
+
+    if detected < required {
+        return Err(LaunchError::JavaTooOld {
+            java: java.to_owned(),
+            required,
+            detected,
+        });
+    }
+
+    Ok(())
 }
 
 // existing installs from rmcl <= 0.3.0 have meta.json files in the
@@ -334,6 +412,7 @@ pub async fn build_launch_invocation(
     // so we check there first.
     let has_local_libs = matches!(config.loader, ModLoader::Forge | ModLoader::NeoForge);
     let local_lib_dir = minecraft_dir.join("libraries");
+    let library_directory = if has_local_libs { &local_lib_dir } else { &lib_dir };
 
     let mut classpath: Vec<PathBuf> = Vec::new();
     for lib in &merged_profile.libraries {
@@ -407,6 +486,15 @@ pub async fn build_launch_invocation(
         })
         .unwrap_or_else(crate::net::detect_java_path);
 
+    check_java_version(
+        &java,
+        merged_profile
+            .java_version
+            .as_ref()
+            .map(|version| version.major_version),
+    )
+    .await?;
+
     let assets_root = meta_dir.join("assets");
     let natives_dir = meta_dir
         .join("versions")
@@ -414,7 +502,7 @@ pub async fn build_launch_invocation(
         .join("natives");
     let version_type = merged_profile.type_.as_deref().unwrap_or("release");
     let template_ctx = TemplateContext {
-        library_directory: &lib_dir,
+        library_directory,
         classpath_separator: sep,
         version_name: &config.game_version,
         version_type,
@@ -523,6 +611,16 @@ pub async fn launch(
     };
 
     let invocation = build_launch_invocation(config, instances_dir, meta_dir, &auth).await?;
+    tracing::debug!(
+        "[{}] Prepared launch invocation: working_dir={} classpath_entries={} jvm_args={} extra_args={} game_args={} main_class={}",
+        name,
+        invocation.working_dir.display(),
+        invocation.classpath.len(),
+        invocation.jvm_args.len(),
+        invocation.extra_args.len(),
+        invocation.game_args.len(),
+        invocation.main_class
+    );
 
     let (kill_tx, kill_rx) = tokio::sync::oneshot::channel::<()>();
     crate::running::register_kill(&name, kill_tx);
@@ -563,13 +661,23 @@ pub async fn launch(
         Err(e) => {
             crate::running::cleanup_kill_sender(&name);
             crate::running::remove(&name);
+            tracing::error!("[{}] Failed to spawn Minecraft process: {}", name, e);
             return Err(LaunchError::Io(e));
         }
     };
+    tracing::debug!("[{}] Spawned Minecraft process", name);
 
     crate::running::set_state(&name, crate::running::RunState::Running);
 
     let log_file_path = crate::instance::log_files::create_log_file(instances_dir, &name);
+    match &log_file_path {
+        Some(path) => tracing::debug!(
+            "[{}] Writing Minecraft process log to {}",
+            name,
+            path.display()
+        ),
+        None => tracing::warn!("[{}] Could not create Minecraft process log file", name),
+    }
 
     let name_for_task = name.clone();
     let instances_dir_owned = instances_dir.to_path_buf();
@@ -636,6 +744,7 @@ pub async fn launch(
                         break;
                     }
                 }
+                tracing::trace!("Minecraft stdout capture task ended");
             });
         }
 
@@ -654,6 +763,7 @@ pub async fn launch(
                         break;
                     }
                 }
+                tracing::trace!("Minecraft stderr capture task ended");
             });
         }
         drop(log_tx);
@@ -675,6 +785,11 @@ pub async fn launch(
 
         if code == Some(0) || killed_by_user {
             crate::running::remove(&name_for_task);
+            tracing::debug!(
+                "[{}] Cleared running state after normal exit (killed_by_user={})",
+                name_for_task,
+                killed_by_user
+            );
         } else {
             crate::running::set_state(&name_for_task, crate::running::RunState::Crashed(code));
             crate::tui::error_buffer::push_error(crate::tui::error_buffer::ErrorEvent {
@@ -733,6 +848,18 @@ fn emit_parsed_instance_log(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[rstest::rstest]
+    #[case("openjdk version \"25.0.3\" 2026-04-21", Some(25))]
+    #[case("openjdk version \"21.0.11\" 2026-04-21", Some(21))]
+    #[case("java version \"1.8.0_402\"", Some(8))]
+    #[case("garbage", None)]
+    fn parse_java_major_version_handles_common_outputs(
+        #[case] output: &str,
+        #[case] expected: Option<u32>,
+    ) {
+        assert_eq!(parse_java_major_version(output), expected);
+    }
 
     #[test]
     fn build_game_args_renders_upstream_arguments() {

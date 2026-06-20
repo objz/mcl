@@ -9,12 +9,12 @@ use ratatui::{
 
 pub mod account;
 pub mod content;
-pub mod settings;
 pub mod instances;
 pub mod logs_viewer;
 pub mod popups;
 pub mod screenshots_grid;
 pub mod search;
+pub mod settings;
 pub mod status;
 
 // highlight the first character of a title with the accent color,

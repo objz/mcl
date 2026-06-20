@@ -383,8 +383,13 @@ mod tests {
     #[test]
     fn parse_add_opens_extracts_module_args() {
         let tmp = tempfile::tempdir().unwrap();
-        let manifest = b"Manifest-Version: 1.0\nAdd-Opens: java.base/java.lang java.base/java.util\n";
-        let zip_path = make_zip(tmp.path(), "patches.zip", &[("META-INF/MANIFEST.MF", manifest)]);
+        let manifest =
+            b"Manifest-Version: 1.0\nAdd-Opens: java.base/java.lang java.base/java.util\n";
+        let zip_path = make_zip(
+            tmp.path(),
+            "patches.zip",
+            &[("META-INF/MANIFEST.MF", manifest)],
+        );
         let args = parse_add_opens(&zip_path).expect("parsed");
         assert_eq!(
             args,

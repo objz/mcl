@@ -426,11 +426,8 @@ mod tests {
                 id: "1.20.1".into(),
                 stable: true,
             }]);
-            guard.loader_versions = LoadState::Loaded(vec![
-                "47.2.0".into(),
-                "47.1.0".into(),
-                "47.0.50".into(),
-            ]);
+            guard.loader_versions =
+                LoadState::Loaded(vec!["47.2.0".into(), "47.1.0".into(), "47.0.50".into()]);
         }
 
         let backend = TestBackend::new(60, 14);

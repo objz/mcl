@@ -153,12 +153,22 @@ pub fn scan_mods(instances_dir: &Path, instance_name: &str) -> Vec<ContentEntry>
 fn read_mod_metadata(jar_path: &Path) -> (String, String, Option<Vec<u8>>) {
     let file = match std::fs::File::open(jar_path) {
         Ok(file) => file,
-        Err(_) => return (String::new(), String::new(), None),
+        Err(e) => {
+            tracing::trace!("Failed to open mod JAR {}: {}", jar_path.display(), e);
+            return (String::new(), String::new(), None);
+        }
     };
 
     let mut archive = match zip::ZipArchive::new(file) {
         Ok(archive) => archive,
-        Err(_) => return (String::new(), String::new(), None),
+        Err(e) => {
+            tracing::trace!(
+                "Failed to read mod JAR as ZIP {}: {}",
+                jar_path.display(),
+                e
+            );
+            return (String::new(), String::new(), None);
+        }
     };
 
     // try each loader's metadata in order. if we get metadata but the
@@ -180,12 +190,23 @@ fn read_mod_metadata(jar_path: &Path) -> (String, String, Option<Vec<u8>>) {
                 read_zip_bytes(&mut archive, icon_path)
             }
             .or_else(|| try_fallback_icons(&mut archive));
+            tracing::trace!(
+                "Read mod metadata from {}: name='{}' icon_declared={}",
+                jar_path.display(),
+                name,
+                !icon_path.is_empty()
+            );
             return (name, description, icon);
         }
     }
 
     // no recognized metadata at all, try common icon paths
     let icon_bytes = try_fallback_icons(&mut archive);
+    tracing::trace!(
+        "No recognized mod metadata in {}; fallback_icon={}",
+        jar_path.display(),
+        icon_bytes.is_some()
+    );
     (String::new(), String::new(), icon_bytes)
 }
 
@@ -742,7 +763,8 @@ description = "A neoforge mod"
     fn scan_mods_prefers_neoforge_toml_over_forge_toml() {
         let tmp = tempfile::tempdir().unwrap();
         let dir = setup_mods_dir(tmp.path(), "inst");
-        let neoforge = "[[mods]]\ndisplayName = \"NeoForge Name\"\ndescription = \"neoforge desc\"\n";
+        let neoforge =
+            "[[mods]]\ndisplayName = \"NeoForge Name\"\ndescription = \"neoforge desc\"\n";
         let forge = "[[mods]]\ndisplayName = \"Forge Name\"\ndescription = \"forge desc\"\n";
         make_jar(
             &dir,

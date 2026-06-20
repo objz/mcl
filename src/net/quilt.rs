@@ -52,7 +52,9 @@ pub async fn fetch_quilt_game_versions_from(
     meta_base: &str,
 ) -> Result<Vec<GameVersion>, NetError> {
     let url = format!("{}/versions/game", meta_base);
+    tracing::debug!("Fetching Quilt game versions from {}", url);
     let versions: Vec<QuiltGameVersion> = client.get_json(&url).await?;
+    tracing::debug!("Fetched {} Quilt game version(s)", versions.len());
 
     Ok(versions
         .into_iter()
@@ -76,7 +78,14 @@ pub async fn fetch_quilt_versions_from(
     game_version: &str,
 ) -> Result<Vec<QuiltLoaderVersion>, NetError> {
     let url = format!("{}/versions/loader/{}", meta_base, game_version);
-    client.get_json(&url).await
+    tracing::debug!("Fetching Quilt loader versions for {}", game_version);
+    let versions: Vec<QuiltLoaderVersion> = client.get_json(&url).await?;
+    tracing::debug!(
+        "Fetched {} Quilt loader version(s) for {}",
+        versions.len(),
+        game_version
+    );
+    Ok(versions)
 }
 
 pub async fn fetch_quilt_profile(
@@ -96,6 +105,11 @@ pub async fn fetch_quilt_profile_from(
     let url = format!(
         "{}/versions/loader/{}/{}/profile/json",
         meta_base, game_version, loader_version
+    );
+    tracing::debug!(
+        "Fetching Quilt profile for Minecraft {} loader {}",
+        game_version,
+        loader_version
     );
     client.get_json(&url).await
 }
@@ -122,6 +136,11 @@ pub async fn fetch_quilt_profile_with_raw_from(
         "{}/versions/loader/{}/{}/profile/json",
         meta_base, game_version, loader_version
     );
+    tracing::debug!(
+        "Fetching raw Quilt profile for Minecraft {} loader {}",
+        game_version,
+        loader_version
+    );
     client.get_json_with_raw(&url, "Quilt profile").await
 }
 
@@ -131,6 +150,11 @@ pub async fn download_quilt_libraries(
     meta_dir: &Path,
 ) -> Result<(), NetError> {
     let libraries_dir = meta_dir.join("libraries");
+    tracing::debug!(
+        "Resolving {} Quilt libraries into {}",
+        profile.libraries.len(),
+        libraries_dir.display()
+    );
 
     for lib in &profile.libraries {
         let maven_path = match crate::net::maven_coord_to_path(&lib.name) {
@@ -155,10 +179,12 @@ pub async fn download_quilt_libraries(
 
         set_sub_action(&lib.name);
         tracing::info!("Downloading Quilt library: {}", lib.name);
+        tracing::trace!("Quilt library destination: {}", dest.display());
 
         download_file(client, &download_url, &dest, |_, _| {}).await?;
     }
 
+    tracing::debug!("Quilt library resolution complete for {}", profile.id);
     Ok(())
 }
 

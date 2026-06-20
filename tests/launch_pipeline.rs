@@ -55,6 +55,22 @@ fn make_config_with(
     }
 }
 
+#[cfg(unix)]
+fn fake_java(tmp: &TempDir, major: u32) -> String {
+    use std::os::unix::fs::PermissionsExt;
+
+    let path = tmp.path().join(format!("java-{major}"));
+    std::fs::write(
+        &path,
+        format!("#!/bin/sh\necho 'openjdk version \"{major}.0.1\"' >&2\n"),
+    )
+    .unwrap();
+    let mut permissions = std::fs::metadata(&path).unwrap().permissions();
+    permissions.set_mode(0o755);
+    std::fs::set_permissions(&path, permissions).unwrap();
+    path.to_string_lossy().into_owned()
+}
+
 // builds the on-disk layout that build_launch_invocation expects:
 //   <tmp>/instances/<name>/.minecraft/        (instance dir, created empty)
 //   <tmp>/meta/versions/<game_version>/meta.json
@@ -148,6 +164,16 @@ fn modern_vanilla_meta(id: &str) -> serde_json::Value {
     })
 }
 
+#[cfg(unix)]
+fn modern_vanilla_meta_with_java(id: &str, java_major: u32) -> serde_json::Value {
+    let mut meta = modern_vanilla_meta(id);
+    meta["javaVersion"] = json!({
+        "component": format!("java-runtime-{java_major}"),
+        "majorVersion": java_major
+    });
+    meta
+}
+
 fn legacy_vanilla_meta(id: &str) -> serde_json::Value {
     json!({
         "id": id,
@@ -182,14 +208,11 @@ async fn vanilla_modern_builds_complete_invocation() {
     assert_eq!(inv.main_class, "net.minecraft.client.main.Main");
     assert!(inv.extra_args.is_empty());
 
-    let expected_natives = fx
-        .meta_dir
-        .join("versions")
-        .join("1.20.1")
-        .join("natives");
+    let expected_natives = fx.meta_dir.join("versions").join("1.20.1").join("natives");
     assert!(
-        inv.jvm_args.iter().any(|a| a
-            == &format!("-Djava.library.path={}", expected_natives.display())),
+        inv.jvm_args
+            .iter()
+            .any(|a| a == &format!("-Djava.library.path={}", expected_natives.display())),
         "jvm_args missing natives substitution: {:?}",
         inv.jvm_args
     );
@@ -213,6 +236,34 @@ async fn vanilla_modern_builds_complete_invocation() {
     let client_jar = fx.meta_dir.join("versions/1.20.1/1.20.1.jar");
     assert!(inv.classpath.contains(&slf4j));
     assert!(inv.classpath.contains(&client_jar));
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn launch_fails_when_selected_java_is_older_than_profile_requires() {
+    let fx = Fixture::new(
+        "java-old",
+        "26.1.2",
+        modern_vanilla_meta_with_java("26.1.2", 25),
+    );
+    let mut config = make_config("java-old", "26.1.2", ModLoader::Vanilla);
+    config.java_path = Some(fake_java(&fx._tmp, 21));
+
+    let err = build_launch_invocation(&config, &fx.instances_dir, &fx.meta_dir, &test_auth())
+        .await
+        .expect_err("java 21 should fail for a Java 25 profile");
+
+    assert!(
+        matches!(
+            err,
+            LaunchError::JavaTooOld {
+                required: 25,
+                detected: 21,
+                ..
+            }
+        ),
+        "expected JavaTooOld, got {err:?}"
+    );
 }
 
 #[tokio::test]
@@ -270,7 +321,10 @@ async fn forge_modern_includes_add_opens() {
         .await
         .unwrap();
 
-    assert_eq!(inv.main_class, "cpw.mods.bootstraplauncher.BootstrapLauncher");
+    assert_eq!(
+        inv.main_class,
+        "cpw.mods.bootstraplauncher.BootstrapLauncher"
+    );
     assert!(
         inv.jvm_args.iter().any(|a| a == "--add-opens"),
         "Forge --add-opens missing: {:?}",
@@ -311,9 +365,9 @@ async fn forge_local_lib_dir_preferred_over_meta_dir() {
 
     // drop fmlloader into the instance-local libraries dir so the launcher
     // finds it there rather than under the shared meta cache.
-    let local_lib =
-        fx.instance_libraries_dir("f2")
-            .join("net/minecraftforge/fmlloader/1.20.1-47.2.0");
+    let local_lib = fx
+        .instance_libraries_dir("f2")
+        .join("net/minecraftforge/fmlloader/1.20.1-47.2.0");
     std::fs::create_dir_all(&local_lib).unwrap();
     let local_jar = local_lib.join("fmlloader-1.20.1-47.2.0.jar");
     std::fs::write(&local_jar, b"jar").unwrap();
@@ -412,7 +466,10 @@ async fn neoforge_inheritsfrom_resolves() {
         .await
         .unwrap();
 
-    assert_eq!(inv.main_class, "cpw.mods.bootstraplauncher.BootstrapLauncher");
+    assert_eq!(
+        inv.main_class,
+        "cpw.mods.bootstraplauncher.BootstrapLauncher"
+    );
     assert!(
         inv.jvm_args
             .windows(2)
@@ -527,9 +584,7 @@ async fn rule_disallow_excludes_library() {
         .await
         .unwrap();
 
-    let denied = fx
-        .meta_dir
-        .join("libraries/com/denied/lib/1.0/lib-1.0.jar");
+    let denied = fx.meta_dir.join("libraries/com/denied/lib/1.0/lib-1.0.jar");
     assert!(
         !inv.classpath.contains(&denied),
         "denied library was included: {:?}",
@@ -680,4 +735,3 @@ async fn legacy_loader_profile_missing_installer_json_errors() {
         "expected Parse error about missing installer JSON, got: {err:?}"
     );
 }
-

@@ -6,11 +6,11 @@ pub mod resource_packs;
 pub mod shaders;
 pub mod worlds;
 
-pub use mods::{ContentEntry, scan_mods, toggle_entry};
 pub use mods::scan_one_mod;
-pub use resource_packs::{scan_resource_packs, scan_one_resource_pack};
-pub use shaders::{scan_shaders, scan_one_shader};
-pub use worlds::{scan_worlds, scan_one_world};
+pub use mods::{ContentEntry, scan_mods, toggle_entry};
+pub use resource_packs::{scan_one_resource_pack, scan_resource_packs};
+pub use shaders::{scan_one_shader, scan_shaders};
+pub use worlds::{scan_one_world, scan_worlds};
 
 use std::io::Read;
 

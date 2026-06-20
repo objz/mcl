@@ -39,7 +39,11 @@ fn rename_top_level(old: &Path, new: &Path) {
         return;
     }
     match fs::rename(old, new) {
-        Ok(_) => eprintln!("rmcl migration: moved {} -> {}", old.display(), new.display()),
+        Ok(_) => eprintln!(
+            "rmcl migration: moved {} -> {}",
+            old.display(),
+            new.display()
+        ),
         Err(e) if e.kind() == io::ErrorKind::CrossesDevices => {
             if let Err(e2) = copy_dir_recursive(old, new) {
                 eprintln!(

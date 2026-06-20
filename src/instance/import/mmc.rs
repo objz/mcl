@@ -51,6 +51,11 @@ impl MmcPack {
 
 pub fn build_summary(path: &Path) -> Result<ImportSummary, String> {
     let pack = parse_mmc_pack(path)?;
+    tracing::debug!(
+        "Parsed MultiMC pack {} with {} component(s)",
+        path.display(),
+        pack.components.len()
+    );
 
     let game_version = pack
         .game_version()
@@ -62,6 +67,15 @@ pub fn build_summary(path: &Path) -> Result<ImportSummary, String> {
     let name = instance_name_from_cfg(path).unwrap_or_else(|| "Imported Pack".to_string());
 
     let (mod_count, override_count) = count_content_files(path)?;
+    tracing::trace!(
+        "MultiMC summary: name='{}' game_version={} loader={:?} loader_version={:?} mods={} overrides={}",
+        name,
+        game_version,
+        loader,
+        loader_version,
+        mod_count,
+        override_count
+    );
 
     Ok(ImportSummary {
         name,
@@ -81,6 +95,11 @@ pub async fn execute_import(
     manager: &InstanceManager,
 ) -> Result<crate::instance::InstanceConfig, Box<dyn std::error::Error + Send + Sync>> {
     let name = super::unique_instance_name(&summary.name, &manager.instances_dir);
+    tracing::info!(
+        "Importing MultiMC/Prism pack '{}' as instance '{}'",
+        summary.name,
+        name
+    );
 
     progress::set_action(format!("Importing '{name}'..."));
     progress::set_sub_action(format!("{} {}", summary.game_version, summary.loader));
@@ -99,6 +118,11 @@ pub async fn execute_import(
     extract_mmc_archive(&summary.archive_path, &minecraft_dir)?;
 
     progress::clear();
+    tracing::info!(
+        "Imported MultiMC/Prism pack '{}' as '{}'",
+        summary.name,
+        name
+    );
     Ok(config)
 }
 
@@ -117,8 +141,16 @@ fn extract_mmc_archive(
 
     let prefix = find_archive_prefix(&archive);
     let minecraft_prefix = format!("{prefix}.minecraft/");
+    tracing::debug!(
+        "Extracting MultiMC archive {} with prefix '{}' into {}",
+        archive_path.display(),
+        prefix,
+        minecraft_dir.display()
+    );
 
     let total = archive.len();
+    let mut extracted = 0usize;
+    let mut dirs = 0usize;
     for i in 0..total {
         let mut entry = archive.by_index(i)?;
         let entry_name = entry.name().to_string();
@@ -129,6 +161,7 @@ fn extract_mmc_archive(
 
         if relative.is_empty() || entry_name.ends_with('/') {
             std::fs::create_dir_all(minecraft_dir.join(relative))?;
+            dirs += 1;
             continue;
         }
 
@@ -142,9 +175,22 @@ fn extract_mmc_archive(
 
         let mut buf = Vec::new();
         entry.read_to_end(&mut buf)?;
+        tracing::trace!(
+            "Extracting MultiMC entry {} to {} ({} bytes)",
+            entry_name,
+            dest.display(),
+            buf.len()
+        );
         std::fs::write(&dest, &buf)?;
+        extracted += 1;
     }
 
+    tracing::debug!(
+        "Extracted {} files and {} directories from MultiMC archive {}",
+        extracted,
+        dirs,
+        archive_path.display()
+    );
     Ok(())
 }
 
@@ -167,6 +213,7 @@ fn instance_name_from_cfg(path: &Path) -> Option<String> {
     let mut archive = zip::ZipArchive::new(file).ok()?;
 
     let entry_name = find_entry(&archive, "instance.cfg")?;
+    tracing::trace!("Reading instance name from {}", entry_name);
     let entry = archive.by_name(&entry_name).ok()?;
 
     let reader = std::io::BufRead::lines(std::io::BufReader::new(entry));
@@ -174,6 +221,7 @@ fn instance_name_from_cfg(path: &Path) -> Option<String> {
         if let Some(value) = line.strip_prefix("name=") {
             let name = value.trim().to_string();
             if !name.is_empty() {
+                tracing::debug!("Read MultiMC instance name '{}' from instance.cfg", name);
                 return Some(name);
             }
         }
