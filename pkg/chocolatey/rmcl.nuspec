@@ -5,7 +5,7 @@
     <version>0.0.0</version>
     <packageSourceUrl>https://github.com/objz/rmcl</packageSourceUrl>
     <owners>objz</owners>
-    <title>rmcl</title>
+    <title>rmcl Minecraft Launcher</title>
     <authors>objz</authors>
     <projectUrl>https://github.com/objz/rmcl</projectUrl>
     <licenseUrl>https://github.com/objz/rmcl/blob/master/LICENSE</licenseUrl>
@@ -13,6 +13,7 @@
     <projectSourceUrl>https://github.com/objz/rmcl</projectSourceUrl>
     <docsUrl>https://github.com/objz/rmcl#readme</docsUrl>
     <bugTrackerUrl>https://github.com/objz/rmcl/issues</bugTrackerUrl>
+    <releaseNotes>https://github.com/objz/rmcl/releases</releaseNotes>
     <tags>minecraft launcher cli tui rust</tags>
     <summary>Minecraft launcher TUI</summary>
     <description>A fully featured Minecraft launcher TUI with Microsoft account authentication, instance management, mod loaders, imports, content management, and launch support.</description>

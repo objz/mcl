@@ -46,7 +46,6 @@ jobs:
 
           checksum="$(awk '{print $1}' "$package_dir/$checksum_file")"
           sed -i "s|__TAG__|$tag|g; s|__CHECKSUM64__|$checksum|g" "$package_dir/tools/chocolateyInstall.ps1"
-          sed -i "s|__TAG__|$tag|g; s|__CHECKSUM64__|$checksum|g" "$package_dir/tools/VERIFICATION.txt"
 
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "package_dir=$package_dir" >> "$GITHUB_OUTPUT"
