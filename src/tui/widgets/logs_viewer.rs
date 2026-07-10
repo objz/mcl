@@ -228,6 +228,33 @@ impl LogsState {
         self.viewer_scrollbar_state =
             ScrollbarState::new(self.viewer_max_scroll).position(self.viewer_scroll);
     }
+
+    pub fn pending_delete(
+        &self,
+    ) -> Option<crate::tui::widgets::content::list::PendingContentDelete> {
+        let index = self.file_index_for_selected()?;
+        let entry = self.entries.get(index)?;
+        Some(crate::tui::widgets::content::list::PendingContentDelete {
+            name: entry.name.clone(),
+            path: entry.path.clone(),
+        })
+    }
+
+    pub fn remove_path(&mut self, path: &Path) {
+        self.entries.retain(|entry| entry.path != path);
+        let display_count = self.display_count();
+        if display_count == 0 {
+            self.list_state.selected = None;
+            self.viewer_focused = false;
+            self.selected_path = None;
+            self.viewer_lines.clear();
+            self.viewer_scroll = 0;
+        } else if let Some(sel) = self.list_state.selected {
+            self.list_state.selected = Some(sel.min(display_count.saturating_sub(1)));
+            self.load_selected_content();
+        }
+        self.update_scrollbar();
+    }
 }
 
 pub fn handle_key(key_event: &KeyEvent, state: &mut LogsState) -> bool {

@@ -1,4 +1,4 @@
-// "are you sure?" popup for instance deletion. uses global state so the
+// "are you sure?" popup for destructive actions. uses global state so the
 // confirmation target persists across render frames.
 
 use std::sync::LazyLock;
@@ -24,16 +24,21 @@ struct ConfirmState {
 
 #[derive(Debug, Clone)]
 pub enum ConfirmTarget {
-    Instance { name: String },
-    ConfigProfile { profile: String },
+    Instance {
+        name: String,
+    },
+    ConfigProfile {
+        profile: String,
+    },
+    Content {
+        name: String,
+        path: std::path::PathBuf,
+    },
 }
 
 impl ConfirmTarget {
     fn title(&self) -> String {
-        match self {
-            ConfirmTarget::Instance { name } => format!(" Delete '{}' ", name),
-            ConfirmTarget::ConfigProfile { profile } => format!(" Delete '{}' ", profile),
-        }
+        format!(" Delete '{}' ", self.name())
     }
 
     fn body(&self) -> &'static str {
@@ -42,13 +47,15 @@ impl ConfirmTarget {
             ConfirmTarget::ConfigProfile { .. } => {
                 "This will permanently remove this config profile"
             }
+            ConfirmTarget::Content { .. } => "This will permanently remove the selected item",
         }
     }
 
-    fn name(&self) -> &str {
+    pub fn name(&self) -> &str {
         match self {
             ConfirmTarget::Instance { name } => name,
             ConfirmTarget::ConfigProfile { profile } => profile,
+            ConfirmTarget::Content { name, .. } => name,
         }
     }
 }
@@ -66,6 +73,17 @@ pub fn set_pending(target: ConfirmTarget) {
 
 pub fn set_pending_delete(name: impl Into<String>) {
     set_pending(ConfirmTarget::Instance { name: name.into() });
+}
+
+pub fn set_pending_instance_delete(name: impl Into<String>) {
+    set_pending_delete(name);
+}
+
+pub fn set_pending_content_delete(name: impl Into<String>, path: impl Into<std::path::PathBuf>) {
+    set_pending(ConfirmTarget::Content {
+        name: name.into(),
+        path: path.into(),
+    });
 }
 
 pub fn pending_target() -> Option<ConfirmTarget> {

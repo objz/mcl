@@ -56,6 +56,12 @@ pub struct ContentListState {
     content_ext: Option<&'static str>,
 }
 
+#[derive(Clone, Debug)]
+pub struct PendingContentDelete {
+    pub name: String,
+    pub path: std::path::PathBuf,
+}
+
 impl Default for ContentListState {
     fn default() -> Self {
         Self {
@@ -322,6 +328,16 @@ impl ContentListState {
             .map(|(i, _)| i)
             .collect()
     }
+
+    pub fn pending_delete(&self) -> Option<PendingContentDelete> {
+        let filtered = self.filtered_indices();
+        let real_idx = self.list_state.selected.and_then(|i| filtered.get(i))?;
+        let entry = self.entries.get(*real_idx)?;
+        Some(PendingContentDelete {
+            name: entry.name.clone(),
+            path: entry.path.clone(),
+        })
+    }
 }
 
 impl ContentListState {
@@ -486,6 +502,19 @@ impl ContentListState {
                 );
             }
         }
+    }
+
+    pub fn remove_path(&mut self, path: &Path) {
+        self.entries.retain(|entry| entry.path != path);
+        if let Some(sel) = self.list_state.selected {
+            let visible_count = self.filtered_indices().len();
+            if visible_count == 0 {
+                self.list_state.selected = None;
+            } else {
+                self.list_state.selected = Some(sel.min(visible_count.saturating_sub(1)));
+            }
+        }
+        self.update_scrollbar();
     }
 }
 

@@ -148,12 +148,14 @@ pub fn render(
             ContentTab::Mods | ContentTab::ResourcePacks | ContentTab::Shaders => &[
                 ("j/k", " navigate"),
                 ("⏎", " toggle"),
+                ("d", " delete"),
                 ("Shift+⏎", " open dir"),
                 ("h/l", " tabs"),
                 ("/", " search"),
             ],
             ContentTab::Worlds => &[
                 ("j/k", " navigate"),
+                ("d", " delete"),
                 ("Shift+⏎", " open dir"),
                 ("h/l", " tabs"),
                 ("/", " search"),
@@ -161,6 +163,7 @@ pub fn render(
             ContentTab::Screenshots => &[
                 ("Shift+HJKL", " grid"),
                 ("⏎", " open"),
+                ("d", " delete"),
                 ("Shift+⏎", " open dir"),
                 ("h/l", " tabs"),
                 ("/", " search"),
@@ -170,6 +173,7 @@ pub fn render(
                     &[
                         ("j/k", " scroll"),
                         ("g/G", " top/bottom"),
+                        ("d", " delete"),
                         ("Esc", " back"),
                         ("/", " search"),
                     ]
@@ -177,6 +181,7 @@ pub fn render(
                     &[
                         ("j/k", " navigate"),
                         ("⏎", " view"),
+                        ("d", " delete"),
                         ("h/l", " tabs"),
                         ("/", " search"),
                     ]
