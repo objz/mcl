@@ -52,6 +52,7 @@ fn make_config_with(
         memory_min: None,
         jvm_args: Vec::new(),
         resolution: None,
+        config_sync_profile: None,
     }
 }
 
