@@ -793,14 +793,14 @@ pub async fn launch(
         let _ = parser_task.await;
         tracing::info!("[{}] Exited with code {:?}", name_for_task, code);
 
-        if config_sync_active {
-            if let Err(e) = crate::instance::config_sync::finish(
+        if config_sync_active
+            && let Err(e) = crate::instance::config_sync::finish(
                 config_sync_profile.as_deref(),
                 &meta_dir_owned,
                 &minecraft_dir_owned,
-            ) {
-                tracing::warn!("Failed to sync config for '{}': {}", name_for_task, e);
-            }
+            )
+        {
+            tracing::warn!("Failed to sync config for '{}': {}", name_for_task, e);
         }
         drop(config_sync_lock);
 

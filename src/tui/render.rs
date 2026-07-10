@@ -124,11 +124,11 @@ impl App {
             import_modpack::render(frame, area, self.focused);
         }
 
-        if self.focused == FocusedArea::ConfirmDelete {
-            if let Some(target) = confirm_popup::pending_target() {
-                let area = confirm_popup_area(frame.area(), &target);
-                frame.render_widget(ConfirmPopup::for_target(&target), area);
-            }
+        if self.focused == FocusedArea::ConfirmDelete
+            && let Some(target) = confirm_popup::pending_target()
+        {
+            let area = confirm_popup_area(frame.area(), &target);
+            frame.render_widget(ConfirmPopup::for_target(&target), area);
         }
     }
 
