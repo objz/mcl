@@ -47,6 +47,8 @@ pub struct InstanceConfig {
     pub jvm_args: Vec<String>,
     #[serde(default)]
     pub resolution: Option<(u32, u32)>,
+    #[serde(default)]
+    pub config_sync_profile: Option<String>,
 }
 
 pub fn normalize_memory_value(raw: &str) -> Option<String> {
@@ -137,6 +139,7 @@ mod tests {
             memory_min: Some("512M".to_string()),
             jvm_args: vec![],
             resolution: Some((1920, 1080)),
+            config_sync_profile: None,
         };
         let json = serde_json::to_string_pretty(&config).expect("serialize");
         let parsed: InstanceConfig = serde_json::from_str(&json).expect("deserialize");

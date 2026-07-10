@@ -269,6 +269,7 @@ impl InstanceManager {
             memory_min: None,
             jvm_args: vec![],
             resolution: None,
+            config_sync_profile: None,
         };
 
         self.save(&config)?;
@@ -518,6 +519,7 @@ mod tests {
             memory_min: None,
             jvm_args: vec![],
             resolution: None,
+            config_sync_profile: None,
         }
     }
 

@@ -11,6 +11,7 @@ use crate::instance::{InstanceManager, ModLoader};
 use crate::running::RunState;
 
 type CliResult = Result<(), Box<dyn std::error::Error>>;
+const LOCAL_CONFIG_PROFILE: &str = "instance default";
 
 pub async fn handle_instance(matches: &ArgMatches) -> CliResult {
     match matches.subcommand() {
@@ -20,6 +21,7 @@ pub async fn handle_instance(matches: &ArgMatches) -> CliResult {
         Some(("rename", sub_matches)) => rename_instance(sub_matches),
         Some(("launch", sub_matches)) => launch_instance(sub_matches).await,
         Some(("config", sub_matches)) => config_instance(sub_matches),
+        Some(("profile", sub_matches)) => profile_instance(sub_matches),
         Some(("desktop", sub_matches)) => desktop_instance(sub_matches),
         _ => Ok(()),
     }
@@ -233,10 +235,84 @@ fn config_instance(matches: &ArgMatches) -> CliResult {
                 .map(|(width, height)| format!("{}x{}", width, height))
                 .unwrap_or_else(|| "-".to_string()),
         ],
+        vec![
+            "config-sync-profile".to_string(),
+            display_config_profile(config.config_sync_profile.as_deref()).to_string(),
+        ],
     ];
 
     print_table(&["Field", "Value"], &rows);
     Ok(())
+}
+
+fn profile_instance(matches: &ArgMatches) -> CliResult {
+    let name = required_arg(matches, "name")?;
+    let manager = manager();
+    let mut config = manager.load_one(name)?;
+    let profiles = crate::instance::config_sync::list_profiles(&manager.meta_dir)?;
+    if config
+        .config_sync_profile
+        .as_ref()
+        .is_some_and(|profile| !profiles.iter().any(|candidate| candidate == profile))
+    {
+        config.config_sync_profile = None;
+        manager.save(&config)?;
+    }
+
+    let Some(profile) = matches.get_one::<String>("profile") else {
+        let rows = vec![
+            vec![
+                "current".to_string(),
+                display_config_profile(config.config_sync_profile.as_deref()).to_string(),
+            ],
+            vec![
+                "available".to_string(),
+                if profiles.is_empty() {
+                    LOCAL_CONFIG_PROFILE.to_string()
+                } else {
+                    format!("{}, {}", LOCAL_CONFIG_PROFILE, profiles.join(", "))
+                },
+            ],
+        ];
+        print_table(&["Field", "Value"], &rows);
+        return Ok(());
+    };
+
+    let target = if is_local_profile_alias(profile) {
+        None
+    } else {
+        Some(profile.as_str())
+    };
+    let instance_dir = manager.instances_dir.join(&config.name);
+    let selected = crate::instance::config_sync::switch_profile(
+        &config.name,
+        config.config_sync_profile.as_deref(),
+        target,
+        &manager.meta_dir,
+        &instance_dir,
+    )?;
+    config.config_sync_profile = selected;
+    manager.save(&config)?;
+
+    println!(
+        "Updated '{}' config profile to {}.",
+        name,
+        display_config_profile(config.config_sync_profile.as_deref())
+    );
+    Ok(())
+}
+
+fn display_config_profile(profile: Option<&str>) -> &str {
+    profile.unwrap_or(LOCAL_CONFIG_PROFILE)
+}
+
+fn is_local_profile_alias(profile: &str) -> bool {
+    let profile = profile.trim();
+    profile.eq_ignore_ascii_case("none")
+        || profile.eq_ignore_ascii_case("default")
+        || profile.eq_ignore_ascii_case("local")
+        || profile.eq_ignore_ascii_case("instance-default")
+        || profile.eq_ignore_ascii_case("instance default")
 }
 
 // maps --set key=value pairs to config fields. empty value = clear the field.

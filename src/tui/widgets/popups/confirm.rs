@@ -19,13 +19,44 @@ static CONFIRM_STATE: LazyLock<Mutex<ConfirmState>> =
 
 #[derive(Debug, Default)]
 struct ConfirmState {
-    instance_name: String,
+    target: Option<ConfirmTarget>,
 }
 
-pub fn set_pending_delete(name: impl Into<String>) {
+#[derive(Debug, Clone)]
+pub enum ConfirmTarget {
+    Instance { name: String },
+    ConfigProfile { profile: String },
+}
+
+impl ConfirmTarget {
+    fn title(&self) -> String {
+        match self {
+            ConfirmTarget::Instance { name } => format!(" Delete '{}' ", name),
+            ConfirmTarget::ConfigProfile { profile } => format!(" Delete '{}' ", profile),
+        }
+    }
+
+    fn body(&self) -> &'static str {
+        match self {
+            ConfirmTarget::Instance { .. } => "This will permanently remove the instance",
+            ConfirmTarget::ConfigProfile { .. } => {
+                "This will permanently remove this config profile"
+            }
+        }
+    }
+
+    fn name(&self) -> &str {
+        match self {
+            ConfirmTarget::Instance { name } => name,
+            ConfirmTarget::ConfigProfile { profile } => profile,
+        }
+    }
+}
+
+pub fn set_pending(target: ConfirmTarget) {
     match CONFIRM_STATE.lock() {
         Ok(mut s) => {
-            s.instance_name = name.into();
+            s.target = Some(target);
         }
         Err(e) => {
             tracing::error!("Confirm popup state lock poisoned: {}", e);
@@ -33,17 +64,21 @@ pub fn set_pending_delete(name: impl Into<String>) {
     }
 }
 
-pub fn pending_delete_name() -> String {
+pub fn set_pending_delete(name: impl Into<String>) {
+    set_pending(ConfirmTarget::Instance { name: name.into() });
+}
+
+pub fn pending_target() -> Option<ConfirmTarget> {
     match CONFIRM_STATE.lock() {
-        Ok(s) => s.instance_name.clone(),
-        Err(_) => String::new(),
+        Ok(s) => s.target.clone(),
+        Err(_) => None,
     }
 }
 
 pub fn clear_pending() {
     match CONFIRM_STATE.lock() {
         Ok(mut s) => {
-            s.instance_name.clear();
+            s.target = None;
         }
         Err(e) => {
             tracing::error!("Confirm popup state lock poisoned: {}", e);
@@ -52,14 +87,20 @@ pub fn clear_pending() {
 }
 
 pub struct ConfirmPopup {
-    instance_name: String,
+    title: String,
+    body: &'static str,
 }
 
 impl ConfirmPopup {
-    pub fn new(instance_name: impl Into<String>) -> Self {
+    pub fn new(title: impl Into<String>, body: &'static str) -> Self {
         Self {
-            instance_name: instance_name.into(),
+            title: title.into(),
+            body,
         }
+    }
+
+    pub fn for_target(target: &ConfirmTarget) -> Self {
+        Self::new(target.title(), target.body())
     }
 }
 
@@ -69,7 +110,7 @@ impl Widget for ConfirmPopup {
 
         let theme = THEME.as_ref();
         let title = Line::from(vec![Span::styled(
-            format!(" Delete '{}' ", self.instance_name),
+            self.title,
             Style::default()
                 .fg(theme.text_dim())
                 .add_modifier(Modifier::BOLD),
@@ -86,7 +127,7 @@ impl Widget for ConfirmPopup {
             keybinds: Some(kb),
             search_line: None,
             content: Box::new(move |inner, buf| {
-                Paragraph::new("This will permanently remove the instance")
+                Paragraph::new(self.body)
                     .style(Style::default().fg(text_color))
                     .render(inner, buf);
             }),
@@ -96,15 +137,14 @@ impl Widget for ConfirmPopup {
     }
 }
 
-pub fn confirm_popup_area(frame_area: Rect, name: &str) -> Rect {
+pub fn confirm_popup_area(frame_area: Rect, target: &ConfirmTarget) -> Rect {
     use super::word_wrap_size;
     use ratatui::layout::Constraint;
     const MAX_W: usize = 48;
-    const BODY: &str = "This will permanently remove the instance";
-    let title_w = name.len() + 12;
-    let (body_w, _) = word_wrap_size(BODY, MAX_W);
+    let title_w = target.name().len() + 12;
+    let (body_w, _) = word_wrap_size(target.body(), MAX_W);
     let inner_w = title_w.max(body_w).min(MAX_W);
-    let (_, lines) = word_wrap_size(BODY, inner_w);
+    let (_, lines) = word_wrap_size(target.body(), inner_w);
     let popup_w = ((inner_w + 2) as u16).min(frame_area.width.saturating_sub(4));
     let popup_h = ((lines + 2) as u16).min(frame_area.height.saturating_sub(4));
     frame_area.centered(Constraint::Length(popup_w), Constraint::Length(popup_h))

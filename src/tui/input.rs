@@ -70,18 +70,49 @@ impl App {
         if self.focused == FocusedArea::ConfirmDelete {
             match key_event.code {
                 KeyCode::Enter | KeyCode::Char('y') | KeyCode::Char('Y') => {
-                    let name = confirm_popup::pending_delete_name();
-                    if !name.is_empty()
-                        && let Ok(_) = self.instance_manager.delete(&name) {
-                            self.instances_state.remove_instance(&name);
+                    if let Some(target) = confirm_popup::pending_target() {
+                        match target {
+                            confirm_popup::ConfirmTarget::Instance { name } => {
+                                match self.instance_manager.delete(&name) {
+                                    Ok(_) => {
+                                        self.instances_state.remove_instance(&name);
+                                    }
+                                    Err(e) => {
+                                        tracing::error!(
+                                            "Failed to delete instance '{}': {}",
+                                            name,
+                                            e
+                                        );
+                                    }
+                                }
+                                self.focused = FocusedArea::Instances;
+                            }
+                            confirm_popup::ConfirmTarget::ConfigProfile { profile } => {
+                                if let Err(e) = self.delete_config_profile(&profile) {
+                                    error_buffer::push_error(error_buffer::ErrorEvent {
+                                        id: 0,
+                                        level: tracing::Level::ERROR,
+                                        message: e.to_string(),
+                                        pushed_at: std::time::Instant::now(),
+                                    });
+                                }
+                                self.focused = FocusedArea::Settings;
+                            }
                         }
+                    }
                     confirm_popup::clear_pending();
-                    self.focused = FocusedArea::Instances;
                     return Ok(());
                 }
                 KeyCode::Esc | KeyCode::Char('n') | KeyCode::Char('N') => {
+                    if matches!(
+                        confirm_popup::pending_target(),
+                        Some(confirm_popup::ConfirmTarget::ConfigProfile { .. })
+                    ) {
+                        self.focused = FocusedArea::Settings;
+                    } else {
+                        self.focused = FocusedArea::Instances;
+                    }
                     confirm_popup::clear_pending();
-                    self.focused = FocusedArea::Instances;
                     return Ok(());
                 }
                 _ => {
@@ -132,6 +163,7 @@ impl App {
         if self.focused == FocusedArea::Settings {
             match widgets::settings::handle_key(
                 &key_event,
+                &mut self.settings_state,
                 self.instances_state.selected_instance(),
                 &self.instance_manager.instances_dir,
             ) {
@@ -167,6 +199,53 @@ impl App {
                     }
                     return Ok(());
                 }
+                widgets::settings::SettingsAction::SelectProfile(profile) => {
+                    if let Some(inst) = self.instances_state.selected_instance().cloned() {
+                        let instance_dir = self.instance_manager.instances_dir.join(&inst.name);
+                        match crate::instance::config_sync::switch_profile(
+                            &inst.name,
+                            inst.config_sync_profile.as_deref(),
+                            profile.as_deref(),
+                            &self.instance_manager.meta_dir,
+                            &instance_dir,
+                        ) {
+                            Ok(selected) => {
+                                let mut updated = inst.clone();
+                                updated.config_sync_profile = selected;
+                                if let Err(e) = self.instance_manager.save(&updated) {
+                                    tracing::error!("Failed to save config profile: {}", e);
+                                } else {
+                                    self.instances_state.replace_instance(&inst.name, updated);
+                                }
+                            }
+                            Err(e) => {
+                                error_buffer::push_error(error_buffer::ErrorEvent {
+                                    id: 0,
+                                    level: tracing::Level::ERROR,
+                                    message: e.to_string(),
+                                    pushed_at: std::time::Instant::now(),
+                                });
+                            }
+                        }
+                    }
+                    return Ok(());
+                }
+                widgets::settings::SettingsAction::ConfirmDeleteProfile(profile) => {
+                    confirm_popup::set_pending(confirm_popup::ConfirmTarget::ConfigProfile {
+                        profile,
+                    });
+                    self.focused = FocusedArea::ConfirmDelete;
+                    return Ok(());
+                }
+                widgets::settings::SettingsAction::Error(message) => {
+                    error_buffer::push_error(error_buffer::ErrorEvent {
+                        id: 0,
+                        level: tracing::Level::ERROR,
+                        message,
+                        pushed_at: std::time::Instant::now(),
+                    });
+                    return Ok(());
+                }
                 widgets::settings::SettingsAction::None => {}
             }
         }
@@ -192,9 +271,9 @@ impl App {
                                         .instances
                                         .iter_mut()
                                         .find(|i| i.name == old_name)
-                                    {
-                                        inst.name = new_name.trim().to_owned();
-                                    }
+                                {
+                                    inst.name = new_name.trim().to_owned();
+                                }
                             }
                         }
                         KeyCode::Esc => {
@@ -331,6 +410,33 @@ impl App {
             self.focused = FocusedArea::Instances;
         }
 
+        Ok(())
+    }
+
+    fn delete_config_profile(&mut self, profile: &str) -> color_eyre::Result<()> {
+        let instances = self.instance_manager.load_all();
+        for instance in instances
+            .into_iter()
+            .filter(|instance| instance.config_sync_profile.as_deref() == Some(profile))
+        {
+            let instance_dir = self.instance_manager.instances_dir.join(&instance.name);
+            let mut updated = instance.clone();
+            updated.config_sync_profile = crate::instance::config_sync::switch_profile(
+                &instance.name,
+                instance.config_sync_profile.as_deref(),
+                None,
+                &self.instance_manager.meta_dir,
+                &instance_dir,
+            )?;
+            self.instance_manager.save(&updated)?;
+            self.instances_state
+                .replace_instance(&instance.name, updated);
+        }
+
+        crate::instance::config_sync::delete_profile(&self.instance_manager.meta_dir, profile)?;
+        self.settings_state
+            .profiles
+            .retain(|candidate| candidate != profile);
         Ok(())
     }
 }

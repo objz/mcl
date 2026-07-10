@@ -105,6 +105,13 @@ fn build_command() -> Command {
                         .arg(Arg::new("set").long("set").action(ArgAction::Set)),
                 )
                 .subcommand(
+                    Command::new("profile")
+                        .about("Show or set an instance config-sync profile")
+                        .arg_required_else_help(true)
+                        .arg(Arg::new("name").required(true).action(ArgAction::Set))
+                        .arg(Arg::new("profile").action(ArgAction::Set)),
+                )
+                .subcommand(
                     Command::new("desktop")
                         .about("Toggle desktop shortcut for an instance")
                         .arg_required_else_help(true)

@@ -29,6 +29,7 @@ pub struct App {
     pub(super) screenshots_state: widgets::screenshots_grid::ScreenshotsState,
     pub(super) logs_state: widgets::logs_viewer::LogsState,
     pub(super) account_state: widgets::account::AccountState,
+    pub(super) settings_state: widgets::settings::SettingsState,
     pub(super) picker: ratatui_image::picker::Picker,
     pub(super) instance_manager: InstanceManager,
     pub(super) log_overlay_scroll: usize,
@@ -87,6 +88,7 @@ impl App {
             worlds_state: widgets::content::list::ContentListState::default(),
             logs_state: widgets::logs_viewer::LogsState::default(),
             account_state: widgets::account::AccountState::default(),
+            settings_state: widgets::settings::SettingsState::new(manager.meta_dir.clone()),
             screenshots_state: {
                 let mut s = widgets::screenshots_grid::ScreenshotsState::default();
                 s.font_size = picker.font_size();
