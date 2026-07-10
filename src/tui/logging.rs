@@ -91,10 +91,14 @@ pub fn init() -> WorkerGuard {
         )
         .with(
             tui_logger::TuiTracingSubscriberLayer.with_filter(filter_fn(|metadata| {
-                should_record_app_log(metadata.target())
+                should_record_app_log(metadata.target(), *metadata.level())
             })),
         )
-        .with(StatusLayer::new(error_buffer::ERROR_EVENTS.clone()))
+        .with(
+            StatusLayer::new(error_buffer::ERROR_EVENTS.clone()).with_filter(filter_fn(
+                |metadata| should_record_app_log(metadata.target(), *metadata.level()),
+            )),
+        )
         .init();
 
     guard
@@ -127,11 +131,11 @@ impl<S: Subscriber> Layer<S> for StatusLayer {
             Level::TRACE => "TRACE",
         };
         let now = chrono::Local::now().format("%H:%M:%S");
-        if should_record_app_log(target) {
+        if should_record_app_log(target, level) {
             push_app_log(format!("{now}:{level_str}:{target}: {}", visitor.message));
         }
 
-        if level <= Level::WARN && should_record_app_log(target) {
+        if level <= Level::WARN && should_record_app_log(target, level) {
             error_buffer::push_error(ErrorEvent {
                 id: 0,
                 level,
@@ -142,8 +146,12 @@ impl<S: Subscriber> Layer<S> for StatusLayer {
     }
 }
 
-fn should_record_app_log(target: &str) -> bool {
-    target != MINECRAFT_LOG_TARGET
+fn should_record_app_log(target: &str, level: Level) -> bool {
+    if target == MINECRAFT_LOG_TARGET {
+        return false;
+    }
+
+    target == "rmcl" || target.starts_with("rmcl::") || level <= Level::WARN
 }
 
 #[derive(Default)]
@@ -178,11 +186,24 @@ mod tests {
 
     #[test]
     fn minecraft_events_are_not_general_app_logs() {
-        assert!(!should_record_app_log(MINECRAFT_LOG_TARGET));
+        assert!(!should_record_app_log(MINECRAFT_LOG_TARGET, Level::ERROR));
     }
 
     #[test]
     fn rmcl_events_are_general_app_logs() {
-        assert!(should_record_app_log("rmcl::instance::manager"));
+        assert!(should_record_app_log(
+            "rmcl::instance::manager",
+            Level::TRACE
+        ));
+    }
+
+    #[test]
+    fn dependency_debug_events_are_not_general_app_logs() {
+        assert!(!should_record_app_log("log", Level::DEBUG));
+    }
+
+    #[test]
+    fn dependency_warnings_are_general_app_logs() {
+        assert!(should_record_app_log("notify", Level::WARN));
     }
 }

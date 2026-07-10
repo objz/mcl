@@ -238,7 +238,7 @@ pub fn detect_java_path() -> String {
         let java_name = if cfg!(windows) { "java.exe" } else { "java" };
         let bin = std::path::Path::new(&java_home).join("bin").join(java_name);
         if bin.exists() {
-            tracing::debug!("Detected Java from JAVA_HOME: {}", bin.display());
+            tracing::trace!("Detected Java from JAVA_HOME: {}", bin.display());
             return bin.to_string_lossy().to_string();
         }
         tracing::warn!(
@@ -249,7 +249,7 @@ pub fn detect_java_path() -> String {
     }
     match which::which("java") {
         Ok(path) => {
-            tracing::debug!("Detected Java from PATH: {}", path.display());
+            tracing::trace!("Detected Java from PATH: {}", path.display());
             path.to_string_lossy().to_string()
         }
         Err(e) => {

@@ -49,6 +49,7 @@ pub struct SettingsState {
     meta_dir: PathBuf,
     active_profile: Option<String>,
     instance_name: Option<String>,
+    java_key: Option<String>,
     java_source: Option<String>,
     java_label: String,
 }
@@ -67,6 +68,7 @@ impl SettingsState {
             meta_dir,
             active_profile: None,
             instance_name: None,
+            java_key: None,
             java_source: None,
             java_label: "unknown".to_string(),
         };
@@ -110,12 +112,14 @@ impl SettingsState {
             self.select_active();
         }
 
-        let java_source = instance.map(effective_java_path);
-        if self.java_source != java_source {
+        let java_key = instance.map(java_path_key);
+        if self.java_key != java_key {
+            let java_source = instance.map(effective_java_path);
             self.java_label = java_source
                 .as_deref()
                 .map(java_version_label)
                 .unwrap_or_else(|| "unknown".to_string());
+            self.java_key = java_key;
             self.java_source = java_source;
         }
     }
@@ -128,6 +132,16 @@ fn add_active_profile(profiles: &mut Vec<String>, active_profile: Option<&str>) 
         profiles.push(active.to_string());
         profiles.sort_unstable();
     }
+}
+
+fn java_path_key(instance: &InstanceConfig) -> String {
+    instance
+        .java_path
+        .as_deref()
+        .filter(|path| !path.is_empty())
+        .or_else(|| SETTINGS.paths.effective_java_path())
+        .unwrap_or("<auto>")
+        .to_string()
 }
 
 fn effective_java_path(instance: &InstanceConfig) -> String {
