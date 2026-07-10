@@ -70,49 +70,69 @@ impl App {
         if self.focused == FocusedArea::ConfirmDelete {
             match key_event.code {
                 KeyCode::Enter | KeyCode::Char('y') | KeyCode::Char('Y') => {
-                    if let Some(target) = confirm_popup::pending_target() {
-                        match target {
-                            confirm_popup::ConfirmTarget::Instance { name } => {
-                                match self.instance_manager.delete(&name) {
-                                    Ok(_) => {
-                                        self.instances_state.remove_instance(&name);
-                                    }
-                                    Err(e) => {
-                                        tracing::error!(
-                                            "Failed to delete instance '{}': {}",
-                                            name,
-                                            e
-                                        );
-                                    }
+                    let focus_after = match confirm_popup::pending_target() {
+                        Some(confirm_popup::ConfirmTarget::Instance { name }) => {
+                            match self.instance_manager.delete(&name) {
+                                Ok(_) => {
+                                    self.instances_state.remove_instance(&name);
                                 }
-                                self.focused = FocusedArea::Instances;
-                            }
-                            confirm_popup::ConfirmTarget::ConfigProfile { profile } => {
-                                if let Err(e) = self.delete_config_profile(&profile) {
-                                    error_buffer::push_error(error_buffer::ErrorEvent {
-                                        id: 0,
-                                        level: tracing::Level::ERROR,
-                                        message: e.to_string(),
-                                        pushed_at: std::time::Instant::now(),
-                                    });
+                                Err(e) => {
+                                    tracing::error!("Failed to delete instance '{}': {}", name, e);
                                 }
-                                self.focused = FocusedArea::Settings;
                             }
+                            FocusedArea::Instances
                         }
-                    }
+                        Some(confirm_popup::ConfirmTarget::Account { index, .. }) => {
+                            let count = self.account_state.store.accounts.len();
+                            self.account_state.store.remove(index);
+                            if count > 1 {
+                                self.account_state.list_state.selected = Some(index.min(
+                                    self.account_state.store.accounts.len().saturating_sub(1),
+                                ));
+                            } else {
+                                self.account_state.list_state.selected = None;
+                            }
+                            FocusedArea::Account
+                        }
+                        Some(confirm_popup::ConfirmTarget::ConfigProfile { profile }) => {
+                            if let Err(e) = self.delete_config_profile(&profile) {
+                                error_buffer::push_error(error_buffer::ErrorEvent {
+                                    id: 0,
+                                    level: tracing::Level::ERROR,
+                                    message: e.to_string(),
+                                    pushed_at: std::time::Instant::now(),
+                                });
+                            }
+                            FocusedArea::Settings
+                        }
+                        Some(confirm_popup::ConfirmTarget::Content { name, path }) => {
+                            match delete_content_path(&path) {
+                                Ok(()) => {
+                                    self.remove_content_path_from_states(&path);
+                                }
+                                Err(e) => {
+                                    tracing::error!("Failed to delete content '{}': {}", name, e);
+                                }
+                            }
+                            FocusedArea::Content
+                        }
+                        None => FocusedArea::Instances,
+                    };
                     confirm_popup::clear_pending();
+                    self.focused = focus_after;
                     return Ok(());
                 }
                 KeyCode::Esc | KeyCode::Char('n') | KeyCode::Char('N') => {
-                    if matches!(
-                        confirm_popup::pending_target(),
-                        Some(confirm_popup::ConfirmTarget::ConfigProfile { .. })
-                    ) {
-                        self.focused = FocusedArea::Settings;
-                    } else {
-                        self.focused = FocusedArea::Instances;
-                    }
+                    let focus_after = match confirm_popup::pending_target() {
+                        Some(confirm_popup::ConfirmTarget::Content { .. }) => FocusedArea::Content,
+                        Some(confirm_popup::ConfirmTarget::Account { .. }) => FocusedArea::Account,
+                        Some(confirm_popup::ConfirmTarget::ConfigProfile { .. }) => {
+                            FocusedArea::Settings
+                        }
+                        _ => FocusedArea::Instances,
+                    };
                     confirm_popup::clear_pending();
+                    self.focused = focus_after;
                     return Ok(());
                 }
                 _ => {
@@ -122,17 +142,41 @@ impl App {
         }
 
         // content area delegates to whichever tab is active.
-        // worlds get handle_key_no_toggle because you can't "disable" a world like you can a mod
+        // worlds use the same list navigation without the toggle
         if self.focused == FocusedArea::Content {
             if self.content_tab == widgets::content::ContentTab::Logs {
+                if key_event.code == KeyCode::Char('d')
+                    && !self.logs_state.search.active
+                    && !self.logs_state.viewer_search.active
+                {
+                    if let Some(pending) = self.logs_state.pending_delete() {
+                        confirm_popup::set_pending_content_delete(pending.name, pending.path);
+                        self.focused = FocusedArea::ConfirmDelete;
+                    }
+                    return Ok(());
+                }
                 if widgets::logs_viewer::handle_key(&key_event, &mut self.logs_state) {
                     return Ok(());
                 }
             } else if self.content_tab == widgets::content::ContentTab::Screenshots {
+                if key_event.code == KeyCode::Char('d') && !self.screenshots_state.search.active {
+                    if let Some(pending) = self.screenshots_state.pending_delete() {
+                        confirm_popup::set_pending_content_delete(pending.name, pending.path);
+                        self.focused = FocusedArea::ConfirmDelete;
+                    }
+                    return Ok(());
+                }
                 if widgets::screenshots_grid::handle_key(&key_event, &mut self.screenshots_state) {
                     return Ok(());
                 }
             } else if self.content_tab == widgets::content::ContentTab::Worlds {
+                if key_event.code == KeyCode::Char('d') && !self.worlds_state.search.active {
+                    if let Some(pending) = self.worlds_state.pending_delete() {
+                        confirm_popup::set_pending_content_delete(pending.name, pending.path);
+                        self.focused = FocusedArea::ConfirmDelete;
+                    }
+                    return Ok(());
+                }
                 if widgets::content::list::handle_key_no_toggle(&key_event, &mut self.worlds_state)
                 {
                     return Ok(());
@@ -146,12 +190,32 @@ impl App {
                     widgets::content::ContentTab::Shaders => Some(&mut self.shaders_state),
                     _ => None,
                 };
-                if let Some(state) = state
-                    && widgets::content::list::handle_key(&key_event, state)
-                {
-                    return Ok(());
+                if let Some(state) = state {
+                    if key_event.code == KeyCode::Char('d') && !state.search.active {
+                        if let Some(pending) = state.pending_delete() {
+                            confirm_popup::set_pending_content_delete(pending.name, pending.path);
+                            self.focused = FocusedArea::ConfirmDelete;
+                        }
+                        return Ok(());
+                    }
+                    if widgets::content::list::handle_key(&key_event, state) {
+                        return Ok(());
+                    }
                 }
             }
+        }
+
+        if self.focused == FocusedArea::Account
+            && let KeyCode::Char('d') = key_event.code
+            && let Some(index) = self.account_state.list_state.selected
+            && let Some(account) = self.account_state.store.accounts.get(index)
+        {
+            confirm_popup::set_pending(confirm_popup::ConfirmTarget::Account {
+                username: account.username.clone(),
+                index,
+            });
+            self.focused = FocusedArea::ConfirmDelete;
+            return Ok(());
         }
 
         if self.focused == FocusedArea::Account
@@ -326,7 +390,7 @@ impl App {
                     {
                         if let Some(instance) = self.instances_state.selected_instance() {
                             let name = instance.name.clone();
-                            confirm_popup::set_pending_delete(&name);
+                            confirm_popup::set_pending_instance_delete(&name);
                             self.focused = FocusedArea::ConfirmDelete;
                         }
                     }
@@ -438,5 +502,23 @@ impl App {
             .profiles
             .retain(|candidate| candidate != profile);
         Ok(())
+    }
+
+    fn remove_content_path_from_states(&mut self, path: &std::path::Path) {
+        self.mods_state.remove_path(path);
+        self.resource_packs_state.remove_path(path);
+        self.shaders_state.remove_path(path);
+        self.worlds_state.remove_path(path);
+        self.screenshots_state.remove_path(path);
+        self.logs_state.remove_path(path);
+    }
+}
+
+fn delete_content_path(path: &std::path::Path) -> std::io::Result<()> {
+    match std::fs::metadata(path) {
+        Ok(meta) if meta.is_dir() => std::fs::remove_dir_all(path),
+        Ok(_) => std::fs::remove_file(path),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(e),
     }
 }

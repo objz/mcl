@@ -173,6 +173,30 @@ impl ScreenshotsState {
         }
         self.entries.len().div_ceil(self.cols)
     }
+
+    pub fn pending_delete(
+        &self,
+    ) -> Option<crate::tui::widgets::content::list::PendingContentDelete> {
+        let entry = self.entries.get(self.selected)?;
+        Some(crate::tui::widgets::content::list::PendingContentDelete {
+            name: entry.name.clone(),
+            path: entry.path.clone(),
+        })
+    }
+
+    pub fn remove_path(&mut self, path: &Path) {
+        self.entries.retain(|entry| entry.path != path);
+        self.protocols.clear();
+        self.requested.clear();
+
+        if self.entries.is_empty() {
+            self.selected = 0;
+            self.scroll_row = 0;
+        } else {
+            self.selected = self.selected.min(self.entries.len().saturating_sub(1));
+            self.ensure_visible();
+        }
+    }
 }
 
 pub fn handle_key(key_event: &KeyEvent, state: &mut ScreenshotsState) -> bool {
