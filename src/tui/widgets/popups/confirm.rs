@@ -27,6 +27,10 @@ pub enum ConfirmTarget {
     Instance {
         name: String,
     },
+    Account {
+        username: String,
+        index: usize,
+    },
     ConfigProfile {
         profile: String,
     },
@@ -44,6 +48,7 @@ impl ConfirmTarget {
     fn body(&self) -> &'static str {
         match self {
             ConfirmTarget::Instance { .. } => "This will permanently remove the instance",
+            ConfirmTarget::Account { .. } => "This will permanently remove this account",
             ConfirmTarget::ConfigProfile { .. } => {
                 "This will permanently remove this config profile"
             }
@@ -54,6 +59,7 @@ impl ConfirmTarget {
     pub fn name(&self) -> &str {
         match self {
             ConfirmTarget::Instance { name } => name,
+            ConfirmTarget::Account { username, .. } => username,
             ConfirmTarget::ConfigProfile { profile } => profile,
             ConfirmTarget::Content { name, .. } => name,
         }

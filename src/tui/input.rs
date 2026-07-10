@@ -82,6 +82,18 @@ impl App {
                             }
                             FocusedArea::Instances
                         }
+                        Some(confirm_popup::ConfirmTarget::Account { index, .. }) => {
+                            let count = self.account_state.store.accounts.len();
+                            self.account_state.store.remove(index);
+                            if count > 1 {
+                                self.account_state.list_state.selected = Some(index.min(
+                                    self.account_state.store.accounts.len().saturating_sub(1),
+                                ));
+                            } else {
+                                self.account_state.list_state.selected = None;
+                            }
+                            FocusedArea::Account
+                        }
                         Some(confirm_popup::ConfirmTarget::ConfigProfile { profile }) => {
                             if let Err(e) = self.delete_config_profile(&profile) {
                                 error_buffer::push_error(error_buffer::ErrorEvent {
@@ -113,6 +125,7 @@ impl App {
                 KeyCode::Esc | KeyCode::Char('n') | KeyCode::Char('N') => {
                     let focus_after = match confirm_popup::pending_target() {
                         Some(confirm_popup::ConfirmTarget::Content { .. }) => FocusedArea::Content,
+                        Some(confirm_popup::ConfirmTarget::Account { .. }) => FocusedArea::Account,
                         Some(confirm_popup::ConfirmTarget::ConfigProfile { .. }) => {
                             FocusedArea::Settings
                         }
@@ -190,6 +203,19 @@ impl App {
                     }
                 }
             }
+        }
+
+        if self.focused == FocusedArea::Account
+            && let KeyCode::Char('d') = key_event.code
+            && let Some(index) = self.account_state.list_state.selected
+            && let Some(account) = self.account_state.store.accounts.get(index)
+        {
+            confirm_popup::set_pending(confirm_popup::ConfirmTarget::Account {
+                username: account.username.clone(),
+                index,
+            });
+            self.focused = FocusedArea::ConfirmDelete;
+            return Ok(());
         }
 
         if self.focused == FocusedArea::Account

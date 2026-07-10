@@ -27,7 +27,6 @@ pub enum AddMode {
     ChooseType,
     OfflineNameInput(String),
     OfflineBlocked,
-    ConfirmDelete(usize),
     DeviceCodeWaiting {
         info: DeviceCodeInfo,
         pending: Arc<Mutex<Option<AuthResult>>>,
@@ -163,39 +162,11 @@ pub fn handle_key(key_event: &KeyEvent, state: &mut AccountState) -> bool {
             }
             _ => true,
         },
-        AddMode::ConfirmDelete(idx) => {
-            let idx = *idx;
-            match key_event.code {
-                KeyCode::Enter | KeyCode::Char('y') | KeyCode::Char('Y') => {
-                    let count = state.store.accounts.len();
-                    state.store.remove(idx);
-                    if count > 1 {
-                        state.list_state.selected =
-                            Some(idx.min(state.store.accounts.len().saturating_sub(1)));
-                    } else {
-                        state.list_state.selected = None;
-                    }
-                    state.add_mode = AddMode::None;
-                    true
-                }
-                KeyCode::Esc | KeyCode::Char('n') | KeyCode::Char('N') => {
-                    state.add_mode = AddMode::None;
-                    true
-                }
-                _ => true,
-            }
-        }
         AddMode::None => {
             let count = state.store.accounts.len();
             match key_event.code {
                 KeyCode::Char('a') => {
                     state.add_mode = AddMode::ChooseType;
-                    true
-                }
-                KeyCode::Char('d') => {
-                    if let Some(idx) = state.list_state.selected {
-                        state.add_mode = AddMode::ConfirmDelete(idx);
-                    }
                     true
                 }
                 KeyCode::Enter => {
@@ -276,7 +247,6 @@ pub fn render(frame: &mut Frame, area: Rect, focused: FocusedArea, state: &mut A
         AddMode::ChooseType => render_choose_popup(frame),
         AddMode::OfflineNameInput(name) => render_offline_popup(frame, name),
         AddMode::OfflineBlocked => render_offline_blocked_popup(frame),
-        AddMode::ConfirmDelete(idx) => render_confirm_delete(frame, state, *idx),
         AddMode::DeviceCodeWaiting { info, .. } => render_device_code_popup(frame, info),
         AddMode::None => {}
     }
@@ -493,24 +463,6 @@ fn render_offline_blocked_popup(frame: &mut Frame) {
         }),
     }
     .render(area, frame.buffer_mut());
-}
-
-fn render_confirm_delete(frame: &mut Frame, state: &AccountState, idx: usize) {
-    use super::popups::confirm::ConfirmPopup;
-    let username = state
-        .store
-        .accounts
-        .get(idx)
-        .map(|a| a.username.as_str())
-        .unwrap_or("?");
-
-    let body = "This will permanently remove this account";
-    let popup_w = (username.len() + 14).max(body.len() + 2).min(48) as u16 + 2;
-    let area = popup_area(frame, popup_w, 3);
-    frame.render_widget(
-        ConfirmPopup::new(format!(" Delete '{}' ", username), body),
-        area,
-    );
 }
 
 fn render_device_code_popup(frame: &mut Frame, info: &DeviceCodeInfo) {
