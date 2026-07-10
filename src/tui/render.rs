@@ -70,8 +70,8 @@ impl App {
         let bottom_chunks = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([
-                Constraint::Percentage(30),
-                Constraint::Percentage(40),
+                Constraint::Percentage(24),
+                Constraint::Percentage(46),
                 Constraint::Percentage(30),
             ])
             .split(main_chunks[2]);
@@ -86,6 +86,7 @@ impl App {
             frame,
             bottom_chunks[1],
             self.focused,
+            &mut self.settings_state,
             self.instances_state.selected_instance(),
             &self.instance_manager.instances_dir,
         );
@@ -124,10 +125,9 @@ impl App {
         }
 
         if self.focused == FocusedArea::ConfirmDelete {
-            let name = confirm_popup::pending_delete_name();
-            if !name.is_empty() {
-                let area = confirm_popup_area(frame.area(), &name);
-                frame.render_widget(ConfirmPopup::new(&name), area);
+            if let Some(target) = confirm_popup::pending_target() {
+                let area = confirm_popup_area(frame.area(), &target);
+                frame.render_widget(ConfirmPopup::for_target(&target), area);
             }
         }
     }

@@ -310,9 +310,11 @@ fn render_account_list(
         let (username, acc_type, is_active) = &accounts[context.index];
         let show_selected = is_focused && context.is_selected;
 
-        let stripe_bg = theme.background();
-
-        let bg = stripe_bg;
+        let bg = if show_selected {
+            theme.stripe()
+        } else {
+            theme.background()
+        };
 
         let active_marker = if *is_active { "\u{25b8} " } else { "  " };
 
@@ -494,8 +496,7 @@ fn render_offline_blocked_popup(frame: &mut Frame) {
 }
 
 fn render_confirm_delete(frame: &mut Frame, state: &AccountState, idx: usize) {
-    use super::popups::{base::PopupFrame, keybind_line};
-    let theme = THEME.as_ref();
+    use super::popups::confirm::ConfirmPopup;
     let username = state
         .store
         .accounts
@@ -503,34 +504,13 @@ fn render_confirm_delete(frame: &mut Frame, state: &AccountState, idx: usize) {
         .map(|a| a.username.as_str())
         .unwrap_or("?");
 
-    let border_color = theme.text_dim();
-    let title = Line::from(Span::styled(
-        format!(" Delete '{}' ", username),
-        Style::default()
-            .fg(border_color)
-            .add_modifier(Modifier::BOLD),
-    ));
-
     let body = "This will permanently remove this account";
     let popup_w = (username.len() + 14).max(body.len() + 2).min(48) as u16 + 2;
     let area = popup_area(frame, popup_w, 3);
-
-    let bg_color = theme.surface();
-    let text_color = theme.text();
-
-    PopupFrame {
-        title,
-        border_color,
-        bg: Some(bg_color),
-        keybinds: Some(keybind_line(&[("Enter", " confirm")])),
-        search_line: None,
-        content: Box::new(move |inner, buf| {
-            Paragraph::new("This will permanently remove this account")
-                .style(Style::default().fg(text_color))
-                .render(inner, buf);
-        }),
-    }
-    .render(area, frame.buffer_mut());
+    frame.render_widget(
+        ConfirmPopup::new(format!(" Delete '{}' ", username), body),
+        area,
+    );
 }
 
 fn render_device_code_popup(frame: &mut Frame, info: &DeviceCodeInfo) {
