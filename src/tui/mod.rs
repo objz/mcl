@@ -9,6 +9,18 @@ pub mod progress;
 mod render;
 pub mod widgets;
 
+use std::sync::atomic::{AtomicBool, Ordering};
+
+static REDRAW_REQUESTED: AtomicBool = AtomicBool::new(true);
+
+pub fn request_redraw() {
+    REDRAW_REQUESTED.store(true, Ordering::Release);
+}
+
+pub(super) fn take_redraw_request() -> bool {
+    REDRAW_REQUESTED.swap(false, Ordering::AcqRel)
+}
+
 pub type Tui = ratatui::DefaultTerminal;
 
 pub async fn show() -> color_eyre::Result<()> {

@@ -33,12 +33,14 @@ pub static KILL_SENDERS: LazyLock<KillSenders> =
 pub fn set_state(name: &str, state: RunState) {
     if let Ok(mut map) = RUNNING.lock() {
         map.insert(name.to_string(), state);
+        crate::tui::request_redraw();
     }
 }
 
 pub fn remove(name: &str) {
     if let Ok(mut map) = RUNNING.lock() {
         map.remove(name);
+        crate::tui::request_redraw();
     }
 }
 
@@ -59,6 +61,7 @@ pub fn all() -> Vec<(String, RunState)> {
 pub fn push_last_played(name: &str, time: DateTime<Utc>) {
     if let Ok(mut q) = PENDING_LAST_PLAYED.lock() {
         q.push((name.to_string(), time));
+        crate::tui::request_redraw();
     }
 }
 

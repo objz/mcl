@@ -37,7 +37,7 @@ pub struct LogsState {
     pub viewer_search: super::search::SearchState,
     selected_path: Option<std::path::PathBuf>,
     pending: PendingLogs,
-    rescan_counter: u8,
+    last_rescan: std::time::Instant,
     instances_dir_cache: Option<std::path::PathBuf>,
     was_live: bool,
 }
@@ -59,7 +59,7 @@ impl Default for LogsState {
             viewer_search: super::search::SearchState::default(),
             selected_path: None,
             pending: Arc::new(Mutex::new(None)),
-            rescan_counter: 0,
+            last_rescan: std::time::Instant::now(),
             instances_dir_cache: None,
             was_live: false,
         }
@@ -77,6 +77,7 @@ impl LogsState {
         self.viewer_scroll = 0;
         self.viewer_focused = false;
         self.selected_path = None;
+        self.last_rescan = std::time::Instant::now();
 
         let dir = instances_dir.to_path_buf();
         let tag = instance_name.to_string();
@@ -92,6 +93,7 @@ impl LogsState {
 
             if let Ok(mut slot) = pending.lock() {
                 *slot = Some((tag, entries));
+                crate::tui::request_redraw();
             }
         });
     }
@@ -128,16 +130,25 @@ impl LogsState {
     }
 
     // periodically re-scan log files in case new ones appeared while playing.
-    // only triggers every 120 ticks to avoid hammering the filesystem
     pub fn try_rescan(&mut self) {
-        self.rescan_counter = self.rescan_counter.wrapping_add(1);
-        if !self.rescan_counter.is_multiple_of(120) {
+        if self.last_rescan.elapsed() < std::time::Duration::from_secs(2) {
             return;
         }
+        self.last_rescan = std::time::Instant::now();
 
         let (Some(dir), Some(name)) = (&self.instances_dir_cache, &self.loaded_for) else {
             return;
         };
+        if !matches!(
+            crate::running::get(name),
+            Some(
+                crate::running::RunState::Authenticating
+                    | crate::running::RunState::Starting
+                    | crate::running::RunState::Running
+            )
+        ) {
+            return;
+        }
 
         let dir = dir.clone();
         let tag = name.clone();
@@ -153,6 +164,7 @@ impl LogsState {
 
             if let Ok(mut slot) = pending.lock() {
                 *slot = Some((tag, entries));
+                crate::tui::request_redraw();
             }
         });
     }

@@ -11,9 +11,13 @@ use crate::tui::error_buffer;
 use crate::tui::progress;
 
 impl App {
-    /// main loop: drain async results, render, handle input, repeat at ~60fps
+    /// main loop: poll async results and input at ~60Hz, drawing only when state changes
     pub async fn run(&mut self, terminal: &mut Tui) -> color_eyre::Result<()> {
+        let mut last_draw = std::time::Instant::now()
+            .checked_sub(Duration::from_secs(1))
+            .unwrap_or_else(std::time::Instant::now);
         while !self.exit {
+            let redraw_requested = super::take_redraw_request();
             // check if any popup wizard finished and wants to create/import
             if let Some(params) = new_instance::take_result() {
                 self.spawn_create(params);
@@ -53,14 +57,26 @@ impl App {
             self.screenshots_state.drain_pending_entries();
             self.screenshots_state.request_visible_loads();
             self.create_screenshot_protocols();
-            // only advance the spinner every 8 ticks to keep it readable
-            self.throbber_tick = self.throbber_tick.wrapping_add(1);
-            if self.throbber_tick.is_multiple_of(8) {
-                self.throbber_state.calc_next();
+            let progress_active = progress::is_active();
+            if progress_active {
+                // only advance the spinner every 8 ticks to keep it readable
+                self.throbber_tick = self.throbber_tick.wrapping_add(1);
+                if self.throbber_tick.is_multiple_of(8) {
+                    self.throbber_state.calc_next();
+                }
             }
 
-            terminal.draw(|frame| self.render_frame(frame))?;
-            self.handle_events().wrap_err("handle events failed")?;
+            let input_changed = self.handle_events().wrap_err("handle events failed")?;
+            let continuously_animated = progress_active || error_buffer::has_errors();
+            let safety_refresh = last_draw.elapsed() >= Duration::from_secs(1);
+            if input_changed
+                || continuously_animated
+                || safety_refresh
+                || redraw_requested
+            {
+                terminal.draw(|frame| self.render_frame(frame))?;
+                last_draw = std::time::Instant::now();
+            }
 
             if let Some(path) = self.pending_editor.take()
                 && Self::run_editor(terminal, &path)
@@ -73,22 +89,24 @@ impl App {
 
     // polls for input with a 16ms timeout (~60fps). only key presses are handled,
     // releases and repeats are ignored thanks to the enhanced keyboard protocol
-    fn handle_events(&mut self) -> color_eyre::Result<()> {
+    fn handle_events(&mut self) -> color_eyre::Result<bool> {
         match crossterm::event::poll(Duration::from_millis(16)) {
             Ok(true) => match event::read() {
-                Ok(Event::Key(key_event)) if key_event.kind == KeyEventKind::Press => self
-                    .handle_key_event(key_event)
-                    .wrap_err_with(|| format!("handling key event failed:\n{key_event:#?}")),
-                Ok(_) => Ok(()),
+                Ok(Event::Key(key_event)) if key_event.kind == KeyEventKind::Press => {
+                    self.handle_key_event(key_event)
+                        .wrap_err_with(|| format!("handling key event failed:\n{key_event:#?}"))?;
+                    Ok(true)
+                }
+                Ok(_) => Ok(true),
                 Err(e) => {
                     tracing::error!("Event read error: {}", e);
-                    Ok(())
+                    Ok(false)
                 }
             },
-            Ok(false) => Ok(()),
+            Ok(false) => Ok(false),
             Err(e) => {
                 tracing::error!("Event poll error: {}", e);
-                Ok(())
+                Ok(false)
             }
         }
     }
@@ -115,6 +133,7 @@ impl App {
                 Ok(config) => {
                     if let Ok(mut pending) = pending_instances.lock() {
                         pending.push(config);
+                        crate::tui::request_redraw();
                     }
                 }
                 Err(e) => {
@@ -141,6 +160,7 @@ impl App {
                 Ok(config) => {
                     if let Ok(mut pending) = pending_instances.lock() {
                         pending.push(config);
+                        crate::tui::request_redraw();
                     }
                 }
                 Err(e) => {

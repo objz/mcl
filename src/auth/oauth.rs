@@ -61,6 +61,7 @@ async fn run_full_oauth_flow() -> Result<(String, Option<String>), String> {
             user_code: details.user_code().secret().to_owned(),
             verification_uri: details.verification_uri().to_string(),
         });
+        crate::tui::request_redraw();
     }
 
     let token = oauth_client
@@ -85,6 +86,7 @@ pub fn start_microsoft_auth() -> Arc<Mutex<Option<AuthResult>>> {
         let outcome = run_full_auth_flow().await;
         if let Ok(mut slot) = result_clone.lock() {
             *slot = Some(outcome);
+            crate::tui::request_redraw();
         }
     });
 

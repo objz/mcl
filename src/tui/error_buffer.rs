@@ -38,6 +38,7 @@ pub fn push_error(event: ErrorEvent) {
             while events.len() > MAX_ERROR_EVENTS {
                 events.pop_front();
             }
+            crate::tui::request_redraw();
         }
         Err(e) => {
             tracing::error!("Error buffer lock poisoned: {}", e);
@@ -56,7 +57,13 @@ pub fn has_errors() -> bool {
 #[must_use]
 pub fn pop_error() -> Option<ErrorEvent> {
     match ERROR_EVENTS.lock() {
-        Ok(mut events) => events.pop_front(),
+        Ok(mut events) => {
+            let event = events.pop_front();
+            if event.is_some() {
+                crate::tui::request_redraw();
+            }
+            event
+        }
         Err(_) => None,
     }
 }

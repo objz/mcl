@@ -92,6 +92,7 @@ impl ScreenshotsState {
 
             if let Ok(mut slot) = pending.lock() {
                 *slot = Some((tag, entries));
+                crate::tui::request_redraw();
             }
         });
     }
@@ -148,6 +149,7 @@ impl ScreenshotsState {
                         && let Ok(mut slot) = pending.lock()
                     {
                         slot.push((idx, img));
+                        crate::tui::request_redraw();
                     }
                 });
             }

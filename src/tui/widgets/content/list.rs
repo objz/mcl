@@ -22,14 +22,6 @@ use tui_widget_list::{ListBuilder, ListState as TuiListState, ListView};
 use crate::config::theme::THEME;
 use crate::instance::content::mods::{ContentEntry, IconCell};
 
-type SnapshotRow = (
-    String,
-    String,
-    bool,
-    Option<Vec<Vec<IconCell>>>,
-    bool,
-    usize,
-);
 type ScanOneFn = fn(&Path, &str, bool) -> ContentEntry;
 
 struct CachedList {
@@ -41,6 +33,11 @@ struct PendingContentImage {
     path: std::path::PathBuf,
     icon_lines: Vec<Vec<IconCell>>,
     image: Option<image::DynamicImage>,
+}
+
+struct DisplayMetadata {
+    description: String,
+    has_description: bool,
 }
 
 // result from the notify-triggered background diff
@@ -60,6 +57,7 @@ pub struct ContentListState {
     requested_images: HashSet<std::path::PathBuf>,
     pending_images: Arc<Mutex<Vec<PendingContentImage>>>,
     images_dirty: bool,
+    display_metadata: HashMap<std::path::PathBuf, DisplayMetadata>,
     pub search: crate::tui::widgets::search::SearchState,
     cache: HashMap<String, CachedList>,
     // streaming: individual entries arrive here during initial load
@@ -92,6 +90,7 @@ impl Default for ContentListState {
             requested_images: HashSet::new(),
             pending_images: Arc::new(Mutex::new(Vec::new())),
             images_dirty: true,
+            display_metadata: HashMap::new(),
             search: crate::tui::widgets::search::SearchState::default(),
             cache: HashMap::new(),
             stream_rx: None,
@@ -169,6 +168,7 @@ impl ContentListState {
                     && let Ok(mut pending) = pending.lock()
                 {
                     pending.push(result);
+                    crate::tui::request_redraw();
                 }
             });
         }
@@ -211,6 +211,8 @@ impl ContentListState {
                     received = true;
                     self.images_dirty = true;
                     received_count += 1;
+                    self.display_metadata
+                        .insert(entry.path.clone(), display_metadata(&entry));
                     let pos = self
                         .entries
                         .binary_search_by(|e| e.name.to_lowercase().cmp(&entry.name.to_lowercase()))
@@ -276,6 +278,9 @@ impl ContentListState {
         );
         for (stem, enabled, path) in &diff.toggled {
             if let Some(entry) = self.entries.iter_mut().find(|e| &e.file_stem == stem) {
+                if let Some(metadata) = self.display_metadata.remove(&entry.path) {
+                    self.display_metadata.insert(path.clone(), metadata);
+                }
                 entry.enabled = *enabled;
                 entry.path = path.clone();
             }
@@ -285,10 +290,14 @@ impl ContentListState {
         if !diff.removed.is_empty() {
             self.entries
                 .retain(|e| !diff.removed.contains(&e.file_stem));
+            self.display_metadata
+                .retain(|path, _| self.entries.iter().any(|entry| &entry.path == path));
         }
 
         // insert new entries in sorted position
         for entry in diff.added {
+            self.display_metadata
+                .insert(entry.path.clone(), display_metadata(&entry));
             let pos = self
                 .entries
                 .binary_search_by(|e| e.name.to_lowercase().cmp(&entry.name.to_lowercase()))
@@ -408,6 +417,7 @@ impl ContentListState {
                         && let Ok(mut slot) = diff_slot.lock()
                     {
                         *slot = Some(diff);
+                        crate::tui::request_redraw();
                     }
 
                     if !dirty.load(Ordering::Relaxed) {
@@ -560,6 +570,7 @@ impl ContentListState {
                     if tx.send(entry).is_err() {
                         break; // receiver dropped (instance switched)
                     }
+                    crate::tui::request_redraw();
                 }
             })
             .await;
@@ -623,6 +634,7 @@ impl ContentListState {
         self.entries.retain(|entry| entry.path != path);
         self.image_protocols.remove(path);
         self.requested_images.remove(path);
+        self.display_metadata.remove(path);
         self.images_dirty = true;
         if let Some(sel) = self.list_state.selected {
             let visible_count = self.filtered_indices().len();
@@ -791,29 +803,23 @@ pub fn render(
         state.list_state.selected = Some(count.saturating_sub(1));
     }
 
-    let snapshot: Vec<SnapshotRow> = filtered
-        .iter()
-        .map(|&i| {
-            let entry = &state.entries[i];
-            (
-                entry.name.clone(),
-                entry.description.clone(),
-                entry.enabled,
-                entry.icon_lines.clone(),
-                entry.icon_bytes.is_some(),
-                protocol_icon_columns(entry, picker) as usize,
-            )
-        })
-        .collect();
     let use_image_protocol =
         picker.protocol_type() != ratatui_image::picker::ProtocolType::Halfblocks;
+    let entries = &state.entries;
+    let display_metadata = &state.display_metadata;
+    let filtered_rows = &filtered;
 
     let builder = ListBuilder::new(move |context| {
         let theme = THEME.as_ref();
-        let (name, description, enabled, icon_pixels, has_image, protocol_columns) =
-            &snapshot[context.index];
+        let entry = &entries[filtered_rows[context.index]];
+        let name = &entry.name;
+        let metadata = display_metadata.get(&entry.path);
+        let enabled = entry.enabled;
+        let icon_pixels = &entry.icon_lines;
+        let has_image = entry.icon_bytes.is_some();
+        let protocol_columns = protocol_icon_columns(entry, picker) as usize;
         let show_selected = is_focused && context.is_selected;
-        let use_mc_colors = *enabled;
+        let use_mc_colors = enabled;
 
         let stripe_bg = if context.index % 2 == 0 {
             theme.background()
@@ -821,7 +827,7 @@ pub fn render(
             theme.stripe()
         };
 
-        let (name_style, description_style, background) = match (*enabled, show_selected) {
+        let (name_style, description_style, background) = match (enabled, show_selected) {
             (true, true) => (
                 Style::default()
                     .fg(theme.accent())
@@ -853,9 +859,8 @@ pub fn render(
         };
 
         let has_icon = icon_pixels.is_some();
-        let full_desc = strip_mc_codes(description);
-        let stripped_desc = full_desc.lines().next().unwrap_or("").trim().to_string();
-        let has_description = !stripped_desc.is_empty();
+        let stripped_desc = metadata.map_or("", |metadata| metadata.description.as_str());
+        let has_description = metadata.is_some_and(|metadata| metadata.has_description);
         let compact = !has_icon && !has_description;
 
         let selector = if show_selected {
@@ -890,8 +895,8 @@ pub fn render(
             line_0.extend(icon_spans(
                 icon_pixels.as_ref(),
                 0,
-                use_image_protocol && *has_image,
-                *protocol_columns,
+                use_image_protocol && has_image,
+                protocol_columns,
             ));
             line_0.push(Span::raw(" "));
             if use_mc_colors {
@@ -907,11 +912,11 @@ pub fn render(
                 row.extend(icon_spans(
                     icon_pixels.as_ref(),
                     1,
-                    use_image_protocol && *has_image,
-                    *protocol_columns,
+                    use_image_protocol && has_image,
+                    protocol_columns,
                 ));
                 row.push(Span::raw(" "));
-                row.push(Span::styled(stripped_desc.clone(), description_style));
+                row.push(Span::styled(stripped_desc.to_string(), description_style));
                 lines.push(Line::from(row));
             }
 
@@ -921,8 +926,8 @@ pub fn render(
                 row.extend(icon_spans(
                     icon_pixels.as_ref(),
                     r,
-                    use_image_protocol && *has_image,
-                    *protocol_columns,
+                    use_image_protocol && has_image,
+                    protocol_columns,
                 ));
                 lines.push(Line::from(row));
             }
@@ -948,7 +953,7 @@ pub fn render(
                 };
                 lines.push(Line::from(vec![
                     pad,
-                    Span::styled(stripped_desc.clone(), description_style),
+                    Span::styled(stripped_desc.to_string(), description_style),
                 ]));
             }
 
@@ -1004,11 +1009,10 @@ fn render_image_icons(
             continue;
         };
         let icon_rows = entry.icon_lines.as_ref().map_or(0, Vec::len);
-        let description = strip_mc_codes(&entry.description);
-        let has_description = description
-            .lines()
-            .next()
-            .is_some_and(|line| !line.trim().is_empty());
+        let has_description = state
+            .display_metadata
+            .get(&entry.path)
+            .is_some_and(|metadata| metadata.has_description);
         let height = icon_rows.max(if has_description { 2 } else { 1 }) as u16;
 
         if y >= area.y + area.height {
@@ -1146,6 +1150,15 @@ fn strip_mc_codes(text: &str) -> String {
         }
     }
     result
+}
+
+fn display_metadata(entry: &ContentEntry) -> DisplayMetadata {
+    let description = strip_mc_codes(&entry.description);
+    let description = description.lines().next().unwrap_or("").trim().to_string();
+    DisplayMetadata {
+        has_description: !description.is_empty(),
+        description,
+    }
 }
 
 // renders one row of a mod icon using half-block characters (U+2584).

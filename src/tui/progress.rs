@@ -19,6 +19,7 @@ pub fn set_action(text: impl Into<String>) {
     match PROGRESS.lock() {
         Ok(mut state) => {
             state.current_action = Some(text.clone());
+            crate::tui::request_redraw();
         }
         Err(e) => {
             tracing::error!("Progress lock poisoned: {}", e);
@@ -31,6 +32,7 @@ pub fn set_progress(current: u64, total: u64) {
     match PROGRESS.lock() {
         Ok(mut state) => {
             state.progress = Some((current, total));
+            crate::tui::request_redraw();
         }
         Err(e) => {
             tracing::error!("Progress lock poisoned: {}", e);
@@ -43,6 +45,7 @@ pub fn set_sub_action(text: impl Into<String>) {
     match PROGRESS.lock() {
         Ok(mut state) => {
             state.sub_action = Some(text.clone());
+            crate::tui::request_redraw();
         }
         Err(e) => {
             tracing::error!("Progress lock poisoned: {}", e);
@@ -57,9 +60,16 @@ pub fn clear() {
             state.current_action = None;
             state.progress = None;
             state.sub_action = None;
+            crate::tui::request_redraw();
         }
         Err(e) => {
             tracing::error!("Progress lock poisoned: {}", e);
         }
     }
+}
+
+pub fn is_active() -> bool {
+    PROGRESS
+        .lock()
+        .is_ok_and(|state| state.current_action.is_some())
 }
