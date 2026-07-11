@@ -254,7 +254,9 @@ impl InstanceManager {
             .await
             .map_err(|e| match e {
                 InstallError::Download(net_error) => InstanceError::Download(net_error),
-                InstallError::Installer(installer_error) => InstanceError::InstallerError(installer_error),
+                InstallError::Installer(installer_error) => {
+                    InstanceError::InstallerError(installer_error)
+                }
             })?;
 
         let config = InstanceConfig {

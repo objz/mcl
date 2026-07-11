@@ -462,13 +462,16 @@ fn quadrant_cell(pixels: [[u8; 3]; 4]) -> IconCell {
 
     let bg = pixels[pair.0];
     let fg = pixels[pair.1];
-    let mask = pixels.iter().enumerate().fold(0_u8, |mask, (index, pixel)| {
-        if color_distance(*pixel, fg) <= color_distance(*pixel, bg) {
-            mask | (1 << index)
-        } else {
-            mask
-        }
-    });
+    let mask = pixels
+        .iter()
+        .enumerate()
+        .fold(0_u8, |mask, (index, pixel)| {
+            if color_distance(*pixel, fg) <= color_distance(*pixel, bg) {
+                mask | (1 << index)
+            } else {
+                mask
+            }
+        });
     let symbol = match mask {
         0 => ' ',
         1 => '\u{2598}',
