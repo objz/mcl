@@ -5,6 +5,16 @@ use std::path::PathBuf;
 
 use serde::Deserialize;
 
+#[derive(Debug, Deserialize, Default, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum ImageProtocol {
+    Halfblocks,
+    Quadrants,
+    #[default]
+    Kitty,
+    Iterm2,
+}
+
 #[derive(Debug, Deserialize, Default)]
 pub struct General {}
 
@@ -102,6 +112,8 @@ impl Default for Defaults {
 // timing knobs for the error toast animation: show for 5s, start sliding at 3.5s,
 // fly off screen over 300ms. tweak these if the toasts feel too fast or slow.
 pub struct Ui {
+    #[serde(default)]
+    pub image_protocol: ImageProtocol,
     #[serde(default = "default_error_auto_dismiss_ms")]
     pub error_auto_dismiss_ms: u64,
     #[serde(default = "default_error_slide_start_ms")]
@@ -128,6 +140,7 @@ fn default_max_error_events() -> usize {
 impl Default for Ui {
     fn default() -> Self {
         Self {
+            image_protocol: ImageProtocol::default(),
             error_auto_dismiss_ms: default_error_auto_dismiss_ms(),
             error_slide_start_ms: default_error_slide_start_ms(),
             error_fly_out_ms: default_error_fly_out_ms(),
