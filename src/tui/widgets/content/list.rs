@@ -4,7 +4,7 @@
 // also handles minecraft's formatting codes for colored mod names/descriptions
 // because apparently mojang thought terminal UIs would need that. thanks guys
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::{Arc, Mutex, mpsc};
 
@@ -16,17 +16,31 @@ use ratatui::{
     text::{Line, Span, Text},
     widgets::{Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState},
 };
+use ratatui_image::{CropOptions, Resize, StatefulImage, protocol::StatefulProtocol};
 use tui_widget_list::{ListBuilder, ListState as TuiListState, ListView};
 
 use crate::config::theme::THEME;
 use crate::instance::content::mods::{ContentEntry, IconCell};
 
-type SnapshotRow = (String, String, bool, Option<Vec<Vec<IconCell>>>);
+type SnapshotRow = (
+    String,
+    String,
+    bool,
+    Option<Vec<Vec<IconCell>>>,
+    bool,
+    usize,
+);
 type ScanOneFn = fn(&Path, &str, bool) -> ContentEntry;
 
 struct CachedList {
     entries: Vec<ContentEntry>,
     selected: Option<usize>,
+}
+
+struct PendingContentImage {
+    path: std::path::PathBuf,
+    icon_lines: Vec<Vec<IconCell>>,
+    image: Option<image::DynamicImage>,
 }
 
 // result from the notify-triggered background diff
@@ -42,6 +56,10 @@ pub struct ContentListState {
     pub scrollbar_state: ScrollbarState,
     pub loaded_for: Option<String>,
     pub loading: bool,
+    image_protocols: HashMap<std::path::PathBuf, StatefulProtocol>,
+    requested_images: HashSet<std::path::PathBuf>,
+    pending_images: Arc<Mutex<Vec<PendingContentImage>>>,
+    images_dirty: bool,
     pub search: crate::tui::widgets::search::SearchState,
     cache: HashMap<String, CachedList>,
     // streaming: individual entries arrive here during initial load
@@ -70,6 +88,10 @@ impl Default for ContentListState {
             scrollbar_state: ScrollbarState::default(),
             loaded_for: None,
             loading: false,
+            image_protocols: HashMap::new(),
+            requested_images: HashSet::new(),
+            pending_images: Arc::new(Mutex::new(Vec::new())),
+            images_dirty: true,
             search: crate::tui::widgets::search::SearchState::default(),
             cache: HashMap::new(),
             stream_rx: None,
@@ -83,6 +105,96 @@ impl Default for ContentListState {
 }
 
 impl ContentListState {
+    pub fn request_image_loads(&mut self, picker: &ratatui_image::picker::Picker) {
+        if !self.images_dirty {
+            return;
+        }
+        self.images_dirty = false;
+
+        let use_image_protocol =
+            picker.protocol_type() != ratatui_image::picker::ProtocolType::Halfblocks;
+        let use_quadrants = crate::config::SETTINGS.ui.image_protocol
+            == crate::config::settings::ImageProtocol::Quadrants;
+        if !use_image_protocol {
+            self.image_protocols.clear();
+        }
+
+        self.image_protocols
+            .retain(|path, _| self.entries.iter().any(|entry| &entry.path == path));
+        self.requested_images
+            .retain(|path| self.entries.iter().any(|entry| &entry.path == path));
+
+        let font_size = picker.font_size();
+        for entry in &self.entries {
+            if entry.icon_bytes.is_none() || !self.requested_images.insert(entry.path.clone()) {
+                continue;
+            }
+            let path = entry.path.clone();
+            let bytes = entry.icon_bytes.clone().unwrap_or_default();
+            let rows = entry.icon_lines.as_ref().map_or(3, Vec::len) as u32;
+            let columns = square_icon_columns(rows as u16, font_size);
+            let pending = self.pending_images.clone();
+
+            tokio::spawn(async move {
+                let result = tokio::task::spawn_blocking(move || {
+                    let image = image::load_from_memory(&bytes).ok()?;
+                    let icon_lines = if use_quadrants {
+                        crate::instance::content::mods::make_icon_quadrants_from_image(
+                            &image,
+                            columns,
+                            rows as u16,
+                        )
+                    } else {
+                        crate::instance::content::mods::make_icon_pixels_from_image(
+                            &image,
+                            columns,
+                            rows as u16,
+                        )
+                    };
+                    let side = rows * u32::from(font_size.1.max(1));
+                    let image = use_image_protocol.then(|| {
+                        image.resize_exact(side, side, image::imageops::FilterType::Lanczos3)
+                    });
+                    Some(PendingContentImage {
+                        path,
+                        icon_lines,
+                        image,
+                    })
+                })
+                .await
+                .ok()
+                .flatten();
+
+                if let Some(result) = result
+                    && let Ok(mut pending) = pending.lock()
+                {
+                    pending.push(result);
+                }
+            });
+        }
+    }
+
+    pub fn drain_image_loads(&mut self, picker: &ratatui_image::picker::Picker) {
+        let images = match self.pending_images.lock() {
+            Ok(mut pending) => std::mem::take(&mut *pending),
+            Err(_) => return,
+        };
+
+        for result in images {
+            if let Some(entry) = self
+                .entries
+                .iter_mut()
+                .find(|entry| entry.path == result.path)
+            {
+                entry.icon_lines = Some(result.icon_lines);
+                if let Some(image) = result.image {
+                    self.image_protocols
+                        .insert(result.path, picker.new_resize_protocol(image));
+                }
+            }
+        }
+    }
+
     // drain streaming entries from the initial load. each entry arrives
     // individually and is inserted in sorted position for a smooth fill-in
     pub fn drain_pending(&mut self) {
@@ -97,6 +209,7 @@ impl ContentListState {
             match rx.try_recv() {
                 Ok(entry) => {
                     received = true;
+                    self.images_dirty = true;
                     received_count += 1;
                     let pos = self
                         .entries
@@ -151,6 +264,7 @@ impl ContentListState {
         let Some(diff) = diff else {
             return;
         };
+        self.images_dirty = true;
 
         // apply toggles (enabled/path changes)
         tracing::debug!(
@@ -353,6 +467,7 @@ impl ContentListState {
     ) {
         self.scan_one_fn = Some(scan_one_fn);
         self.content_ext = Some(ext);
+        self.images_dirty = true;
 
         // save current entries to cache
         if let Some(prev) = self.loaded_for.take()
@@ -506,6 +621,9 @@ impl ContentListState {
 
     pub fn remove_path(&mut self, path: &Path) {
         self.entries.retain(|entry| entry.path != path);
+        self.image_protocols.remove(path);
+        self.requested_images.remove(path);
+        self.images_dirty = true;
         if let Some(sel) = self.list_state.selected {
             let visible_count = self.filtered_indices().len();
             if visible_count == 0 {
@@ -560,6 +678,7 @@ pub fn handle_key_no_toggle(key_event: &KeyEvent, state: &mut ContentListState) 
     }
     let filtered = state.filtered_indices();
     let count = filtered.len();
+
     match key_event.code {
         KeyCode::Char('j') | KeyCode::Down => {
             if count == 0 {
@@ -595,6 +714,7 @@ pub fn handle_key(key_event: &KeyEvent, state: &mut ContentListState) -> bool {
     }
     let filtered = state.filtered_indices();
     let count = filtered.len();
+
     match key_event.code {
         KeyCode::Char('j') | KeyCode::Down => {
             if count == 0 {
@@ -640,6 +760,7 @@ pub fn render(
     is_focused: bool,
     loading_text: &str,
     empty_text: &str,
+    picker: &ratatui_image::picker::Picker,
 ) {
     let theme = THEME.as_ref();
     if state.loading {
@@ -679,13 +800,18 @@ pub fn render(
                 entry.description.clone(),
                 entry.enabled,
                 entry.icon_lines.clone(),
+                entry.icon_bytes.is_some(),
+                protocol_icon_columns(entry, picker) as usize,
             )
         })
         .collect();
+    let use_image_protocol =
+        picker.protocol_type() != ratatui_image::picker::ProtocolType::Halfblocks;
 
     let builder = ListBuilder::new(move |context| {
         let theme = THEME.as_ref();
-        let (name, description, enabled, icon_pixels) = &snapshot[context.index];
+        let (name, description, enabled, icon_pixels, has_image, protocol_columns) =
+            &snapshot[context.index];
         let show_selected = is_focused && context.is_selected;
         let use_mc_colors = *enabled;
 
@@ -761,7 +887,12 @@ pub fn render(
             };
 
             let mut line_0 = vec![selector.clone()];
-            line_0.extend(icon_spans(icon_pixels.as_ref(), 0));
+            line_0.extend(icon_spans(
+                icon_pixels.as_ref(),
+                0,
+                use_image_protocol && *has_image,
+                *protocol_columns,
+            ));
             line_0.push(Span::raw(" "));
             if use_mc_colors {
                 line_0.extend(parse_mc_text(name, name_style));
@@ -773,7 +904,12 @@ pub fn render(
 
             if has_description {
                 let mut row = vec![pad.clone()];
-                row.extend(icon_spans(icon_pixels.as_ref(), 1));
+                row.extend(icon_spans(
+                    icon_pixels.as_ref(),
+                    1,
+                    use_image_protocol && *has_image,
+                    *protocol_columns,
+                ));
                 row.push(Span::raw(" "));
                 row.push(Span::styled(stripped_desc.clone(), description_style));
                 lines.push(Line::from(row));
@@ -782,7 +918,12 @@ pub fn render(
             let desc_rows = if has_description { 1 } else { 0 };
             for r in (1 + desc_rows)..icon_row_count {
                 let mut row = vec![pad.clone()];
-                row.extend(icon_spans(icon_pixels.as_ref(), r));
+                row.extend(icon_spans(
+                    icon_pixels.as_ref(),
+                    r,
+                    use_image_protocol && *has_image,
+                    *protocol_columns,
+                ));
                 lines.push(Line::from(row));
             }
 
@@ -820,6 +961,10 @@ pub fn render(
     let list = ListView::new(builder, count);
     frame.render_stateful_widget(list, area, &mut state.list_state);
 
+    if picker.protocol_type() != ratatui_image::picker::ProtocolType::Halfblocks {
+        render_image_icons(frame, area, state, &filtered, picker);
+    }
+
     let scrollbar_area = Rect {
         x: area.x + area.width.saturating_sub(0),
         y: area.y + 1,
@@ -841,6 +986,77 @@ pub fn render(
         scrollbar_area,
         &mut state.scrollbar_state,
     );
+}
+
+fn render_image_icons(
+    frame: &mut Frame,
+    area: Rect,
+    state: &mut ContentListState,
+    filtered: &[usize],
+    picker: &ratatui_image::picker::Picker,
+) {
+    let truncation = state.list_state.scroll_truncation();
+    let mut y = area.y;
+    let first = state.list_state.scroll_offset_index();
+
+    for (visible_index, &entry_index) in filtered.iter().enumerate().skip(first) {
+        let Some(entry) = state.entries.get(entry_index) else {
+            continue;
+        };
+        let icon_rows = entry.icon_lines.as_ref().map_or(0, Vec::len);
+        let description = strip_mc_codes(&entry.description);
+        let has_description = description
+            .lines()
+            .next()
+            .is_some_and(|line| !line.trim().is_empty());
+        let height = icon_rows.max(if has_description { 2 } else { 1 }) as u16;
+
+        if y >= area.y + area.height {
+            break;
+        }
+        let top_crop = if visible_index == first {
+            truncation.min(icon_rows as u16)
+        } else {
+            0
+        };
+        let visible_icon_rows = (icon_rows as u16)
+            .saturating_sub(top_crop)
+            .min(area.y + area.height - y);
+        if visible_icon_rows > 0
+            && entry.icon_bytes.is_some()
+            && let Some(protocol) = state.image_protocols.get_mut(&entry.path)
+        {
+            let icon_area = Rect {
+                x: area.x + 1,
+                y,
+                width: protocol_icon_columns(entry, picker).min(area.width.saturating_sub(1)),
+                height: visible_icon_rows,
+            };
+            if icon_area.height > 0 && icon_area.width > 0 {
+                let clipped = top_crop > 0 || visible_icon_rows < icon_rows as u16;
+                let resize = if clipped {
+                    Resize::Crop(Some(CropOptions {
+                        clip_top: top_crop > 0,
+                        clip_left: false,
+                    }))
+                } else {
+                    Resize::Scale(None)
+                };
+                let widget: StatefulImage<StatefulProtocol> =
+                    StatefulImage::default().resize(resize);
+                frame.render_stateful_widget(widget, icon_area, protocol);
+            }
+        }
+        let visible_height = if visible_index == first {
+            height.saturating_sub(truncation)
+        } else {
+            height
+        };
+        y = y.saturating_add(visible_height);
+        if visible_index + 1 >= filtered.len() {
+            break;
+        }
+    }
 }
 
 // minecraft's 16-color palette, keyed by the formatting code character.
@@ -935,13 +1151,21 @@ fn strip_mc_codes(text: &str) -> String {
 // renders one row of a mod icon using half-block characters (U+2584).
 // each cell packs two vertical pixels via fg/bg colors, giving
 // double the vertical resolution out of the terminal
-fn icon_spans(icon_pixels: Option<&Vec<Vec<IconCell>>>, row: usize) -> Vec<Span<'static>> {
+fn icon_spans(
+    icon_pixels: Option<&Vec<Vec<IconCell>>>,
+    row: usize,
+    use_image_protocol: bool,
+    protocol_columns: usize,
+) -> Vec<Span<'static>> {
+    if use_image_protocol {
+        return vec![Span::raw(" ".repeat(protocol_columns))];
+    }
     match icon_pixels.and_then(|rows| rows.get(row)) {
         Some(cols) => cols
             .iter()
             .map(|cell| {
                 Span::styled(
-                    "\u{2584}",
+                    cell.symbol.to_string(),
                     Style::default()
                         .fg(Color::Rgb(cell.fg_r, cell.fg_g, cell.fg_b))
                         .bg(Color::Rgb(cell.bg_r, cell.bg_g, cell.bg_b)),
@@ -956,6 +1180,20 @@ fn icon_spans(icon_pixels: Option<&Vec<Vec<IconCell>>>, row: usize) -> Vec<Span<
             )]
         }
     }
+}
+
+fn protocol_icon_columns(
+    entry: &crate::instance::content::mods::ContentEntry,
+    picker: &ratatui_image::picker::Picker,
+) -> u16 {
+    let rows = entry.icon_lines.as_ref().map_or(3, Vec::len) as u16;
+    square_icon_columns(rows, picker.font_size())
+}
+
+fn square_icon_columns(rows: u16, font_size: (u16, u16)) -> u16 {
+    let width = u32::from(font_size.0.max(1));
+    let height = u32::from(font_size.1.max(1));
+    ((u32::from(rows) * height + width / 2) / width).max(1) as u16
 }
 
 // reads a content directory and builds a stem -> (path, enabled) map.
@@ -994,4 +1232,21 @@ fn read_dir_stems(dir: &std::path::Path, ext: &str) -> HashMap<String, (std::pat
     }
 
     map
+}
+
+#[cfg(test)]
+mod tests {
+    use super::square_icon_columns;
+
+    #[test]
+    fn square_columns_follow_terminal_cell_ratio() {
+        assert_eq!(square_icon_columns(3, (8, 16)), 6);
+        assert_eq!(square_icon_columns(3, (8, 18)), 7);
+        assert_eq!(square_icon_columns(6, (8, 18)), 14);
+    }
+
+    #[test]
+    fn square_columns_handle_missing_cell_size() {
+        assert_eq!(square_icon_columns(3, (0, 0)), 3);
+    }
 }
