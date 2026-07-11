@@ -30,6 +30,7 @@ struct CachedList {
 }
 
 struct PendingContentImage {
+    file_stem: String,
     path: std::path::PathBuf,
     icon_lines: Vec<Vec<IconCell>>,
     image: Option<image::DynamicImage>,
@@ -53,11 +54,11 @@ pub struct ContentListState {
     pub scrollbar_state: ScrollbarState,
     pub loaded_for: Option<String>,
     pub loading: bool,
-    image_protocols: HashMap<std::path::PathBuf, StatefulProtocol>,
-    requested_images: HashSet<std::path::PathBuf>,
+    image_protocols: HashMap<String, StatefulProtocol>,
+    requested_images: HashSet<String>,
     pending_images: Arc<Mutex<Vec<PendingContentImage>>>,
     images_dirty: bool,
-    display_metadata: HashMap<std::path::PathBuf, DisplayMetadata>,
+    display_metadata: HashMap<String, DisplayMetadata>,
     pub search: crate::tui::widgets::search::SearchState,
     cache: HashMap<String, CachedList>,
     // streaming: individual entries arrive here during initial load
@@ -118,16 +119,24 @@ impl ContentListState {
             self.image_protocols.clear();
         }
 
+        let valid_stems: HashSet<&str> = self
+            .entries
+            .iter()
+            .map(|entry| entry.file_stem.as_str())
+            .collect();
         self.image_protocols
-            .retain(|path, _| self.entries.iter().any(|entry| &entry.path == path));
+            .retain(|stem, _| valid_stems.contains(stem.as_str()));
         self.requested_images
-            .retain(|path| self.entries.iter().any(|entry| &entry.path == path));
+            .retain(|stem| valid_stems.contains(stem.as_str()));
 
         let font_size = picker.font_size();
         for entry in &self.entries {
-            if entry.icon_bytes.is_none() || !self.requested_images.insert(entry.path.clone()) {
+            if entry.icon_bytes.is_none()
+                || !self.requested_images.insert(entry.file_stem.clone())
+            {
                 continue;
             }
+            let file_stem = entry.file_stem.clone();
             let path = entry.path.clone();
             let bytes = entry.icon_bytes.clone().unwrap_or_default();
             let rows = entry.icon_lines.as_ref().map_or(3, Vec::len) as u32;
@@ -155,6 +164,7 @@ impl ContentListState {
                         image.resize_exact(side, side, image::imageops::FilterType::Lanczos3)
                     });
                     Some(PendingContentImage {
+                        file_stem,
                         path,
                         icon_lines,
                         image,
@@ -184,12 +194,14 @@ impl ContentListState {
             if let Some(entry) = self
                 .entries
                 .iter_mut()
-                .find(|entry| entry.path == result.path)
+                .find(|entry| {
+                    entry.file_stem == result.file_stem && entry.path == result.path
+                })
             {
                 entry.icon_lines = Some(result.icon_lines);
                 if let Some(image) = result.image {
                     self.image_protocols
-                        .insert(result.path, picker.new_resize_protocol(image));
+                        .insert(result.file_stem, picker.new_resize_protocol(image));
                 }
             }
         }
@@ -212,7 +224,7 @@ impl ContentListState {
                     self.images_dirty = true;
                     received_count += 1;
                     self.display_metadata
-                        .insert(entry.path.clone(), display_metadata(&entry));
+                        .insert(entry.file_stem.clone(), display_metadata(&entry));
                     let pos = self
                         .entries
                         .binary_search_by(|e| e.name.to_lowercase().cmp(&entry.name.to_lowercase()))
@@ -278,9 +290,6 @@ impl ContentListState {
         );
         for (stem, enabled, path) in &diff.toggled {
             if let Some(entry) = self.entries.iter_mut().find(|e| &e.file_stem == stem) {
-                if let Some(metadata) = self.display_metadata.remove(&entry.path) {
-                    self.display_metadata.insert(path.clone(), metadata);
-                }
                 entry.enabled = *enabled;
                 entry.path = path.clone();
             }
@@ -290,14 +299,15 @@ impl ContentListState {
         if !diff.removed.is_empty() {
             self.entries
                 .retain(|e| !diff.removed.contains(&e.file_stem));
-            self.display_metadata
-                .retain(|path, _| self.entries.iter().any(|entry| &entry.path == path));
+            for stem in &diff.removed {
+                self.display_metadata.remove(stem);
+            }
         }
 
         // insert new entries in sorted position
         for entry in diff.added {
             self.display_metadata
-                .insert(entry.path.clone(), display_metadata(&entry));
+                .insert(entry.file_stem.clone(), display_metadata(&entry));
             let pos = self
                 .entries
                 .binary_search_by(|e| e.name.to_lowercase().cmp(&entry.name.to_lowercase()))
@@ -478,6 +488,8 @@ impl ContentListState {
         self.scan_one_fn = Some(scan_one_fn);
         self.content_ext = Some(ext);
         self.images_dirty = true;
+        self.image_protocols.clear();
+        self.requested_images.clear();
 
         // save current entries to cache
         if let Some(prev) = self.loaded_for.take()
@@ -500,6 +512,7 @@ impl ContentListState {
         // try cache first
         if let Some(cached) = self.cache.remove(instance_name) {
             self.entries = cached.entries;
+            self.rebuild_display_metadata();
             self.list_state.selected = cached.selected;
             self.loading = false;
             self.stream_rx = None;
@@ -515,6 +528,7 @@ impl ContentListState {
 
         // no cache, stream entries one by one as each file is scanned
         self.entries.clear();
+        self.display_metadata.clear();
         self.list_state = TuiListState::default();
         self.loading = true;
         self.loaded_for = Some(instance_name.to_string());
@@ -584,6 +598,14 @@ impl ContentListState {
         self.scrollbar_state = ScrollbarState::new(max).position(pos);
     }
 
+    fn rebuild_display_metadata(&mut self) {
+        self.display_metadata = self
+            .entries
+            .iter()
+            .map(|entry| (entry.file_stem.clone(), display_metadata(entry)))
+            .collect();
+    }
+
     // enable/disable by renaming the file with/without .disabled extension.
     // this is how most minecraft launchers handle it
     pub fn toggle_selected(&mut self) {
@@ -631,10 +653,17 @@ impl ContentListState {
     }
 
     pub fn remove_path(&mut self, path: &Path) {
+        let file_stem = self
+            .entries
+            .iter()
+            .find(|entry| entry.path == path)
+            .map(|entry| entry.file_stem.clone());
         self.entries.retain(|entry| entry.path != path);
-        self.image_protocols.remove(path);
-        self.requested_images.remove(path);
-        self.display_metadata.remove(path);
+        if let Some(file_stem) = file_stem {
+            self.image_protocols.remove(&file_stem);
+            self.requested_images.remove(&file_stem);
+            self.display_metadata.remove(&file_stem);
+        }
         self.images_dirty = true;
         if let Some(sel) = self.list_state.selected {
             let visible_count = self.filtered_indices().len();
@@ -813,7 +842,7 @@ pub fn render(
         let theme = THEME.as_ref();
         let entry = &entries[filtered_rows[context.index]];
         let name = &entry.name;
-        let metadata = display_metadata.get(&entry.path);
+        let metadata = display_metadata.get(&entry.file_stem);
         let enabled = entry.enabled;
         let icon_pixels = &entry.icon_lines;
         let has_image = entry.icon_bytes.is_some();
@@ -1011,7 +1040,7 @@ fn render_image_icons(
         let icon_rows = entry.icon_lines.as_ref().map_or(0, Vec::len);
         let has_description = state
             .display_metadata
-            .get(&entry.path)
+            .get(&entry.file_stem)
             .is_some_and(|metadata| metadata.has_description);
         let height = icon_rows.max(if has_description { 2 } else { 1 }) as u16;
 
@@ -1028,7 +1057,7 @@ fn render_image_icons(
             .min(area.y + area.height - y);
         if visible_icon_rows > 0
             && entry.icon_bytes.is_some()
-            && let Some(protocol) = state.image_protocols.get_mut(&entry.path)
+            && let Some(protocol) = state.image_protocols.get_mut(&entry.file_stem)
         {
             let icon_area = Rect {
                 x: area.x + 1,
