@@ -28,17 +28,13 @@ pub enum LaunchError {
     Json(#[from] serde_json::Error),
     #[error("{0} launch is not yet supported")]
     NotSupported(String),
-    #[error(
-        "This instance requires Java {required}, but rmcl is using Java {detected}: {java}"
-    )]
+    #[error("This instance requires Java {required}, but rmcl is using Java {detected}: {java}")]
     JavaTooOld {
         java: String,
         required: u32,
         detected: u32,
     },
-    #[error(
-        "This instance requires Java {required}, but rmcl could not check {java}: {reason}"
-    )]
+    #[error("This instance requires Java {required}, but rmcl could not check {java}: {reason}")]
     JavaCheckFailed {
         java: String,
         required: u32,
@@ -414,7 +410,11 @@ pub async fn build_launch_invocation(
     // so we check there first.
     let has_local_libs = matches!(config.loader, ModLoader::Forge | ModLoader::NeoForge);
     let local_lib_dir = minecraft_dir.join("libraries");
-    let library_directory = if has_local_libs { &local_lib_dir } else { &lib_dir };
+    let library_directory = if has_local_libs {
+        &local_lib_dir
+    } else {
+        &lib_dir
+    };
 
     let mut classpath: Vec<PathBuf> = Vec::new();
     for lib in &merged_profile.libraries {

@@ -65,6 +65,7 @@ impl App {
             &mut self.screenshots_state,
             &mut self.logs_state,
             &self.instance_manager.instances_dir,
+            &self.picker,
         );
 
         let bottom_chunks = Layout::default()

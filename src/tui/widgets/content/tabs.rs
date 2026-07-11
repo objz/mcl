@@ -80,6 +80,7 @@ pub fn render(
     screenshots_state: &mut crate::tui::widgets::screenshots_grid::ScreenshotsState,
     logs_state: &mut crate::tui::widgets::logs_viewer::LogsState,
     instances_dir: &std::path::Path,
+    picker: &ratatui_image::picker::Picker,
 ) {
     let theme = THEME.as_ref();
     let is_focused = focused == FocusedArea::Content;
@@ -239,6 +240,7 @@ pub fn render(
                     is_focused,
                     "Loading mods...",
                     "No mods installed.",
+                    picker,
                 );
             } else {
                 frame.render_widget(
@@ -270,6 +272,7 @@ pub fn render(
                     is_focused,
                     "Loading resource packs...",
                     "No resource packs installed.",
+                    picker,
                 );
             } else {
                 frame.render_widget(
@@ -301,6 +304,7 @@ pub fn render(
                     is_focused,
                     "Loading shaders...",
                     "No shaders installed.",
+                    picker,
                 );
             } else {
                 frame.render_widget(
@@ -370,6 +374,7 @@ pub fn render(
                     is_focused,
                     "Loading worlds...",
                     "No worlds saved.",
+                    picker,
                 );
             } else {
                 frame.render_widget(

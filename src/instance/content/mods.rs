@@ -13,6 +13,7 @@ use serde::Deserialize;
 // where each character cell shows two vertical pixels (fg = top, bg = bottom)
 #[derive(Debug, Clone, Copy)]
 pub struct IconCell {
+    pub symbol: char,
     pub bg_r: u8,
     pub bg_g: u8,
     pub bg_b: u8,
@@ -375,6 +376,14 @@ pub(crate) fn make_icon_pixels(
     height: u16,
 ) -> Option<Vec<Vec<IconCell>>> {
     let img = image::load_from_memory(bytes).ok()?;
+    Some(make_icon_pixels_from_image(&img, width, height))
+}
+
+pub(crate) fn make_icon_pixels_from_image(
+    img: &image::DynamicImage,
+    width: u16,
+    height: u16,
+) -> Vec<Vec<IconCell>> {
     let resized = img.resize_exact(
         u32::from(width),
         u32::from(height) * 2,
@@ -391,6 +400,7 @@ pub(crate) fn make_icon_pixels(
             let [tr, tg, tb] = rgb.get_pixel(u32::from(col), top_y).0;
             let [br, bg, bb] = rgb.get_pixel(u32::from(col), bottom_y).0;
             cols.push(IconCell {
+                symbol: '\u{2584}',
                 bg_r: br,
                 bg_g: bg,
                 bg_b: bb,
@@ -402,12 +412,110 @@ pub(crate) fn make_icon_pixels(
         rows.push(cols);
     }
 
-    Some(rows)
+    rows
+}
+
+pub(crate) fn make_icon_quadrants_from_image(
+    img: &image::DynamicImage,
+    width: u16,
+    height: u16,
+) -> Vec<Vec<IconCell>> {
+    let resized = img
+        .resize_exact(
+            u32::from(width) * 2,
+            u32::from(height) * 2,
+            image::imageops::FilterType::Lanczos3,
+        )
+        .to_rgb8();
+
+    (0..height)
+        .map(|row| {
+            (0..width)
+                .map(|col| {
+                    let x = u32::from(col) * 2;
+                    let y = u32::from(row) * 2;
+                    let pixels = [
+                        resized.get_pixel(x, y).0,
+                        resized.get_pixel(x + 1, y).0,
+                        resized.get_pixel(x, y + 1).0,
+                        resized.get_pixel(x + 1, y + 1).0,
+                    ];
+                    quadrant_cell(pixels)
+                })
+                .collect()
+        })
+        .collect()
+}
+
+fn quadrant_cell(pixels: [[u8; 3]; 4]) -> IconCell {
+    let mut pair = (0, 0);
+    let mut max_distance = 0;
+    for left in 0..pixels.len() {
+        for right in (left + 1)..pixels.len() {
+            let distance = color_distance(pixels[left], pixels[right]);
+            if distance > max_distance {
+                max_distance = distance;
+                pair = (left, right);
+            }
+        }
+    }
+
+    let bg = pixels[pair.0];
+    let fg = pixels[pair.1];
+    let mask = pixels
+        .iter()
+        .enumerate()
+        .fold(0_u8, |mask, (index, pixel)| {
+            if color_distance(*pixel, fg) <= color_distance(*pixel, bg) {
+                mask | (1 << index)
+            } else {
+                mask
+            }
+        });
+    let symbol = match mask {
+        0 => ' ',
+        1 => '\u{2598}',
+        2 => '\u{259d}',
+        3 => '\u{2580}',
+        4 => '\u{2596}',
+        5 => '\u{258c}',
+        6 => '\u{259e}',
+        7 => '\u{259b}',
+        8 => '\u{2597}',
+        9 => '\u{259a}',
+        10 => '\u{2590}',
+        11 => '\u{259c}',
+        12 => '\u{2584}',
+        13 => '\u{2599}',
+        14 => '\u{259f}',
+        _ => '\u{2588}',
+    };
+
+    IconCell {
+        symbol,
+        bg_r: bg[0],
+        bg_g: bg[1],
+        bg_b: bg[2],
+        fg_r: fg[0],
+        fg_g: fg[1],
+        fg_b: fg[2],
+    }
+}
+
+fn color_distance(left: [u8; 3], right: [u8; 3]) -> u32 {
+    left.into_iter()
+        .zip(right)
+        .map(|(left, right)| {
+            let delta = i32::from(left) - i32::from(right);
+            (delta * delta) as u32
+        })
+        .sum()
 }
 
 // 6x3 fallback icon showing a "?" pattern for mods without icons.
 pub(super) fn fallback_icon() -> Vec<Vec<IconCell>> {
     let b = IconCell {
+        symbol: '\u{2584}',
         bg_r: 50,
         bg_g: 50,
         bg_b: 50,
@@ -416,6 +524,7 @@ pub(super) fn fallback_icon() -> Vec<Vec<IconCell>> {
         fg_b: 50,
     };
     let tb = IconCell {
+        symbol: '\u{2584}',
         bg_r: 50,
         bg_g: 50,
         bg_b: 50,
@@ -424,6 +533,7 @@ pub(super) fn fallback_icon() -> Vec<Vec<IconCell>> {
         fg_b: 130,
     };
     let bt = IconCell {
+        symbol: '\u{2584}',
         bg_r: 130,
         bg_g: 130,
         bg_b: 130,
@@ -441,6 +551,7 @@ pub(super) fn fallback_icon() -> Vec<Vec<IconCell>> {
 // 12x6 fallback icon showing a "?" pattern for worlds without icons.
 pub(super) fn fallback_icon_large() -> Vec<Vec<IconCell>> {
     let b = IconCell {
+        symbol: '\u{2584}',
         bg_r: 50,
         bg_g: 50,
         bg_b: 50,
@@ -449,6 +560,7 @@ pub(super) fn fallback_icon_large() -> Vec<Vec<IconCell>> {
         fg_b: 50,
     };
     let tb = IconCell {
+        symbol: '\u{2584}',
         bg_r: 50,
         bg_g: 50,
         bg_b: 50,
@@ -457,6 +569,7 @@ pub(super) fn fallback_icon_large() -> Vec<Vec<IconCell>> {
         fg_b: 130,
     };
     let bt = IconCell {
+        symbol: '\u{2584}',
         bg_r: 130,
         bg_g: 130,
         bg_b: 130,
@@ -496,6 +609,20 @@ pub fn toggle_entry(entry: &ContentEntry) -> Result<(), std::io::Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn quadrant_raster_has_requested_dimensions() {
+        let image = image::DynamicImage::ImageRgb8(image::RgbImage::from_pixel(
+            2,
+            2,
+            image::Rgb([12, 34, 56]),
+        ));
+        let rows = make_icon_quadrants_from_image(&image, 7, 3);
+
+        assert_eq!(rows.len(), 3);
+        assert!(rows.iter().all(|row| row.len() == 7));
+        assert!(rows.iter().flatten().all(|cell| cell.symbol == '\u{2588}'));
+    }
 
     fn setup_mods_dir(tmp: &Path, instance: &str) -> PathBuf {
         let dir = tmp.join(instance).join(".minecraft").join("mods");

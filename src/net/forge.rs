@@ -227,38 +227,58 @@ pub(crate) async fn install_forge_from_profile(
 
     let file = std::fs::File::open(installer_path)
         .map_err(|e| InstallError::Installer(InstallerError::Io(e)))?;
-    let mut archive = zip::ZipArchive::new(file)
-        .map_err(|e| InstallError::Installer(InstallerError::Profile(format!("Failed to open installer as ZIP: {e}"))))?;
+    let mut archive = zip::ZipArchive::new(file).map_err(|e| {
+        InstallError::Installer(InstallerError::Profile(format!(
+            "Failed to open installer as ZIP: {e}"
+        )))
+    })?;
 
     let profile_data: serde_json::Value = {
         let entry = archive.by_name("install_profile.json").map_err(|e| {
-            InstallError::Installer(InstallerError::Profile(format!("install_profile.json not found in installer: {e}")))
+            InstallError::Installer(InstallerError::Profile(format!(
+                "install_profile.json not found in installer: {e}"
+            )))
         })?;
-        serde_json::from_reader(entry)
-            .map_err(|e| InstallError::Installer(InstallerError::Profile(format!("Failed to parse install_profile.json: {e}"))))?
+        serde_json::from_reader(entry).map_err(|e| {
+            InstallError::Installer(InstallerError::Profile(format!(
+                "Failed to parse install_profile.json: {e}"
+            )))
+        })?
     };
 
-    let version_info = profile_data
-        .get("versionInfo")
-        .ok_or_else(|| InstallError::Installer(InstallerError::Profile("install_profile.json missing versionInfo".into())))?;
-    let install_info = profile_data
-        .get("install")
-        .ok_or_else(|| InstallError::Installer(InstallerError::Profile("install_profile.json missing install section".into())))?;
+    let version_info = profile_data.get("versionInfo").ok_or_else(|| {
+        InstallError::Installer(InstallerError::Profile(
+            "install_profile.json missing versionInfo".into(),
+        ))
+    })?;
+    let install_info = profile_data.get("install").ok_or_else(|| {
+        InstallError::Installer(InstallerError::Profile(
+            "install_profile.json missing install section".into(),
+        ))
+    })?;
 
     let libraries = version_info
         .get("libraries")
         .and_then(|v| v.as_array())
-        .ok_or_else(|| InstallError::Installer(InstallerError::Profile("missing versionInfo.libraries".into())))?;
+        .ok_or_else(|| {
+            InstallError::Installer(InstallerError::Profile(
+                "missing versionInfo.libraries".into(),
+            ))
+        })?;
 
     let file_path = install_info
         .get("filePath")
         .and_then(|v| v.as_str())
-        .ok_or_else(|| InstallError::Installer(InstallerError::Profile("missing install.filePath".into())))?;
+        .ok_or_else(|| {
+            InstallError::Installer(InstallerError::Profile("missing install.filePath".into()))
+        })?;
 
     let install_path_coord = install_info
         .get("path")
         .and_then(|v| v.as_str())
-        .ok_or_else(|| InstallError::Installer(InstallerError::Profile("missing install.path".into())))?;
+        .ok_or_else(|| {
+            InstallError::Installer(InstallerError::Profile("missing install.path".into()))
+        })?;
 
     // extract the universal jar to the correct maven location
     let universal_maven_path =
@@ -300,12 +320,14 @@ pub(crate) async fn install_forge_from_profile(
     // in mojang's modern version metadata, so we fetch those too.
     let libraries_dir = meta_dir.join("libraries");
     for lib in libraries {
-            let name = lib.get("name").and_then(|v| v.as_str()).unwrap_or_default();
+        let name = lib.get("name").and_then(|v| v.as_str()).unwrap_or_default();
 
         let maven_path = match crate::net::maven_coord_to_path(name) {
             Some(p) => p,
             None => {
-                return Err(InstallError::Installer(InstallerError::Profile(format!("Invalid Maven coordinate: {name}"))));
+                return Err(InstallError::Installer(InstallerError::Profile(format!(
+                    "Invalid Maven coordinate: {name}"
+                ))));
             }
         };
 
@@ -341,8 +363,11 @@ pub(crate) async fn install_forge_from_profile(
     // and whitespace may differ from the original installer JSON because
     // the source is a serde_json::Value (which doesn't preserve order),
     // but no field is silently dropped.
-    let serialized = serde_json::to_vec(version_info)
-        .map_err(|e| InstallError::Installer(InstallerError::Profile(format!("Failed to serialize Forge profile: {e}"))))?;
+    let serialized = serde_json::to_vec(version_info).map_err(|e| {
+        InstallError::Installer(InstallerError::Profile(format!(
+            "Failed to serialize Forge profile: {e}"
+        )))
+    })?;
     crate::instance::loader::save_profile_bytes(meta_dir, profile_filename, &serialized)
         .map_err(|e| InstallError::Installer(InstallerError::Io(e)))?;
     Ok(())

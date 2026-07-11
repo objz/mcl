@@ -14,6 +14,8 @@ memory_min = "512M"
 memory_max = "2G"
 
 [ui]
+# image protocol for content icons and screenshots: halfblocks, quadrants, kitty, or iterm2
+image_protocol = "kitty"
 # error popup timing (in ms)
 error_auto_dismiss_ms = 5000
 error_slide_start_ms = 3500

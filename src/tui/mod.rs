@@ -37,8 +37,27 @@ pub async fn show() -> color_eyre::Result<()> {
 
     // figure out the terminal's font cell size for rendering images.
     // falls back to halfblock characters if the terminal doesn't respond
-    let picker = ratatui_image::picker::Picker::from_query_stdio()
+    let mut picker = ratatui_image::picker::Picker::from_query_stdio()
         .unwrap_or_else(|_| ratatui_image::picker::Picker::halfblocks());
+    let detected_protocol = picker.protocol_type();
+    let requested_protocol = match crate::config::SETTINGS.ui.image_protocol {
+        crate::config::settings::ImageProtocol::Halfblocks
+        | crate::config::settings::ImageProtocol::Quadrants => {
+            ratatui_image::picker::ProtocolType::Halfblocks
+        }
+        crate::config::settings::ImageProtocol::Kitty
+            if detected_protocol == ratatui_image::picker::ProtocolType::Kitty =>
+        {
+            ratatui_image::picker::ProtocolType::Kitty
+        }
+        crate::config::settings::ImageProtocol::Iterm2
+            if detected_protocol == ratatui_image::picker::ProtocolType::Iterm2 =>
+        {
+            ratatui_image::picker::ProtocolType::Iterm2
+        }
+        _ => ratatui_image::picker::ProtocolType::Halfblocks,
+    };
+    picker.set_protocol_type(requested_protocol);
 
     let result = app::App::new(picker).run(&mut terminal).await;
 
