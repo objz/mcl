@@ -11,7 +11,14 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  checks:
+    uses: ./.github/workflows/checks.yml
+    with:
+      network-tests: true
+      ref: master
+
   prepare:
+    needs: checks
     runs-on: ubuntu-latest
     outputs:
       release: ${{ steps.version.outputs.release }}
