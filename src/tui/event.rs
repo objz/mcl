@@ -69,11 +69,7 @@ impl App {
             let input_changed = self.handle_events().wrap_err("handle events failed")?;
             let continuously_animated = progress_active || error_buffer::has_errors();
             let safety_refresh = last_draw.elapsed() >= Duration::from_secs(1);
-            if input_changed
-                || continuously_animated
-                || safety_refresh
-                || redraw_requested
-            {
+            if input_changed || continuously_animated || safety_refresh || redraw_requested {
                 terminal.draw(|frame| self.render_frame(frame))?;
                 last_draw = std::time::Instant::now();
             }

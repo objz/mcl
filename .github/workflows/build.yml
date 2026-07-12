@@ -2,7 +2,6 @@ name: ci
 
 on:
   push:
-    branches: [master]
   pull_request:
     branches: [master]
 
@@ -18,8 +17,31 @@ env:
   RUST_BACKTRACE: 1
 
 jobs:
-  verify:
-    name: ${{ matrix.os }}
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: cargo fmt --all -- --check
+
+  clippy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy --all-targets --locked -- -D warnings
+
+  build-and-test:
+    name: build and test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -31,8 +53,6 @@ jobs:
 
       - name: install Rust
         uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy
 
       - name: install JDK
         uses: actions/setup-java@v5
@@ -44,18 +64,21 @@ jobs:
         with:
           key: ${{ matrix.os }}
 
-      - name: cargo check
-        run: cargo check --locked --all-targets
-
-      - name: cargo clippy
-        run: cargo clippy --all-targets --locked -- -D warnings
+      - name: cargo build
+        run: cargo build --locked
 
       - name: cargo test
         run: cargo test --locked --all-targets
 
-      - name: cargo build
-        run: cargo build --locked
-
-      - name: cargo test --ignored (network canaries, master only)
-        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
-        run: cargo test --locked --all-targets -- --ignored
+  network-canaries:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --locked --all-targets -- --ignored

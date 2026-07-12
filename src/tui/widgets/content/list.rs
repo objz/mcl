@@ -131,8 +131,7 @@ impl ContentListState {
 
         let font_size = picker.font_size();
         for entry in &self.entries {
-            if entry.icon_bytes.is_none()
-                || !self.requested_images.insert(entry.file_stem.clone())
+            if entry.icon_bytes.is_none() || !self.requested_images.insert(entry.file_stem.clone())
             {
                 continue;
             }
@@ -194,9 +193,7 @@ impl ContentListState {
             if let Some(entry) = self
                 .entries
                 .iter_mut()
-                .find(|entry| {
-                    entry.file_stem == result.file_stem && entry.path == result.path
-                })
+                .find(|entry| entry.file_stem == result.file_stem && entry.path == result.path)
             {
                 entry.icon_lines = Some(result.icon_lines);
                 if let Some(image) = result.image {

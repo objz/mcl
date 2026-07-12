@@ -11,21 +11,21 @@ repo = "rmcl"
 # See https://keats.github.io/tera/docs/#introduction
 body = """
 {% if version %}\
-    ## [{{ version | trim_start_matches(pat="v") }}] - {{ timestamp | date(format="%Y-%m-%d") }}
+    ## {{ version | trim_start_matches(pat="v") }} - {{ timestamp | date(format="%Y-%m-%d") }}
 {% else %}\
-    ## [unreleased]
+    ## unreleased
 {% endif %}\
 {% for group, commits in commits | group_by(attribute="group") %}
-    ### {{ group | striptags | trim | upper_first }}
+    ### {{ group | striptags | trim }}
     {% for commit in commits %}
         - {% if commit.scope %}*({{ commit.scope }})* {% endif %}\
             {% if commit.breaking %}[**breaking**] {% endif %}\
-            {{ commit.message | upper_first }}\
+            {{ commit.message }}\
             {% if commit.github.pr_number %} ([#{{ commit.github.pr_number }}](https://github.com/objz/rmcl/pull/{{ commit.github.pr_number }})){% endif %}\
     {% endfor %}
 {% endfor %}
 {% if github.contributors | filter(attribute="is_first_time", value=true) | length != 0 %}
-    ### New Contributors
+    ### new contributors
     {% for contributor in github.contributors | filter(attribute="is_first_time", value=true) %}
         - @{{ contributor.username }} made their first contribution\
             {% if contributor.pr_number %} in [#{{ contributor.pr_number }}](https://github.com/objz/rmcl/pull/{{ contributor.pr_number }}){% endif %}\
@@ -68,21 +68,21 @@ protect_breaking_commits = false
 # Assigns commits to groups.
 # Optionally sets the commit's scope and can decide to exclude commits from further processing.
 commit_parsers = [
-    { message = "^feat", group = "<!-- 0 -->Features" },
-    { message = "^fix", group = "<!-- 1 -->Bug Fixes" },
-    { message = "^doc", group = "<!-- 3 -->Documentation" },
-    { message = "^perf", group = "<!-- 4 -->Performance" },
-    { message = "^refactor", group = "<!-- 2 -->Refactor" },
-    { message = "^style", group = "<!-- 5 -->Styling" },
-    { message = "^test", group = "<!-- 6 -->Testing" },
+    { message = "^feat", group = "<!-- 0 -->features" },
+    { message = "^fix", group = "<!-- 1 -->bug fixes" },
+    { message = "^doc", group = "<!-- 3 -->documentation" },
+    { message = "^perf", group = "<!-- 4 -->performance" },
+    { message = "^refactor", group = "<!-- 2 -->refactoring" },
+    { message = "^style", group = "<!-- 5 -->styling" },
+    { message = "^test", group = "<!-- 6 -->testing" },
     { message = "^chore\\(release\\): prepare for", skip = true },
     { message = "^chore\\(deps.*\\)", skip = true },
     { message = "^chore\\(pr\\)", skip = true },
     { message = "^chore\\(pull\\)", skip = true },
-    { message = "^chore|^ci", group = "<!-- 7 -->Miscellaneous Tasks" },
-    { body = ".*security", group = "<!-- 8 -->Security" },
-    { message = "^revert", group = "<!-- 9 -->Revert" },
-    { message = ".*", group = "<!-- 10 -->Other" },
+    { message = "^chore|^ci", group = "<!-- 7 -->maintenance" },
+    { body = ".*security", group = "<!-- 8 -->security" },
+    { message = "^revert", group = "<!-- 9 -->reverts" },
+    { message = ".*", group = "<!-- 10 -->other changes" },
 ]
 # Exclude commits that are not matched by any commit parser.
 filter_commits = false

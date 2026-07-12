@@ -67,18 +67,13 @@ brew install objz/tap/rmcl
 
 ### Windows
 
-release builds include a `.zip` archive and an `.msi`. WinGet and Chocolatey
-packages are submitted from release CI and become available after review.
+release builds include a `.zip` archive and an `.msi`. WinGet packages are
+submitted from release CI and become available after review.
 
 [![WinGet](https://img.shields.io/badge/winget-Objz.Rmcl-0078D4?style=for-the-badge&logo=windows11)](https://winstall.app/apps/Objz.Rmcl)
-[![Chocolatey](https://img.shields.io/chocolatey/v/rmcl?style=for-the-badge&logo=chocolatey)](https://community.chocolatey.org/packages/rmcl)
-
 ```powershell
 # WinGet
 winget install Objz.Rmcl
-
-# Chocolatey
-choco install rmcl
 ```
 
 ### Arch Linux
