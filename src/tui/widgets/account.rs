@@ -3,7 +3,7 @@
 // for the result while showing the user a code to enter in their browser
 
 use std::sync::{Arc, Mutex};
-
+use std::sync::atomic::{AtomicU32, Ordering};
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     Frame,
@@ -20,6 +20,8 @@ use crate::tui::app::FocusedArea;
 
 use super::styled_title;
 
+pub static TRIED_OFFLINE_TIMES: AtomicU32 = AtomicU32::new(0);
+pub const OFFLINE_ACCOUNT_UNLOCK_ATTEMPTS: u32 = 3;
 #[derive(Default)]
 pub enum AddMode {
     #[default]
@@ -98,11 +100,13 @@ pub fn handle_key(key_event: &KeyEvent, state: &mut AccountState) -> bool {
                 true
             }
             KeyCode::Char('o') | KeyCode::Char('2') => {
-                state.add_mode = if state.store.has_microsoft_account() {
+                state.add_mode = if state.store.has_microsoft_account()
+                    || TRIED_OFFLINE_TIMES.load(Ordering::Relaxed) >= OFFLINE_ACCOUNT_UNLOCK_ATTEMPTS {
                     AddMode::OfflineNameInput(String::new())
                 } else {
                     AddMode::OfflineBlocked
                 };
+                TRIED_OFFLINE_TIMES.fetch_add(1, Ordering::Relaxed);
                 true
             }
             KeyCode::Esc => {
@@ -115,7 +119,7 @@ pub fn handle_key(key_event: &KeyEvent, state: &mut AccountState) -> bool {
             KeyCode::Enter => {
                 let trimmed = name.trim().to_string();
                 if !trimmed.is_empty() {
-                    if state.store.has_microsoft_account() {
+                    if state.store.has_microsoft_account() || TRIED_OFFLINE_TIMES.load(Ordering::Relaxed) >= OFFLINE_ACCOUNT_UNLOCK_ATTEMPTS {
                         let account = auth::create_offline_account(&trimmed);
                         state.store.add(account);
                         if state.list_state.selected.is_none() && !state.store.accounts.is_empty() {
@@ -457,7 +461,16 @@ fn render_offline_blocked_popup(frame: &mut Frame) {
         keybinds: Some(keybind_line(&[("Enter", " close")])),
         search_line: None,
         content: Box::new(move |inner, buf| {
-            Paragraph::new("Add a Microsoft account that owns Minecraft first.")
+            let tried_time = TRIED_OFFLINE_TIMES.load(Ordering::Relaxed);
+            let popup_text = match tried_time {
+                1 => "Add a Microsoft account that owns Minecraft first.".to_string(),
+                2..OFFLINE_ACCOUNT_UNLOCK_ATTEMPTS => format!("We noticed you've tried to create Offline Mode account \nwithout an Online Account {} times.\n\
+                After {} attempts, it will succeed.",
+                                tried_time, OFFLINE_ACCOUNT_UNLOCK_ATTEMPTS),
+                OFFLINE_ACCOUNT_UNLOCK_ATTEMPTS => format!("You have tried to create Offline Account for {} times.\nWe kindly hope you to support the official version.", tried_time),
+                _ => "Add a Microsoft account that owns Minecraft first.".to_string(),
+            };
+            Paragraph::new(popup_text)
                 .style(Style::default().fg(text_color))
                 .render(inner, buf);
         }),
