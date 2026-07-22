@@ -58,7 +58,8 @@ impl App {
             self.screenshots_state.request_visible_loads();
             self.create_screenshot_protocols();
             let progress_active = progress::is_active();
-            if progress_active {
+            let spinner_active = progress_active || crate::running::has_active();
+            if spinner_active {
                 // only advance the spinner every 8 ticks to keep it readable
                 self.throbber_tick = self.throbber_tick.wrapping_add(1);
                 if self.throbber_tick.is_multiple_of(8) {
@@ -67,7 +68,7 @@ impl App {
             }
 
             let input_changed = self.handle_events().wrap_err("handle events failed")?;
-            let continuously_animated = progress_active || error_buffer::has_errors();
+            let continuously_animated = spinner_active || error_buffer::has_errors();
             let safety_refresh = last_draw.elapsed() >= Duration::from_secs(1);
             if input_changed || continuously_animated || safety_refresh || redraw_requested {
                 terminal.draw(|frame| self.render_frame(frame))?;

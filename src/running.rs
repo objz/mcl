@@ -58,6 +58,18 @@ pub fn all() -> Vec<(String, RunState)> {
         .unwrap_or_default()
 }
 
+#[must_use]
+pub fn has_active() -> bool {
+    RUNNING.lock().is_ok_and(|map| {
+        map.values().any(|state| {
+            matches!(
+                state,
+                RunState::Authenticating | RunState::Starting | RunState::Running
+            )
+        })
+    })
+}
+
 pub fn push_last_played(name: &str, time: DateTime<Utc>) {
     if let Ok(mut q) = PENDING_LAST_PLAYED.lock() {
         q.push((name.to_string(), time));
