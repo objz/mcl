@@ -5,7 +5,7 @@ use crossterm::event::{KeyCode, KeyEvent};
 
 use crate::instance::content::mods::ContentEntry;
 use crate::instance::{InstanceConfig, ModLoader};
-use crate::net::modrinth::{DiscoveryKind, DiscoveryProject};
+use crate::net::modrinth::{DiscoveryKind, DiscoveryProject, VersionInfo};
 
 use super::list::{ContentListState, ContentStream};
 
@@ -66,6 +66,63 @@ pub struct DiscoveryRequest {
 
 pub(crate) type PendingDiscovery = Arc<Mutex<Vec<PendingDiscoveryResult>>>;
 
+pub struct VersionPopupState {
+    request_id: u64,
+    pub project_id: String,
+    pub project_title: String,
+    pub installed_path: Option<PathBuf>,
+    pub versions: Vec<VersionInfo>,
+    pub selected: usize,
+    pub loading: bool,
+    pub installing: bool,
+    pub error: Option<String>,
+}
+
+impl VersionPopupState {
+    pub fn title(&self) -> String {
+        if self.installed_path.is_some() {
+            format!("Change {} version", self.project_title)
+        } else {
+            format!("Install {}", self.project_title)
+        }
+    }
+}
+
+pub struct VersionsRequest {
+    pub request_id: u64,
+    pub project_id: String,
+    pub pending: PendingActions,
+}
+
+pub struct InstallRequest {
+    pub request_id: u64,
+    pub project_id: String,
+    pub version: VersionInfo,
+    pub installed_path: Option<PathBuf>,
+    pub pending: PendingActions,
+}
+
+pub struct InstallCompletion {
+    pub path: PathBuf,
+    pub replaced: bool,
+    pub skipped: bool,
+}
+
+pub enum DiscoveryActionResult {
+    Versions {
+        request_id: u64,
+        project_id: String,
+        result: Result<Vec<VersionInfo>, String>,
+    },
+    Install {
+        request_id: u64,
+        project_id: String,
+        result: Result<InstallCompletion, String>,
+    },
+}
+
+pub(crate) type PendingActions = Arc<Mutex<Vec<DiscoveryActionResult>>>;
+
 pub struct DiscoveryState {
     pub kind: DiscoveryKind,
     pub list: ContentListState,
@@ -75,6 +132,9 @@ pub struct DiscoveryState {
     context: Option<String>,
     generation: u64,
     pending: PendingDiscovery,
+    pending_actions: PendingActions,
+    pub version_popup: Option<VersionPopupState>,
+    next_action_request_id: u64,
     stream: Option<ContentStream>,
     next_offset: usize,
     page_loading: bool,
@@ -96,6 +156,9 @@ impl DiscoveryState {
             context: None,
             generation: 0,
             pending: Arc::new(Mutex::new(Vec::new())),
+            pending_actions: Arc::new(Mutex::new(Vec::new())),
+            version_popup: None,
+            next_action_request_id: 0,
             stream: None,
             next_offset: 0,
             page_loading: false,
@@ -113,6 +176,7 @@ impl DiscoveryState {
 
     pub fn begin_search(&mut self, instance: &InstanceConfig) -> DiscoveryRequest {
         self.generation = self.generation.wrapping_add(1);
+        self.version_popup = None;
         let context = discovery_context(instance);
         let reconcile =
             self.context.as_deref() == Some(context.as_str()) && !self.list.entries.is_empty();
@@ -180,6 +244,71 @@ impl DiscoveryState {
         self.viewport_rows = rows;
     }
 
+    pub fn begin_versions(&mut self) -> Option<VersionsRequest> {
+        let filtered = self.list.filtered_indices();
+        let index = self
+            .list
+            .list_state
+            .selected
+            .and_then(|selected| filtered.get(selected))?;
+        let entry = self.list.entries.get(*index)?;
+        let installed_path = entry.installed_path.clone();
+        let project_id = entry.file_stem.clone();
+        self.next_action_request_id = self.next_action_request_id.wrapping_add(1);
+        let request_id = self.next_action_request_id;
+        self.version_popup = Some(VersionPopupState {
+            request_id,
+            project_id: project_id.clone(),
+            project_title: entry.name.clone(),
+            installed_path,
+            versions: Vec::new(),
+            selected: 0,
+            loading: true,
+            installing: false,
+            error: None,
+        });
+        Some(VersionsRequest {
+            request_id,
+            project_id,
+            pending: self.pending_actions.clone(),
+        })
+    }
+
+    pub fn refresh_installed_labels(&mut self, installed_entries: &[ContentEntry]) {
+        let mut changed = false;
+        for entry in &mut self.list.entries {
+            let installed_path = entry
+                .source_slug
+                .as_deref()
+                .and_then(|slug| installed_path_for_identity(&entry.name, slug, installed_entries));
+            if entry.installed_path != installed_path {
+                entry.title_suffix = installed_path.is_some().then(|| "Installed".to_owned());
+                entry.installed_path = installed_path;
+                changed = true;
+            }
+        }
+        if changed {
+            crate::tui::request_redraw();
+        }
+    }
+
+    pub fn begin_install(&mut self) -> Option<InstallRequest> {
+        let popup = self.version_popup.as_mut()?;
+        if popup.loading || popup.installing {
+            return None;
+        }
+        let version = popup.versions.get(popup.selected)?.clone();
+        popup.installing = true;
+        popup.error = None;
+        Some(InstallRequest {
+            request_id: popup.request_id,
+            project_id: popup.project_id.clone(),
+            version,
+            installed_path: popup.installed_path.clone(),
+            pending: self.pending_actions.clone(),
+        })
+    }
+
     pub fn search_due(&self) -> bool {
         self.search_changed_at
             .is_some_and(|changed| changed.elapsed() >= SEARCH_DEBOUNCE)
@@ -203,6 +332,13 @@ impl DiscoveryState {
                 offset,
                 result,
             });
+            crate::tui::request_redraw();
+        }
+    }
+
+    pub fn push_action_result(pending: &PendingActions, result: DiscoveryActionResult) {
+        if let Ok(mut pending) = pending.lock() {
+            pending.push(result);
             crate::tui::request_redraw();
         }
     }
@@ -256,6 +392,81 @@ impl DiscoveryState {
                 }
             }
         }
+
+        self.drain_action_results();
+    }
+
+    fn drain_action_results(&mut self) {
+        let results = match self.pending_actions.lock() {
+            Ok(mut pending) => std::mem::take(&mut *pending),
+            Err(_) => return,
+        };
+        for result in results {
+            match result {
+                DiscoveryActionResult::Versions {
+                    request_id,
+                    project_id,
+                    result,
+                } => {
+                    let Some(popup) = self.version_popup.as_mut().filter(|popup| {
+                        popup.request_id == request_id && popup.project_id == project_id
+                    }) else {
+                        continue;
+                    };
+                    popup.loading = false;
+                    match result {
+                        Ok(versions) => {
+                            popup.versions = versions;
+                            popup.selected = 0;
+                            popup.error = None;
+                        }
+                        Err(error) => popup.error = Some(error),
+                    }
+                }
+                DiscoveryActionResult::Install {
+                    request_id,
+                    project_id,
+                    result,
+                } => {
+                    let Some(popup) = self.version_popup.as_mut().filter(|popup| {
+                        popup.request_id == request_id && popup.project_id == project_id
+                    }) else {
+                        continue;
+                    };
+                    popup.installing = false;
+                    match result {
+                        Ok(completion) => {
+                            if let Some(entry) = self
+                                .list
+                                .entries
+                                .iter_mut()
+                                .find(|entry| entry.file_stem == project_id)
+                            {
+                                entry.title_suffix = Some("Installed".to_owned());
+                                entry.installed_path = Some(completion.path.clone());
+                            }
+                            let action = if completion.skipped {
+                                "already installed"
+                            } else if completion.replaced {
+                                "version changed"
+                            } else {
+                                "installed"
+                            };
+                            crate::tui::error_buffer::push_error(
+                                crate::tui::error_buffer::ErrorEvent {
+                                    id: 0,
+                                    level: tracing::Level::INFO,
+                                    message: format!("{}: {action}", popup.project_title),
+                                    pushed_at: std::time::Instant::now(),
+                                },
+                            );
+                            self.version_popup = None;
+                        }
+                        Err(error) => popup.error = Some(error),
+                    }
+                }
+            }
+        }
     }
 
     pub fn empty_text(&self) -> &str {
@@ -287,6 +498,21 @@ impl DiscoveryState {
 }
 
 pub fn handle_key(key_event: &KeyEvent, state: &mut DiscoveryState) -> bool {
+    if let Some(popup) = state.version_popup.as_mut() {
+        match key_event.code {
+            KeyCode::Esc if !popup.installing => state.version_popup = None,
+            KeyCode::Char('j') | KeyCode::Down if !popup.loading && !popup.installing => {
+                if popup.selected + 1 < popup.versions.len() {
+                    popup.selected += 1;
+                }
+            }
+            KeyCode::Char('k') | KeyCode::Up if !popup.loading && !popup.installing => {
+                popup.selected = popup.selected.saturating_sub(1);
+            }
+            _ => {}
+        }
+        return true;
+    }
     if state.search.active {
         let previous_query = state.search.query.clone();
         match key_event.code {
@@ -328,11 +554,16 @@ fn loader_slug(loader: ModLoader) -> Option<&'static str> {
     }
 }
 
-pub(crate) fn project_entry(project: DiscoveryProject, installed: bool) -> ContentEntry {
+pub(crate) fn project_entry(
+    project: DiscoveryProject,
+    installed_path: Option<PathBuf>,
+) -> ContentEntry {
     ContentEntry {
         file_stem: project.id.clone(),
         name: project.title,
-        title_suffix: installed.then(|| "Installed".to_owned()),
+        source_slug: Some(project.slug),
+        installed_path: installed_path.clone(),
+        title_suffix: installed_path.is_some().then(|| "Installed".to_owned()),
         footer_label: Some(format!("{} downloads", format_downloads(project.downloads))),
         description: project.description,
         enabled: true,
@@ -342,15 +573,24 @@ pub(crate) fn project_entry(project: DiscoveryProject, installed: bool) -> Conte
     }
 }
 
-pub(crate) fn project_is_installed(
+pub(crate) fn installed_project_path(
     project: &DiscoveryProject,
     installed_entries: &[ContentEntry],
-) -> bool {
-    installed_entries.iter().any(|entry| {
-        identity_matches(&entry.name, &project.title)
-            || identity_matches(&entry.name, &project.slug)
-            || filename_matches_project(&entry.file_stem, &project.slug)
-            || filename_matches_project(&entry.file_stem, &project.title)
+) -> Option<PathBuf> {
+    installed_path_for_identity(&project.title, &project.slug, installed_entries)
+}
+
+fn installed_path_for_identity(
+    title: &str,
+    slug: &str,
+    installed_entries: &[ContentEntry],
+) -> Option<PathBuf> {
+    installed_entries.iter().find_map(|entry| {
+        let matches = identity_matches(&entry.name, title)
+            || identity_matches(&entry.name, slug)
+            || filename_matches_project(&entry.file_stem, slug)
+            || filename_matches_project(&entry.file_stem, title);
+        matches.then(|| entry.path.clone())
     })
 }
 
@@ -406,6 +646,17 @@ mod tests {
         }
     }
 
+    fn version(id: &str) -> VersionInfo {
+        VersionInfo {
+            id: id.to_owned(),
+            name: format!("Version {id}"),
+            version_number: id.to_owned(),
+            game_versions: vec!["1.21.1".to_owned()],
+            loaders: vec!["fabric".to_owned()],
+            files: Vec::new(),
+        }
+    }
+
     #[test]
     fn content_mode_toggles_both_ways() {
         assert_eq!(ContentMode::Installed.toggle(), ContentMode::Discover);
@@ -424,12 +675,14 @@ mod tests {
                 icon_url: None,
                 icon_bytes: None,
             },
-            true,
+            Some(PathBuf::from("example.jar")),
         );
 
         assert_eq!(entry.title_suffix.as_deref(), Some("Installed"));
         assert_eq!(entry.footer_label.as_deref(), Some("1.2K downloads"));
         assert_eq!(entry.description, "Project description");
+        assert_eq!(entry.path, PathBuf::from("example"));
+        assert_eq!(entry.installed_path, Some(PathBuf::from("example.jar")));
     }
 
     #[test]
@@ -443,20 +696,164 @@ mod tests {
             icon_url: None,
             icon_bytes: None,
         };
-        let mut local = project_entry(project.clone(), false);
+        let mut local = project_entry(project.clone(), None);
         local.name = "Fabric API".to_owned();
         local.file_stem = "unrelated-file".to_owned();
-        assert!(project_is_installed(&project, &[local]));
+        assert!(installed_project_path(&project, &[local]).is_some());
 
-        let mut local = project_entry(project.clone(), false);
+        let mut local = project_entry(project.clone(), None);
         local.name = "Unknown".to_owned();
         local.file_stem = "fabric-api-0.116.0+1.21.1".to_owned();
-        assert!(project_is_installed(&project, &[local]));
+        assert!(installed_project_path(&project, &[local]).is_some());
 
-        let mut local = project_entry(project.clone(), false);
+        let mut local = project_entry(project.clone(), None);
         local.name = "Fabric Language Kotlin".to_owned();
         local.file_stem = "fabric-language-kotlin".to_owned();
-        assert!(!project_is_installed(&project, &[local]));
+        assert!(installed_project_path(&project, &[local]).is_none());
+    }
+
+    #[test]
+    fn install_and_change_version_popups_only_differ_in_title() {
+        let project = DiscoveryProject {
+            id: "project".to_owned(),
+            slug: "project".to_owned(),
+            title: "Project".to_owned(),
+            description: String::new(),
+            downloads: 0,
+            icon_url: None,
+            icon_bytes: None,
+        };
+        let mut state = DiscoveryState::new(DiscoveryKind::Mod);
+        state
+            .list
+            .entries
+            .push(project_entry(project.clone(), None));
+        state.list.list_state.selected = Some(0);
+        state.begin_versions().unwrap();
+        assert_eq!(
+            state.version_popup.as_ref().unwrap().title(),
+            "Install Project"
+        );
+
+        state.version_popup = None;
+        state.list.entries[0] = project_entry(project, Some(PathBuf::from("mods/project.jar")));
+        state.begin_versions().unwrap();
+        assert_eq!(
+            state.version_popup.as_ref().unwrap().title(),
+            "Change Project version"
+        );
+    }
+
+    #[test]
+    fn compatible_versions_populate_the_open_popup() {
+        let project = DiscoveryProject {
+            id: "project".to_owned(),
+            slug: "project".to_owned(),
+            title: "Project".to_owned(),
+            description: String::new(),
+            downloads: 0,
+            icon_url: None,
+            icon_bytes: None,
+        };
+        let mut state = DiscoveryState::new(DiscoveryKind::Mod);
+        state.list.entries.push(project_entry(project, None));
+        state.list.list_state.selected = Some(0);
+        let request = state.begin_versions().unwrap();
+        DiscoveryState::push_action_result(
+            &request.pending,
+            DiscoveryActionResult::Versions {
+                request_id: request.request_id,
+                project_id: request.project_id,
+                result: Ok(vec![version("1.0.0"), version("1.1.0")]),
+            },
+        );
+
+        state.drain_pending();
+
+        let popup = state.version_popup.as_ref().unwrap();
+        assert!(!popup.loading);
+        assert_eq!(popup.versions.len(), 2);
+        assert_eq!(popup.selected, 0);
+    }
+
+    #[test]
+    fn successful_install_marks_the_project_and_closes_the_popup() {
+        let project = DiscoveryProject {
+            id: "project".to_owned(),
+            slug: "project".to_owned(),
+            title: "Project".to_owned(),
+            description: String::new(),
+            downloads: 0,
+            icon_url: None,
+            icon_bytes: None,
+        };
+        let mut state = DiscoveryState::new(DiscoveryKind::Mod);
+        state.list.entries.push(project_entry(project, None));
+        state.list.list_state.selected = Some(0);
+        let request = state.begin_versions().unwrap();
+        DiscoveryState::push_action_result(
+            &request.pending,
+            DiscoveryActionResult::Install {
+                request_id: request.request_id,
+                project_id: request.project_id,
+                result: Ok(InstallCompletion {
+                    path: PathBuf::from("mods/project.jar"),
+                    replaced: false,
+                    skipped: false,
+                }),
+            },
+        );
+
+        state.drain_pending();
+
+        assert!(state.version_popup.is_none());
+        assert_eq!(
+            state.list.entries[0].title_suffix.as_deref(),
+            Some("Installed")
+        );
+        assert_eq!(
+            state.list.entries[0].installed_path,
+            Some(PathBuf::from("mods/project.jar"))
+        );
+        assert_eq!(state.list.entries[0].path, PathBuf::from("project"));
+    }
+
+    #[test]
+    fn installed_labels_follow_the_current_instance_entries() {
+        let project = DiscoveryProject {
+            id: "project-id".to_owned(),
+            slug: "example-project".to_owned(),
+            title: "Example Project".to_owned(),
+            description: String::new(),
+            downloads: 0,
+            icon_url: None,
+            icon_bytes: None,
+        };
+        let mut state = DiscoveryState::new(DiscoveryKind::Mod);
+        state.list.entries.push(project_entry(project, None));
+
+        let mut installed = state.list.entries[0].clone();
+        installed.name = "Example Project".to_owned();
+        installed.file_stem = "example-project-1.0.0".to_owned();
+        installed.path = PathBuf::from("first/mods/example-project-1.0.0.jar");
+        installed.source_slug = None;
+        installed.installed_path = None;
+        installed.title_suffix = None;
+
+        state.refresh_installed_labels(&[installed]);
+        assert_eq!(
+            state.list.entries[0].title_suffix.as_deref(),
+            Some("Installed")
+        );
+        assert_eq!(
+            state.list.entries[0].installed_path,
+            Some(PathBuf::from("first/mods/example-project-1.0.0.jar"))
+        );
+
+        state.refresh_installed_labels(&[]);
+        assert_eq!(state.list.entries[0].title_suffix, None);
+        assert_eq!(state.list.entries[0].installed_path, None);
+        assert_eq!(state.list.entries[0].path, PathBuf::from("project-id"));
     }
 
     #[test]
@@ -523,7 +920,7 @@ mod tests {
                     icon_url: None,
                     icon_bytes: None,
                 },
-                false
+                None
             )));
         }
         state.list.drain_pending();
@@ -560,7 +957,7 @@ mod tests {
                     icon_url: None,
                     icon_bytes: None,
                 },
-                false
+                None
             )));
         }
         state.list.drain_pending();
@@ -593,7 +990,7 @@ mod tests {
                     icon_url: None,
                     icon_bytes: None,
                 },
-                false
+                None
             )));
         }
         state.list.drain_pending();
@@ -632,7 +1029,7 @@ mod tests {
                     icon_url: None,
                     icon_bytes: (title == "Sodium").then(|| vec![1, 2, 3]),
                 },
-                false
+                None
             )));
         }
         state.list.drain_pending();
@@ -664,7 +1061,7 @@ mod tests {
                     icon_url: None,
                     icon_bytes: None,
                 },
-                false
+                None
             )));
         }
         state.list.drain_pending();
@@ -692,7 +1089,7 @@ mod tests {
                     icon_url: None,
                     icon_bytes: None,
                 },
-                false
+                None
             )));
         }
         state.list.drain_pending();
@@ -727,7 +1124,7 @@ mod tests {
                     icon_url: None,
                     icon_bytes: None,
                 },
-                false
+                None
             )));
         }
         state.list.drain_pending();

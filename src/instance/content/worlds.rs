@@ -18,6 +18,8 @@ pub fn scan_one_world(path: &Path, file_stem: &str, enabled: bool) -> ContentEnt
     ContentEntry {
         name: file_stem.to_owned(),
         file_stem: file_stem.to_owned(),
+        source_slug: None,
+        installed_path: None,
         title_suffix: None,
         footer_label: None,
         description,

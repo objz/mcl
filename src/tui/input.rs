@@ -146,6 +146,29 @@ impl App {
         if self.focused == FocusedArea::Content
             && self.content_mode == widgets::content::ContentMode::Discover
         {
+            let (search_active, popup_open) = match self.content_tab {
+                widgets::content::ContentTab::Mods => (
+                    self.mods_discovery_state.search.active,
+                    self.mods_discovery_state.version_popup.is_some(),
+                ),
+                widgets::content::ContentTab::ResourcePacks => (
+                    self.resource_packs_discovery_state.search.active,
+                    self.resource_packs_discovery_state.version_popup.is_some(),
+                ),
+                widgets::content::ContentTab::Shaders => (
+                    self.shaders_discovery_state.search.active,
+                    self.shaders_discovery_state.version_popup.is_some(),
+                ),
+                _ => (false, false),
+            };
+            if !search_active && !popup_open && key_event.code == KeyCode::Char('i') {
+                self.spawn_active_discovery_versions();
+                return Ok(());
+            }
+            if popup_open && key_event.code == KeyCode::Enter {
+                self.spawn_active_discovery_install();
+                return Ok(());
+            }
             let handled = {
                 let state = match self.content_tab {
                     widgets::content::ContentTab::Mods => Some(&mut self.mods_discovery_state),
@@ -547,16 +570,158 @@ impl App {
         }
     }
 
+    fn active_discovery_state_mut(
+        &mut self,
+    ) -> Option<&mut widgets::content::discovery::DiscoveryState> {
+        match self.content_tab {
+            widgets::content::ContentTab::Mods => Some(&mut self.mods_discovery_state),
+            widgets::content::ContentTab::ResourcePacks => {
+                Some(&mut self.resource_packs_discovery_state)
+            }
+            widgets::content::ContentTab::Shaders => Some(&mut self.shaders_discovery_state),
+            _ => None,
+        }
+    }
+
+    fn spawn_active_discovery_versions(&mut self) {
+        let Some(instance) = self.instances_state.selected_instance().cloned() else {
+            return;
+        };
+        let Some(state) = self.active_discovery_state_mut() else {
+            return;
+        };
+        let kind = state.kind;
+        let Some(request) = state.begin_versions() else {
+            return;
+        };
+        tokio::spawn(async move {
+            let client = crate::net::HttpClient::new();
+            let result = crate::net::modrinth::fetch_content_versions(
+                &client,
+                &request.project_id,
+                kind,
+                &instance.game_version,
+                instance.loader,
+            )
+            .await
+            .map_err(|error| error.to_string());
+            widgets::content::DiscoveryState::push_action_result(
+                &request.pending,
+                widgets::content::discovery::DiscoveryActionResult::Versions {
+                    request_id: request.request_id,
+                    project_id: request.project_id,
+                    result,
+                },
+            );
+        });
+    }
+
+    fn spawn_active_discovery_install(&mut self) {
+        let Some(instance) = self.instances_state.selected_instance().cloned() else {
+            return;
+        };
+        let kind = match self.content_tab {
+            widgets::content::ContentTab::Mods => crate::net::modrinth::DiscoveryKind::Mod,
+            widgets::content::ContentTab::ResourcePacks => {
+                crate::net::modrinth::DiscoveryKind::ResourcePack
+            }
+            widgets::content::ContentTab::Shaders => crate::net::modrinth::DiscoveryKind::Shader,
+            _ => return,
+        };
+        let Some(request) = self
+            .active_discovery_state_mut()
+            .and_then(widgets::content::DiscoveryState::begin_install)
+        else {
+            return;
+        };
+        let destination = self
+            .instance_manager
+            .instances_dir
+            .join(&instance.name)
+            .join(".minecraft")
+            .join(match kind {
+                crate::net::modrinth::DiscoveryKind::Mod => "mods",
+                crate::net::modrinth::DiscoveryKind::ResourcePack => "resourcepacks",
+                crate::net::modrinth::DiscoveryKind::Shader => "shaderpacks",
+            });
+        tokio::spawn(async move {
+            let client = crate::net::HttpClient::new();
+            let result = async {
+                tokio::fs::create_dir_all(&destination)
+                    .await
+                    .map_err(crate::net::NetError::from)?;
+                let outcome = if let Some(installed_path) = request.installed_path.as_deref() {
+                    crate::net::modrinth::download_version_file_for_update(
+                        &client,
+                        &request.version,
+                        &destination,
+                        installed_path,
+                    )
+                    .await?
+                } else {
+                    crate::net::modrinth::download_version_file(
+                        &client,
+                        &request.version,
+                        &destination,
+                    )
+                    .await?
+                };
+                let (path, skipped) = match outcome {
+                    crate::net::modrinth::DownloadOutcome::Downloaded(path) => (path, false),
+                    crate::net::modrinth::DownloadOutcome::SkippedExisting(path) => (path, true),
+                };
+                let replaced = request.installed_path.is_some() && !skipped;
+                if !skipped
+                    && let Some(old_path) = request
+                        .installed_path
+                        .as_ref()
+                        .filter(|old_path| old_path.as_path() != path.as_path())
+                {
+                    delete_content_path(old_path).map_err(crate::net::NetError::from)?;
+                }
+                Ok::<_, crate::net::NetError>(widgets::content::discovery::InstallCompletion {
+                    path,
+                    replaced,
+                    skipped,
+                })
+            }
+            .await
+            .map_err(|error| error.to_string());
+            widgets::content::DiscoveryState::push_action_result(
+                &request.pending,
+                widgets::content::discovery::DiscoveryActionResult::Install {
+                    request_id: request.request_id,
+                    project_id: request.project_id,
+                    result,
+                },
+            );
+        });
+    }
+
     fn spawn_active_discovery_search(&mut self) {
         let Some(instance) = self.instances_state.selected_instance().cloned() else {
             return;
         };
         let installed_entries = match self.content_tab {
-            widgets::content::ContentTab::Mods => self.mods_state.entries.clone(),
-            widgets::content::ContentTab::ResourcePacks => {
+            widgets::content::ContentTab::Mods
+                if self.mods_state.loaded_for.as_deref() == Some(instance.name.as_str()) =>
+            {
+                self.mods_state.entries.clone()
+            }
+            widgets::content::ContentTab::ResourcePacks
+                if self.resource_packs_state.loaded_for.as_deref()
+                    == Some(instance.name.as_str()) =>
+            {
                 self.resource_packs_state.entries.clone()
             }
-            widgets::content::ContentTab::Shaders => self.shaders_state.entries.clone(),
+            widgets::content::ContentTab::Shaders
+                if self.shaders_state.loaded_for.as_deref() == Some(instance.name.as_str()) =>
+            {
+                self.shaders_state.entries.clone()
+            }
+            widgets::content::ContentTab::Mods
+            | widgets::content::ContentTab::ResourcePacks
+            | widgets::content::ContentTab::Shaders => Vec::new(),
             _ => return,
         };
         let state = match self.content_tab {
@@ -576,11 +741,25 @@ impl App {
             return;
         };
         let installed_entries = match self.content_tab {
-            widgets::content::ContentTab::Mods => self.mods_state.entries.clone(),
-            widgets::content::ContentTab::ResourcePacks => {
+            widgets::content::ContentTab::Mods
+                if self.mods_state.loaded_for.as_deref() == Some(instance.name.as_str()) =>
+            {
+                self.mods_state.entries.clone()
+            }
+            widgets::content::ContentTab::ResourcePacks
+                if self.resource_packs_state.loaded_for.as_deref()
+                    == Some(instance.name.as_str()) =>
+            {
                 self.resource_packs_state.entries.clone()
             }
-            widgets::content::ContentTab::Shaders => self.shaders_state.entries.clone(),
+            widgets::content::ContentTab::Shaders
+                if self.shaders_state.loaded_for.as_deref() == Some(instance.name.as_str()) =>
+            {
+                self.shaders_state.entries.clone()
+            }
+            widgets::content::ContentTab::Mods
+            | widgets::content::ContentTab::ResourcePacks
+            | widgets::content::ContentTab::Shaders => Vec::new(),
             _ => return,
         };
         let state = match self.content_tab {
@@ -633,23 +812,18 @@ impl App {
                     let icon_slots = std::sync::Arc::new(tokio::sync::Semaphore::new(8));
                     for mut project in results.projects {
                         returned_stems.insert(project.id.clone());
-                        let installed = widgets::content::discovery::project_is_installed(
+                        let installed_path = widgets::content::discovery::installed_project_path(
                             &project,
                             &installed_entries,
                         );
-                        let icon = (!loaded_icon_stems.contains(&project.id))
+                        let icon_url = (!loaded_icon_stems.contains(&project.id))
                             .then(|| project.icon_url.take())
-                            .flatten()
-                            .map(|url| {
-                                (
-                                    url,
-                                    project.id.clone(),
-                                    std::path::PathBuf::from(&project.id),
-                                )
-                            });
-                        if !stream.upsert(widgets::content::discovery::project_entry(
-                            project, installed,
-                        )) {
+                            .flatten();
+                        let entry =
+                            widgets::content::discovery::project_entry(project, installed_path);
+                        let icon =
+                            icon_url.map(|url| (url, entry.file_stem.clone(), entry.path.clone()));
+                        if !stream.upsert(entry) {
                             break;
                         }
                         if let Some((url, file_stem, path)) = icon {

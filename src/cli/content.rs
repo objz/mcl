@@ -125,6 +125,8 @@ mod tests {
         ContentEntry {
             file_stem: file_stem.to_string(),
             name: file_stem.to_string(),
+            source_slug: None,
+            installed_path: None,
             title_suffix: None,
             footer_label: None,
             description: String::new(),

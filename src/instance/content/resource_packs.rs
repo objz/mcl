@@ -65,6 +65,8 @@ pub fn scan_one_resource_pack(path: &Path, file_stem: &str, enabled: bool) -> Co
     ContentEntry {
         file_stem: file_stem.to_owned(),
         name: display_name,
+        source_slug: None,
+        installed_path: None,
         title_suffix: None,
         footer_label: None,
         description,

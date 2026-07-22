@@ -26,6 +26,8 @@ pub struct IconCell {
 pub struct ContentEntry {
     pub file_stem: String,
     pub name: String,
+    pub source_slug: Option<String>,
+    pub installed_path: Option<PathBuf>,
     pub title_suffix: Option<String>,
     pub footer_label: Option<String>,
     pub description: String,
@@ -110,6 +112,8 @@ pub fn scan_one_mod(path: &Path, file_stem: &str, enabled: bool) -> ContentEntry
     ContentEntry {
         file_stem: file_stem.to_owned(),
         name: display_name,
+        source_slug: None,
+        installed_path: None,
         title_suffix: None,
         footer_label: None,
         description,
@@ -705,6 +709,8 @@ mod tests {
         let entry = ContentEntry {
             file_stem: "mymod".to_string(),
             name: "mymod".to_string(),
+            source_slug: None,
+            installed_path: None,
             title_suffix: None,
             footer_label: None,
             description: String::new(),
@@ -978,6 +984,8 @@ description = "A neoforge mod"
         let entry = ContentEntry {
             file_stem: "mymod".to_string(),
             name: "mymod".to_string(),
+            source_slug: None,
+            installed_path: None,
             title_suffix: None,
             footer_label: None,
             description: String::new(),

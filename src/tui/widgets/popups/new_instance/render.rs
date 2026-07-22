@@ -193,18 +193,26 @@ fn render_version_step(state: &WizardState, area: Rect, buf: &mut ratatui::buffe
                 })
                 .collect();
 
-            let list = List::new(items)
-                .highlight_style(
-                    Style::default()
-                        .fg(theme.accent())
-                        .add_modifier(Modifier::BOLD),
-                )
-                .highlight_symbol("▶ ");
-
-            let mut list_state = ListState::default().with_selected(Some(state.version_idx));
-            StatefulWidget::render(list, area, buf, &mut list_state);
+            render_select_list(items, state.version_idx, area, buf);
         }
     }
+}
+
+pub(crate) fn render_select_list(
+    items: Vec<ListItem<'_>>,
+    selected: usize,
+    area: Rect,
+    buffer: &mut ratatui::buffer::Buffer,
+) {
+    let list = List::new(items)
+        .highlight_style(
+            Style::default()
+                .fg(THEME.as_ref().accent())
+                .add_modifier(Modifier::BOLD),
+        )
+        .highlight_symbol("▶ ");
+    let mut state = ListState::default().with_selected(Some(selected));
+    StatefulWidget::render(list, area, buffer, &mut state);
 }
 
 fn render_loader_step(state: &WizardState, area: Rect, buf: &mut ratatui::buffer::Buffer) {

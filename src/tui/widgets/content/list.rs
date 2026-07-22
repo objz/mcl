@@ -1180,10 +1180,13 @@ pub fn render(
                     row.extend(search.highlight_spans(&visible_description, description_style));
                 }
                 if let Some(footer_label) = footer_label {
-                    if has_description {
-                        row.push(Span::styled(" • ", description_style));
-                    }
-                    row.push(Span::styled(footer_label.to_owned(), footer_label_style));
+                    row.extend(right_aligned_footer_spans(
+                        description_width,
+                        &visible_description,
+                        has_description,
+                        footer_label,
+                        footer_label_style,
+                    ));
                 }
                 lines.push(Line::from(row));
             }
@@ -1225,10 +1228,13 @@ pub fn render(
                         .extend(search.highlight_spans(&visible_description, description_style));
                 }
                 if let Some(footer_label) = footer_label {
-                    if has_description {
-                        description.push(Span::styled(" • ", description_style));
-                    }
-                    description.push(Span::styled(footer_label.to_owned(), footer_label_style));
+                    description.extend(right_aligned_footer_spans(
+                        description_width,
+                        &visible_description,
+                        has_description,
+                        footer_label,
+                        footer_label_style,
+                    ));
                 }
                 lines.push(Line::from(description));
             }
@@ -1515,9 +1521,27 @@ fn description_text_width(
     has_description: bool,
 ) -> usize {
     let footer_width = footer_label.map_or(0, |footer_label| {
-        Span::raw(footer_label).width() + if has_description { 3 } else { 0 }
+        Span::raw(footer_label).width() + usize::from(has_description)
     });
     available_width.saturating_sub(footer_width)
+}
+
+fn right_aligned_footer_spans(
+    available_width: usize,
+    description: &str,
+    has_description: bool,
+    footer_label: &str,
+    footer_style: Style,
+) -> Vec<Span<'static>> {
+    let description_width = has_description
+        .then(|| Span::raw(description).width())
+        .unwrap_or(0);
+    let footer_width = Span::raw(footer_label).width();
+    let padding = available_width.saturating_sub(description_width + footer_width);
+    vec![
+        Span::raw(" ".repeat(padding)),
+        Span::styled(footer_label.to_owned(), footer_style),
+    ]
 }
 
 fn ellipsize(text: &str, max_width: usize) -> String {
@@ -1603,19 +1627,21 @@ mod tests {
         buffer::Buffer,
         layout::Rect,
         style::{Color, Modifier, Style},
-        text::{Line, Text},
+        text::{Line, Span, Text},
         widgets::Widget,
     };
 
     use super::{
         ContentListState, available_description_width, description_text_width, ellipsize,
-        square_icon_columns, title_suffix_spans,
+        right_aligned_footer_spans, square_icon_columns, title_suffix_spans,
     };
 
     fn entry(name: &str) -> ContentEntry {
         ContentEntry {
             file_stem: name.to_lowercase(),
             name: name.to_owned(),
+            source_slug: None,
+            installed_path: None,
             title_suffix: None,
             footer_label: None,
             description: String::new(),
@@ -1697,9 +1723,25 @@ mod tests {
 
     #[test]
     fn description_width_reserves_the_download_metadata() {
-        assert_eq!(description_text_width(40, Some("1.2K downloads"), true), 23);
+        assert_eq!(description_text_width(40, Some("1.2K downloads"), true), 25);
         assert_eq!(description_text_width(10, Some("1.2K downloads"), true), 0);
         assert_eq!(description_text_width(40, None, true), 40);
+    }
+
+    #[test]
+    fn footer_metadata_is_right_aligned_without_a_separator() {
+        let mut spans = vec![Span::raw("Description")];
+        spans.extend(right_aligned_footer_spans(
+            30,
+            "Description",
+            true,
+            "1.2K downloads",
+            Style::default(),
+        ));
+        let line = Line::from(spans);
+
+        assert_eq!(line.width(), 30);
+        assert_eq!(line.to_string(), "Description     1.2K downloads");
     }
 
     #[test]

@@ -38,6 +38,15 @@ impl App {
             self.mods_state.drain_watcher();
             self.mods_state.request_image_loads(&self.picker);
             self.mods_state.drain_image_loads(&self.picker);
+            if self.mods_state.loaded_for.as_deref()
+                == self
+                    .instances_state
+                    .selected_instance()
+                    .map(|instance| instance.name.as_str())
+            {
+                self.mods_discovery_state
+                    .refresh_installed_labels(&self.mods_state.entries);
+            }
             self.mods_discovery_state.drain_pending();
             self.mods_discovery_state.list.drain_pending();
             self.mods_discovery_state
@@ -50,6 +59,15 @@ impl App {
             self.resource_packs_state.drain_watcher();
             self.resource_packs_state.request_image_loads(&self.picker);
             self.resource_packs_state.drain_image_loads(&self.picker);
+            if self.resource_packs_state.loaded_for.as_deref()
+                == self
+                    .instances_state
+                    .selected_instance()
+                    .map(|instance| instance.name.as_str())
+            {
+                self.resource_packs_discovery_state
+                    .refresh_installed_labels(&self.resource_packs_state.entries);
+            }
             self.resource_packs_discovery_state.drain_pending();
             self.resource_packs_discovery_state.list.drain_pending();
             self.resource_packs_discovery_state
@@ -62,6 +80,15 @@ impl App {
             self.shaders_state.drain_watcher();
             self.shaders_state.request_image_loads(&self.picker);
             self.shaders_state.drain_image_loads(&self.picker);
+            if self.shaders_state.loaded_for.as_deref()
+                == self
+                    .instances_state
+                    .selected_instance()
+                    .map(|instance| instance.name.as_str())
+            {
+                self.shaders_discovery_state
+                    .refresh_installed_labels(&self.shaders_state.entries);
+            }
             self.shaders_discovery_state.drain_pending();
             self.shaders_discovery_state.list.drain_pending();
             self.shaders_discovery_state

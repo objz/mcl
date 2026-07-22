@@ -260,6 +260,125 @@ pub async fn fetch_versions(
     Ok(versions)
 }
 
+pub async fn fetch_content_versions(
+    client: &crate::net::HttpClient,
+    project_id: &str,
+    kind: DiscoveryKind,
+    game_version: &str,
+    loader: ModLoader,
+) -> Result<Vec<VersionInfo>, crate::net::NetError> {
+    let url = content_versions_url(API_BASE, project_id, kind, game_version, loader);
+    tracing::debug!(
+        "Fetching compatible Modrinth versions for '{}' ({}, {})",
+        project_id,
+        game_version,
+        loader
+    );
+    client.get_json(&url).await
+}
+
+fn content_versions_url(
+    api_base: &str,
+    project_id: &str,
+    kind: DiscoveryKind,
+    game_version: &str,
+    loader: ModLoader,
+) -> String {
+    let mut params = vec![
+        "include_changelog=false".to_owned(),
+        format!(
+            "game_versions={}",
+            url_encode(&serde_json::to_string(&[game_version]).unwrap_or_default())
+        ),
+    ];
+    if kind == DiscoveryKind::Mod
+        && let Some(loader) = loader_facet(loader)
+    {
+        params.push(format!(
+            "loaders={}",
+            url_encode(&serde_json::to_string(&[loader]).unwrap_or_default())
+        ));
+    }
+    format!(
+        "{api_base}/project/{}/version?{}",
+        url_encode(project_id),
+        params.join("&")
+    )
+}
+
+pub fn select_primary_file(version: &VersionInfo) -> Result<&VersionFile, crate::net::NetError> {
+    version
+        .files
+        .iter()
+        .find(|file| file.primary)
+        .or_else(|| version.files.first())
+        .ok_or_else(|| crate::net::NetError::Parse("No files in version".to_owned()))
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DownloadOutcome {
+    Downloaded(std::path::PathBuf),
+    SkippedExisting(std::path::PathBuf),
+}
+
+pub async fn download_version_file(
+    client: &crate::net::HttpClient,
+    version: &VersionInfo,
+    destination: &std::path::Path,
+) -> Result<DownloadOutcome, crate::net::NetError> {
+    let file = select_primary_file(version)?;
+    let path = destination.join(&file.filename);
+    if path.exists() {
+        return Ok(DownloadOutcome::SkippedExisting(path));
+    }
+    crate::net::download_file(client, &file.url, &path, |_, _| {}).await?;
+    Ok(DownloadOutcome::Downloaded(path))
+}
+
+pub async fn download_version_file_for_update(
+    client: &crate::net::HttpClient,
+    version: &VersionInfo,
+    destination: &std::path::Path,
+    installed_path: &std::path::Path,
+) -> Result<DownloadOutcome, crate::net::NetError> {
+    let file = select_primary_file(version)?;
+    let target = destination.join(&file.filename);
+    if target != installed_path {
+        return download_version_file(client, version, destination).await;
+    }
+
+    let temporary = destination.join(format!(".{}.{}.rmcl-download", file.filename, version.id));
+    let backup = destination.join(format!(".{}.{}.rmcl-backup", file.filename, version.id));
+    if temporary.exists() || backup.exists() {
+        return Err(crate::net::NetError::Parse(format!(
+            "A previous update of '{}' did not finish cleanly",
+            file.filename
+        )));
+    }
+
+    crate::net::download_file(client, &file.url, &temporary, |_, _| {}).await?;
+    replace_installed_file(&temporary, &target, installed_path, &backup).await?;
+    Ok(DownloadOutcome::Downloaded(target))
+}
+
+async fn replace_installed_file(
+    temporary: &std::path::Path,
+    target: &std::path::Path,
+    installed_path: &std::path::Path,
+    backup: &std::path::Path,
+) -> Result<(), crate::net::NetError> {
+    tokio::fs::rename(installed_path, &backup).await?;
+    if let Err(error) = tokio::fs::rename(&temporary, &target).await {
+        let _ = tokio::fs::rename(&backup, installed_path).await;
+        let _ = tokio::fs::remove_file(&temporary).await;
+        return Err(error.into());
+    }
+    if let Err(error) = tokio::fs::remove_file(&backup).await {
+        tracing::warn!("Failed to remove Modrinth update backup: {error}");
+    }
+    Ok(())
+}
+
 pub async fn fetch_version(
     client: &crate::net::HttpClient,
     version_id: &str,
@@ -283,18 +402,7 @@ pub async fn download_mrpack(
     version: &VersionInfo,
     dest: &std::path::Path,
 ) -> Result<std::path::PathBuf, crate::net::NetError> {
-    let file = version
-        .files
-        .iter()
-        .find(|f| f.primary)
-        .or_else(|| {
-            tracing::warn!(
-                "Modrinth version '{}' has no primary file; using first file",
-                version.id
-            );
-            version.files.first()
-        })
-        .ok_or_else(|| crate::net::NetError::Parse("No files in version".to_string()))?;
+    let file = select_primary_file(version)?;
 
     let mrpack_path = dest.join(&file.filename);
     tracing::info!(
@@ -331,6 +439,17 @@ pub fn parse_mrpack(path: &std::path::Path) -> Result<MrpackIndex, String> {
 mod tests {
     use super::*;
 
+    fn version_with_files(files: Vec<VersionFile>) -> VersionInfo {
+        VersionInfo {
+            id: "version-id".to_owned(),
+            name: "Version 1".to_owned(),
+            version_number: "1.0.0".to_owned(),
+            game_versions: vec!["1.21.1".to_owned()],
+            loaders: vec!["fabric".to_owned()],
+            files,
+        }
+    }
+
     #[test]
     fn discovery_mod_facets_include_instance_compatibility() {
         let facets = discovery_facets(DiscoveryKind::Mod, "1.21.1", ModLoader::Fabric);
@@ -351,6 +470,110 @@ mod tests {
             serde_json::from_str::<Vec<Vec<String>>>(&facets).unwrap(),
             vec![vec!["project_type:resourcepack"], vec!["versions:1.20.1"]]
         );
+    }
+
+    #[test]
+    fn compatible_mod_versions_filter_by_game_and_loader() {
+        let url = content_versions_url(
+            "https://example.test/v2",
+            "fabric-api",
+            DiscoveryKind::Mod,
+            "1.21.1",
+            ModLoader::Fabric,
+        );
+        assert_eq!(
+            url,
+            "https://example.test/v2/project/fabric-api/version?include_changelog=false&game_versions=%5B%221.21.1%22%5D&loaders=%5B%22fabric%22%5D"
+        );
+    }
+
+    #[test]
+    fn compatible_resource_pack_versions_do_not_filter_by_loader() {
+        let url = content_versions_url(
+            "https://example.test/v2",
+            "stay-true",
+            DiscoveryKind::ResourcePack,
+            "1.21.1",
+            ModLoader::Fabric,
+        );
+        assert_eq!(
+            url,
+            "https://example.test/v2/project/stay-true/version?include_changelog=false&game_versions=%5B%221.21.1%22%5D"
+        );
+    }
+
+    #[test]
+    fn primary_file_selection_falls_back_to_first_file() {
+        let version = version_with_files(vec![
+            VersionFile {
+                url: "https://example.test/first.jar".to_owned(),
+                filename: "first.jar".to_owned(),
+                size: 1,
+                primary: false,
+            },
+            VersionFile {
+                url: "https://example.test/primary.jar".to_owned(),
+                filename: "primary.jar".to_owned(),
+                size: 1,
+                primary: true,
+            },
+        ]);
+        assert_eq!(
+            select_primary_file(&version).unwrap().filename,
+            "primary.jar"
+        );
+
+        let fallback = version_with_files(vec![VersionFile {
+            url: "https://example.test/first.jar".to_owned(),
+            filename: "first.jar".to_owned(),
+            size: 1,
+            primary: false,
+        }]);
+        assert_eq!(
+            select_primary_file(&fallback).unwrap().filename,
+            "first.jar"
+        );
+    }
+
+    #[tokio::test]
+    async fn content_download_skips_an_existing_filename() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("example.jar");
+        std::fs::write(&path, b"existing").unwrap();
+        let version = version_with_files(vec![VersionFile {
+            url: "https://example.test/example.jar".to_owned(),
+            filename: "example.jar".to_owned(),
+            size: 1,
+            primary: true,
+        }]);
+
+        let outcome =
+            download_version_file(&crate::net::HttpClient::new(), &version, directory.path())
+                .await
+                .unwrap();
+
+        assert_eq!(outcome, DownloadOutcome::SkippedExisting(path));
+        assert_eq!(
+            std::fs::read(directory.path().join("example.jar")).unwrap(),
+            b"existing"
+        );
+    }
+
+    #[tokio::test]
+    async fn staged_update_replaces_the_old_file_and_cleans_its_backup() {
+        let directory = tempfile::tempdir().unwrap();
+        let installed = directory.path().join("example.jar");
+        let temporary = directory.path().join(".example.jar.rmcl-download");
+        let backup = directory.path().join(".example.jar.rmcl-backup");
+        std::fs::write(&installed, b"old version").unwrap();
+        std::fs::write(&temporary, b"new version").unwrap();
+
+        replace_installed_file(&temporary, &installed, &installed, &backup)
+            .await
+            .unwrap();
+
+        assert_eq!(std::fs::read(installed).unwrap(), b"new version");
+        assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 1);
     }
 
     #[test]

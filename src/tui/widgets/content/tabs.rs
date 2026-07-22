@@ -7,7 +7,7 @@ use ratatui::{
     layout::{Alignment, Constraint, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph},
+    widgets::{Block, Borders, ListItem, Paragraph, Widget, Wrap},
 };
 use throbber_widgets_tui::{Throbber, ThrobberState};
 
@@ -217,6 +217,7 @@ pub fn render(
         Some(match (mode, tab) {
             (ContentMode::Discover, _) => &[
                 ("j/k", " navigate"),
+                ("i", " versions"),
                 ("h/l", " tabs"),
                 ("/", " search"),
                 ("Tab", " installed"),
@@ -302,6 +303,19 @@ pub fn render(
     match tab {
         ContentTab::Mods => {
             if let Some(instance) = instance {
+                if mods_state.loaded_for.as_deref() != Some(instance.name.as_str()) {
+                    let content_dir = instances_dir
+                        .join(&instance.name)
+                        .join(".minecraft")
+                        .join("mods");
+                    mods_state.start_load(
+                        &content_dir,
+                        &instance.name,
+                        crate::instance::scan_one_mod,
+                        ".jar",
+                    );
+                    mods_state.watch_dir(content_dir);
+                }
                 if mode == ContentMode::Discover {
                     render_discovery(
                         frame,
@@ -312,19 +326,6 @@ pub fn render(
                         picker,
                     );
                 } else {
-                    if mods_state.loaded_for.as_deref() != Some(instance.name.as_str()) {
-                        let content_dir = instances_dir
-                            .join(&instance.name)
-                            .join(".minecraft")
-                            .join("mods");
-                        mods_state.start_load(
-                            &content_dir,
-                            &instance.name,
-                            crate::instance::scan_one_mod,
-                            ".jar",
-                        );
-                        mods_state.watch_dir(content_dir);
-                    }
                     super::list::render(
                         frame,
                         content_area,
@@ -345,6 +346,19 @@ pub fn render(
         }
         ContentTab::ResourcePacks => {
             if let Some(instance) = instance {
+                if resource_packs_state.loaded_for.as_deref() != Some(instance.name.as_str()) {
+                    let content_dir = instances_dir
+                        .join(&instance.name)
+                        .join(".minecraft")
+                        .join("resourcepacks");
+                    resource_packs_state.start_load(
+                        &content_dir,
+                        &instance.name,
+                        crate::instance::scan_one_resource_pack,
+                        ".zip",
+                    );
+                    resource_packs_state.watch_dir(content_dir);
+                }
                 if mode == ContentMode::Discover {
                     render_discovery(
                         frame,
@@ -355,19 +369,6 @@ pub fn render(
                         picker,
                     );
                 } else {
-                    if resource_packs_state.loaded_for.as_deref() != Some(instance.name.as_str()) {
-                        let content_dir = instances_dir
-                            .join(&instance.name)
-                            .join(".minecraft")
-                            .join("resourcepacks");
-                        resource_packs_state.start_load(
-                            &content_dir,
-                            &instance.name,
-                            crate::instance::scan_one_resource_pack,
-                            ".zip",
-                        );
-                        resource_packs_state.watch_dir(content_dir);
-                    }
                     super::list::render(
                         frame,
                         content_area,
@@ -388,6 +389,19 @@ pub fn render(
         }
         ContentTab::Shaders => {
             if let Some(instance) = instance {
+                if shaders_state.loaded_for.as_deref() != Some(instance.name.as_str()) {
+                    let content_dir = instances_dir
+                        .join(&instance.name)
+                        .join(".minecraft")
+                        .join("shaderpacks");
+                    shaders_state.start_load(
+                        &content_dir,
+                        &instance.name,
+                        crate::instance::scan_one_shader,
+                        ".zip",
+                    );
+                    shaders_state.watch_dir(content_dir);
+                }
                 if mode == ContentMode::Discover {
                     render_discovery(
                         frame,
@@ -398,19 +412,6 @@ pub fn render(
                         picker,
                     );
                 } else {
-                    if shaders_state.loaded_for.as_deref() != Some(instance.name.as_str()) {
-                        let content_dir = instances_dir
-                            .join(&instance.name)
-                            .join(".minecraft")
-                            .join("shaderpacks");
-                        shaders_state.start_load(
-                            &content_dir,
-                            &instance.name,
-                            crate::instance::scan_one_shader,
-                            ".zip",
-                        );
-                        shaders_state.watch_dir(content_dir);
-                    }
                     super::list::render(
                         frame,
                         content_area,
@@ -521,6 +522,84 @@ fn render_discovery(
         &empty_text,
         picker,
     );
+    if state.version_popup.is_some() {
+        render_version_popup(frame, area, state);
+    }
+}
+
+fn render_version_popup(frame: &mut Frame, area: Rect, state: &DiscoveryState) {
+    let Some(popup) = state.version_popup.as_ref() else {
+        return;
+    };
+    let [_, vertical, _] = Layout::vertical([
+        Constraint::Percentage(10),
+        Constraint::Percentage(80),
+        Constraint::Percentage(10),
+    ])
+    .areas(area);
+    let [_, popup_area, _] = Layout::horizontal([
+        Constraint::Percentage(12),
+        Constraint::Percentage(76),
+        Constraint::Percentage(12),
+    ])
+    .areas(vertical);
+    let theme = THEME.as_ref();
+    let title = popup.title();
+    let loading = popup.loading;
+    let installing = popup.installing;
+    let error = popup.error.clone();
+    let selected = popup.selected;
+    let items = popup
+        .versions
+        .iter()
+        .map(|version| {
+            ListItem::new(discovery_version_label(version)).style(Style::default().fg(theme.text()))
+        })
+        .collect::<Vec<_>>();
+
+    let popup = crate::tui::widgets::popups::base::PopupFrame {
+        title: styled_title(&title, false),
+        border_color: theme.accent(),
+        bg: Some(theme.surface()),
+        keybinds: Some(crate::tui::widgets::popups::keybind_line(&[
+            ("j/k", " navigate"),
+            ("Enter", " install"),
+            ("Esc", " close"),
+        ])),
+        search_line: None,
+        content: Box::new(move |area, buffer| {
+            if installing {
+                Paragraph::new("Installing...")
+                    .style(Style::default().fg(THEME.as_ref().text_dim()))
+                    .render(area, buffer);
+            } else if loading {
+                Paragraph::new("Loading compatible versions...")
+                    .style(Style::default().fg(THEME.as_ref().text_dim()))
+                    .render(area, buffer);
+            } else if let Some(error) = &error {
+                Paragraph::new(error.as_str())
+                    .style(Style::default().fg(THEME.as_ref().error()))
+                    .wrap(Wrap { trim: true })
+                    .render(area, buffer);
+            } else if items.is_empty() {
+                Paragraph::new("No compatible versions found.")
+                    .style(Style::default().fg(THEME.as_ref().text_dim()))
+                    .render(area, buffer);
+            } else {
+                crate::tui::widgets::popups::new_instance::render_select_list(
+                    items.clone(),
+                    selected,
+                    area,
+                    buffer,
+                );
+            }
+        }),
+    };
+    frame.render_widget(popup, popup_area);
+}
+
+fn discovery_version_label(version: &crate::net::modrinth::VersionInfo) -> String {
+    version.version_number.clone()
 }
 
 // the header bar above the content tabs, showing instance name, loader info,
@@ -658,5 +737,19 @@ mod tests {
             ContentTab::Logs.next_for_mode(ContentMode::Discover),
             ContentTab::ResourcePacks
         );
+    }
+
+    #[test]
+    fn discovery_version_rows_only_show_the_version_number() {
+        let version = crate::net::modrinth::VersionInfo {
+            id: "version-id".to_owned(),
+            name: "A descriptive release title".to_owned(),
+            version_number: "3.2.4-fabric-26.1".to_owned(),
+            game_versions: vec![],
+            loaders: vec![],
+            files: vec![],
+        };
+
+        assert_eq!(discovery_version_label(&version), "3.2.4-fabric-26.1");
     }
 }
