@@ -6,8 +6,6 @@ use thiserror::Error;
 pub enum ConfigSyncError {
     #[error("Invalid config sync profile: {0}")]
     InvalidProfile(String),
-    #[error("Config sync profile '{profile}' is already in use")]
-    AlreadyLocked { profile: String },
     #[error("Cannot switch config profiles while '{instance}' is running")]
     InstanceRunning { instance: String },
     #[error("IO error: {0}")]
@@ -16,14 +14,12 @@ pub enum ConfigSyncError {
 
 #[derive(Debug)]
 pub struct ConfigSyncLock {
-    path: PathBuf,
+    file: std::fs::File,
 }
 
 impl Drop for ConfigSyncLock {
     fn drop(&mut self) {
-        if let Err(e) = std::fs::remove_file(&self.path)
-            && e.kind() != std::io::ErrorKind::NotFound
-        {
+        if let Err(e) = self.file.unlock() {
             tracing::warn!("Failed to release config sync lock: {}", e);
         }
     }
@@ -33,17 +29,17 @@ pub fn prepare(
     profile: Option<&str>,
     meta_dir: &Path,
     minecraft_dir: &Path,
-) -> Result<Option<ConfigSyncLock>, ConfigSyncError> {
+) -> Result<bool, ConfigSyncError> {
     let Some(profile) = profile.and_then(normalize_profile) else {
-        return Ok(None);
+        return Ok(false);
     };
     validate_profile(profile)?;
 
     let profile_dir = profile_dir(meta_dir, profile);
     if !profile_dir.exists() {
-        return Ok(None);
+        return Ok(false);
     }
-    let lock = acquire_lock(&profile_dir, profile)?;
+    let _lock = acquire_lock(&profile_dir)?;
 
     if !profile_payload_exists(&profile_dir)? {
         sync_to_profile(minecraft_dir, &profile_dir)?;
@@ -51,7 +47,7 @@ pub fn prepare(
         sync_from_profile(&profile_dir, minecraft_dir)?;
     }
 
-    Ok(Some(lock))
+    Ok(true)
 }
 
 pub fn finish(
@@ -64,7 +60,9 @@ pub fn finish(
     };
     validate_profile(profile)?;
 
-    sync_to_profile(minecraft_dir, &profile_dir(meta_dir, profile))
+    let profile_dir = profile_dir(meta_dir, profile);
+    let _lock = acquire_lock(&profile_dir)?;
+    sync_to_profile(minecraft_dir, &profile_dir)
 }
 
 pub fn list_profiles(meta_dir: &Path) -> Result<Vec<String>, ConfigSyncError> {
@@ -134,8 +132,8 @@ pub fn switch_profile(
     if let Some(profile) = current_profile {
         let profile_dir = profile_dir(meta_dir, profile);
         if profile_dir.exists() {
-            let _lock = acquire_lock(&profile_dir, profile)?;
-            finish(Some(profile), meta_dir, &minecraft_dir(instance_dir))?;
+            let _lock = acquire_lock(&profile_dir)?;
+            sync_to_profile(&minecraft_dir(instance_dir), &profile_dir)?;
         }
     }
 
@@ -161,7 +159,7 @@ pub fn switch_profile(
     };
 
     let profile_dir = profile_dir(meta_dir, profile);
-    let _lock = acquire_lock(&profile_dir, profile)?;
+    let _lock = acquire_lock(&profile_dir)?;
 
     if !profile_payload_exists(&profile_dir)? {
         sync_to_profile(&minecraft_dir(instance_dir), &profile_dir)?;
@@ -219,22 +217,16 @@ fn local_backup_dir(instance_dir: &Path) -> PathBuf {
         .join("local-config")
 }
 
-fn acquire_lock(profile_dir: &Path, profile: &str) -> Result<ConfigSyncLock, ConfigSyncError> {
+fn acquire_lock(profile_dir: &Path) -> Result<ConfigSyncLock, ConfigSyncError> {
     std::fs::create_dir_all(profile_dir)?;
     let path = profile_dir.join(".lock");
-    match std::fs::OpenOptions::new()
+    let file = std::fs::OpenOptions::new()
+        .read(true)
         .write(true)
-        .create_new(true)
-        .open(&path)
-    {
-        Ok(_) => Ok(ConfigSyncLock { path }),
-        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
-            Err(ConfigSyncError::AlreadyLocked {
-                profile: profile.to_string(),
-            })
-        }
-        Err(e) => Err(e.into()),
-    }
+        .create(true)
+        .open(path)?;
+    file.lock()?;
+    Ok(ConfigSyncLock { file })
 }
 
 fn mirror_dir(src: &Path, dst: &Path) -> Result<(), ConfigSyncError> {
@@ -355,7 +347,7 @@ mod tests {
         std::fs::write(minecraft.join("config/options.txt"), "local-config").unwrap();
         std::fs::write(minecraft.join("config/nested/mod.toml"), "nested").unwrap();
 
-        let _lock = prepare(Some("main"), &meta, &minecraft).unwrap();
+        assert!(prepare(Some("main"), &meta, &minecraft).unwrap());
 
         assert_eq!(
             std::fs::read_to_string(meta.join("config-sync/profiles/main/options.txt")).unwrap(),
@@ -398,7 +390,7 @@ mod tests {
         std::fs::write(minecraft.join("options.txt"), "stale-options").unwrap();
         std::fs::write(minecraft.join("config/local.toml"), "stale").unwrap();
 
-        let _lock = prepare(Some("main"), &meta, &minecraft).unwrap();
+        assert!(prepare(Some("main"), &meta, &minecraft).unwrap());
 
         assert_eq!(
             std::fs::read_to_string(minecraft.join("options.txt")).unwrap(),
@@ -445,17 +437,18 @@ mod tests {
     }
 
     #[test]
-    fn lock_blocks_second_prepare() {
+    fn prepare_releases_lock_for_another_instance() {
         let tmp = tempfile::tempdir().unwrap();
         let meta = tmp.path().join("meta");
         let minecraft = tmp.path().join("instance/.minecraft");
         create_profile(&meta, "main").unwrap();
         std::fs::create_dir_all(minecraft.join("config")).unwrap();
 
-        let _lock = prepare(Some("main"), &meta, &minecraft).unwrap();
-        let err = prepare(Some("main"), &meta, &minecraft).unwrap_err();
+        assert!(prepare(Some("main"), &meta, &minecraft).unwrap());
+        let second = tmp.path().join("second/.minecraft");
+        std::fs::create_dir_all(second.join("config")).unwrap();
 
-        assert!(matches!(err, ConfigSyncError::AlreadyLocked { .. }));
+        assert!(prepare(Some("main"), &meta, &second).unwrap());
     }
 
     #[test]
@@ -489,7 +482,7 @@ mod tests {
 
         let lock = prepare(Some("deleted"), &meta, &minecraft).unwrap();
 
-        assert!(lock.is_none());
+        assert!(!lock);
         assert!(!meta.join("config-sync/profiles/deleted").exists());
     }
 
@@ -655,10 +648,9 @@ mod tests {
         std::fs::write(second.join("options.txt"), "second-local").unwrap();
         create_profile(&meta, "main").unwrap();
 
-        let _lock = prepare(Some("main"), &meta, &first).unwrap();
+        assert!(prepare(Some("main"), &meta, &first).unwrap());
         std::fs::write(first.join("options.txt"), "changed-in-main").unwrap();
         finish(Some("main"), &meta, &first).unwrap();
-        drop(_lock);
 
         switch_profile("second", None, Some("main"), &meta, &second_instance).unwrap();
 

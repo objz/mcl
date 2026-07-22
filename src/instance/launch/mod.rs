@@ -624,12 +624,11 @@ pub async fn launch(
         invocation.main_class
     );
     let config_sync_profile = config.config_sync_profile.clone();
-    let config_sync_lock = crate::instance::config_sync::prepare(
+    let config_sync_active = crate::instance::config_sync::prepare(
         config_sync_profile.as_deref(),
         meta_dir,
         &invocation.working_dir,
     )?;
-    let config_sync_active = config_sync_lock.is_some();
 
     let (kill_tx, kill_rx) = tokio::sync::oneshot::channel::<()>();
     crate::running::register_kill(&name, kill_tx);
@@ -802,8 +801,6 @@ pub async fn launch(
         {
             tracing::warn!("Failed to sync config for '{}': {}", name_for_task, e);
         }
-        drop(config_sync_lock);
-
         if code == Some(0) || killed_by_user {
             crate::running::remove(&name_for_task);
             tracing::debug!(
