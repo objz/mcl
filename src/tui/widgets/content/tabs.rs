@@ -13,6 +13,7 @@ use throbber_widgets_tui::{Throbber, ThrobberState};
 
 use crate::config::theme::{BORDER_STYLE, THEME};
 use crate::tui::app::FocusedArea;
+use crate::tui::widgets::content::{ContentMode, DiscoveryState};
 
 use crate::tui::widgets::styled_title;
 
@@ -35,6 +36,12 @@ impl ContentTab {
         ContentTab::Screenshots,
         ContentTab::Worlds,
         ContentTab::Logs,
+    ];
+
+    const DISCOVERY: &'static [ContentTab] = &[
+        ContentTab::Mods,
+        ContentTab::ResourcePacks,
+        ContentTab::Shaders,
     ];
 
     pub fn label(self) -> &'static str {
@@ -64,6 +71,34 @@ impl ContentTab {
             idx - 1
         }]
     }
+
+    pub fn next_for_mode(self, mode: ContentMode) -> Self {
+        cycle_tab(self, visible_tabs(mode), true)
+    }
+
+    pub fn previous_for_mode(self, mode: ContentMode) -> Self {
+        cycle_tab(self, visible_tabs(mode), false)
+    }
+}
+
+fn visible_tabs(mode: ContentMode) -> &'static [ContentTab] {
+    match mode {
+        ContentMode::Installed => ContentTab::ALL,
+        ContentMode::Discover => ContentTab::DISCOVERY,
+    }
+}
+
+fn cycle_tab(current: ContentTab, tabs: &[ContentTab], forward: bool) -> ContentTab {
+    let index = tabs.iter().position(|tab| *tab == current).unwrap_or(0);
+    if forward {
+        tabs[(index + 1) % tabs.len()]
+    } else {
+        tabs[if index == 0 {
+            tabs.len() - 1
+        } else {
+            index - 1
+        }]
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -72,10 +107,14 @@ pub fn render(
     area: Rect,
     focused: FocusedArea,
     tab: ContentTab,
+    mode: ContentMode,
     instance: Option<&crate::instance::InstanceConfig>,
     mods_state: &mut super::list::ContentListState,
+    mods_discovery_state: &mut DiscoveryState,
     resource_packs_state: &mut super::list::ContentListState,
+    resource_packs_discovery_state: &mut DiscoveryState,
     shaders_state: &mut super::list::ContentListState,
+    shaders_discovery_state: &mut DiscoveryState,
     worlds_state: &mut super::list::ContentListState,
     screenshots_state: &mut crate::tui::widgets::screenshots_grid::ScreenshotsState,
     logs_state: &mut crate::tui::widgets::logs_viewer::LogsState,
@@ -91,7 +130,8 @@ pub fn render(
         theme.border()
     };
 
-    let tab_titles: Vec<Span> = ContentTab::ALL
+    let tabs = visible_tabs(mode);
+    let tab_titles: Vec<Span> = tabs
         .iter()
         .enumerate()
         .flat_map(|(i, t)| {
@@ -102,7 +142,7 @@ pub fn render(
                     Style::default().fg(theme.text_dim()),
                 ));
             }
-            if i == tab.index() {
+            if tabs.get(i) == Some(&tab) {
                 let style = Style::default()
                     .fg(theme.accent())
                     .add_modifier(Modifier::BOLD);
@@ -118,8 +158,17 @@ pub fn render(
         .collect();
 
     let search_line = match tab {
+        ContentTab::Mods if mode == ContentMode::Discover => {
+            mods_discovery_state.search.title_line()
+        }
         ContentTab::Mods => mods_state.search.title_line(),
+        ContentTab::ResourcePacks if mode == ContentMode::Discover => {
+            resource_packs_discovery_state.search.title_line()
+        }
         ContentTab::ResourcePacks => resource_packs_state.search.title_line(),
+        ContentTab::Shaders if mode == ContentMode::Discover => {
+            shaders_discovery_state.search.title_line()
+        }
         ContentTab::Shaders => shaders_state.search.title_line(),
         ContentTab::Worlds => worlds_state.search.title_line(),
         ContentTab::Screenshots => screenshots_state.search.title_line(),
@@ -132,8 +181,24 @@ pub fn render(
         }
     };
 
+    let mode_color = match mode {
+        ContentMode::Installed => theme.success(),
+        ContentMode::Discover => theme.accent(),
+    };
+    let mut content_titles = vec![
+        Span::styled(
+            format!(" {} ", mode.label()),
+            Style::default()
+                .fg(theme.background())
+                .bg(mode_color)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::raw(" "),
+    ];
+    content_titles.extend(tab_titles);
+
     let mut block = Block::default()
-        .title_top(Line::from(tab_titles))
+        .title_top(Line::from(content_titles))
         .borders(Borders::ALL)
         .border_type(BORDER_STYLE.to_border_type())
         .border_style(Style::default().fg(border_color));
@@ -145,31 +210,42 @@ pub fn render(
     // keybinds change depending on which tab is active and whether
     // the content panel or instances panel has focus
     let kb: Option<&[(&str, &str)]> = if is_focused {
-        Some(match tab {
-            ContentTab::Mods | ContentTab::ResourcePacks | ContentTab::Shaders => &[
+        Some(match (mode, tab) {
+            (ContentMode::Discover, _) => &[
+                ("j/k", " navigate"),
+                ("h/l", " tabs"),
+                ("/", " search"),
+                ("Tab", " installed"),
+            ],
+            (ContentMode::Installed, ContentTab::Mods)
+            | (ContentMode::Installed, ContentTab::ResourcePacks)
+            | (ContentMode::Installed, ContentTab::Shaders) => &[
                 ("j/k", " navigate"),
                 ("⏎", " toggle"),
                 ("d", " delete"),
                 ("Shift+⏎", " open dir"),
                 ("h/l", " tabs"),
                 ("/", " search"),
+                ("Tab", " discover"),
             ],
-            ContentTab::Worlds => &[
+            (ContentMode::Installed, ContentTab::Worlds) => &[
                 ("j/k", " navigate"),
                 ("d", " delete"),
                 ("Shift+⏎", " open dir"),
                 ("h/l", " tabs"),
                 ("/", " search"),
+                ("Tab", " discover"),
             ],
-            ContentTab::Screenshots => &[
+            (ContentMode::Installed, ContentTab::Screenshots) => &[
                 ("Shift+HJKL", " grid"),
                 ("⏎", " open"),
                 ("d", " delete"),
                 ("Shift+⏎", " open dir"),
                 ("h/l", " tabs"),
                 ("/", " search"),
+                ("Tab", " discover"),
             ],
-            ContentTab::Logs => {
+            (ContentMode::Installed, ContentTab::Logs) => {
                 if logs_state.viewer_focused {
                     &[
                         ("j/k", " scroll"),
@@ -177,6 +253,7 @@ pub fn render(
                         ("d", " delete"),
                         ("Esc", " back"),
                         ("/", " search"),
+                        ("Tab", " discover"),
                     ]
                 } else {
                     &[
@@ -185,6 +262,7 @@ pub fn render(
                         ("d", " delete"),
                         ("h/l", " tabs"),
                         ("/", " search"),
+                        ("Tab", " discover"),
                     ]
                 }
             }
@@ -220,28 +298,39 @@ pub fn render(
     match tab {
         ContentTab::Mods => {
             if let Some(instance) = instance {
-                if mods_state.loaded_for.as_deref() != Some(instance.name.as_str()) {
-                    let content_dir = instances_dir
-                        .join(&instance.name)
-                        .join(".minecraft")
-                        .join("mods");
-                    mods_state.start_load(
-                        &content_dir,
-                        &instance.name,
-                        crate::instance::scan_one_mod,
-                        ".jar",
+                if mode == ContentMode::Discover {
+                    render_discovery(
+                        frame,
+                        content_area,
+                        mods_discovery_state,
+                        is_focused,
+                        "Searching Modrinth...",
+                        picker,
                     );
-                    mods_state.watch_dir(content_dir);
+                } else {
+                    if mods_state.loaded_for.as_deref() != Some(instance.name.as_str()) {
+                        let content_dir = instances_dir
+                            .join(&instance.name)
+                            .join(".minecraft")
+                            .join("mods");
+                        mods_state.start_load(
+                            &content_dir,
+                            &instance.name,
+                            crate::instance::scan_one_mod,
+                            ".jar",
+                        );
+                        mods_state.watch_dir(content_dir);
+                    }
+                    super::list::render(
+                        frame,
+                        content_area,
+                        mods_state,
+                        is_focused,
+                        "Loading mods...",
+                        "No mods installed.",
+                        picker,
+                    );
                 }
-                super::list::render(
-                    frame,
-                    content_area,
-                    mods_state,
-                    is_focused,
-                    "Loading mods...",
-                    "No mods installed.",
-                    picker,
-                );
             } else {
                 frame.render_widget(
                     Paragraph::new("No instance selected.")
@@ -252,28 +341,39 @@ pub fn render(
         }
         ContentTab::ResourcePacks => {
             if let Some(instance) = instance {
-                if resource_packs_state.loaded_for.as_deref() != Some(instance.name.as_str()) {
-                    let content_dir = instances_dir
-                        .join(&instance.name)
-                        .join(".minecraft")
-                        .join("resourcepacks");
-                    resource_packs_state.start_load(
-                        &content_dir,
-                        &instance.name,
-                        crate::instance::scan_one_resource_pack,
-                        ".zip",
+                if mode == ContentMode::Discover {
+                    render_discovery(
+                        frame,
+                        content_area,
+                        resource_packs_discovery_state,
+                        is_focused,
+                        "Searching Modrinth...",
+                        picker,
                     );
-                    resource_packs_state.watch_dir(content_dir);
+                } else {
+                    if resource_packs_state.loaded_for.as_deref() != Some(instance.name.as_str()) {
+                        let content_dir = instances_dir
+                            .join(&instance.name)
+                            .join(".minecraft")
+                            .join("resourcepacks");
+                        resource_packs_state.start_load(
+                            &content_dir,
+                            &instance.name,
+                            crate::instance::scan_one_resource_pack,
+                            ".zip",
+                        );
+                        resource_packs_state.watch_dir(content_dir);
+                    }
+                    super::list::render(
+                        frame,
+                        content_area,
+                        resource_packs_state,
+                        is_focused,
+                        "Loading resource packs...",
+                        "No resource packs installed.",
+                        picker,
+                    );
                 }
-                super::list::render(
-                    frame,
-                    content_area,
-                    resource_packs_state,
-                    is_focused,
-                    "Loading resource packs...",
-                    "No resource packs installed.",
-                    picker,
-                );
             } else {
                 frame.render_widget(
                     Paragraph::new("No instance selected.")
@@ -284,28 +384,39 @@ pub fn render(
         }
         ContentTab::Shaders => {
             if let Some(instance) = instance {
-                if shaders_state.loaded_for.as_deref() != Some(instance.name.as_str()) {
-                    let content_dir = instances_dir
-                        .join(&instance.name)
-                        .join(".minecraft")
-                        .join("shaderpacks");
-                    shaders_state.start_load(
-                        &content_dir,
-                        &instance.name,
-                        crate::instance::scan_one_shader,
-                        ".zip",
+                if mode == ContentMode::Discover {
+                    render_discovery(
+                        frame,
+                        content_area,
+                        shaders_discovery_state,
+                        is_focused,
+                        "Searching Modrinth...",
+                        picker,
                     );
-                    shaders_state.watch_dir(content_dir);
+                } else {
+                    if shaders_state.loaded_for.as_deref() != Some(instance.name.as_str()) {
+                        let content_dir = instances_dir
+                            .join(&instance.name)
+                            .join(".minecraft")
+                            .join("shaderpacks");
+                        shaders_state.start_load(
+                            &content_dir,
+                            &instance.name,
+                            crate::instance::scan_one_shader,
+                            ".zip",
+                        );
+                        shaders_state.watch_dir(content_dir);
+                    }
+                    super::list::render(
+                        frame,
+                        content_area,
+                        shaders_state,
+                        is_focused,
+                        "Loading shaders...",
+                        "No shaders installed.",
+                        picker,
+                    );
                 }
-                super::list::render(
-                    frame,
-                    content_area,
-                    shaders_state,
-                    is_focused,
-                    "Loading shaders...",
-                    "No shaders installed.",
-                    picker,
-                );
             } else {
                 frame.render_widget(
                     Paragraph::new("No instance selected.")
@@ -385,6 +496,27 @@ pub fn render(
             }
         }
     }
+}
+
+fn render_discovery(
+    frame: &mut Frame,
+    area: Rect,
+    state: &mut DiscoveryState,
+    is_focused: bool,
+    loading_text: &str,
+    picker: &ratatui_image::picker::Picker,
+) {
+    state.set_viewport_rows(area.height);
+    let empty_text = state.empty_text().to_string();
+    super::list::render(
+        frame,
+        area,
+        &mut state.list,
+        is_focused,
+        loading_text,
+        &empty_text,
+        picker,
+    );
 }
 
 // the header bar above the content tabs, showing instance name, loader info,
@@ -489,5 +621,30 @@ pub fn title(
                 right_area,
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn discovery_navigation_only_cycles_downloadable_tabs() {
+        assert_eq!(
+            ContentTab::Shaders.next_for_mode(ContentMode::Discover),
+            ContentTab::Mods
+        );
+        assert_eq!(
+            ContentTab::Mods.previous_for_mode(ContentMode::Discover),
+            ContentTab::Shaders
+        );
+    }
+
+    #[test]
+    fn discovery_navigation_recovers_from_hidden_local_tab() {
+        assert_eq!(
+            ContentTab::Logs.next_for_mode(ContentMode::Discover),
+            ContentTab::ResourcePacks
+        );
     }
 }

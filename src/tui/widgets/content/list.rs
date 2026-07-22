@@ -24,6 +24,55 @@ use crate::instance::content::mods::{ContentEntry, IconCell};
 
 type ScanOneFn = fn(&Path, &str, bool) -> ContentEntry;
 
+#[derive(Clone, Copy, Default)]
+enum ContentStreamOrder {
+    #[default]
+    Sorted,
+    Source,
+}
+
+#[derive(Clone)]
+pub struct ContentStream {
+    sender: mpsc::Sender<ContentStreamUpdate>,
+}
+
+impl ContentStream {
+    pub fn send(&self, entry: ContentEntry) -> bool {
+        if self.sender.send(ContentStreamUpdate::Entry(entry)).is_ok() {
+            crate::tui::request_redraw();
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn send_icon(&self, file_stem: String, path: std::path::PathBuf, bytes: Vec<u8>) -> bool {
+        if self
+            .sender
+            .send(ContentStreamUpdate::Icon {
+                file_stem,
+                path,
+                bytes,
+            })
+            .is_ok()
+        {
+            crate::tui::request_redraw();
+            true
+        } else {
+            false
+        }
+    }
+}
+
+enum ContentStreamUpdate {
+    Entry(ContentEntry),
+    Icon {
+        file_stem: String,
+        path: std::path::PathBuf,
+        bytes: Vec<u8>,
+    },
+}
+
 struct CachedList {
     entries: Vec<ContentEntry>,
     selected: Option<usize>,
@@ -62,7 +111,8 @@ pub struct ContentListState {
     pub search: crate::tui::widgets::search::SearchState,
     cache: HashMap<String, CachedList>,
     // streaming: individual entries arrive here during initial load
-    stream_rx: Option<mpsc::Receiver<ContentEntry>>,
+    stream_rx: Option<mpsc::Receiver<ContentStreamUpdate>>,
+    stream_order: ContentStreamOrder,
     // file watcher: notify callback spawns background work,
     // precomputed diff lands here for the UI to pick up
     watcher_diff: Arc<Mutex<Option<WatcherDiff>>>,
@@ -95,6 +145,7 @@ impl Default for ContentListState {
             search: crate::tui::widgets::search::SearchState::default(),
             cache: HashMap::new(),
             stream_rx: None,
+            stream_order: ContentStreamOrder::default(),
             watcher_diff: Arc::new(Mutex::new(None)),
             _watcher: None,
             watched_dir: None,
@@ -105,6 +156,34 @@ impl Default for ContentListState {
 }
 
 impl ContentListState {
+    pub fn start_stream(&mut self, source: impl Into<String>) -> ContentStream {
+        self.start_stream_with_order(source, ContentStreamOrder::Sorted)
+    }
+
+    pub fn start_source_stream(&mut self, source: impl Into<String>) -> ContentStream {
+        self.start_stream_with_order(source, ContentStreamOrder::Source)
+    }
+
+    fn start_stream_with_order(
+        &mut self,
+        source: impl Into<String>,
+        order: ContentStreamOrder,
+    ) -> ContentStream {
+        self.images_dirty = true;
+        self.image_protocols.clear();
+        self.requested_images.clear();
+        self.entries.clear();
+        self.display_metadata.clear();
+        self.list_state = TuiListState::default();
+        self.loading = true;
+        self.loaded_for = Some(source.into());
+        self.update_scrollbar();
+        let (sender, receiver) = mpsc::channel();
+        self.stream_rx = Some(receiver);
+        self.stream_order = order;
+        ContentStream { sender }
+    }
+
     pub fn request_image_loads(&mut self, picker: &ratatui_image::picker::Picker) {
         if !self.images_dirty {
             return;
@@ -216,17 +295,39 @@ impl ContentListState {
         let mut finished = false;
         loop {
             match rx.try_recv() {
-                Ok(entry) => {
+                Ok(ContentStreamUpdate::Entry(entry)) => {
                     received = true;
                     self.images_dirty = true;
                     received_count += 1;
                     self.display_metadata
                         .insert(entry.file_stem.clone(), display_metadata(&entry));
-                    let pos = self
+                    match self.stream_order {
+                        ContentStreamOrder::Sorted => {
+                            let pos = self
+                                .entries
+                                .binary_search_by(|e| {
+                                    e.name.to_lowercase().cmp(&entry.name.to_lowercase())
+                                })
+                                .unwrap_or_else(|i| i);
+                            self.entries.insert(pos, entry);
+                        }
+                        ContentStreamOrder::Source => self.entries.push(entry),
+                    }
+                }
+                Ok(ContentStreamUpdate::Icon {
+                    file_stem,
+                    path,
+                    bytes,
+                }) => {
+                    if let Some(entry) = self
                         .entries
-                        .binary_search_by(|e| e.name.to_lowercase().cmp(&entry.name.to_lowercase()))
-                        .unwrap_or_else(|i| i);
-                    self.entries.insert(pos, entry);
+                        .iter_mut()
+                        .find(|entry| entry.file_stem == file_stem && entry.path == path)
+                    {
+                        entry.icon_bytes = Some(bytes);
+                        self.requested_images.remove(&file_stem);
+                        self.images_dirty = true;
+                    }
                 }
                 Err(mpsc::TryRecvError::Empty) => break,
                 Err(mpsc::TryRecvError::Disconnected) => {
@@ -524,15 +625,7 @@ impl ContentListState {
         }
 
         // no cache, stream entries one by one as each file is scanned
-        self.entries.clear();
-        self.display_metadata.clear();
-        self.list_state = TuiListState::default();
-        self.loading = true;
-        self.loaded_for = Some(instance_name.to_string());
-        self.update_scrollbar();
-
-        let (tx, rx) = mpsc::channel();
-        self.stream_rx = Some(rx);
+        let stream = self.start_stream(instance_name);
 
         let dir = content_dir.to_path_buf();
         tracing::debug!(
@@ -578,10 +671,9 @@ impl ContentListState {
                     };
 
                     let entry = scan_one_fn(&path, &file_stem, enabled);
-                    if tx.send(entry).is_err() {
+                    if !stream.send(entry) {
                         break; // receiver dropped (instance switched)
                     }
-                    crate::tui::request_redraw();
                 }
             })
             .await;
@@ -1275,7 +1367,23 @@ fn read_dir_stems(dir: &std::path::Path, ext: &str) -> HashMap<String, (std::pat
 
 #[cfg(test)]
 mod tests {
-    use super::square_icon_columns;
+    use std::path::PathBuf;
+
+    use crate::instance::content::mods::ContentEntry;
+
+    use super::{ContentListState, square_icon_columns};
+
+    fn entry(name: &str) -> ContentEntry {
+        ContentEntry {
+            file_stem: name.to_lowercase(),
+            name: name.to_owned(),
+            description: String::new(),
+            enabled: true,
+            icon_bytes: None,
+            path: PathBuf::from(name.to_lowercase()),
+            icon_lines: None,
+        }
+    }
 
     #[test]
     fn square_columns_follow_terminal_cell_ratio() {
@@ -1287,5 +1395,52 @@ mod tests {
     #[test]
     fn square_columns_handle_missing_cell_size() {
         assert_eq!(square_icon_columns(3, (0, 0)), 3);
+    }
+
+    #[test]
+    fn content_stream_inserts_entries_and_icons_incrementally() {
+        let mut state = ContentListState::default();
+        let stream = state.start_stream("remote");
+
+        assert!(stream.send(entry("Zulu")));
+        state.drain_pending();
+        assert_eq!(state.entries[0].name, "Zulu");
+        assert!(!state.loading);
+
+        assert!(stream.send(entry("Alpha")));
+        assert!(stream.send_icon("alpha".to_owned(), PathBuf::from("alpha"), vec![1, 2, 3],));
+        state.drain_pending();
+
+        assert_eq!(
+            state
+                .entries
+                .iter()
+                .map(|entry| entry.name.as_str())
+                .collect::<Vec<_>>(),
+            ["Alpha", "Zulu"]
+        );
+        assert_eq!(
+            state.entries[0].icon_bytes.as_deref(),
+            Some([1, 2, 3].as_slice())
+        );
+    }
+
+    #[test]
+    fn source_stream_preserves_remote_result_order() {
+        let mut state = ContentListState::default();
+        let stream = state.start_source_stream("remote");
+        assert!(stream.send(entry("Zulu")));
+        assert!(stream.send(entry("Alpha")));
+
+        state.drain_pending();
+
+        assert_eq!(
+            state
+                .entries
+                .iter()
+                .map(|entry| entry.name.as_str())
+                .collect::<Vec<_>>(),
+            ["Zulu", "Alpha"]
+        );
     }
 }

@@ -50,9 +50,10 @@ tui-logger = { version = "0.18", features = ["tracing-support"] }
 tui-scrollview = "0.6"
 tui-widget-list = "0.15"
 ratatui-image = { version = "10.0.6", default-features = false, features = ["crossterm"] }
-image = { version = "0.25", default-features = false, features = ["png"] }
+image = { version = "0.25", default-features = false, features = ["png", "webp"] }
 zip = "8.5.1"
 minecraft-msa-auth = "0.4.0"
+modrinth-api = "2.7.1"
 oauth2 = "5.0.0"
 open = "5"
 which = "8.0.2"
@@ -79,4 +80,4 @@ tempfile = "3"
 insta = "1"
 wiremock = "0.6"
 rstest = "0.23"
-image = { version = "0.25", default-features = false, features = ["png"] }
+image = { version = "0.25", default-features = false, features = ["png", "webp"] }

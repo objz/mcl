@@ -143,7 +143,33 @@ impl App {
 
         // content area delegates to whichever tab is active.
         // worlds use the same list navigation without the toggle
-        if self.focused == FocusedArea::Content {
+        if self.focused == FocusedArea::Content
+            && self.content_mode == widgets::content::ContentMode::Discover
+        {
+            let (handled, submit_search) = {
+                let state = match self.content_tab {
+                    widgets::content::ContentTab::Mods => Some(&mut self.mods_discovery_state),
+                    widgets::content::ContentTab::ResourcePacks => {
+                        Some(&mut self.resource_packs_discovery_state)
+                    }
+                    widgets::content::ContentTab::Shaders => {
+                        Some(&mut self.shaders_discovery_state)
+                    }
+                    _ => None,
+                };
+                if let Some(state) = state {
+                    widgets::content::discovery::handle_key(&key_event, state)
+                } else {
+                    (false, false)
+                }
+            };
+            if submit_search {
+                self.spawn_active_discovery_search();
+            }
+            if handled {
+                return Ok(());
+            }
+        } else if self.focused == FocusedArea::Content {
             if self.content_tab == widgets::content::ContentTab::Logs {
                 if key_event.code == KeyCode::Char('d')
                     && !self.logs_state.search.active
@@ -374,15 +400,27 @@ impl App {
                         self.pre_overlay_focused = self.focused;
                         self.focused = FocusedArea::OverviewExpanded;
                     }
-                    KeyCode::Tab | KeyCode::Char('l') | KeyCode::Right
-                        if self.focused == FocusedArea::Content =>
-                    {
-                        self.content_tab = self.content_tab.next();
+                    KeyCode::Tab if self.focused == FocusedArea::Content => {
+                        self.content_mode = self.content_mode.toggle();
+                        if self.content_mode == widgets::content::ContentMode::Discover
+                            && !matches!(
+                                self.content_tab,
+                                widgets::content::ContentTab::Mods
+                                    | widgets::content::ContentTab::ResourcePacks
+                                    | widgets::content::ContentTab::Shaders
+                            )
+                        {
+                            self.content_tab = widgets::content::ContentTab::Mods;
+                        }
+                        self.ensure_active_discovery_loaded();
                     }
-                    KeyCode::BackTab | KeyCode::Char('h') | KeyCode::Left
-                        if self.focused == FocusedArea::Content =>
-                    {
-                        self.content_tab = self.content_tab.previous();
+                    KeyCode::Char('l') | KeyCode::Right if self.focused == FocusedArea::Content => {
+                        self.content_tab = self.content_tab.next_for_mode(self.content_mode);
+                        self.ensure_active_discovery_loaded();
+                    }
+                    KeyCode::Char('h') | KeyCode::Left if self.focused == FocusedArea::Content => {
+                        self.content_tab = self.content_tab.previous_for_mode(self.content_mode);
+                        self.ensure_active_discovery_loaded();
                     }
                     KeyCode::Char('d')
                         if self.focused == FocusedArea::Instances
@@ -475,6 +513,125 @@ impl App {
         }
 
         Ok(())
+    }
+
+    pub(super) fn ensure_active_discovery_loaded(&mut self) {
+        if self.content_mode != widgets::content::ContentMode::Discover {
+            return;
+        }
+        let Some(instance) = self.instances_state.selected_instance().cloned() else {
+            return;
+        };
+        let needs_search = match self.content_tab {
+            widgets::content::ContentTab::Mods => self.mods_discovery_state.needs_search(&instance),
+            widgets::content::ContentTab::ResourcePacks => {
+                self.resource_packs_discovery_state.needs_search(&instance)
+            }
+            widgets::content::ContentTab::Shaders => {
+                self.shaders_discovery_state.needs_search(&instance)
+            }
+            _ => false,
+        };
+        if needs_search {
+            self.spawn_active_discovery_search();
+        } else {
+            self.spawn_active_discovery_page();
+        }
+    }
+
+    fn spawn_active_discovery_search(&mut self) {
+        let Some(instance) = self.instances_state.selected_instance().cloned() else {
+            return;
+        };
+        let state = match self.content_tab {
+            widgets::content::ContentTab::Mods => &mut self.mods_discovery_state,
+            widgets::content::ContentTab::ResourcePacks => &mut self.resource_packs_discovery_state,
+            widgets::content::ContentTab::Shaders => &mut self.shaders_discovery_state,
+            _ => return,
+        };
+        let kind = state.kind;
+        let query = state.search.query.clone();
+        let request = state.begin_search(&instance);
+        Self::spawn_discovery_request(instance, kind, query, request);
+    }
+
+    fn spawn_active_discovery_page(&mut self) {
+        let Some(instance) = self.instances_state.selected_instance().cloned() else {
+            return;
+        };
+        let state = match self.content_tab {
+            widgets::content::ContentTab::Mods => &mut self.mods_discovery_state,
+            widgets::content::ContentTab::ResourcePacks => &mut self.resource_packs_discovery_state,
+            widgets::content::ContentTab::Shaders => &mut self.shaders_discovery_state,
+            _ => return,
+        };
+        let kind = state.kind;
+        let query = state.search.query.clone();
+        let Some(request) = state.begin_next_page() else {
+            return;
+        };
+        Self::spawn_discovery_request(instance, kind, query, request);
+    }
+
+    fn spawn_discovery_request(
+        instance: crate::instance::InstanceConfig,
+        kind: crate::net::modrinth::DiscoveryKind,
+        query: String,
+        request: widgets::content::discovery::DiscoveryRequest,
+    ) {
+        let widgets::content::discovery::DiscoveryRequest {
+            generation,
+            offset,
+            pending,
+            stream,
+        } = request;
+
+        tokio::spawn(async move {
+            let client = crate::net::HttpClient::new();
+            let result = crate::net::modrinth::search_discovery(
+                &client,
+                kind,
+                &query,
+                &instance.game_version,
+                instance.loader,
+                offset,
+                widgets::content::discovery::PAGE_SIZE,
+            )
+            .await;
+            let result = match result {
+                Ok(results) => {
+                    let total_hits = results.total_hits;
+                    let received = results.projects.len();
+                    for mut project in results.projects {
+                        let icon = project.icon_url.take().map(|url| {
+                            (
+                                url,
+                                project.id.clone(),
+                                std::path::PathBuf::from(&project.id),
+                            )
+                        });
+                        if !stream.send(widgets::content::discovery::project_entry(project)) {
+                            break;
+                        }
+                        if let Some((url, file_stem, path)) = icon {
+                            let client = client.clone();
+                            let stream = stream.clone();
+                            tokio::spawn(async move {
+                                if let Ok(bytes) = client.get_bytes(&url).await {
+                                    stream.send_icon(file_stem, path, bytes);
+                                }
+                            });
+                        }
+                    }
+                    Ok(widgets::content::discovery::DiscoveryPageResult {
+                        received,
+                        total_hits,
+                    })
+                }
+                Err(error) => Err(error.to_string()),
+            };
+            widgets::content::DiscoveryState::push_result(&pending, generation, offset, result);
+        });
     }
 
     fn delete_config_profile(&mut self, profile: &str) -> color_eyre::Result<()> {

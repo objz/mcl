@@ -513,7 +513,7 @@ fn color_distance(left: [u8; 3], right: [u8; 3]) -> u32 {
 }
 
 // 6x3 fallback icon showing a "?" pattern for mods without icons.
-pub(super) fn fallback_icon() -> Vec<Vec<IconCell>> {
+pub(crate) fn fallback_icon() -> Vec<Vec<IconCell>> {
     let b = IconCell {
         symbol: '\u{2584}',
         bg_r: 50,

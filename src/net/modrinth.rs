@@ -53,6 +53,114 @@ pub struct MrpackFile {
 
 use crate::instance::models::ModLoader;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DiscoveryKind {
+    Mod,
+    ResourcePack,
+    Shader,
+}
+
+impl DiscoveryKind {
+    fn project_type(self) -> &'static str {
+        match self {
+            Self::Mod => "mod",
+            Self::ResourcePack => "resourcepack",
+            Self::Shader => "shader",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DiscoveryProject {
+    pub id: String,
+    pub slug: String,
+    pub title: String,
+    pub description: String,
+    pub downloads: u64,
+    pub icon_url: Option<String>,
+    pub icon_bytes: Option<Vec<u8>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DiscoveryResults {
+    pub projects: Vec<DiscoveryProject>,
+    pub total_hits: usize,
+}
+
+pub async fn search_discovery(
+    client: &crate::net::HttpClient,
+    kind: DiscoveryKind,
+    query: &str,
+    game_version: &str,
+    loader: ModLoader,
+    offset: usize,
+    limit: usize,
+) -> Result<DiscoveryResults, crate::net::NetError> {
+    let facets = discovery_facets(kind, game_version, loader);
+    let mut configuration = modrinth_api::apis::configuration::Configuration::new();
+    configuration.client = client.inner().clone();
+    configuration.user_agent = Some(format!(
+        "rmcl/{} (Minecraft Launcher)",
+        env!("CARGO_PKG_VERSION")
+    ));
+    let query = (!query.trim().is_empty()).then_some(query.trim());
+    let index = if query.is_some() {
+        "relevance"
+    } else {
+        "downloads"
+    };
+    let results = modrinth_api::apis::projects_api::search_projects(
+        &configuration,
+        query,
+        Some(&facets),
+        Some(index),
+        Some(offset.min(i32::MAX as usize) as i32),
+        Some(limit.min(i32::MAX as usize) as i32),
+    )
+    .await
+    .map_err(|e| crate::net::NetError::Parse(format!("Modrinth search failed: {e}")))?;
+
+    Ok(DiscoveryResults {
+        total_hits: results.total_hits.max(0) as usize,
+        projects: results
+            .hits
+            .into_iter()
+            .map(|project| DiscoveryProject {
+                id: project.project_id,
+                slug: project.slug,
+                title: project.title,
+                description: project.description,
+                downloads: project.downloads.max(0) as u64,
+                icon_url: project.icon_url.flatten(),
+                icon_bytes: None,
+            })
+            .collect(),
+    })
+}
+
+fn discovery_facets(kind: DiscoveryKind, game_version: &str, loader: ModLoader) -> String {
+    let mut facets = vec![vec![format!("project_type:{}", kind.project_type())]];
+    if !game_version.is_empty() {
+        facets.push(vec![format!("versions:{game_version}")]);
+    }
+    if kind == DiscoveryKind::Mod
+        && let Some(loader) = loader_facet(loader)
+    {
+        facets.push(vec![format!("categories:{loader}")]);
+    }
+    serde_json::to_string(&facets).unwrap_or_else(|_| "[]".to_string())
+}
+
+fn loader_facet(loader: ModLoader) -> Option<&'static str> {
+    match loader {
+        ModLoader::Vanilla => None,
+        ModLoader::Fabric => Some("fabric"),
+        ModLoader::Forge => Some("forge"),
+        ModLoader::NeoForge => Some("neoforge"),
+        ModLoader::Quilt => Some("quilt"),
+    }
+}
+
 // mrpack dependencies use keys like "fabric-loader", "forge", etc.
 // checks in priority order and returns the first match.
 pub fn loader_from_dependencies(
@@ -207,6 +315,77 @@ pub fn parse_mrpack(path: &std::path::Path) -> Result<MrpackIndex, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn discovery_mod_facets_include_instance_compatibility() {
+        let facets = discovery_facets(DiscoveryKind::Mod, "1.21.1", ModLoader::Fabric);
+        assert_eq!(
+            serde_json::from_str::<Vec<Vec<String>>>(&facets).unwrap(),
+            vec![
+                vec!["project_type:mod"],
+                vec!["versions:1.21.1"],
+                vec!["categories:fabric"],
+            ]
+        );
+    }
+
+    #[test]
+    fn discovery_resource_pack_facets_do_not_require_loader() {
+        let facets = discovery_facets(DiscoveryKind::ResourcePack, "1.20.1", ModLoader::Forge);
+        assert_eq!(
+            serde_json::from_str::<Vec<Vec<String>>>(&facets).unwrap(),
+            vec![vec!["project_type:resourcepack"], vec!["versions:1.20.1"]]
+        );
+    }
+
+    #[tokio::test]
+    #[ignore = "hits live Modrinth API"]
+    async fn search_discovery_returns_compatible_mods() {
+        let client = crate::net::HttpClient::new();
+        let result = search_discovery(
+            &client,
+            DiscoveryKind::Mod,
+            "sodium",
+            "1.21.1",
+            ModLoader::Fabric,
+            0,
+            20,
+        )
+        .await
+        .unwrap();
+
+        assert!(!result.projects.is_empty());
+        assert!(result.total_hits >= result.projects.len());
+        let icon_url = result
+            .projects
+            .iter()
+            .find_map(|project| project.icon_url.as_deref())
+            .expect("expected at least one project icon");
+        let icon = client.get_bytes(icon_url).await.unwrap();
+        assert!(
+            image::load_from_memory(&icon).is_ok(),
+            "failed to decode {icon_url}; first bytes: {:?}",
+            icon.get(..icon.len().min(16))
+        );
+
+        let next = search_discovery(
+            &client,
+            DiscoveryKind::Mod,
+            "sodium",
+            "1.21.1",
+            ModLoader::Fabric,
+            20,
+            20,
+        )
+        .await
+        .unwrap();
+        assert!(!next.projects.is_empty());
+        assert!(
+            next.projects
+                .iter()
+                .all(|project| !result.projects.iter().any(|first| first.id == project.id))
+        );
+    }
 
     // covers each branch of url_encode: unreserved bytes pass through; the
     // reserved set + spaces + non-ascii bytes get percent-encoded. emoji

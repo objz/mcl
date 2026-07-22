@@ -38,14 +38,38 @@ impl App {
             self.mods_state.drain_watcher();
             self.mods_state.request_image_loads(&self.picker);
             self.mods_state.drain_image_loads(&self.picker);
+            self.mods_discovery_state.drain_pending();
+            self.mods_discovery_state.list.drain_pending();
+            self.mods_discovery_state
+                .list
+                .request_image_loads(&self.picker);
+            self.mods_discovery_state
+                .list
+                .drain_image_loads(&self.picker);
             self.resource_packs_state.drain_pending();
             self.resource_packs_state.drain_watcher();
             self.resource_packs_state.request_image_loads(&self.picker);
             self.resource_packs_state.drain_image_loads(&self.picker);
+            self.resource_packs_discovery_state.drain_pending();
+            self.resource_packs_discovery_state.list.drain_pending();
+            self.resource_packs_discovery_state
+                .list
+                .request_image_loads(&self.picker);
+            self.resource_packs_discovery_state
+                .list
+                .drain_image_loads(&self.picker);
             self.shaders_state.drain_pending();
             self.shaders_state.drain_watcher();
             self.shaders_state.request_image_loads(&self.picker);
             self.shaders_state.drain_image_loads(&self.picker);
+            self.shaders_discovery_state.drain_pending();
+            self.shaders_discovery_state.list.drain_pending();
+            self.shaders_discovery_state
+                .list
+                .request_image_loads(&self.picker);
+            self.shaders_discovery_state
+                .list
+                .drain_image_loads(&self.picker);
             self.worlds_state.drain_pending();
             self.worlds_state.drain_watcher();
             self.worlds_state.request_image_loads(&self.picker);
@@ -57,6 +81,7 @@ impl App {
             self.screenshots_state.drain_pending_entries();
             self.screenshots_state.request_visible_loads();
             self.create_screenshot_protocols();
+            self.ensure_active_discovery_loaded();
             let progress_active = progress::is_active();
             let spinner_active = progress_active || crate::running::has_active();
             if spinner_active {
