@@ -88,6 +88,10 @@ fn visible_tabs(mode: ContentMode) -> &'static [ContentTab] {
     }
 }
 
+fn mode_label(mode: ContentMode) -> String {
+    format!(" {} ", mode.label())
+}
+
 fn cycle_tab(current: ContentTab, tabs: &[ContentTab], forward: bool) -> ContentTab {
     let index = tabs.iter().position(|tab| *tab == current).unwrap_or(0);
     if forward {
@@ -181,16 +185,16 @@ pub fn render(
         }
     };
 
-    let mode_color = match mode {
+    let mode_background = match mode {
         ContentMode::Installed => theme.success(),
-        ContentMode::Discover => theme.accent(),
+        ContentMode::Discover => theme.info(),
     };
     let mut content_titles = vec![
         Span::styled(
-            format!(" {} ", mode.label()),
+            mode_label(mode),
             Style::default()
                 .fg(theme.background())
-                .bg(mode_color)
+                .bg(mode_background)
                 .add_modifier(Modifier::BOLD),
         ),
         Span::raw(" "),
@@ -627,6 +631,14 @@ pub fn title(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn mode_labels_have_the_same_rendered_width() {
+        assert_eq!(
+            mode_label(ContentMode::Installed).chars().count(),
+            mode_label(ContentMode::Discover).chars().count()
+        );
+    }
 
     #[test]
     fn discovery_navigation_only_cycles_downloadable_tabs() {

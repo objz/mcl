@@ -1043,6 +1043,8 @@ pub fn render(
         let metadata = display_metadata.get(&entry.file_stem);
         let enabled = entry.enabled;
         let icon_pixels = &entry.icon_lines;
+        let title_suffix = entry.title_suffix.as_deref();
+        let footer_label = entry.footer_label.as_deref();
         // Keep rendering the terminal fallback until the asynchronous image
         // decoder has produced a protocol. Invalid and unsupported images
         // therefore remain visible as a question mark instead of blank space.
@@ -1087,11 +1089,33 @@ pub fn render(
                 stripe_bg,
             ),
         };
+        let title_suffix_style = Style::default()
+            .fg(theme.background())
+            .bg(theme.success())
+            .add_modifier(Modifier::BOLD);
+        let footer_label_style = Style::default().fg(theme.text());
 
         let has_icon = icon_pixels.is_some();
         let stripped_desc = metadata.map_or("", |metadata| metadata.description.as_str());
         let has_description = metadata.is_some_and(|metadata| metadata.has_description);
-        let compact = !has_icon && !has_description;
+        let rendered_icon_columns = if use_image_protocol && has_image {
+            protocol_columns
+        } else {
+            icon_pixels
+                .as_ref()
+                .and_then(|rows| rows.first())
+                .map_or(0, Vec::len)
+        };
+        let description_width = available_description_width(
+            usize::from(context.cross_axis_size),
+            rendered_icon_columns,
+            has_icon,
+        );
+        let visible_description = ellipsize(
+            stripped_desc,
+            description_text_width(description_width, footer_label, has_description),
+        );
+        let compact = !has_icon && !has_description && footer_label.is_none();
 
         let selector = if show_selected {
             Span::styled("\u{258c}", Style::default().fg(theme.accent()))
@@ -1103,12 +1127,21 @@ pub fn render(
             let mut line = Vec::new();
             line.push(selector.clone());
             line.extend(searchable_spans(search, name, name_style, use_mc_colors));
+            line.extend(title_suffix_spans(
+                title_suffix,
+                description_style,
+                title_suffix_style,
+            ));
 
             let item = Text::from(vec![Line::from(line)]).style(Style::default().bg(background));
             (item, 1)
         } else if has_icon {
             let icon_row_count = icon_pixels.as_ref().map(|r| r.len()).unwrap_or(0);
-            let text_rows = if has_description { 2 } else { 1 }; // name + optional description
+            let text_rows = if has_description || footer_label.is_some() {
+                2
+            } else {
+                1
+            };
             let height = icon_row_count.max(text_rows) as u16;
 
             let pad = if show_selected {
@@ -1126,10 +1159,15 @@ pub fn render(
             ));
             line_0.push(Span::raw(" "));
             line_0.extend(searchable_spans(search, name, name_style, use_mc_colors));
+            line_0.extend(title_suffix_spans(
+                title_suffix,
+                description_style,
+                title_suffix_style,
+            ));
 
             let mut lines = vec![Line::from(line_0)];
 
-            if has_description {
+            if has_description || footer_label.is_some() {
                 let mut row = vec![pad.clone()];
                 row.extend(icon_spans(
                     icon_pixels.as_ref(),
@@ -1138,12 +1176,19 @@ pub fn render(
                     protocol_columns,
                 ));
                 row.push(Span::raw(" "));
-                row.extend(search.highlight_spans(stripped_desc, description_style));
+                if has_description {
+                    row.extend(search.highlight_spans(&visible_description, description_style));
+                }
+                if let Some(footer_label) = footer_label {
+                    if has_description {
+                        row.push(Span::styled(" • ", description_style));
+                    }
+                    row.push(Span::styled(footer_label.to_owned(), footer_label_style));
+                }
                 lines.push(Line::from(row));
             }
 
-            let desc_rows = if has_description { 1 } else { 0 };
-            for r in (1 + desc_rows)..icon_row_count {
+            for r in text_rows..icon_row_count {
                 let mut row = vec![pad.clone()];
                 row.extend(icon_spans(
                     icon_pixels.as_ref(),
@@ -1160,17 +1205,31 @@ pub fn render(
             let mut line_0 = Vec::new();
             line_0.push(selector.clone());
             line_0.extend(searchable_spans(search, name, name_style, use_mc_colors));
+            line_0.extend(title_suffix_spans(
+                title_suffix,
+                description_style,
+                title_suffix_style,
+            ));
 
             let mut lines = vec![Line::from(line_0)];
 
-            if has_description {
+            if has_description || footer_label.is_some() {
                 let pad = if show_selected {
                     Span::styled("\u{258c}", Style::default().fg(theme.accent()))
                 } else {
                     Span::raw(" ")
                 };
                 let mut description = vec![pad];
-                description.extend(search.highlight_spans(stripped_desc, description_style));
+                if has_description {
+                    description
+                        .extend(search.highlight_spans(&visible_description, description_style));
+                }
+                if let Some(footer_label) = footer_label {
+                    if has_description {
+                        description.push(Span::styled(" • ", description_style));
+                    }
+                    description.push(Span::styled(footer_label.to_owned(), footer_label_style));
+                }
                 lines.push(Line::from(description));
             }
 
@@ -1427,6 +1486,62 @@ fn icon_spans(
     }
 }
 
+fn title_suffix_spans(
+    suffix: Option<&str>,
+    spacing_style: Style,
+    label_style: Style,
+) -> Vec<Span<'static>> {
+    suffix.map_or_else(Vec::new, |suffix| {
+        vec![
+            Span::styled("  ", spacing_style),
+            Span::styled(format!(" {suffix} "), label_style),
+        ]
+    })
+}
+
+fn available_description_width(
+    row_width: usize,
+    rendered_icon_columns: usize,
+    has_icon: bool,
+) -> usize {
+    let selector_and_scrollbar = 2;
+    let icon_and_gap = has_icon.then_some(rendered_icon_columns + 1).unwrap_or(0);
+    row_width.saturating_sub(selector_and_scrollbar + icon_and_gap)
+}
+
+fn description_text_width(
+    available_width: usize,
+    footer_label: Option<&str>,
+    has_description: bool,
+) -> usize {
+    let footer_width = footer_label.map_or(0, |footer_label| {
+        Span::raw(footer_label).width() + if has_description { 3 } else { 0 }
+    });
+    available_width.saturating_sub(footer_width)
+}
+
+fn ellipsize(text: &str, max_width: usize) -> String {
+    if Span::raw(text).width() <= max_width {
+        return text.to_owned();
+    }
+    if max_width <= 3 {
+        return ".".repeat(max_width);
+    }
+
+    let content_width = max_width - 3;
+    let mut visible = String::new();
+    for character in text.chars() {
+        visible.push(character);
+        if Span::raw(visible.as_str()).width() > content_width {
+            visible.pop();
+            break;
+        }
+    }
+    visible = visible.trim_end().to_owned();
+    visible.push_str("...");
+    visible
+}
+
 fn protocol_icon_columns(
     entry: &crate::instance::content::mods::ContentEntry,
     picker: &ratatui_image::picker::Picker,
@@ -1484,13 +1599,25 @@ mod tests {
     use std::{collections::HashSet, path::PathBuf};
 
     use crate::instance::content::mods::ContentEntry;
+    use ratatui::{
+        buffer::Buffer,
+        layout::Rect,
+        style::{Color, Modifier, Style},
+        text::{Line, Text},
+        widgets::Widget,
+    };
 
-    use super::{ContentListState, square_icon_columns};
+    use super::{
+        ContentListState, available_description_width, description_text_width, ellipsize,
+        square_icon_columns, title_suffix_spans,
+    };
 
     fn entry(name: &str) -> ContentEntry {
         ContentEntry {
             file_stem: name.to_lowercase(),
             name: name.to_owned(),
+            title_suffix: None,
+            footer_label: None,
             description: String::new(),
             enabled: true,
             icon_bytes: None,
@@ -1509,6 +1636,70 @@ mod tests {
     #[test]
     fn square_columns_handle_missing_cell_size() {
         assert_eq!(square_icon_columns(3, (0, 0)), 3);
+    }
+
+    #[test]
+    fn title_badge_is_rendered_after_a_small_gap() {
+        let label_style = Style::default()
+            .fg(Color::Black)
+            .bg(Color::Cyan)
+            .add_modifier(Modifier::BOLD);
+        let spans = title_suffix_spans(Some("Installed"), Style::default(), label_style);
+        let text = spans
+            .iter()
+            .map(|span| span.content.as_ref())
+            .collect::<Vec<_>>()
+            .concat();
+
+        assert_eq!(text, "   Installed ");
+        assert_eq!(spans[1].style, label_style);
+        assert!(title_suffix_spans(None, Style::default(), label_style).is_empty());
+    }
+
+    #[test]
+    fn title_suffix_keeps_label_style_after_the_row_background_is_applied() {
+        let label_style = Style::default()
+            .fg(Color::Black)
+            .bg(Color::Cyan)
+            .add_modifier(Modifier::BOLD);
+        let text = Text::from(Line::from(title_suffix_spans(
+            Some("downloads"),
+            Style::default(),
+            label_style,
+        )))
+        .style(Style::default().bg(Color::Black));
+        let area = Rect::new(0, 0, 20, 1);
+        let mut buffer = Buffer::empty(area);
+
+        text.render(area, &mut buffer);
+
+        let label_cell = buffer.cell((5, 0)).unwrap();
+        assert_eq!(label_cell.fg, Color::Black);
+        assert_eq!(label_cell.bg, Color::Cyan);
+        assert!(label_cell.modifier.contains(Modifier::BOLD));
+    }
+
+    #[test]
+    fn descriptions_are_ellipsized_to_the_available_cell_width() {
+        assert_eq!(ellipsize("short", 5), "short");
+        assert_eq!(ellipsize("a longer description", 10), "a longe...");
+        assert_eq!(ellipsize("narrow", 3), "...");
+        assert_eq!(ellipsize("narrow", 2), "..");
+        assert_eq!(ellipsize("界界界", 5), "界...");
+    }
+
+    #[test]
+    fn description_width_reserves_the_row_chrome() {
+        assert_eq!(available_description_width(100, 6, true), 91);
+        assert_eq!(available_description_width(100, 0, false), 98);
+        assert_eq!(available_description_width(4, 6, true), 0);
+    }
+
+    #[test]
+    fn description_width_reserves_the_download_metadata() {
+        assert_eq!(description_text_width(40, Some("1.2K downloads"), true), 23);
+        assert_eq!(description_text_width(10, Some("1.2K downloads"), true), 0);
+        assert_eq!(description_text_width(40, None, true), 40);
     }
 
     #[test]

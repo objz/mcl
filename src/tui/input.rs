@@ -551,6 +551,14 @@ impl App {
         let Some(instance) = self.instances_state.selected_instance().cloned() else {
             return;
         };
+        let installed_entries = match self.content_tab {
+            widgets::content::ContentTab::Mods => self.mods_state.entries.clone(),
+            widgets::content::ContentTab::ResourcePacks => {
+                self.resource_packs_state.entries.clone()
+            }
+            widgets::content::ContentTab::Shaders => self.shaders_state.entries.clone(),
+            _ => return,
+        };
         let state = match self.content_tab {
             widgets::content::ContentTab::Mods => &mut self.mods_discovery_state,
             widgets::content::ContentTab::ResourcePacks => &mut self.resource_packs_discovery_state,
@@ -560,12 +568,20 @@ impl App {
         let kind = state.kind;
         let query = state.search.query.clone();
         let request = state.begin_search(&instance);
-        Self::spawn_discovery_request(instance, kind, query, request);
+        Self::spawn_discovery_request(instance, kind, query, installed_entries, request);
     }
 
     fn spawn_active_discovery_page(&mut self) {
         let Some(instance) = self.instances_state.selected_instance().cloned() else {
             return;
+        };
+        let installed_entries = match self.content_tab {
+            widgets::content::ContentTab::Mods => self.mods_state.entries.clone(),
+            widgets::content::ContentTab::ResourcePacks => {
+                self.resource_packs_state.entries.clone()
+            }
+            widgets::content::ContentTab::Shaders => self.shaders_state.entries.clone(),
+            _ => return,
         };
         let state = match self.content_tab {
             widgets::content::ContentTab::Mods => &mut self.mods_discovery_state,
@@ -578,13 +594,14 @@ impl App {
         let Some(request) = state.begin_next_page() else {
             return;
         };
-        Self::spawn_discovery_request(instance, kind, query, request);
+        Self::spawn_discovery_request(instance, kind, query, installed_entries, request);
     }
 
     fn spawn_discovery_request(
         instance: crate::instance::InstanceConfig,
         kind: crate::net::modrinth::DiscoveryKind,
         query: String,
+        installed_entries: Vec<crate::instance::ContentEntry>,
         request: widgets::content::discovery::DiscoveryRequest,
     ) {
         let widgets::content::discovery::DiscoveryRequest {
@@ -616,6 +633,10 @@ impl App {
                     let icon_slots = std::sync::Arc::new(tokio::sync::Semaphore::new(8));
                     for mut project in results.projects {
                         returned_stems.insert(project.id.clone());
+                        let installed = widgets::content::discovery::project_is_installed(
+                            &project,
+                            &installed_entries,
+                        );
                         let icon = (!loaded_icon_stems.contains(&project.id))
                             .then(|| project.icon_url.take())
                             .flatten()
@@ -626,7 +647,9 @@ impl App {
                                     std::path::PathBuf::from(&project.id),
                                 )
                             });
-                        if !stream.upsert(widgets::content::discovery::project_entry(project)) {
+                        if !stream.upsert(widgets::content::discovery::project_entry(
+                            project, installed,
+                        )) {
                             break;
                         }
                         if let Some((url, file_stem, path)) = icon {

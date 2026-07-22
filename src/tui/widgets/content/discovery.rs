@@ -34,7 +34,7 @@ impl ContentMode {
     pub fn label(self) -> &'static str {
         match self {
             Self::Installed => "Installed",
-            Self::Discover => "Discover",
+            Self::Discover => "Discovery",
         }
     }
 }
@@ -328,21 +328,51 @@ fn loader_slug(loader: ModLoader) -> Option<&'static str> {
     }
 }
 
-pub(crate) fn project_entry(project: DiscoveryProject) -> ContentEntry {
-    let description = format!(
-        "{}  •  {} downloads",
-        project.description,
-        format_downloads(project.downloads)
-    );
+pub(crate) fn project_entry(project: DiscoveryProject, installed: bool) -> ContentEntry {
     ContentEntry {
         file_stem: project.id.clone(),
         name: project.title,
-        description,
+        title_suffix: installed.then(|| "Installed".to_owned()),
+        footer_label: Some(format!("{} downloads", format_downloads(project.downloads))),
+        description: project.description,
         enabled: true,
         icon_bytes: project.icon_bytes,
         path: PathBuf::from(project.id),
         icon_lines: Some(crate::instance::content::mods::fallback_icon()),
     }
+}
+
+pub(crate) fn project_is_installed(
+    project: &DiscoveryProject,
+    installed_entries: &[ContentEntry],
+) -> bool {
+    installed_entries.iter().any(|entry| {
+        identity_matches(&entry.name, &project.title)
+            || identity_matches(&entry.name, &project.slug)
+            || filename_matches_project(&entry.file_stem, &project.slug)
+            || filename_matches_project(&entry.file_stem, &project.title)
+    })
+}
+
+fn identity_matches(left: &str, right: &str) -> bool {
+    let normalize = |value: &str| {
+        value
+            .chars()
+            .filter(|character| character.is_alphanumeric())
+            .flat_map(char::to_lowercase)
+            .collect::<String>()
+    };
+    let right = normalize(right);
+    !right.is_empty() && normalize(left) == right
+}
+
+fn filename_matches_project(file_stem: &str, project_name: &str) -> bool {
+    let file_stem = file_stem.to_lowercase();
+    let project_name = project_name.to_lowercase().replace(' ', "-");
+    file_stem == project_name
+        || file_stem
+            .strip_prefix(&project_name)
+            .is_some_and(|suffix| suffix.starts_with(['-', '_', '.']))
 }
 
 fn format_downloads(downloads: u64) -> String {
@@ -383,6 +413,53 @@ mod tests {
     }
 
     #[test]
+    fn project_metadata_is_split_between_title_and_footer_badges() {
+        let entry = project_entry(
+            DiscoveryProject {
+                id: "example".to_owned(),
+                slug: "example".to_owned(),
+                title: "Example".to_owned(),
+                description: "Project description".to_owned(),
+                downloads: 1_234,
+                icon_url: None,
+                icon_bytes: None,
+            },
+            true,
+        );
+
+        assert_eq!(entry.title_suffix.as_deref(), Some("Installed"));
+        assert_eq!(entry.footer_label.as_deref(), Some("1.2K downloads"));
+        assert_eq!(entry.description, "Project description");
+    }
+
+    #[test]
+    fn installed_projects_match_metadata_names_and_versioned_filenames() {
+        let project = DiscoveryProject {
+            id: "P7dR8mSH".to_owned(),
+            slug: "fabric-api".to_owned(),
+            title: "Fabric API".to_owned(),
+            description: String::new(),
+            downloads: 0,
+            icon_url: None,
+            icon_bytes: None,
+        };
+        let mut local = project_entry(project.clone(), false);
+        local.name = "Fabric API".to_owned();
+        local.file_stem = "unrelated-file".to_owned();
+        assert!(project_is_installed(&project, &[local]));
+
+        let mut local = project_entry(project.clone(), false);
+        local.name = "Unknown".to_owned();
+        local.file_stem = "fabric-api-0.116.0+1.21.1".to_owned();
+        assert!(project_is_installed(&project, &[local]));
+
+        let mut local = project_entry(project.clone(), false);
+        local.name = "Fabric Language Kotlin".to_owned();
+        local.file_stem = "fabric-language-kotlin".to_owned();
+        assert!(!project_is_installed(&project, &[local]));
+    }
+
+    #[test]
     fn changing_instance_invalidates_results() {
         let mut state = DiscoveryState::new(DiscoveryKind::Mod);
         let first = instance("one", "1.21.1");
@@ -391,6 +468,20 @@ mod tests {
 
         assert!(!state.needs_search(&first));
         assert!(state.needs_search(&second));
+    }
+
+    #[test]
+    fn changing_instance_compatibility_invalidates_results() {
+        let mut state = DiscoveryState::new(DiscoveryKind::Mod);
+        let original = instance("one", "1.21.1");
+        let mut other_version = original.clone();
+        other_version.game_version = "1.20.1".to_owned();
+        let mut other_loader = original.clone();
+        other_loader.loader = ModLoader::NeoForge;
+        let _request = state.begin_search(&original);
+
+        assert!(state.needs_search(&other_version));
+        assert!(state.needs_search(&other_loader));
     }
 
     #[test]
@@ -422,15 +513,18 @@ mod tests {
         let instance = instance("one", "1.21.1");
         let first = state.begin_search(&instance);
         for index in 0..PAGE_SIZE {
-            assert!(first.stream.send(project_entry(DiscoveryProject {
-                id: index.to_string(),
-                slug: index.to_string(),
-                title: index.to_string(),
-                description: String::new(),
-                downloads: 0,
-                icon_url: None,
-                icon_bytes: None,
-            })));
+            assert!(first.stream.send(project_entry(
+                DiscoveryProject {
+                    id: index.to_string(),
+                    slug: index.to_string(),
+                    title: index.to_string(),
+                    description: String::new(),
+                    downloads: 0,
+                    icon_url: None,
+                    icon_bytes: None,
+                },
+                false
+            )));
         }
         state.list.drain_pending();
         DiscoveryState::push_result(
@@ -456,15 +550,18 @@ mod tests {
         state.set_viewport_rows(90);
         let first = state.begin_search(&instance("one", "1.21.1"));
         for index in 0..PAGE_SIZE {
-            assert!(first.stream.send(project_entry(DiscoveryProject {
-                id: index.to_string(),
-                slug: index.to_string(),
-                title: index.to_string(),
-                description: String::new(),
-                downloads: 0,
-                icon_url: None,
-                icon_bytes: None,
-            })));
+            assert!(first.stream.send(project_entry(
+                DiscoveryProject {
+                    id: index.to_string(),
+                    slug: index.to_string(),
+                    title: index.to_string(),
+                    description: String::new(),
+                    downloads: 0,
+                    icon_url: None,
+                    icon_bytes: None,
+                },
+                false
+            )));
         }
         state.list.drain_pending();
         DiscoveryState::push_result(
@@ -486,15 +583,18 @@ mod tests {
         let mut state = DiscoveryState::new(DiscoveryKind::Mod);
         let request = state.begin_search(&instance("one", "1.21.1"));
         for title in ["Sodium", "Lithium"] {
-            assert!(request.stream.send(project_entry(DiscoveryProject {
-                id: title.to_lowercase(),
-                slug: title.to_lowercase(),
-                title: title.to_owned(),
-                description: String::new(),
-                downloads: 0,
-                icon_url: None,
-                icon_bytes: None,
-            })));
+            assert!(request.stream.send(project_entry(
+                DiscoveryProject {
+                    id: title.to_lowercase(),
+                    slug: title.to_lowercase(),
+                    title: title.to_owned(),
+                    description: String::new(),
+                    downloads: 0,
+                    icon_url: None,
+                    icon_bytes: None,
+                },
+                false
+            )));
         }
         state.list.drain_pending();
 
@@ -522,15 +622,18 @@ mod tests {
         let instance = instance("one", "1.21.1");
         let initial = state.begin_search(&instance);
         for title in ["Sodium", "Lithium"] {
-            assert!(initial.stream.upsert(project_entry(DiscoveryProject {
-                id: title.to_lowercase(),
-                slug: title.to_lowercase(),
-                title: title.to_owned(),
-                description: String::new(),
-                downloads: 0,
-                icon_url: None,
-                icon_bytes: (title == "Sodium").then(|| vec![1, 2, 3]),
-            })));
+            assert!(initial.stream.upsert(project_entry(
+                DiscoveryProject {
+                    id: title.to_lowercase(),
+                    slug: title.to_lowercase(),
+                    title: title.to_owned(),
+                    description: String::new(),
+                    downloads: 0,
+                    icon_url: None,
+                    icon_bytes: (title == "Sodium").then(|| vec![1, 2, 3]),
+                },
+                false
+            )));
         }
         state.list.drain_pending();
         state.search.query = "sodium".to_owned();
@@ -551,15 +654,18 @@ mod tests {
         let instance = instance("one", "1.21.1");
         let first = state.begin_search(&instance);
         for index in 0..PAGE_SIZE {
-            assert!(first.stream.upsert(project_entry(DiscoveryProject {
-                id: index.to_string(),
-                slug: index.to_string(),
-                title: index.to_string(),
-                description: String::new(),
-                downloads: 0,
-                icon_url: None,
-                icon_bytes: None,
-            })));
+            assert!(first.stream.upsert(project_entry(
+                DiscoveryProject {
+                    id: index.to_string(),
+                    slug: index.to_string(),
+                    title: index.to_string(),
+                    description: String::new(),
+                    downloads: 0,
+                    icon_url: None,
+                    icon_bytes: None,
+                },
+                false
+            )));
         }
         state.list.drain_pending();
         DiscoveryState::push_result(
@@ -576,15 +682,18 @@ mod tests {
 
         let second = state.begin_next_page().unwrap();
         for index in PAGE_SIZE..PAGE_SIZE * 2 {
-            assert!(second.stream.upsert(project_entry(DiscoveryProject {
-                id: index.to_string(),
-                slug: index.to_string(),
-                title: index.to_string(),
-                description: String::new(),
-                downloads: 0,
-                icon_url: None,
-                icon_bytes: None,
-            })));
+            assert!(second.stream.upsert(project_entry(
+                DiscoveryProject {
+                    id: index.to_string(),
+                    slug: index.to_string(),
+                    title: index.to_string(),
+                    description: String::new(),
+                    downloads: 0,
+                    icon_url: None,
+                    icon_bytes: None,
+                },
+                false
+            )));
         }
         state.list.drain_pending();
         DiscoveryState::push_result(
@@ -608,15 +717,18 @@ mod tests {
         let mut state = DiscoveryState::new(DiscoveryKind::Mod);
         let first = state.begin_search(&instance("one", "1.21.1"));
         for index in 0..PAGE_SIZE {
-            assert!(first.stream.upsert(project_entry(DiscoveryProject {
-                id: index.to_string(),
-                slug: index.to_string(),
-                title: index.to_string(),
-                description: String::new(),
-                downloads: 0,
-                icon_url: None,
-                icon_bytes: None,
-            })));
+            assert!(first.stream.upsert(project_entry(
+                DiscoveryProject {
+                    id: index.to_string(),
+                    slug: index.to_string(),
+                    title: index.to_string(),
+                    description: String::new(),
+                    downloads: 0,
+                    icon_url: None,
+                    icon_bytes: None,
+                },
+                false
+            )));
         }
         state.list.drain_pending();
         DiscoveryState::push_result(
