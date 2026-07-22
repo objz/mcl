@@ -11,7 +11,6 @@ use ratatui::{
     Frame,
     layout::{Constraint, Layout, Rect},
     style::{Modifier, Style},
-    text::Span,
     widgets::{Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState},
 };
 use ratatui_image::{Resize, StatefulImage, protocol::StatefulProtocol};
@@ -127,14 +126,15 @@ impl ScreenshotsState {
     // only load images that are currently visible (or about to be).
     // no point decoding a 4K screenshot the user can't even see yet
     pub fn request_visible_loads(&mut self) {
-        if self.entries.is_empty() {
+        let filtered = self.filtered_indices();
+        if filtered.is_empty() {
             return;
         }
 
         let first = self.scroll_row * self.cols;
-        let last = ((self.scroll_row + self.visible_rows + 1) * self.cols).min(self.entries.len());
+        let last = ((self.scroll_row + self.visible_rows + 1) * self.cols).min(filtered.len());
 
-        for idx in first..last {
+        for &idx in filtered.iter().take(last).skip(first) {
             if !self.protocols.contains_key(&idx) && self.requested.insert(idx) {
                 let path = self.entries[idx].path.clone();
                 let pending = self.pending_images.clone();
@@ -173,13 +173,25 @@ impl ScreenshotsState {
         if self.cols == 0 {
             return 0;
         }
-        self.entries.len().div_ceil(self.cols)
+        self.filtered_indices().len().div_ceil(self.cols)
+    }
+
+    fn filtered_indices(&self) -> Vec<usize> {
+        self.entries
+            .iter()
+            .enumerate()
+            .filter(|(_, entry)| self.search.matches(&entry.name))
+            .map(|(index, _)| index)
+            .collect()
     }
 
     pub fn pending_delete(
         &self,
     ) -> Option<crate::tui::widgets::content::list::PendingContentDelete> {
-        let entry = self.entries.get(self.selected)?;
+        let entry = self
+            .filtered_indices()
+            .get(self.selected)
+            .and_then(|index| self.entries.get(*index))?;
         Some(crate::tui::widgets::content::list::PendingContentDelete {
             name: entry.name.clone(),
             path: entry.path.clone(),
@@ -191,11 +203,12 @@ impl ScreenshotsState {
         self.protocols.clear();
         self.requested.clear();
 
-        if self.entries.is_empty() {
+        let visible_count = self.filtered_indices().len();
+        if visible_count == 0 {
             self.selected = 0;
             self.scroll_row = 0;
         } else {
-            self.selected = self.selected.min(self.entries.len().saturating_sub(1));
+            self.selected = self.selected.min(visible_count.saturating_sub(1));
             self.ensure_visible();
         }
     }
@@ -207,18 +220,22 @@ pub fn handle_key(key_event: &KeyEvent, state: &mut ScreenshotsState) -> bool {
             KeyCode::Enter => {
                 state.search.confirm();
                 state.selected = 0;
+                state.scroll_row = 0;
             }
             KeyCode::Esc => {
                 state.search.deactivate();
                 state.selected = 0;
+                state.scroll_row = 0;
             }
             KeyCode::Backspace => {
                 state.search.pop();
                 state.selected = 0;
+                state.scroll_row = 0;
             }
             KeyCode::Char(c) => {
                 state.search.push(c);
                 state.selected = 0;
+                state.scroll_row = 0;
             }
             _ => {}
         }
@@ -249,7 +266,9 @@ pub fn handle_key(key_event: &KeyEvent, state: &mut ScreenshotsState) -> bool {
             true
         }
         KeyCode::Enter if key_event.modifiers.contains(KeyModifiers::SHIFT) => {
-            if let Some(entry) = state.entries.get(state.selected)
+            if let Some(entry) = filtered
+                .get(state.selected)
+                .and_then(|index| state.entries.get(*index))
                 && let Some(dir) = entry.path.parent()
                 && let Err(e) = open::that_detached(dir)
             {
@@ -258,7 +277,9 @@ pub fn handle_key(key_event: &KeyEvent, state: &mut ScreenshotsState) -> bool {
             true
         }
         KeyCode::Enter => {
-            if let Some(entry) = state.entries.get(state.selected)
+            if let Some(entry) = filtered
+                .get(state.selected)
+                .and_then(|index| state.entries.get(*index))
                 && let Err(e) = open::that_detached(&entry.path)
             {
                 tracing::error!("Failed to open file: {}", e);
@@ -314,6 +335,15 @@ pub fn render(frame: &mut Frame, area: Rect, state: &mut ScreenshotsState, is_fo
         return;
     }
 
+    let filtered = state.filtered_indices();
+    if filtered.is_empty() {
+        frame.render_widget(
+            Paragraph::new("No matching screenshots.").style(Style::default().fg(theme.text_dim())),
+            area,
+        );
+        return;
+    }
+
     let min_cols = (area.width / MAX_CELL_WIDTH).max(1) as usize;
     let max_cols = (area.width / MIN_CELL_WIDTH).max(1) as usize;
     let target_cols = (area.width / TARGET_CELL_WIDTH).max(1) as usize;
@@ -342,10 +372,11 @@ pub fn render(frame: &mut Frame, area: Rect, state: &mut ScreenshotsState, is_fo
 
     for vr in 0..visible_rows {
         for vc in 0..cols {
-            let idx = (state.scroll_row + vr) * cols + vc;
-            if idx >= state.entries.len() {
+            let display_index = (state.scroll_row + vr) * cols + vc;
+            if display_index >= filtered.len() {
                 break;
             }
+            let idx = filtered[display_index];
 
             let raw_x = area.x + vc as u16 * cell_width;
             let raw_y = area.y + vr as u16 * cell_height;
@@ -363,7 +394,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &mut ScreenshotsState, is_fo
                 continue;
             }
 
-            let is_selected = is_focused && idx == state.selected;
+            let is_selected = is_focused && display_index == state.selected;
 
             let [img_area, name_area] =
                 Layout::vertical([Constraint::Min(0), Constraint::Length(NAME_ROW_HEIGHT)])
@@ -390,7 +421,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &mut ScreenshotsState, is_fo
                 name
             };
             frame.render_widget(
-                Paragraph::new(Span::styled(truncated, name_style)),
+                Paragraph::new(state.search.highlight_line(truncated, name_style)),
                 name_area,
             );
         }

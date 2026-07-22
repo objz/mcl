@@ -150,10 +150,10 @@ fn render_version_step(state: &ImportWizardState, area: Rect, buf: &mut ratatui:
                 .map(|version| {
                     let game_ver = version.game_versions.first().cloned().unwrap_or_default();
                     let loader = version.loaders.first().cloned().unwrap_or_default();
-                    ListItem::new(Line::from(Span::styled(
-                        format!("{}  {}  {}", version.version_number, game_ver, loader),
+                    ListItem::new(state.version_search.highlight_line(
+                        &format!("{}  {}  {}", version.version_number, game_ver, loader),
                         Style::default().fg(theme.text()),
-                    )))
+                    ))
                 })
                 .collect();
 

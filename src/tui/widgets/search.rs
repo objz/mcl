@@ -49,11 +49,11 @@ impl SearchState {
         text.to_lowercase().contains(&self.query.to_lowercase())
     }
 
-    // splits a line into spans, bolding+underlining the parts that match
-    // the query so they pop out visually
-    pub fn highlight_line<'a>(&self, text: &'a str, base_style: Style) -> Line<'a> {
+    // splits text into spans, bolding+underlining the parts that match
+    // the query so every searchable widget can use the same styling
+    pub fn highlight_spans(&self, text: &str, base_style: Style) -> Vec<Span<'static>> {
         if self.query.is_empty() {
-            return Line::from(Span::styled(text, base_style));
+            return vec![Span::styled(text.to_owned(), base_style)];
         }
 
         let query_lower = self.query.to_lowercase();
@@ -62,25 +62,32 @@ impl SearchState {
         let mut last = 0;
 
         for (start, _) in text_lower.match_indices(&query_lower) {
+            let end = start + query_lower.len();
+            if !text.is_char_boundary(start) || !text.is_char_boundary(end) {
+                continue;
+            }
             if start > last {
-                spans.push(Span::styled(&text[last..start], base_style));
+                spans.push(Span::styled(text[last..start].to_owned(), base_style));
             }
             spans.push(Span::styled(
-                &text[start..start + self.query.len()],
+                text[start..end].to_owned(),
                 base_style.add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
             ));
-            last = start + self.query.len();
+            last = end;
         }
 
         if last < text.len() {
-            spans.push(Span::styled(&text[last..], base_style));
+            spans.push(Span::styled(text[last..].to_owned(), base_style));
         }
 
         if spans.is_empty() {
-            Line::from(Span::styled(text, base_style))
-        } else {
-            Line::from(spans)
+            spans.push(Span::styled(text.to_owned(), base_style));
         }
+        spans
+    }
+
+    pub fn highlight_line(&self, text: &str, base_style: Style) -> Line<'static> {
+        Line::from(self.highlight_spans(text, base_style))
     }
 
     // renders the "/ query█" indicator in the block title bar
@@ -151,5 +158,27 @@ mod tests {
         s.activate();
         assert!(s.active);
         assert_eq!(s.query, "te");
+    }
+
+    #[test]
+    fn highlight_spans_marks_each_case_insensitive_match() {
+        let search = SearchState {
+            query: "di".to_owned(),
+            ..SearchState::default()
+        };
+
+        let spans = search.highlight_spans("Discovery DISK", Style::default());
+
+        assert_eq!(
+            spans
+                .iter()
+                .map(|span| span.content.as_ref())
+                .collect::<String>(),
+            "Discovery DISK"
+        );
+        assert!(spans[0].style.add_modifier.contains(Modifier::BOLD));
+        assert!(spans[0].style.add_modifier.contains(Modifier::UNDERLINED));
+        assert!(spans[2].style.add_modifier.contains(Modifier::BOLD));
+        assert!(spans[2].style.add_modifier.contains(Modifier::UNDERLINED));
     }
 }

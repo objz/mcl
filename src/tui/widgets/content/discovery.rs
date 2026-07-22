@@ -9,8 +9,12 @@ use crate::net::modrinth::{DiscoveryKind, DiscoveryProject};
 
 use super::list::{ContentListState, ContentStream};
 
-pub const PAGE_SIZE: usize = 20;
-const PREFETCH_ITEMS: usize = 5;
+pub const PAGE_SIZE: usize = 100;
+const PREFETCH_VIEWPORTS: usize = 2;
+const MIN_PREFETCH_ITEMS: usize = 10;
+const SEARCH_DEBOUNCE: std::time::Duration = std::time::Duration::from_millis(300);
+const PAGE_RETRY_BASE_DELAY: std::time::Duration = std::time::Duration::from_millis(500);
+const PAGE_RETRY_MAX_DELAY: std::time::Duration = std::time::Duration::from_secs(8);
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub enum ContentMode {
@@ -38,7 +42,12 @@ impl ContentMode {
 pub struct PendingDiscoveryResult {
     generation: u64,
     offset: usize,
-    result: Result<DiscoveryPageResult, String>,
+    result: Result<DiscoveryPageResult, DiscoveryPageError>,
+}
+
+pub struct DiscoveryPageError {
+    pub message: String,
+    pub retryable: bool,
 }
 
 pub struct DiscoveryPageResult {
@@ -51,6 +60,8 @@ pub struct DiscoveryRequest {
     pub offset: usize,
     pub pending: PendingDiscovery,
     pub stream: ContentStream,
+    pub reconcile: bool,
+    pub loaded_icon_stems: std::collections::HashSet<String>,
 }
 
 pub(crate) type PendingDiscovery = Arc<Mutex<Vec<PendingDiscoveryResult>>>;
@@ -69,6 +80,9 @@ pub struct DiscoveryState {
     page_loading: bool,
     exhausted: bool,
     viewport_rows: u16,
+    search_changed_at: Option<std::time::Instant>,
+    retry_page_at: Option<std::time::Instant>,
+    page_retry_attempt: u32,
 }
 
 impl DiscoveryState {
@@ -87,6 +101,9 @@ impl DiscoveryState {
             page_loading: false,
             exhausted: false,
             viewport_rows: 0,
+            search_changed_at: None,
+            retry_page_at: None,
+            page_retry_attempt: 0,
         }
     }
 
@@ -97,19 +114,42 @@ impl DiscoveryState {
     pub fn begin_search(&mut self, instance: &InstanceConfig) -> DiscoveryRequest {
         self.generation = self.generation.wrapping_add(1);
         let context = discovery_context(instance);
+        let reconcile =
+            self.context.as_deref() == Some(context.as_str()) && !self.list.entries.is_empty();
         self.context = Some(context.clone());
         self.total_hits = 0;
         self.error = None;
         self.next_offset = 0;
         self.page_loading = true;
         self.exhausted = false;
-        let stream = self.list.start_source_stream(context);
+        self.search_changed_at = None;
+        self.retry_page_at = None;
+        self.page_retry_attempt = 0;
+        let loaded_icon_stems = if reconcile {
+            self.list
+                .entries
+                .iter()
+                .filter(|entry| entry.icon_bytes.is_some())
+                .map(|entry| entry.file_stem.clone())
+                .collect()
+        } else {
+            std::collections::HashSet::new()
+        };
+        let stream = if reconcile {
+            self.list.refresh_source_stream(context)
+        } else {
+            self.list.start_source_stream(context)
+        };
+        self.list.search.query.clone_from(&self.search.query);
+        self.list.set_search_filtering(false);
         self.stream = Some(stream.clone());
         DiscoveryRequest {
             generation: self.generation,
             offset: 0,
             pending: self.pending.clone(),
             stream,
+            reconcile,
+            loaded_icon_stems,
         }
     }
 
@@ -118,11 +158,21 @@ impl DiscoveryState {
             return None;
         }
         self.page_loading = true;
+        self.retry_page_at = None;
+        let loaded_icon_stems = self
+            .list
+            .entries
+            .iter()
+            .filter(|entry| entry.icon_bytes.is_some())
+            .map(|entry| entry.file_stem.clone())
+            .collect();
         Some(DiscoveryRequest {
             generation: self.generation,
             offset: self.next_offset,
             pending: self.pending.clone(),
             stream: self.stream.clone()?,
+            reconcile: false,
+            loaded_icon_stems,
         })
     }
 
@@ -130,11 +180,22 @@ impl DiscoveryState {
         self.viewport_rows = rows;
     }
 
+    pub fn search_due(&self) -> bool {
+        self.search_changed_at
+            .is_some_and(|changed| changed.elapsed() >= SEARCH_DEBOUNCE)
+    }
+
+    fn search_changed(&mut self) {
+        self.list.search.query.clone_from(&self.search.query);
+        self.list.set_search_filtering(false);
+        self.search_changed_at = Some(std::time::Instant::now());
+    }
+
     pub fn push_result(
         pending: &PendingDiscovery,
         generation: u64,
         offset: usize,
-        result: Result<DiscoveryPageResult, String>,
+        result: Result<DiscoveryPageResult, DiscoveryPageError>,
     ) {
         if let Ok(mut pending) = pending.lock() {
             pending.push(PendingDiscoveryResult {
@@ -163,11 +224,35 @@ impl DiscoveryState {
                     self.next_offset = pending.offset.saturating_add(result.received);
                     self.exhausted = result.received == 0 || self.next_offset >= self.total_hits;
                     self.error = None;
+                    self.retry_page_at = None;
+                    self.page_retry_attempt = 0;
                 }
                 Err(error) => {
-                    self.total_hits = 0;
-                    self.error = Some(error);
-                    self.exhausted = true;
+                    if error.retryable {
+                        let multiplier = 1u32 << self.page_retry_attempt.min(4);
+                        let delay = PAGE_RETRY_BASE_DELAY
+                            .saturating_mul(multiplier)
+                            .min(PAGE_RETRY_MAX_DELAY);
+                        self.page_retry_attempt = self.page_retry_attempt.saturating_add(1);
+                        self.retry_page_at = Some(std::time::Instant::now() + delay);
+                        tracing::debug!(
+                            "Modrinth discovery page at offset {} failed; retrying in {:?}: {}",
+                            pending.offset,
+                            delay,
+                            error.message
+                        );
+                    } else if pending.offset == 0 {
+                        self.total_hits = 0;
+                        self.error = Some(error.message);
+                        self.exhausted = true;
+                    } else {
+                        tracing::warn!(
+                            "Modrinth discovery page at offset {} failed: {}",
+                            pending.offset,
+                            error.message
+                        );
+                        self.exhausted = true;
+                    }
                 }
             }
         }
@@ -180,20 +265,30 @@ impl DiscoveryState {
     }
 
     fn should_load_more(&self) -> bool {
-        if self.page_loading || self.exhausted || self.error.is_some() || self.stream.is_none() {
+        if self.page_loading
+            || self.exhausted
+            || self.error.is_some()
+            || self.stream.is_none()
+            || self.search_changed_at.is_some()
+            || self
+                .retry_page_at
+                .is_some_and(|retry_at| std::time::Instant::now() < retry_at)
+        {
             return false;
         }
         let viewport_items = usize::from(self.viewport_rows).div_ceil(3);
+        let prefetch_items = viewport_items
+            .saturating_mul(PREFETCH_VIEWPORTS)
+            .max(MIN_PREFETCH_ITEMS);
         let selected = self.list.list_state.selected.unwrap_or(0);
-        self.list.entries.len() < viewport_items.saturating_add(PREFETCH_ITEMS)
-            || selected.saturating_add(PREFETCH_ITEMS) >= self.list.entries.len()
+        self.list.entries.len() < viewport_items.saturating_add(prefetch_items)
+            || selected.saturating_add(prefetch_items) >= self.list.entries.len()
     }
 }
 
-pub fn handle_key(key_event: &KeyEvent, state: &mut DiscoveryState) -> (bool, bool) {
+pub fn handle_key(key_event: &KeyEvent, state: &mut DiscoveryState) -> bool {
     if state.search.active {
-        let refresh = key_event.code == KeyCode::Enter
-            || (key_event.code == KeyCode::Esc && !state.search.query.is_empty());
+        let previous_query = state.search.query.clone();
         match key_event.code {
             KeyCode::Enter => state.search.confirm(),
             KeyCode::Esc => state.search.deactivate(),
@@ -201,16 +296,17 @@ pub fn handle_key(key_event: &KeyEvent, state: &mut DiscoveryState) -> (bool, bo
             KeyCode::Char(c) => state.search.push(c),
             _ => {}
         }
-        return (true, refresh);
+        let changed = state.search.query != previous_query;
+        if changed {
+            state.search_changed();
+        }
+        return true;
     }
     if key_event.code == KeyCode::Char('/') {
         state.search.activate();
-        return (true, false);
+        return true;
     }
-    (
-        super::list::handle_key_no_toggle(key_event, &mut state.list),
-        false,
-    )
+    super::list::handle_key_no_toggle(key_event, &mut state.list)
 }
 
 fn discovery_context(instance: &InstanceConfig) -> String {
@@ -261,6 +357,7 @@ fn format_downloads(downloads: u64) -> String {
 mod tests {
     use super::*;
     use chrono::Utc;
+    use crossterm::event::KeyModifiers;
 
     fn instance(name: &str, version: &str) -> InstanceConfig {
         InstanceConfig {
@@ -321,6 +418,7 @@ mod tests {
     #[test]
     fn next_page_prefetches_before_selection_reaches_the_end() {
         let mut state = DiscoveryState::new(DiscoveryKind::Mod);
+        state.set_viewport_rows(30);
         let instance = instance("one", "1.21.1");
         let first = state.begin_search(&instance);
         for index in 0..PAGE_SIZE {
@@ -341,19 +439,19 @@ mod tests {
             first.offset,
             Ok(DiscoveryPageResult {
                 received: PAGE_SIZE,
-                total_hits: 100,
+                total_hits: 300,
             }),
         );
         state.drain_pending();
+        state.list.list_state.selected = Some(80);
 
-        state.list.list_state.selected = Some(PAGE_SIZE - PREFETCH_ITEMS);
         let next = state.begin_next_page().expect("next page should prefetch");
         assert_eq!(next.offset, PAGE_SIZE);
         assert!(state.begin_next_page().is_none());
     }
 
     #[test]
-    fn tall_viewport_loads_enough_pages_to_fill_it() {
+    fn large_page_fills_a_tall_viewport_without_another_request() {
         let mut state = DiscoveryState::new(DiscoveryKind::Mod);
         state.set_viewport_rows(90);
         let first = state.begin_search(&instance("one", "1.21.1"));
@@ -375,11 +473,209 @@ mod tests {
             first.offset,
             Ok(DiscoveryPageResult {
                 received: PAGE_SIZE,
-                total_hits: 100,
+                total_hits: 300,
             }),
         );
         state.drain_pending();
 
+        assert!(state.begin_next_page().is_none());
+    }
+
+    #[test]
+    fn typing_keeps_loaded_results_until_remote_search_is_due() {
+        let mut state = DiscoveryState::new(DiscoveryKind::Mod);
+        let request = state.begin_search(&instance("one", "1.21.1"));
+        for title in ["Sodium", "Lithium"] {
+            assert!(request.stream.send(project_entry(DiscoveryProject {
+                id: title.to_lowercase(),
+                slug: title.to_lowercase(),
+                title: title.to_owned(),
+                description: String::new(),
+                downloads: 0,
+                icon_url: None,
+                icon_bytes: None,
+            })));
+        }
+        state.list.drain_pending();
+
+        handle_key(
+            &KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE),
+            &mut state,
+        );
+        for character in "sod".chars() {
+            handle_key(
+                &KeyEvent::new(KeyCode::Char(character), KeyModifiers::NONE),
+                &mut state,
+            );
+        }
+
+        assert_eq!(state.list.filtered_indices(), vec![0, 1]);
+        assert_eq!(state.list.search.query, "sod");
+        assert!(!state.search_due());
+        state.search_changed_at = Some(std::time::Instant::now() - SEARCH_DEBOUNCE);
+        assert!(state.search_due());
+    }
+
+    #[test]
+    fn search_refresh_keeps_rows_until_the_diff_arrives() {
+        let mut state = DiscoveryState::new(DiscoveryKind::Mod);
+        let instance = instance("one", "1.21.1");
+        let initial = state.begin_search(&instance);
+        for title in ["Sodium", "Lithium"] {
+            assert!(initial.stream.upsert(project_entry(DiscoveryProject {
+                id: title.to_lowercase(),
+                slug: title.to_lowercase(),
+                title: title.to_owned(),
+                description: String::new(),
+                downloads: 0,
+                icon_url: None,
+                icon_bytes: (title == "Sodium").then(|| vec![1, 2, 3]),
+            })));
+        }
+        state.list.drain_pending();
+        state.search.query = "sodium".to_owned();
+        state.search_changed();
+
+        let refresh = state.begin_search(&instance);
+
+        assert!(refresh.reconcile);
+        assert!(refresh.loaded_icon_stems.contains("sodium"));
+        assert!(!refresh.loaded_icon_stems.contains("lithium"));
+        assert_eq!(state.list.entries.len(), 2);
+        assert!(!state.list.loading);
+    }
+
+    #[test]
+    fn pagination_continues_across_multiple_pages() {
+        let mut state = DiscoveryState::new(DiscoveryKind::Mod);
+        let instance = instance("one", "1.21.1");
+        let first = state.begin_search(&instance);
+        for index in 0..PAGE_SIZE {
+            assert!(first.stream.upsert(project_entry(DiscoveryProject {
+                id: index.to_string(),
+                slug: index.to_string(),
+                title: index.to_string(),
+                description: String::new(),
+                downloads: 0,
+                icon_url: None,
+                icon_bytes: None,
+            })));
+        }
+        state.list.drain_pending();
+        DiscoveryState::push_result(
+            &first.pending,
+            first.generation,
+            first.offset,
+            Ok(DiscoveryPageResult {
+                received: PAGE_SIZE,
+                total_hits: 300,
+            }),
+        );
+        state.drain_pending();
+        state.list.list_state.selected = Some(PAGE_SIZE - MIN_PREFETCH_ITEMS);
+
+        let second = state.begin_next_page().unwrap();
+        for index in PAGE_SIZE..PAGE_SIZE * 2 {
+            assert!(second.stream.upsert(project_entry(DiscoveryProject {
+                id: index.to_string(),
+                slug: index.to_string(),
+                title: index.to_string(),
+                description: String::new(),
+                downloads: 0,
+                icon_url: None,
+                icon_bytes: None,
+            })));
+        }
+        state.list.drain_pending();
+        DiscoveryState::push_result(
+            &second.pending,
+            second.generation,
+            second.offset,
+            Ok(DiscoveryPageResult {
+                received: PAGE_SIZE,
+                total_hits: 300,
+            }),
+        );
+        state.drain_pending();
+        state.list.list_state.selected = Some(PAGE_SIZE * 2 - MIN_PREFETCH_ITEMS);
+
+        let third = state.begin_next_page().unwrap();
+        assert_eq!(third.offset, PAGE_SIZE * 2);
+    }
+
+    #[test]
+    fn permanent_pagination_failure_stops_without_discarding_loaded_entries() {
+        let mut state = DiscoveryState::new(DiscoveryKind::Mod);
+        let first = state.begin_search(&instance("one", "1.21.1"));
+        for index in 0..PAGE_SIZE {
+            assert!(first.stream.upsert(project_entry(DiscoveryProject {
+                id: index.to_string(),
+                slug: index.to_string(),
+                title: index.to_string(),
+                description: String::new(),
+                downloads: 0,
+                icon_url: None,
+                icon_bytes: None,
+            })));
+        }
+        state.list.drain_pending();
+        DiscoveryState::push_result(
+            &first.pending,
+            first.generation,
+            first.offset,
+            Ok(DiscoveryPageResult {
+                received: PAGE_SIZE,
+                total_hits: 300,
+            }),
+        );
+        state.drain_pending();
+        state.list.list_state.selected = Some(PAGE_SIZE - MIN_PREFETCH_ITEMS);
+        let second = state.begin_next_page().unwrap();
+        DiscoveryState::push_result(
+            &second.pending,
+            second.generation,
+            second.offset,
+            Err(DiscoveryPageError {
+                message: "invalid response".to_owned(),
+                retryable: false,
+            }),
+        );
+        state.drain_pending();
+
+        assert!(state.begin_next_page().is_none());
+        assert_eq!(state.list.entries.len(), PAGE_SIZE);
+        assert!(state.exhausted);
+    }
+
+    #[test]
+    fn transient_pagination_failure_retries_the_same_offset_after_a_delay() {
+        let mut state = DiscoveryState::new(DiscoveryKind::Mod);
+        let first = state.begin_search(&instance("one", "1.21.1"));
+        DiscoveryState::push_result(
+            &first.pending,
+            first.generation,
+            first.offset,
+            Ok(DiscoveryPageResult {
+                received: PAGE_SIZE,
+                total_hits: 300,
+            }),
+        );
+        state.drain_pending();
+
+        let second = state.begin_next_page().unwrap();
+        DiscoveryState::push_result(
+            &second.pending,
+            second.generation,
+            second.offset,
+            Err(DiscoveryPageError {
+                message: "connection reset".to_owned(),
+                retryable: true,
+            }),
+        );
+        state.drain_pending();
+
+        assert!(state.begin_next_page().is_none());
+        state.retry_page_at = Some(std::time::Instant::now() - PAGE_RETRY_BASE_DELAY);
         assert_eq!(state.begin_next_page().unwrap().offset, PAGE_SIZE);
     }
 }

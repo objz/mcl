@@ -146,7 +146,7 @@ impl App {
         if self.focused == FocusedArea::Content
             && self.content_mode == widgets::content::ContentMode::Discover
         {
-            let (handled, submit_search) = {
+            let handled = {
                 let state = match self.content_tab {
                     widgets::content::ContentTab::Mods => Some(&mut self.mods_discovery_state),
                     widgets::content::ContentTab::ResourcePacks => {
@@ -160,13 +160,16 @@ impl App {
                 if let Some(state) = state {
                     widgets::content::discovery::handle_key(&key_event, state)
                 } else {
-                    (false, false)
+                    false
                 }
             };
-            if submit_search {
-                self.spawn_active_discovery_search();
-            }
             if handled {
+                if matches!(
+                    key_event.code,
+                    KeyCode::Char('j') | KeyCode::Char('k') | KeyCode::Down | KeyCode::Up
+                ) {
+                    self.spawn_active_discovery_page();
+                }
                 return Ok(());
             }
         } else if self.focused == FocusedArea::Content {
@@ -522,17 +525,22 @@ impl App {
         let Some(instance) = self.instances_state.selected_instance().cloned() else {
             return;
         };
-        let needs_search = match self.content_tab {
-            widgets::content::ContentTab::Mods => self.mods_discovery_state.needs_search(&instance),
-            widgets::content::ContentTab::ResourcePacks => {
-                self.resource_packs_discovery_state.needs_search(&instance)
-            }
-            widgets::content::ContentTab::Shaders => {
-                self.shaders_discovery_state.needs_search(&instance)
-            }
-            _ => false,
+        let (needs_search, search_due) = match self.content_tab {
+            widgets::content::ContentTab::Mods => (
+                self.mods_discovery_state.needs_search(&instance),
+                self.mods_discovery_state.search_due(),
+            ),
+            widgets::content::ContentTab::ResourcePacks => (
+                self.resource_packs_discovery_state.needs_search(&instance),
+                self.resource_packs_discovery_state.search_due(),
+            ),
+            widgets::content::ContentTab::Shaders => (
+                self.shaders_discovery_state.needs_search(&instance),
+                self.shaders_discovery_state.search_due(),
+            ),
+            _ => (false, false),
         };
-        if needs_search {
+        if needs_search || search_due {
             self.spawn_active_discovery_search();
         } else {
             self.spawn_active_discovery_page();
@@ -584,6 +592,8 @@ impl App {
             offset,
             pending,
             stream,
+            reconcile,
+            loaded_icon_stems,
         } = request;
 
         tokio::spawn(async move {
@@ -602,33 +612,60 @@ impl App {
                 Ok(results) => {
                     let total_hits = results.total_hits;
                     let received = results.projects.len();
+                    let mut returned_stems = std::collections::HashSet::with_capacity(received);
+                    let icon_slots = std::sync::Arc::new(tokio::sync::Semaphore::new(8));
                     for mut project in results.projects {
-                        let icon = project.icon_url.take().map(|url| {
-                            (
-                                url,
-                                project.id.clone(),
-                                std::path::PathBuf::from(&project.id),
-                            )
-                        });
-                        if !stream.send(widgets::content::discovery::project_entry(project)) {
+                        returned_stems.insert(project.id.clone());
+                        let icon = (!loaded_icon_stems.contains(&project.id))
+                            .then(|| project.icon_url.take())
+                            .flatten()
+                            .map(|url| {
+                                (
+                                    url,
+                                    project.id.clone(),
+                                    std::path::PathBuf::from(&project.id),
+                                )
+                            });
+                        if !stream.upsert(widgets::content::discovery::project_entry(project)) {
                             break;
                         }
                         if let Some((url, file_stem, path)) = icon {
                             let client = client.clone();
                             let stream = stream.clone();
+                            let icon_slots = icon_slots.clone();
                             tokio::spawn(async move {
-                                if let Ok(bytes) = client.get_bytes(&url).await {
-                                    stream.send_icon(file_stem, path, bytes);
+                                let Ok(_permit) = icon_slots.acquire_owned().await else {
+                                    return;
+                                };
+                                match client.get_bytes(&url).await {
+                                    Ok(bytes) if !bytes.is_empty() => {
+                                        stream.send_icon(file_stem, path, bytes);
+                                    }
+                                    Ok(_) => tracing::debug!(
+                                        "Modrinth icon for '{}' was empty; using fallback",
+                                        file_stem
+                                    ),
+                                    Err(error) => tracing::debug!(
+                                        "Failed to fetch Modrinth icon for '{}'; using fallback: {}",
+                                        file_stem,
+                                        error
+                                    ),
                                 }
                             });
                         }
+                    }
+                    if reconcile {
+                        stream.retain(returned_stems);
                     }
                     Ok(widgets::content::discovery::DiscoveryPageResult {
                         received,
                         total_hits,
                     })
                 }
-                Err(error) => Err(error.to_string()),
+                Err(error) => Err(widgets::content::discovery::DiscoveryPageError {
+                    retryable: error.is_retryable(),
+                    message: error.to_string(),
+                }),
             };
             widgets::content::DiscoveryState::push_result(&pending, generation, offset, result);
         });

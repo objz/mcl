@@ -186,10 +186,10 @@ fn render_version_step(state: &WizardState, area: Rect, buf: &mut ratatui::buffe
                     } else {
                         " (snapshot)".to_string()
                     };
-                    ListItem::new(Line::from(Span::styled(
-                        format!("{}{}", version.id, suffix),
+                    ListItem::new(state.version_search.highlight_line(
+                        &format!("{}{}", version.id, suffix),
                         Style::default().fg(theme.text()),
-                    )))
+                    ))
                 })
                 .collect();
 

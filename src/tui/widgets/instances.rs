@@ -291,10 +291,9 @@ pub fn render(frame: &mut Frame, area: Rect, focused: FocusedArea, state: &mut S
                 ),
             ])
         } else {
-            Line::from(vec![
-                selector.clone(),
-                Span::styled(instance.name.as_str(), name_style),
-            ])
+            let mut spans = vec![selector.clone()];
+            spans.extend(state.search.highlight_spans(&instance.name, name_style));
+            Line::from(spans)
         };
 
         let (meta_text, meta_text_style) = match get_run_state(&instance.name) {

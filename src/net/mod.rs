@@ -38,6 +38,12 @@ impl Default for HttpClient {
     }
 }
 
+impl NetError {
+    pub(crate) fn is_retryable(&self) -> bool {
+        matches!(self, Self::StatusError { status: 429, .. }) || is_retryable(self)
+    }
+}
+
 impl HttpClient {
     pub fn new() -> Self {
         let user_agent = format!("rmcl/{} (Minecraft Launcher)", env!("CARGO_PKG_VERSION"));
@@ -146,7 +152,7 @@ const RETRY_BASE_DELAY_MS: u64 = 500;
 
 async fn sleep_before_retry(kind: &str, url: &str, attempt: u32, err: &NetError) {
     let delay = RETRY_BASE_DELAY_MS * 2u64.pow(attempt);
-    tracing::warn!(
+    tracing::debug!(
         "{} failed, retrying after {}ms (attempt {}/{}): {}: {}",
         kind,
         delay,

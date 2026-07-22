@@ -87,6 +87,39 @@ pub struct DiscoveryResults {
     pub total_hits: usize,
 }
 
+#[derive(Debug, Deserialize)]
+struct DiscoverySearchResponse {
+    hits: Vec<DiscoverySearchHit>,
+    #[serde(default)]
+    total_hits: i64,
+}
+
+#[derive(Debug, Deserialize)]
+struct DiscoverySearchHit {
+    project_id: String,
+    slug: String,
+    title: String,
+    description: String,
+    #[serde(default)]
+    downloads: i64,
+    #[serde(default)]
+    icon_url: Option<String>,
+}
+
+impl From<DiscoverySearchHit> for DiscoveryProject {
+    fn from(project: DiscoverySearchHit) -> Self {
+        Self {
+            id: project.project_id,
+            slug: project.slug,
+            title: project.title,
+            description: project.description,
+            downloads: project.downloads.max(0) as u64,
+            icon_url: project.icon_url.filter(|url| !url.trim().is_empty()),
+            icon_bytes: None,
+        }
+    }
+}
+
 pub async fn search_discovery(
     client: &crate::net::HttpClient,
     kind: DiscoveryKind,
@@ -97,43 +130,25 @@ pub async fn search_discovery(
     limit: usize,
 ) -> Result<DiscoveryResults, crate::net::NetError> {
     let facets = discovery_facets(kind, game_version, loader);
-    let mut configuration = modrinth_api::apis::configuration::Configuration::new();
-    configuration.client = client.inner().clone();
-    configuration.user_agent = Some(format!(
-        "rmcl/{} (Minecraft Launcher)",
-        env!("CARGO_PKG_VERSION")
-    ));
-    let query = (!query.trim().is_empty()).then_some(query.trim());
-    let index = if query.is_some() {
-        "relevance"
-    } else {
+    let query = query.trim();
+    let index = if query.is_empty() {
         "downloads"
+    } else {
+        "relevance"
     };
-    let results = modrinth_api::apis::projects_api::search_projects(
-        &configuration,
-        query,
-        Some(&facets),
-        Some(index),
-        Some(offset.min(i32::MAX as usize) as i32),
-        Some(limit.min(i32::MAX as usize) as i32),
-    )
-    .await
-    .map_err(|e| crate::net::NetError::Parse(format!("Modrinth search failed: {e}")))?;
+    let url = format!(
+        "{API_BASE}/search?query={}&facets={}&index={index}&offset={offset}&limit={limit}",
+        url_encode(query),
+        url_encode(&facets),
+    );
+    let results: DiscoverySearchResponse = client.get_json(&url).await?;
 
     Ok(DiscoveryResults {
         total_hits: results.total_hits.max(0) as usize,
         projects: results
             .hits
             .into_iter()
-            .map(|project| DiscoveryProject {
-                id: project.project_id,
-                slug: project.slug,
-                title: project.title,
-                description: project.description,
-                downloads: project.downloads.max(0) as u64,
-                icon_url: project.icon_url.flatten(),
-                icon_bytes: None,
-            })
+            .map(DiscoveryProject::from)
             .collect(),
     })
 }
@@ -338,6 +353,46 @@ mod tests {
         );
     }
 
+    #[test]
+    fn discovery_search_ignores_new_modrinth_enum_values() {
+        let response: DiscoverySearchResponse = serde_json::from_str(
+            r#"{
+                "hits": [{
+                    "project_id": "project-id",
+                    "slug": "example",
+                    "title": "Example",
+                    "description": "Example project",
+                    "downloads": 42,
+                    "icon_url": null,
+                    "client_side": "unknown",
+                    "server_side": "unknown"
+                }],
+                "total_hits": 1
+            }"#,
+        )
+        .unwrap();
+
+        assert_eq!(response.hits.len(), 1);
+        assert_eq!(response.hits[0].project_id, "project-id");
+        assert_eq!(response.total_hits, 1);
+    }
+
+    #[test]
+    fn discovery_search_treats_blank_icon_urls_as_missing() {
+        let hit: DiscoverySearchHit = serde_json::from_str(
+            r#"{
+                "project_id": "project-id",
+                "slug": "example",
+                "title": "Example",
+                "description": "Example project",
+                "icon_url": "   "
+            }"#,
+        )
+        .unwrap();
+
+        assert!(DiscoveryProject::from(hit).icon_url.is_none());
+    }
+
     #[tokio::test]
     #[ignore = "hits live Modrinth API"]
     async fn search_discovery_returns_compatible_mods() {
@@ -349,7 +404,7 @@ mod tests {
             "1.21.1",
             ModLoader::Fabric,
             0,
-            20,
+            100,
         )
         .await
         .unwrap();
@@ -368,23 +423,32 @@ mod tests {
             icon.get(..icon.len().min(16))
         );
 
-        let next = search_discovery(
-            &client,
-            DiscoveryKind::Mod,
-            "sodium",
-            "1.21.1",
-            ModLoader::Fabric,
-            20,
-            20,
-        )
-        .await
-        .unwrap();
-        assert!(!next.projects.is_empty());
-        assert!(
-            next.projects
-                .iter()
-                .all(|project| !result.projects.iter().any(|first| first.id == project.id))
-        );
+        let mut seen = result
+            .projects
+            .iter()
+            .map(|project| project.id.clone())
+            .collect::<std::collections::HashSet<_>>();
+        let end = result.total_hits.min(300);
+        for offset in (100..end).step_by(100) {
+            let next = search_discovery(
+                &client,
+                DiscoveryKind::Mod,
+                "sodium",
+                "1.21.1",
+                ModLoader::Fabric,
+                offset,
+                100,
+            )
+            .await
+            .unwrap();
+            assert!(!next.projects.is_empty(), "empty page at offset {offset}");
+            assert!(
+                next.projects
+                    .iter()
+                    .all(|project| seen.insert(project.id.clone())),
+                "duplicate project at offset {offset}"
+            );
+        }
     }
 
     // covers each branch of url_encode: unreserved bytes pass through; the

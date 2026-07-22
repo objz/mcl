@@ -182,21 +182,41 @@ impl LogsState {
     }
 
     fn display_count(&self) -> usize {
-        self.entries.len() + if self.has_live() { 1 } else { 0 }
+        self.display_indices().len()
+    }
+
+    fn live_display_name(&self) -> String {
+        self.entries
+            .first()
+            .map(|entry| entry.name.trim_end_matches(".log").to_owned())
+            .unwrap_or_else(|| "Live".to_owned())
+    }
+
+    fn display_indices(&self) -> Vec<Option<usize>> {
+        let mut indices = Vec::new();
+        if self.has_live() && self.search.matches(&self.live_display_name()) {
+            indices.push(None);
+        }
+        indices.extend(
+            self.entries
+                .iter()
+                .enumerate()
+                .filter(|(_, entry)| self.search.matches(entry.name.trim_end_matches(".log")))
+                .map(|(index, _)| Some(index)),
+        );
+        indices
     }
 
     fn is_live_selected(&self) -> bool {
-        self.has_live() && self.list_state.selected == Some(0)
+        self.list_state
+            .selected
+            .and_then(|selected| self.display_indices().get(selected).copied())
+            == Some(None)
     }
 
     fn file_index_for_selected(&self) -> Option<usize> {
-        let sel = self.list_state.selected?;
-        let offset = if self.has_live() { 1 } else { 0 };
-        if sel < offset {
-            None
-        } else {
-            Some(sel - offset)
-        }
+        let selected = self.list_state.selected?;
+        self.display_indices().get(selected).copied().flatten()
     }
 
     fn load_selected_content(&mut self) {
@@ -228,6 +248,15 @@ impl LogsState {
     fn update_scrollbar(&mut self) {
         let count = self.display_count();
         let max = count.saturating_sub(1);
+        if count == 0 {
+            self.list_state.selected = None;
+        } else if self
+            .list_state
+            .selected
+            .is_none_or(|selected| selected >= count)
+        {
+            self.list_state.selected = Some(max);
+        }
         let pos = self.list_state.selected.unwrap_or(0);
         self.scrollbar_state = ScrollbarState::new(max).position(pos);
     }
@@ -345,21 +374,25 @@ pub fn handle_key(key_event: &KeyEvent, state: &mut LogsState) -> bool {
                 KeyCode::Enter => {
                     state.search.confirm();
                     state.list_state.selected = Some(0);
+                    state.load_selected_content();
                     state.update_scrollbar();
                 }
                 KeyCode::Esc => {
                     state.search.deactivate();
                     state.list_state.selected = Some(0);
+                    state.load_selected_content();
                     state.update_scrollbar();
                 }
                 KeyCode::Backspace => {
                     state.search.pop();
                     state.list_state.selected = Some(0);
+                    state.load_selected_content();
                     state.update_scrollbar();
                 }
                 KeyCode::Char(c) => {
                     state.search.push(c);
                     state.list_state.selected = Some(0);
+                    state.load_selected_content();
                     state.update_scrollbar();
                 }
                 _ => {}
@@ -435,17 +468,11 @@ pub fn render(frame: &mut Frame, area: Rect, state: &mut LogsState, is_focused: 
     let [list_area, viewer_area] =
         Layout::horizontal([Constraint::Length(30), Constraint::Min(0)]).areas(area);
 
-    render_list(frame, list_area, state, is_focused, has_live);
+    render_list(frame, list_area, state, is_focused);
     render_viewer(frame, viewer_area, state, is_focused, has_live);
 }
 
-fn render_list(
-    frame: &mut Frame,
-    area: Rect,
-    state: &mut LogsState,
-    is_focused: bool,
-    has_live: bool,
-) {
+fn render_list(frame: &mut Frame, area: Rect, state: &mut LogsState, is_focused: bool) {
     let theme = THEME.as_ref();
     let list_focused = is_focused && !state.viewer_focused;
     let border_color = if list_focused {
@@ -464,21 +491,21 @@ fn render_list(
 
     let display_count = state.display_count();
 
-    let entries_snapshot: Vec<(String, bool)> = {
-        let mut v = Vec::new();
-        if has_live {
-            let live_name = state
-                .entries
-                .first()
-                .map(|e| e.name.trim_end_matches(".log"))
-                .unwrap_or("Live");
-            v.push((live_name.to_string(), true));
-        }
-        for e in &state.entries {
-            v.push((e.name.trim_end_matches(".log").to_string(), false));
-        }
-        v
-    };
+    let entries_snapshot: Vec<(String, bool)> = state
+        .display_indices()
+        .into_iter()
+        .map(|index| match index {
+            Some(index) => (
+                state.entries[index]
+                    .name
+                    .trim_end_matches(".log")
+                    .to_owned(),
+                false,
+            ),
+            None => (state.live_display_name(), true),
+        })
+        .collect();
+    let search = &state.search;
 
     let builder = ListBuilder::new(move |context| {
         let (name, is_live) = &entries_snapshot[context.index];
@@ -509,11 +536,9 @@ fn render_list(
         } else {
             Span::raw("  ")
         };
-        let item = ratatui::text::Text::from(Line::from(vec![
-            selector,
-            Span::styled(name.clone(), style),
-        ]))
-        .style(Style::default().bg(bg));
+        let mut spans = vec![selector];
+        spans.extend(search.highlight_spans(name, style));
+        let item = ratatui::text::Text::from(Line::from(spans)).style(Style::default().bg(bg));
         (item, 1)
     });
 

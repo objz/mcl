@@ -62,10 +62,34 @@ impl ContentStream {
             false
         }
     }
+
+    pub fn upsert(&self, entry: ContentEntry) -> bool {
+        if self.sender.send(ContentStreamUpdate::Upsert(entry)).is_ok() {
+            crate::tui::request_redraw();
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn retain(&self, file_stems: HashSet<String>) -> bool {
+        if self
+            .sender
+            .send(ContentStreamUpdate::Retain(file_stems))
+            .is_ok()
+        {
+            crate::tui::request_redraw();
+            true
+        } else {
+            false
+        }
+    }
 }
 
 enum ContentStreamUpdate {
     Entry(ContentEntry),
+    Upsert(ContentEntry),
+    Retain(HashSet<String>),
     Icon {
         file_stem: String,
         path: std::path::PathBuf,
@@ -109,6 +133,7 @@ pub struct ContentListState {
     images_dirty: bool,
     display_metadata: HashMap<String, DisplayMetadata>,
     pub search: crate::tui::widgets::search::SearchState,
+    filter_search: bool,
     cache: HashMap<String, CachedList>,
     // streaming: individual entries arrive here during initial load
     stream_rx: Option<mpsc::Receiver<ContentStreamUpdate>>,
@@ -143,6 +168,7 @@ impl Default for ContentListState {
             images_dirty: true,
             display_metadata: HashMap::new(),
             search: crate::tui::widgets::search::SearchState::default(),
+            filter_search: true,
             cache: HashMap::new(),
             stream_rx: None,
             stream_order: ContentStreamOrder::default(),
@@ -162,6 +188,14 @@ impl ContentListState {
 
     pub fn start_source_stream(&mut self, source: impl Into<String>) -> ContentStream {
         self.start_stream_with_order(source, ContentStreamOrder::Source)
+    }
+
+    pub fn refresh_source_stream(&mut self, source: impl Into<String>) -> ContentStream {
+        let (sender, receiver) = mpsc::channel();
+        self.stream_rx = Some(receiver);
+        self.stream_order = ContentStreamOrder::Source;
+        self.loaded_for = Some(source.into());
+        ContentStream { sender }
     }
 
     fn start_stream_with_order(
@@ -293,6 +327,7 @@ impl ContentListState {
         let mut received = false;
         let mut received_count = 0usize;
         let mut finished = false;
+        let mut restore_selected = None;
         loop {
             match rx.try_recv() {
                 Ok(ContentStreamUpdate::Entry(entry)) => {
@@ -313,6 +348,39 @@ impl ContentListState {
                         }
                         ContentStreamOrder::Source => self.entries.push(entry),
                     }
+                }
+                Ok(ContentStreamUpdate::Upsert(mut entry)) => {
+                    received = true;
+                    self.images_dirty = true;
+                    received_count += 1;
+                    self.display_metadata
+                        .insert(entry.file_stem.clone(), display_metadata(&entry));
+                    if let Some(existing) = self
+                        .entries
+                        .iter_mut()
+                        .find(|existing| existing.file_stem == entry.file_stem)
+                    {
+                        if entry.icon_bytes.is_none() {
+                            entry.icon_bytes = existing.icon_bytes.take();
+                            entry.icon_lines = existing.icon_lines.take();
+                        }
+                        *existing = entry;
+                    } else {
+                        self.entries.push(entry);
+                    }
+                }
+                Ok(ContentStreamUpdate::Retain(file_stems)) => {
+                    let selected_stem = self.selected_file_stem();
+                    self.entries
+                        .retain(|entry| file_stems.contains(&entry.file_stem));
+                    self.display_metadata
+                        .retain(|stem, _| file_stems.contains(stem));
+                    self.image_protocols
+                        .retain(|stem, _| file_stems.contains(stem));
+                    self.requested_images
+                        .retain(|stem| file_stems.contains(stem));
+                    restore_selected = Some(selected_stem);
+                    self.images_dirty = true;
                 }
                 Ok(ContentStreamUpdate::Icon {
                     file_stem,
@@ -336,6 +404,10 @@ impl ContentListState {
                     break;
                 }
             }
+        }
+
+        if let Some(selected_stem) = restore_selected {
+            self.restore_selected_file_stem(selected_stem.as_deref());
         }
 
         if received || finished {
@@ -556,9 +628,44 @@ impl ContentListState {
         self.entries
             .iter()
             .enumerate()
-            .filter(|(_, e)| self.search.matches(&e.name))
+            .filter(|(_, entry)| {
+                !self.filter_search
+                    || self.search.matches(&entry.name)
+                    || self.search.matches(&entry.description)
+            })
             .map(|(i, _)| i)
             .collect()
+    }
+
+    pub fn set_search_filtering(&mut self, enabled: bool) {
+        let selected_stem = self.selected_file_stem();
+        self.filter_search = enabled;
+        self.restore_selected_file_stem(selected_stem.as_deref());
+    }
+
+    fn selected_file_stem(&self) -> Option<String> {
+        let filtered = self.filtered_indices();
+        let entry_index = self
+            .list_state
+            .selected
+            .and_then(|index| filtered.get(index))?;
+        self.entries
+            .get(*entry_index)
+            .map(|entry| entry.file_stem.clone())
+    }
+
+    fn restore_selected_file_stem(&mut self, file_stem: Option<&str>) {
+        let filtered = self.filtered_indices();
+        self.list_state.selected = file_stem
+            .and_then(|stem| {
+                filtered.iter().position(|index| {
+                    self.entries
+                        .get(*index)
+                        .is_some_and(|entry| entry.file_stem == stem)
+                })
+            })
+            .or_else(|| (!filtered.is_empty()).then_some(0));
+        self.update_scrollbar();
     }
 
     pub fn pending_delete(&self) -> Option<PendingContentDelete> {
@@ -926,6 +1033,8 @@ pub fn render(
     let entries = &state.entries;
     let display_metadata = &state.display_metadata;
     let filtered_rows = &filtered;
+    let search = &state.search;
+    let ready_image_stems: HashSet<String> = state.image_protocols.keys().cloned().collect();
 
     let builder = ListBuilder::new(move |context| {
         let theme = THEME.as_ref();
@@ -934,7 +1043,10 @@ pub fn render(
         let metadata = display_metadata.get(&entry.file_stem);
         let enabled = entry.enabled;
         let icon_pixels = &entry.icon_lines;
-        let has_image = entry.icon_bytes.is_some();
+        // Keep rendering the terminal fallback until the asynchronous image
+        // decoder has produced a protocol. Invalid and unsupported images
+        // therefore remain visible as a question mark instead of blank space.
+        let has_image = ready_image_stems.contains(&entry.file_stem);
         let protocol_columns = protocol_icon_columns(entry, picker) as usize;
         let show_selected = is_focused && context.is_selected;
         let use_mc_colors = enabled;
@@ -990,11 +1102,7 @@ pub fn render(
         if compact {
             let mut line = Vec::new();
             line.push(selector.clone());
-            if use_mc_colors {
-                line.extend(parse_mc_text(name, name_style));
-            } else {
-                line.push(Span::styled(strip_mc_codes(name), name_style));
-            }
+            line.extend(searchable_spans(search, name, name_style, use_mc_colors));
 
             let item = Text::from(vec![Line::from(line)]).style(Style::default().bg(background));
             (item, 1)
@@ -1017,11 +1125,7 @@ pub fn render(
                 protocol_columns,
             ));
             line_0.push(Span::raw(" "));
-            if use_mc_colors {
-                line_0.extend(parse_mc_text(name, name_style));
-            } else {
-                line_0.push(Span::styled(strip_mc_codes(name), name_style));
-            }
+            line_0.extend(searchable_spans(search, name, name_style, use_mc_colors));
 
             let mut lines = vec![Line::from(line_0)];
 
@@ -1034,7 +1138,7 @@ pub fn render(
                     protocol_columns,
                 ));
                 row.push(Span::raw(" "));
-                row.push(Span::styled(stripped_desc.to_string(), description_style));
+                row.extend(search.highlight_spans(stripped_desc, description_style));
                 lines.push(Line::from(row));
             }
 
@@ -1055,11 +1159,7 @@ pub fn render(
         } else {
             let mut line_0 = Vec::new();
             line_0.push(selector.clone());
-            if use_mc_colors {
-                line_0.extend(parse_mc_text(name, name_style));
-            } else {
-                line_0.push(Span::styled(strip_mc_codes(name), name_style));
-            }
+            line_0.extend(searchable_spans(search, name, name_style, use_mc_colors));
 
             let mut lines = vec![Line::from(line_0)];
 
@@ -1069,10 +1169,9 @@ pub fn render(
                 } else {
                     Span::raw(" ")
                 };
-                lines.push(Line::from(vec![
-                    pad,
-                    Span::styled(stripped_desc.to_string(), description_style),
-                ]));
+                let mut description = vec![pad];
+                description.extend(search.highlight_spans(stripped_desc, description_style));
+                lines.push(Line::from(description));
             }
 
             let height = lines.len() as u16;
@@ -1202,6 +1301,21 @@ fn mc_color(code: char) -> Option<Color> {
         'e' | 'E' => Some(Color::Rgb(0xFF, 0xFF, 0x55)),
         'f' | 'F' => Some(Color::Rgb(0xFF, 0xFF, 0xFF)),
         _ => None,
+    }
+}
+
+fn searchable_spans(
+    search: &crate::tui::widgets::search::SearchState,
+    text: &str,
+    base_style: Style,
+    use_mc_colors: bool,
+) -> Vec<Span<'static>> {
+    if !search.is_empty() {
+        search.highlight_spans(&strip_mc_codes(text), base_style)
+    } else if use_mc_colors {
+        parse_mc_text(text, base_style)
+    } else {
+        vec![Span::styled(strip_mc_codes(text), base_style)]
     }
 }
 
@@ -1367,7 +1481,7 @@ fn read_dir_stems(dir: &std::path::Path, ext: &str) -> HashMap<String, (std::pat
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
+    use std::{collections::HashSet, path::PathBuf};
 
     use crate::instance::content::mods::ContentEntry;
 
@@ -1442,5 +1556,42 @@ mod tests {
                 .collect::<Vec<_>>(),
             ["Zulu", "Alpha"]
         );
+    }
+
+    #[test]
+    fn source_refresh_reconciles_without_rebuilding_unchanged_entries() {
+        let mut state = ContentListState::default();
+        let initial = state.start_source_stream("remote");
+        let mut alpha = entry("Alpha");
+        alpha.icon_bytes = Some(vec![1, 2, 3]);
+        assert!(initial.upsert(alpha));
+        assert!(initial.upsert(entry("Beta")));
+        assert!(initial.upsert(entry("Gamma")));
+        state.drain_pending();
+        state.list_state.selected = Some(0);
+
+        let refresh = state.refresh_source_stream("remote");
+        let mut alpha_update = entry("Alpha");
+        alpha_update.description = "Updated".to_owned();
+        assert!(refresh.upsert(alpha_update));
+        assert!(refresh.upsert(entry("Delta")));
+        assert!(refresh.retain(HashSet::from(["alpha".to_owned(), "delta".to_owned(),])));
+        state.drain_pending();
+
+        assert_eq!(
+            state
+                .entries
+                .iter()
+                .map(|entry| entry.name.as_str())
+                .collect::<Vec<_>>(),
+            ["Alpha", "Delta"]
+        );
+        assert_eq!(state.entries[0].description, "Updated");
+        assert_eq!(
+            state.entries[0].icon_bytes.as_deref(),
+            Some([1, 2, 3].as_slice())
+        );
+        assert_eq!(state.list_state.selected, Some(0));
+        assert!(!state.loading);
     }
 }
