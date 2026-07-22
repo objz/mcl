@@ -498,9 +498,7 @@ impl App {
         }
 
         crate::instance::config_sync::delete_profile(&self.instance_manager.meta_dir, profile)?;
-        self.settings_state
-            .profiles
-            .retain(|candidate| candidate != profile);
+        self.settings_state.remove_profile(profile);
         Ok(())
     }
 

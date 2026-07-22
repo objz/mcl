@@ -100,6 +100,15 @@ impl SettingsState {
         self.profiles.len() + 1
     }
 
+    pub fn remove_profile(&mut self, profile: &str) {
+        self.profiles.retain(|candidate| candidate != profile);
+        if self.active_profile.as_deref() == Some(profile) {
+            self.active_profile = None;
+        }
+        let last = self.count().saturating_sub(1);
+        self.list_state.selected = Some(self.list_state.selected.unwrap_or(0).min(last));
+    }
+
     fn update_for_instance(&mut self, instance: Option<&InstanceConfig>) {
         let instance_name = instance.map(|inst| inst.name.clone());
         let active_profile = instance.and_then(|inst| inst.config_sync_profile.clone());
@@ -330,13 +339,15 @@ fn render_profile_list(
     let active_profile = state.active_profile.clone();
     let profiles = state.profiles.clone();
     let count = profiles.len() + 1;
+    let last = count.saturating_sub(1);
+    state.list_state.selected = Some(state.list_state.selected.unwrap_or(0).min(last));
 
     let builder = ListBuilder::new(move |context| {
         let theme = THEME.as_ref();
         let name = if context.index == 0 {
             LOCAL_PROFILE_LABEL.to_string()
         } else {
-            profiles[context.index - 1].clone()
+            profiles.get(context.index - 1).cloned().unwrap_or_default()
         };
         let is_active = if context.index == 0 {
             active_profile.is_none()
@@ -550,5 +561,25 @@ pub fn handle_key(
         }
         KeyCode::Char('d') if state.pane == SettingsPane::Info => SettingsAction::ToggleDesktop,
         _ => SettingsAction::None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn removing_selected_last_profile_clamps_selection() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut state = SettingsState::new(tmp.path().to_path_buf());
+        state.profiles = vec!["first".to_string(), "second".to_string()];
+        state.active_profile = Some("second".to_string());
+        state.list_state.selected = Some(2);
+
+        state.remove_profile("second");
+
+        assert_eq!(state.profiles, vec!["first"]);
+        assert_eq!(state.active_profile, None);
+        assert_eq!(state.list_state.selected, Some(1));
     }
 }
