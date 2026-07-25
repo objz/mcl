@@ -36,6 +36,7 @@ impl App {
             self.drain_pending_last_played();
             let local_streamed = self.mods_state.drain_pending();
             let content_changed = self.mods_state.drain_watcher();
+            self.mods_state.drain_provider_icons();
             self.mods_state.request_image_loads(&self.picker);
             self.mods_state.drain_image_loads(&self.picker);
             self.mods_discovery_state.drain_pending();
@@ -48,6 +49,7 @@ impl App {
                 .drain_image_loads(&self.picker);
             let local_streamed = self.resource_packs_state.drain_pending() || local_streamed;
             let content_changed = self.resource_packs_state.drain_watcher() || content_changed;
+            self.resource_packs_state.drain_provider_icons();
             self.resource_packs_state.request_image_loads(&self.picker);
             self.resource_packs_state.drain_image_loads(&self.picker);
             self.resource_packs_discovery_state.drain_pending();
@@ -60,6 +62,7 @@ impl App {
                 .drain_image_loads(&self.picker);
             let local_streamed = self.shaders_state.drain_pending() || local_streamed;
             let content_changed = self.shaders_state.drain_watcher() || content_changed;
+            self.shaders_state.drain_provider_icons();
             self.shaders_state.request_image_loads(&self.picker);
             self.shaders_state.drain_image_loads(&self.picker);
             self.shaders_discovery_state.drain_pending();
@@ -128,7 +131,6 @@ impl App {
         let Some(instance) = self.instances_state.selected_instance().cloned() else {
             self.reconciliation_for = None;
             self.content_manifest = None;
-            self.content_icons.clear();
             return;
         };
         if !changed && self.reconciliation_for.as_deref() == Some(instance.name.as_str()) {
@@ -140,7 +142,6 @@ impl App {
         }
         self.reconciliation_for = Some(instance.name.clone());
         self.content_manifest = None;
-        self.content_icons.clear();
         for discovery in [
             &mut self.mods_discovery_state,
             &mut self.resource_packs_discovery_state,
@@ -158,14 +159,12 @@ impl App {
             crate::instance::content::reconcile::spawn_after_change(
                 instance,
                 self.instance_manager.instances_dir.clone(),
-                self.instance_manager.meta_dir.clone(),
                 crate::net::HttpClient::new(),
             );
         } else {
             crate::instance::content::reconcile::spawn(
                 instance,
                 self.instance_manager.instances_dir.clone(),
-                self.instance_manager.meta_dir.clone(),
                 crate::net::HttpClient::new(),
             );
         }
@@ -201,19 +200,16 @@ impl App {
             &result.manifest,
             &minecraft_dir,
             crate::instance::ContentKind::Mod,
-            &result.icons,
         );
         self.resource_packs_state.apply_manifest(
             &result.manifest,
             &minecraft_dir,
             crate::instance::ContentKind::ResourcePack,
-            &result.icons,
         );
         self.shaders_state.apply_manifest(
             &result.manifest,
             &minecraft_dir,
             crate::instance::ContentKind::Shader,
-            &result.icons,
         );
         self.mods_discovery_state
             .refresh_installed_manifest(&result.manifest, &minecraft_dir);
@@ -221,7 +217,6 @@ impl App {
             .refresh_installed_manifest(&result.manifest, &minecraft_dir);
         self.shaders_discovery_state
             .refresh_installed_manifest(&result.manifest, &minecraft_dir);
-        self.content_icons = result.icons;
         self.content_manifest = Some((result.instance_name, result.manifest));
     }
 
@@ -240,23 +235,17 @@ impl App {
             self.instance_manager.instances_dir.join(instance_name),
         )
         .minecraft();
-        self.mods_state.apply_manifest(
-            manifest,
-            &minecraft_dir,
-            crate::instance::ContentKind::Mod,
-            &self.content_icons,
-        );
+        self.mods_state
+            .apply_manifest(manifest, &minecraft_dir, crate::instance::ContentKind::Mod);
         self.resource_packs_state.apply_manifest(
             manifest,
             &minecraft_dir,
             crate::instance::ContentKind::ResourcePack,
-            &self.content_icons,
         );
         self.shaders_state.apply_manifest(
             manifest,
             &minecraft_dir,
             crate::instance::ContentKind::Shader,
-            &self.content_icons,
         );
     }
 

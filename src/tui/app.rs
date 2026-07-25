@@ -47,7 +47,6 @@ pub struct App {
     pub(super) pending_editor: Option<std::path::PathBuf>,
     pub(super) reconciliation_for: Option<String>,
     pub(super) content_manifest: Option<(String, crate::instance::ContentManifest)>,
-    pub(super) content_icons: HashMap<(String, String), Vec<u8>>,
     pub(super) provider_conflict: Option<ProviderConflictState>,
     pub(super) dismissed_provider_conflicts: HashSet<PathBuf>,
 }
@@ -92,6 +91,18 @@ impl App {
         let instances = manager.load_all();
         let instances_state = instances::State::with_instances(instances);
 
+        let mut mods_state = widgets::content::list::ContentListState::default();
+        let mut resource_packs_state = widgets::content::list::ContentListState::default();
+        let mut shaders_state = widgets::content::list::ContentListState::default();
+        let provider_icon_client = crate::net::HttpClient::new();
+        for state in [
+            &mut mods_state,
+            &mut resource_packs_state,
+            &mut shaders_state,
+        ] {
+            state.enable_provider_icons(manager.meta_dir.clone(), provider_icon_client.clone());
+        }
+
         App {
             exit: false,
             focused: FocusedArea::default(),
@@ -99,15 +110,15 @@ impl App {
             content_tab: widgets::content::ContentTab::default(),
             content_mode: widgets::content::ContentMode::default(),
             instances_state,
-            mods_state: widgets::content::list::ContentListState::default(),
+            mods_state,
             mods_discovery_state: widgets::content::DiscoveryState::new(
                 crate::net::modrinth::DiscoveryKind::Mod,
             ),
-            resource_packs_state: widgets::content::list::ContentListState::default(),
+            resource_packs_state,
             resource_packs_discovery_state: widgets::content::DiscoveryState::new(
                 crate::net::modrinth::DiscoveryKind::ResourcePack,
             ),
-            shaders_state: widgets::content::list::ContentListState::default(),
+            shaders_state,
             shaders_discovery_state: widgets::content::DiscoveryState::new(
                 crate::net::modrinth::DiscoveryKind::Shader,
             ),
@@ -132,7 +143,6 @@ impl App {
             pending_editor: None,
             reconciliation_for: None,
             content_manifest: None,
-            content_icons: HashMap::new(),
             provider_conflict: None,
             dismissed_provider_conflicts: HashSet::new(),
         }

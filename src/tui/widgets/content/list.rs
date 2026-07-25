@@ -6,7 +6,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
-use std::sync::{Arc, Mutex, mpsc};
+use std::sync::{Arc, LazyLock, Mutex, mpsc};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
@@ -23,6 +23,8 @@ use crate::config::theme::THEME;
 use crate::instance::content::mods::{ContentEntry, IconCell};
 
 type ScanOneFn = fn(&Path, &str, bool) -> ContentEntry;
+static PROVIDER_ICON_SLOTS: LazyLock<Arc<tokio::sync::Semaphore>> =
+    LazyLock::new(|| Arc::new(tokio::sync::Semaphore::new(4)));
 
 #[derive(Clone, Copy, Default)]
 enum ContentStreamOrder {
@@ -54,6 +56,19 @@ impl ContentStream {
                 path,
                 bytes,
             })
+            .is_ok()
+        {
+            crate::tui::request_redraw();
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn send_icon_unavailable(&self, file_stem: String, path: std::path::PathBuf) -> bool {
+        if self
+            .sender
+            .send(ContentStreamUpdate::IconUnavailable { file_stem, path })
             .is_ok()
         {
             crate::tui::request_redraw();
@@ -95,6 +110,10 @@ enum ContentStreamUpdate {
         path: std::path::PathBuf,
         bytes: Vec<u8>,
     },
+    IconUnavailable {
+        file_stem: String,
+        path: std::path::PathBuf,
+    },
 }
 
 struct CachedList {
@@ -107,6 +126,12 @@ struct PendingContentImage {
     path: std::path::PathBuf,
     icon_lines: Vec<Vec<IconCell>>,
     image: Option<image::DynamicImage>,
+}
+
+struct PendingProviderIcon {
+    provider: String,
+    project_id: String,
+    bytes: Vec<u8>,
 }
 
 struct DisplayMetadata {
@@ -129,7 +154,12 @@ pub struct ContentListState {
     pub loading: bool,
     image_protocols: HashMap<String, StatefulProtocol>,
     requested_images: HashSet<String>,
+    pending_entry_images: HashSet<String>,
     pending_images: Arc<Mutex<Vec<PendingContentImage>>>,
+    pending_provider_icons: Arc<Mutex<Vec<PendingProviderIcon>>>,
+    requested_provider_icons: HashSet<(String, String)>,
+    provider_icon_meta_dir: Option<std::path::PathBuf>,
+    provider_icon_client: Option<crate::net::HttpClient>,
     images_dirty: bool,
     display_metadata: HashMap<String, DisplayMetadata>,
     pub search: crate::tui::widgets::search::SearchState,
@@ -164,7 +194,12 @@ impl Default for ContentListState {
             loading: false,
             image_protocols: HashMap::new(),
             requested_images: HashSet::new(),
+            pending_entry_images: HashSet::new(),
             pending_images: Arc::new(Mutex::new(Vec::new())),
+            pending_provider_icons: Arc::new(Mutex::new(Vec::new())),
+            requested_provider_icons: HashSet::new(),
+            provider_icon_meta_dir: None,
+            provider_icon_client: None,
             images_dirty: true,
             display_metadata: HashMap::new(),
             search: crate::tui::widgets::search::SearchState::default(),
@@ -187,9 +222,9 @@ impl ContentListState {
         manifest: &crate::instance::ContentManifest,
         minecraft_dir: &Path,
         kind: crate::instance::ContentKind,
-        icons: &std::collections::HashMap<(String, String), Vec<u8>>,
     ) {
         let mut changed = false;
+        let mut invalidated_icons = Vec::new();
         for entry in &mut self.entries {
             let Ok(relative_path) = entry.path.strip_prefix(minecraft_dir) else {
                 continue;
@@ -203,6 +238,7 @@ impl ContentListState {
                         entry.icon_bytes = None;
                         entry.icon_lines = Some(crate::instance::content::mods::fallback_icon());
                         entry.provider_icon = false;
+                        invalidated_icons.push(entry.file_stem.clone());
                     }
                     changed = true;
                 }
@@ -217,28 +253,152 @@ impl ContentListState {
                     entry.icon_bytes = None;
                     entry.icon_lines = Some(crate::instance::content::mods::fallback_icon());
                     entry.provider_icon = false;
+                    invalidated_icons.push(entry.file_stem.clone());
                 }
                 entry.provider_project = project.clone();
                 changed = true;
             }
-            if entry.icon_bytes.is_none()
-                && let Some(project) = project
-                && let Some(bytes) =
-                    icons.get(&(project.provider.clone(), project.project_id.clone()))
-                && let Some(lines) = crate::instance::content::mods::make_icon_pixels(bytes, 6, 3)
-            {
-                entry.icon_bytes = Some(bytes.clone());
-                entry.icon_lines = Some(lines);
-                entry.provider_icon = true;
-                changed = true;
+        }
+        if changed {
+            for stem in invalidated_icons {
+                self.image_protocols.remove(&stem);
+                self.requested_images.remove(&stem);
+                self.pending_entry_images.remove(&stem);
+            }
+            crate::tui::request_redraw();
+        }
+    }
+
+    pub fn enable_provider_icons(
+        &mut self,
+        meta_dir: std::path::PathBuf,
+        client: crate::net::HttpClient,
+    ) {
+        self.provider_icon_meta_dir = Some(meta_dir);
+        self.provider_icon_client = Some(client);
+    }
+
+    pub fn drain_provider_icons(&mut self) -> bool {
+        let pending = match self.pending_provider_icons.lock() {
+            Ok(mut pending) => pending.drain(..).collect::<Vec<_>>(),
+            Err(_) => return false,
+        };
+        let mut changed = false;
+        for icon in pending {
+            for entry in &mut self.entries {
+                let matches_project = entry.provider_project.as_ref().is_some_and(|project| {
+                    project.provider == icon.provider && project.project_id == icon.project_id
+                });
+                if matches_project && entry.icon_bytes.is_none() {
+                    entry.icon_bytes = Some(icon.bytes.clone());
+                    entry.provider_icon = true;
+                    changed = true;
+                }
             }
         }
         if changed {
             self.images_dirty = true;
-            self.image_protocols.clear();
-            self.requested_images.clear();
             crate::tui::request_redraw();
         }
+        changed
+    }
+
+    fn request_visible_provider_icons(&mut self, filtered: &[usize], viewport_height: u16) {
+        let Some(meta_dir) = self.provider_icon_meta_dir.clone() else {
+            return;
+        };
+        let Some(client) = self.provider_icon_client.clone() else {
+            return;
+        };
+        let projects = self.visible_provider_projects(filtered, viewport_height);
+        for project in projects {
+            let key = (project.provider.clone(), project.project_id.clone());
+            if !self.requested_provider_icons.insert(key) {
+                continue;
+            }
+            let pending = self.pending_provider_icons.clone();
+            let slots = PROVIDER_ICON_SLOTS.clone();
+            let meta_dir = meta_dir.clone();
+            let client = client.clone();
+            tokio::spawn(async move {
+                let Ok(_permit) = slots.acquire_owned().await else {
+                    return;
+                };
+                match load_provider_icon(&client, &meta_dir, &project.provider, &project.project_id)
+                    .await
+                {
+                    Ok(bytes) if !bytes.is_empty() => {
+                        if let Ok(mut pending) = pending.lock() {
+                            pending.push(PendingProviderIcon {
+                                provider: project.provider,
+                                project_id: project.project_id,
+                                bytes,
+                            });
+                            crate::tui::request_redraw();
+                        }
+                    }
+                    Ok(_) => {}
+                    Err(error) => tracing::debug!(
+                        "Could not load provider icon for {} project {}: {}",
+                        project.provider,
+                        project.project_id,
+                        error
+                    ),
+                }
+            });
+        }
+    }
+
+    fn visible_provider_projects(
+        &self,
+        filtered: &[usize],
+        viewport_height: u16,
+    ) -> Vec<crate::instance::ProviderProject> {
+        let mut remaining = viewport_height;
+        let first = self.list_state.scroll_offset_index();
+        let truncation = self.list_state.scroll_truncation();
+        let mut projects = Vec::new();
+
+        for (visible_index, &entry_index) in filtered.iter().enumerate().skip(first) {
+            let Some(entry) = self.entries.get(entry_index) else {
+                continue;
+            };
+            let height = self.entry_height(entry);
+            let visible_height = if visible_index == first {
+                height.saturating_sub(truncation)
+            } else {
+                height
+            };
+            if visible_height == 0 {
+                continue;
+            }
+            if entry.icon_bytes.is_none()
+                && let Some(project) = entry.provider_project.clone()
+                && project.provider == "modrinth"
+            {
+                projects.push(project);
+            }
+            remaining = remaining.saturating_sub(visible_height);
+            if remaining == 0 {
+                break;
+            }
+        }
+
+        projects.sort_by(|left, right| {
+            (&left.provider, &left.project_id).cmp(&(&right.provider, &right.project_id))
+        });
+        projects.dedup_by(|left, right| {
+            left.provider == right.provider && left.project_id == right.project_id
+        });
+        projects
+    }
+
+    fn entry_height(&self, entry: &ContentEntry) -> u16 {
+        let icon_rows = entry.icon_lines.as_ref().map_or(0, Vec::len);
+        let metadata = self.display_metadata.get(&entry.file_stem);
+        let has_second_line = metadata.is_some_and(|metadata| metadata.has_description)
+            || entry.footer_label.is_some();
+        icon_rows.max(if has_second_line { 2 } else { 1 }) as u16
     }
 
     pub fn start_stream(&mut self, source: impl Into<String>) -> ContentStream {
@@ -265,6 +425,8 @@ impl ContentListState {
         self.images_dirty = true;
         self.image_protocols.clear();
         self.requested_images.clear();
+        self.pending_entry_images.clear();
+        self.requested_provider_icons.clear();
         self.entries.clear();
         self.display_metadata.clear();
         self.list_state = TuiListState::default();
@@ -316,7 +478,14 @@ impl ContentListState {
 
             tokio::spawn(async move {
                 let result = tokio::task::spawn_blocking(move || {
-                    let image = image::load_from_memory(&bytes).ok()?;
+                    let Some(image) = image::load_from_memory(&bytes).ok() else {
+                        return PendingContentImage {
+                            file_stem,
+                            path,
+                            icon_lines: crate::instance::content::mods::fallback_icon(),
+                            image: None,
+                        };
+                    };
                     let icon_lines = if use_quadrants {
                         crate::instance::content::mods::make_icon_quadrants_from_image(
                             &image,
@@ -334,16 +503,15 @@ impl ContentListState {
                     let image = use_image_protocol.then(|| {
                         image.resize_exact(side, side, image::imageops::FilterType::Lanczos3)
                     });
-                    Some(PendingContentImage {
+                    PendingContentImage {
                         file_stem,
                         path,
                         icon_lines,
                         image,
-                    })
+                    }
                 })
                 .await
-                .ok()
-                .flatten();
+                .ok();
 
                 if let Some(result) = result
                     && let Ok(mut pending) = pending.lock()
@@ -367,6 +535,7 @@ impl ContentListState {
                 .iter_mut()
                 .find(|entry| entry.file_stem == result.file_stem && entry.path == result.path)
             {
+                self.pending_entry_images.remove(&result.file_stem);
                 entry.icon_lines = Some(result.icon_lines);
                 if let Some(image) = result.image {
                     self.image_protocols
@@ -393,6 +562,9 @@ impl ContentListState {
                     received = true;
                     self.images_dirty = true;
                     received_count += 1;
+                    if entry.icon_bytes.is_some() || entry.provider_icon {
+                        self.pending_entry_images.insert(entry.file_stem.clone());
+                    }
                     self.display_metadata
                         .insert(entry.file_stem.clone(), display_metadata(&entry));
                     match self.stream_order {
@@ -412,20 +584,36 @@ impl ContentListState {
                     received = true;
                     self.images_dirty = true;
                     received_count += 1;
-                    self.display_metadata
-                        .insert(entry.file_stem.clone(), display_metadata(&entry));
+                    let stem = entry.file_stem.clone();
                     if let Some(existing) = self
                         .entries
                         .iter_mut()
-                        .find(|existing| existing.file_stem == entry.file_stem)
+                        .find(|existing| existing.file_stem == stem)
                     {
-                        if entry.icon_bytes.is_none() && !existing.provider_icon {
+                        let same_source = existing.path == entry.path
+                            && existing.provider_project == entry.provider_project;
+                        if entry.icon_bytes.is_none() && same_source {
                             entry.icon_bytes = existing.icon_bytes.take();
                             entry.icon_lines = existing.icon_lines.take();
+                            entry.provider_icon = existing.provider_icon;
+                        } else if entry.icon_bytes != existing.icon_bytes {
+                            self.image_protocols.remove(&entry.file_stem);
+                            self.requested_images.remove(&entry.file_stem);
                         }
                         *existing = entry;
                     } else {
                         self.entries.push(entry);
+                    }
+                    if let Some(entry) = self.entries.iter().find(|entry| entry.file_stem == stem) {
+                        self.display_metadata
+                            .insert(entry.file_stem.clone(), display_metadata(entry));
+                        if (entry.icon_bytes.is_some() || entry.provider_icon)
+                            && !self.image_protocols.contains_key(&entry.file_stem)
+                        {
+                            self.pending_entry_images.insert(stem);
+                        } else {
+                            self.pending_entry_images.remove(&stem);
+                        }
                     }
                 }
                 Ok(ContentStreamUpdate::Retain(file_stems)) => {
@@ -438,6 +626,8 @@ impl ContentListState {
                     self.image_protocols
                         .retain(|stem, _| file_stems.contains(stem));
                     self.requested_images
+                        .retain(|stem| file_stems.contains(stem));
+                    self.pending_entry_images
                         .retain(|stem| file_stems.contains(stem));
                     restore_selected = Some(selected_stem);
                     self.images_dirty = true;
@@ -455,7 +645,20 @@ impl ContentListState {
                     {
                         entry.icon_bytes = Some(bytes);
                         entry.provider_icon = true;
+                        self.pending_entry_images.insert(file_stem.clone());
                         self.requested_images.remove(&file_stem);
+                        self.images_dirty = true;
+                    }
+                }
+                Ok(ContentStreamUpdate::IconUnavailable { file_stem, path }) => {
+                    received = true;
+                    if let Some(entry) = self
+                        .entries
+                        .iter_mut()
+                        .find(|entry| entry.file_stem == file_stem && entry.path == path)
+                    {
+                        entry.provider_icon = false;
+                        self.pending_entry_images.remove(&file_stem);
                         self.images_dirty = true;
                     }
                 }
@@ -539,6 +742,9 @@ impl ContentListState {
 
         // insert new entries in sorted position
         for entry in diff.added {
+            if entry.icon_bytes.is_some() {
+                self.pending_entry_images.insert(entry.file_stem.clone());
+            }
             self.display_metadata
                 .insert(entry.file_stem.clone(), display_metadata(&entry));
             let pos = self
@@ -700,9 +906,10 @@ impl ContentListState {
             .iter()
             .enumerate()
             .filter(|(_, entry)| {
-                !self.filter_search
-                    || self.search.matches(&entry.name)
-                    || self.search.matches(&entry.description)
+                !self.pending_entry_images.contains(&entry.file_stem)
+                    && (!self.filter_search
+                        || self.search.matches(&entry.name)
+                        || self.search.matches(&entry.description))
             })
             .map(|(i, _)| i)
             .collect()
@@ -766,6 +973,7 @@ impl ContentListState {
         self.images_dirty = true;
         self.image_protocols.clear();
         self.requested_images.clear();
+        self.pending_entry_images.clear();
 
         // save current entries to cache
         if let Some(prev) = self.loaded_for.take()
@@ -788,6 +996,12 @@ impl ContentListState {
         // try cache first
         if let Some(cached) = self.cache.remove(instance_name) {
             self.entries = cached.entries;
+            self.pending_entry_images.extend(
+                self.entries
+                    .iter()
+                    .filter(|entry| entry.icon_bytes.is_some())
+                    .map(|entry| entry.file_stem.clone()),
+            );
             self.rebuild_display_metadata();
             self.list_state.selected = cached.selected;
             self.loading = false;
@@ -980,6 +1194,64 @@ fn handle_search_keys(key_event: &KeyEvent, state: &mut ContentListState) -> boo
     false
 }
 
+async fn load_provider_icon(
+    client: &crate::net::HttpClient,
+    meta_dir: &Path,
+    provider_id: &str,
+    project_id: &str,
+) -> Result<Vec<u8>, crate::net::NetError> {
+    if provider_id != "modrinth" {
+        return Err(crate::net::NetError::Parse(format!(
+            "Content provider '{provider_id}' does not support lazy icons"
+        )));
+    }
+    let metadata = crate::storage::MetadataPaths::new(meta_dir);
+    let icon_path = metadata
+        .provider_icons(provider_id)
+        .join(format!("{project_id}.img"));
+    if let Ok(bytes) = tokio::fs::read(&icon_path).await
+        && !bytes.is_empty()
+        && image::load_from_memory(&bytes).is_ok()
+    {
+        return Ok(bytes);
+    }
+
+    let registry = crate::content_provider::ProviderRegistry::modrinth(client.clone());
+    let provider = registry.preferred(provider_id).ok_or_else(|| {
+        crate::net::NetError::Parse(format!("Content provider '{provider_id}' is unavailable"))
+    })?;
+    let project_path = metadata
+        .provider_projects(provider_id)
+        .join(format!("{project_id}.json"));
+    let cached_project = tokio::fs::read(&project_path)
+        .await
+        .ok()
+        .and_then(|bytes| serde_json::from_slice(&bytes).ok());
+    let project = match cached_project {
+        Some(project) => project,
+        None => {
+            let project = provider.project(project_id).await?;
+            crate::storage::write_atomic(
+                &project_path,
+                &serde_json::to_vec_pretty(&project)
+                    .map_err(|error| crate::net::NetError::Parse(error.to_string()))?,
+            )?;
+            project
+        }
+    };
+    let Some(url) = project.icon_url.as_deref() else {
+        return Ok(Vec::new());
+    };
+    let bytes = provider.icon(url).await?;
+    if bytes.is_empty() || image::load_from_memory(&bytes).is_err() {
+        return Err(crate::net::NetError::Parse(format!(
+            "Provider returned an invalid icon for project '{project_id}'"
+        )));
+    }
+    crate::storage::write_atomic(&icon_path, &bytes)?;
+    Ok(bytes)
+}
+
 pub fn handle_key_no_toggle(key_event: &KeyEvent, state: &mut ContentListState) -> bool {
     if handle_search_keys(key_event, state) {
         return true;
@@ -1083,8 +1355,13 @@ pub fn render(
 
     if filtered.is_empty() {
         state.list_state.selected = None;
+        let text = if state.pending_entry_images.is_empty() {
+            empty_text
+        } else {
+            loading_text
+        };
         frame.render_widget(
-            Paragraph::new(empty_text).style(Style::default().fg(theme.text_dim())),
+            Paragraph::new(text).style(Style::default().fg(theme.text_dim())),
             area,
         );
         return;
@@ -1098,6 +1375,7 @@ pub fn render(
     {
         state.list_state.selected = Some(count.saturating_sub(1));
     }
+    state.request_visible_provider_icons(&filtered, area.height);
 
     let use_image_protocol =
         picker.protocol_type() != ratatui_image::picker::ProtocolType::Halfblocks;
@@ -1866,8 +2144,9 @@ mod tests {
 
     use super::{
         ContentListState, WatcherEventHandling, available_description_width,
-        description_text_width, diff_event_paths, ellipsize, right_aligned_footer_spans,
-        square_icon_columns, title_suffix_spans, watcher_event_handling,
+        description_text_width, diff_event_paths, ellipsize, load_provider_icon,
+        right_aligned_footer_spans, square_icon_columns, title_suffix_spans,
+        watcher_event_handling,
     };
 
     fn entry(name: &str) -> ContentEntry {
@@ -2090,5 +2369,150 @@ mod tests {
         );
         assert_eq!(state.list_state.selected, Some(0));
         assert!(!state.loading);
+    }
+
+    #[test]
+    fn provider_icons_are_requested_only_for_visible_missing_icons() {
+        let mut state = ContentListState::default();
+        let mut visible = entry("Visible");
+        visible.icon_lines = Some(crate::instance::content::mods::fallback_icon());
+        visible.provider_project = Some(crate::instance::ProviderProject {
+            provider: "modrinth".to_owned(),
+            project_id: "visible-project".to_owned(),
+            version_id: "version".to_owned(),
+        });
+        let mut offscreen = entry("Offscreen");
+        offscreen.icon_lines = Some(crate::instance::content::mods::fallback_icon());
+        offscreen.provider_project = Some(crate::instance::ProviderProject {
+            provider: "modrinth".to_owned(),
+            project_id: "offscreen-project".to_owned(),
+            version_id: "version".to_owned(),
+        });
+        state.entries = vec![visible, offscreen];
+        state.rebuild_display_metadata();
+
+        let projects = state.visible_provider_projects(&[0, 1], 3);
+
+        assert_eq!(projects.len(), 1);
+        assert_eq!(projects[0].project_id, "visible-project");
+    }
+
+    #[test]
+    fn embedded_icons_do_not_request_provider_fallbacks() {
+        let mut state = ContentListState::default();
+        let mut visible = entry("Visible");
+        visible.icon_bytes = Some(vec![1, 2, 3]);
+        visible.icon_lines = Some(crate::instance::content::mods::fallback_icon());
+        visible.provider_project = Some(crate::instance::ProviderProject {
+            provider: "modrinth".to_owned(),
+            project_id: "visible-project".to_owned(),
+            version_id: "version".to_owned(),
+        });
+        state.entries = vec![visible];
+        state.rebuild_display_metadata();
+
+        assert!(state.visible_provider_projects(&[0], 3).is_empty());
+    }
+
+    #[tokio::test]
+    async fn streamed_entries_wait_for_their_rendered_icon() {
+        let mut state = ContentListState::default();
+        let mut png = std::io::Cursor::new(Vec::new());
+        image::DynamicImage::new_rgba8(1, 1)
+            .write_to(&mut png, image::ImageFormat::Png)
+            .unwrap();
+        let mut with_icon = entry("With icon");
+        with_icon.icon_bytes = Some(png.into_inner());
+        let stream = state.start_stream("local");
+
+        assert!(stream.send(with_icon));
+        state.drain_pending();
+        assert!(state.filtered_indices().is_empty());
+
+        let picker = ratatui_image::picker::Picker::halfblocks();
+        state.request_image_loads(&picker);
+        for _ in 0..20 {
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+            state.drain_image_loads(&picker);
+            if !state.filtered_indices().is_empty() {
+                break;
+            }
+        }
+
+        assert_eq!(state.filtered_indices(), vec![0]);
+    }
+
+    #[test]
+    fn streamed_entries_without_icons_are_visible_immediately() {
+        let mut state = ContentListState::default();
+        let stream = state.start_stream("local");
+
+        assert!(stream.send(entry("Without icon")));
+        state.drain_pending();
+
+        assert_eq!(state.filtered_indices(), vec![0]);
+    }
+
+    #[test]
+    fn manifest_metadata_keeps_an_embedded_icon_renderer() {
+        let minecraft_dir = PathBuf::from("instance/minecraft");
+        let mut state = ContentListState::default();
+        let mut installed = entry("Installed");
+        installed.path = minecraft_dir.join("mods/installed.jar");
+        installed.icon_bytes = Some(vec![1, 2, 3]);
+        state.entries.push(installed);
+        let picker = ratatui_image::picker::Picker::halfblocks();
+        state.image_protocols.insert(
+            "installed".to_owned(),
+            picker.new_resize_protocol(image::DynamicImage::new_rgba8(1, 1)),
+        );
+        let mut manifest = crate::instance::ContentManifest::default();
+        manifest.upsert(crate::instance::ContentFileRecord {
+            relative_path: PathBuf::from("mods/installed.jar"),
+            kind: crate::instance::ContentKind::Mod,
+            enabled: true,
+            fingerprint: crate::instance::FileFingerprint {
+                size: 3,
+                modified_ns: 1,
+                hashes: Default::default(),
+            },
+            resolution: crate::instance::Resolution::Resolved {
+                project: crate::instance::ProviderProject {
+                    provider: "modrinth".to_owned(),
+                    project_id: "project".to_owned(),
+                    version_id: "version".to_owned(),
+                },
+            },
+        });
+
+        state.apply_manifest(&manifest, &minecraft_dir, crate::instance::ContentKind::Mod);
+
+        assert!(state.image_protocols.contains_key("installed"));
+    }
+
+    #[tokio::test]
+    async fn provider_icons_load_from_cache_without_network() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut png = std::io::Cursor::new(Vec::new());
+        image::DynamicImage::new_rgba8(1, 1)
+            .write_to(&mut png, image::ImageFormat::Png)
+            .unwrap();
+        let png = png.into_inner();
+        let icon_path = crate::storage::MetadataPaths::new(temp.path())
+            .provider_icons("modrinth")
+            .join("cached-project.img");
+        std::fs::create_dir_all(icon_path.parent().unwrap()).unwrap();
+        std::fs::write(&icon_path, &png).unwrap();
+
+        let bytes = load_provider_icon(
+            &crate::net::HttpClient::new(),
+            temp.path(),
+            "modrinth",
+            "cached-project",
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(bytes, png);
     }
 }

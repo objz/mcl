@@ -9,14 +9,13 @@ use crate::instance::content::manifest::{
     ContentFileRecord, ContentKind, ContentManifest, FileFingerprint, ProviderProject, Resolution,
     fingerprint, fingerprint_metadata,
 };
-use crate::storage::{InstancePaths, MetadataPaths};
+use crate::storage::InstancePaths;
 use crate::tui::progress::{ProgressTask, ProgressTaskHandle};
 
 #[derive(Debug)]
 pub struct ReconcileResult {
     pub instance_name: String,
     pub manifest: ContentManifest,
-    pub icons: HashMap<(String, String), Vec<u8>>,
     pub error: Option<String>,
 }
 
@@ -27,7 +26,6 @@ pub static PENDING_RECONCILIATIONS: LazyLock<Arc<Mutex<Vec<ReconcileResult>>>> =
 struct ReconcileJob {
     instance: InstanceConfig,
     instances_dir: PathBuf,
-    meta_dir: PathBuf,
     client: crate::net::HttpClient,
 }
 
@@ -61,28 +59,21 @@ impl ReconcileCoordinator {
 static RECONCILE_COORDINATOR: LazyLock<Mutex<ReconcileCoordinator>> =
     LazyLock::new(|| Mutex::new(ReconcileCoordinator::default()));
 
-pub fn spawn(
-    instance: InstanceConfig,
-    instances_dir: PathBuf,
-    meta_dir: PathBuf,
-    client: crate::net::HttpClient,
-) {
-    schedule(instance, instances_dir, meta_dir, client, false);
+pub fn spawn(instance: InstanceConfig, instances_dir: PathBuf, client: crate::net::HttpClient) {
+    schedule(instance, instances_dir, client, false);
 }
 
 pub fn spawn_after_change(
     instance: InstanceConfig,
     instances_dir: PathBuf,
-    meta_dir: PathBuf,
     client: crate::net::HttpClient,
 ) {
-    schedule(instance, instances_dir, meta_dir, client, true);
+    schedule(instance, instances_dir, client, true);
 }
 
 fn schedule(
     instance: InstanceConfig,
     instances_dir: PathBuf,
-    meta_dir: PathBuf,
     client: crate::net::HttpClient,
     rerun_if_scheduled: bool,
 ) {
@@ -94,7 +85,6 @@ fn schedule(
             ReconcileJob {
                 instance,
                 instances_dir,
-                meta_dir,
                 client,
             },
             rerun_if_scheduled,
@@ -144,7 +134,6 @@ async fn reconcile(job: ReconcileJob, task: &ProgressTask) -> ReconcileResult {
     let ReconcileJob {
         instance,
         instances_dir,
-        meta_dir,
         client,
     } = job;
     let instance_name = instance.name;
@@ -187,34 +176,22 @@ async fn reconcile(job: ReconcileJob, task: &ProgressTask) -> ReconcileResult {
                 );
             }
             match resolution_result {
-                Ok(()) => {
-                    task.set_action(format!("Loading content icons for {instance_name}"));
-                    let icon_result = load_project_icons(
-                        &registry,
-                        &inventory.manifest,
-                        &MetadataPaths::new(&meta_dir),
-                        task,
-                    )
-                    .await;
-                    match save_reconciled_manifest(
-                        &manifest_path,
-                        &minecraft_dir,
-                        inventory.manifest,
-                    ) {
-                        Ok(manifest) => ReconcileResult {
-                            instance_name,
-                            manifest,
-                            icons: icon_result.unwrap_or_default(),
-                            error: None,
-                        },
-                        Err(error) => ReconcileResult {
-                            instance_name,
-                            manifest: ContentManifest::default(),
-                            icons: HashMap::new(),
-                            error: Some(error.to_string()),
-                        },
-                    }
-                }
+                Ok(()) => match save_reconciled_manifest(
+                    &manifest_path,
+                    &minecraft_dir,
+                    inventory.manifest,
+                ) {
+                    Ok(manifest) => ReconcileResult {
+                        instance_name,
+                        manifest,
+                        error: None,
+                    },
+                    Err(error) => ReconcileResult {
+                        instance_name,
+                        manifest: ContentManifest::default(),
+                        error: Some(error.to_string()),
+                    },
+                },
                 Err(error) => {
                     let saved = save_reconciled_manifest(
                         &manifest_path,
@@ -224,7 +201,6 @@ async fn reconcile(job: ReconcileJob, task: &ProgressTask) -> ReconcileResult {
                     ReconcileResult {
                         instance_name,
                         manifest: saved.unwrap_or_default(),
-                        icons: HashMap::new(),
                         error: Some(error.to_string()),
                     }
                 }
@@ -233,13 +209,11 @@ async fn reconcile(job: ReconcileJob, task: &ProgressTask) -> ReconcileResult {
         Ok(Err(error)) => ReconcileResult {
             instance_name,
             manifest: ContentManifest::default(),
-            icons: HashMap::new(),
             error: Some(error.to_string()),
         },
         Err(error) => ReconcileResult {
             instance_name,
             manifest: ContentManifest::default(),
-            icons: HashMap::new(),
             error: Some(error.to_string()),
         },
     }
@@ -499,142 +473,6 @@ async fn resolve_queries(
     Ok(())
 }
 
-async fn load_project_icons(
-    registry: &ProviderRegistry,
-    manifest: &ContentManifest,
-    metadata: &MetadataPaths,
-    task: &ProgressTask,
-) -> Result<HashMap<(String, String), Vec<u8>>, crate::net::NetError> {
-    let mut projects = manifest
-        .files
-        .iter()
-        .filter_map(|record| match &record.resolution {
-            Resolution::Resolved { project } => {
-                Some((project.provider.clone(), project.project_id.clone()))
-            }
-            _ => None,
-        })
-        .collect::<Vec<_>>();
-    projects.sort();
-    projects.dedup();
-    let project_count = projects.len() as u64;
-    task.set_sub_action(format!("{} icon(s)", projects.len()));
-    if project_count > 0 {
-        task.set_progress(0, project_count);
-    }
-    let mut icons = HashMap::new();
-    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(10);
-    for (index, (provider_id, project_id)) in projects.into_iter().enumerate() {
-        let Some(provider) = registry.preferred(&provider_id) else {
-            task.set_progress(index as u64 + 1, project_count);
-            continue;
-        };
-        let icon_path = metadata
-            .provider_icons(&provider_id)
-            .join(format!("{project_id}.img"));
-        if let Ok(bytes) = tokio::fs::read(&icon_path).await {
-            icons.insert((provider_id, project_id), bytes);
-            task.set_progress(index as u64 + 1, project_count);
-            continue;
-        }
-        let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
-        if remaining.is_zero() {
-            tracing::debug!(
-                "Content icon loading reached its 10 second startup budget; remaining icons will use fallbacks"
-            );
-            task.set_progress(project_count, project_count);
-            break;
-        }
-        task.set_sub_action(&project_id);
-        let cached_project = metadata
-            .provider_projects(&provider_id)
-            .join(format!("{project_id}.json"));
-        let project_result = match tokio::fs::read(&cached_project).await {
-            Ok(bytes) => serde_json::from_slice(&bytes)
-                .map_err(|error| crate::net::NetError::Parse(error.to_string())),
-            Err(_) => match tokio::time::timeout(
-                remaining.min(std::time::Duration::from_secs(3)),
-                provider.project(&project_id),
-            )
-            .await
-            {
-                Ok(result) => result,
-                Err(_) => {
-                    tracing::debug!(
-                        "Timed out loading {provider_id} project {project_id}; using fallback"
-                    );
-                    task.set_progress(index as u64 + 1, project_count);
-                    continue;
-                }
-            },
-        };
-        match project_result {
-            Ok(project) => {
-                if let Err(error) = cache_project(metadata, &provider_id, &project) {
-                    tracing::warn!("Failed to cache {provider_id} project {project_id}: {error}");
-                }
-                if let Some(url) = project.icon_url.as_deref() {
-                    let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
-                    match tokio::time::timeout(
-                        remaining.min(std::time::Duration::from_secs(3)),
-                        provider.icon(url),
-                    )
-                    .await
-                    {
-                        Ok(Ok(bytes)) => {
-                            let cache_result = async {
-                                if let Some(parent) = icon_path.parent() {
-                                    tokio::fs::create_dir_all(parent).await?;
-                                }
-                                tokio::fs::write(&icon_path, &bytes).await
-                            }
-                            .await;
-                            if let Err(error) = cache_result {
-                                tracing::warn!(
-                                    "Failed to cache icon for {provider_id} project \
-                                     {project_id}: {error}"
-                                );
-                            }
-                            icons.insert((provider_id, project_id), bytes);
-                        }
-                        Ok(Err(error)) => tracing::warn!(
-                            "Failed to download icon for {provider_id} project \
-                             {project_id}: {error}"
-                        ),
-                        Err(_) => tracing::debug!(
-                            "Timed out loading icon for {provider_id} project {project_id}; using fallback"
-                        ),
-                    }
-                }
-            }
-            Err(error) => {
-                tracing::warn!("Failed to load {provider_id} project {project_id}: {error}")
-            }
-        }
-        task.set_progress(index as u64 + 1, project_count);
-    }
-    Ok(icons)
-}
-
-fn cache_project(
-    metadata: &MetadataPaths,
-    provider: &str,
-    project: &crate::net::modrinth::ProjectInfo,
-) -> Result<(), crate::net::NetError> {
-    let path = metadata
-        .provider_projects(provider)
-        .join(format!("{}.json", project.id));
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    crate::storage::write_atomic(
-        &path,
-        &serde_json::to_vec_pretty(project)
-            .map_err(|error| crate::net::NetError::Parse(error.to_string()))?,
-    )?;
-    Ok(())
-}
-
 fn content_files(minecraft_dir: &Path) -> std::io::Result<Vec<(ContentKind, PathBuf)>> {
     let mut files = Vec::new();
     for kind in [
@@ -735,7 +573,6 @@ mod tests {
                 config_sync_profile: None,
             },
             instances_dir: PathBuf::new(),
-            meta_dir: PathBuf::new(),
             client: crate::net::HttpClient::new(),
         }
     }

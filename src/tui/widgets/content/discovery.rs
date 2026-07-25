@@ -585,6 +585,11 @@ pub(crate) fn project_entry(
     project: DiscoveryProject,
     installed_path: Option<PathBuf>,
 ) -> ContentEntry {
+    let provider_icon = project.icon_bytes.is_some()
+        || project
+            .icon_url
+            .as_deref()
+            .is_some_and(|url| !url.trim().is_empty());
     ContentEntry {
         file_stem: project.id.clone(),
         name: project.title,
@@ -600,7 +605,7 @@ pub(crate) fn project_entry(
         description: project.description,
         enabled: true,
         icon_bytes: project.icon_bytes,
-        provider_icon: true,
+        provider_icon,
         path: PathBuf::from(project.id),
         icon_lines: Some(crate::instance::content::mods::fallback_icon()),
     }

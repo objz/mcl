@@ -949,7 +949,7 @@ impl App {
                         }
                         let icon_url = (!loaded_icon_stems.contains(&project.id)
                             && project.icon_bytes.is_none())
-                        .then(|| project.icon_url.take())
+                        .then(|| project.icon_url.clone())
                         .flatten();
                         let entry =
                             widgets::content::discovery::project_entry(project, installed_path);
@@ -979,15 +979,21 @@ impl App {
                                         stream.send_icon(file_stem, path, bytes);
                                         progress.finish();
                                     }
-                                    Ok(_) => tracing::debug!(
-                                        "Modrinth icon for '{}' was empty; using fallback",
-                                        file_stem
-                                    ),
-                                    Err(error) => tracing::debug!(
-                                        "Failed to fetch Modrinth icon for '{}'; using fallback: {}",
-                                        file_stem,
-                                        error
-                                    ),
+                                    Ok(_) => {
+                                        tracing::debug!(
+                                            "Modrinth icon for '{}' was empty; using fallback",
+                                            file_stem
+                                        );
+                                        stream.send_icon_unavailable(file_stem, path);
+                                    }
+                                    Err(error) => {
+                                        tracing::debug!(
+                                            "Failed to fetch Modrinth icon for '{}'; using fallback: {}",
+                                            file_stem,
+                                            error
+                                        );
+                                        stream.send_icon_unavailable(file_stem, path);
+                                    }
                                 }
                             });
                         }
