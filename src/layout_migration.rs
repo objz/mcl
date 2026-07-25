@@ -69,6 +69,14 @@ pub enum MigrationError {
         old: String,
         new: String,
     },
+    #[error("Cannot merge migration data because both paths contain {path}")]
+    MergeConflict { path: String },
+    #[error("Migration backup would be created inside the data being backed up: {0}")]
+    BackupOverlap(String),
+    #[error(
+        "Not enough free space for migration backup: need {required} bytes, have {available} bytes"
+    )]
+    InsufficientSpace { required: u64, available: u64 },
 }
 
 pub fn is_needed(instances_dir: &Path, meta_dir: &Path) -> bool {
@@ -164,6 +172,8 @@ pub fn run(
         complete(&mut journal, &metadata, "backup")?;
         current += 1;
     }
+
+    validate_migration_conflicts(&instances, meta_dir)?;
 
     for instance in &instances {
         let name = instance
@@ -297,37 +307,156 @@ fn backup_user_data(
     backup_dir: &Path,
     mut report: impl FnMut(u64, u64, &Path),
 ) -> Result<(), MigrationError> {
-    let profiles = meta_dir.join("config-sync").join("profiles");
+    if backup_dir.exists() {
+        return Ok(());
+    }
+    let legacy_profiles = meta_dir.join("config-sync").join("profiles");
+    let current_profiles = MetadataPaths::new(meta_dir).profiles();
     let total = tree_size(instances_dir)?
         .saturating_add(file_size(config_file)?)
-        .saturating_add(tree_size(&profiles)?);
+        .saturating_add(tree_size(&legacy_profiles)?)
+        .saturating_add(tree_size(&current_profiles)?);
+    validate_backup_destination(instances_dir, backup_dir, total)?;
+    let partial = backup_dir.with_extension("partial");
+    if partial.exists() {
+        fs::remove_dir_all(&partial)?;
+    }
     let mut copied = 0;
     report(copied, total, instances_dir);
-    fs::create_dir_all(backup_dir)?;
+    fs::create_dir_all(&partial)?;
     copy_dir_recursive_with_progress(
         instances_dir,
-        &backup_dir.join("instances"),
+        &partial.join("instances"),
         &mut |bytes, path| {
             copied = copied.saturating_add(bytes);
             report(copied, total, path);
         },
     )?;
     if config_file.exists() {
-        let destination = backup_dir.join("config").join("config.toml");
+        let destination = partial.join("config").join("config.toml");
         fs::create_dir_all(destination.parent().unwrap())?;
         let bytes = fs::copy(config_file, destination)?;
         copied = copied.saturating_add(bytes);
         report(copied, total, config_file);
     }
-    if profiles.exists() {
+    if legacy_profiles.exists() {
         copy_dir_recursive_with_progress(
-            &profiles,
-            &backup_dir.join("profiles"),
+            &legacy_profiles,
+            &partial.join("profiles/legacy"),
             &mut |bytes, path| {
                 copied = copied.saturating_add(bytes);
                 report(copied, total, path);
             },
         )?;
+    }
+    if current_profiles.exists() {
+        copy_dir_recursive_with_progress(
+            &current_profiles,
+            &partial.join("profiles/current"),
+            &mut |bytes, path| {
+                copied = copied.saturating_add(bytes);
+                report(copied, total, path);
+            },
+        )?;
+    }
+    fs::rename(partial, backup_dir)?;
+    Ok(())
+}
+
+fn validate_migration_conflicts(
+    instances: &[PathBuf],
+    meta_dir: &Path,
+) -> Result<(), MigrationError> {
+    for instance in instances {
+        let name = instance
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("instance");
+        let paths = InstancePaths::new(instance);
+        for (legacy, destination) in [
+            (instance.join(LEGACY_MINECRAFT), paths.minecraft()),
+            (instance.join(LEGACY_STATE), paths.state()),
+        ] {
+            if legacy.exists() && destination.exists() {
+                return Err(MigrationError::PathConflict {
+                    instance: name.to_owned(),
+                    old: legacy.display().to_string(),
+                    new: destination.display().to_string(),
+                });
+            }
+        }
+        validate_merge(
+            &paths.state().join("config-sync").join("local-config"),
+            &paths.local_config(),
+        )?;
+    }
+    let metadata = MetadataPaths::new(meta_dir);
+    for (source, destination) in [
+        (
+            meta_dir.join("config-sync").join("profiles"),
+            metadata.profiles(),
+        ),
+        (meta_dir.join("versions"), metadata.versions()),
+        (meta_dir.join("libraries"), metadata.libraries()),
+        (meta_dir.join("assets"), metadata.assets()),
+        (meta_dir.join("loader-profiles"), metadata.loader_profiles()),
+    ] {
+        validate_merge(&source, &destination)?;
+    }
+    Ok(())
+}
+
+fn validate_merge(source: &Path, destination: &Path) -> Result<(), MigrationError> {
+    if !source.exists() || !destination.exists() {
+        return Ok(());
+    }
+    for entry in fs::read_dir(source)? {
+        let entry = entry?;
+        let target = destination.join(entry.file_name());
+        if !target.exists() {
+            continue;
+        }
+        if entry.file_type()?.is_dir() && target.is_dir() {
+            validate_merge(&entry.path(), &target)?;
+        } else {
+            return Err(MigrationError::MergeConflict {
+                path: target.display().to_string(),
+            });
+        }
+    }
+    Ok(())
+}
+
+fn validate_backup_destination(
+    instances_dir: &Path,
+    backup_dir: &Path,
+    required: u64,
+) -> Result<(), MigrationError> {
+    let instances = instances_dir.canonicalize()?;
+    let backup_parent = backup_dir
+        .parent()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "backup has no parent"))?;
+    fs::create_dir_all(backup_parent)?;
+    let backup_parent = backup_parent.canonicalize()?;
+    let backup_name = backup_dir
+        .file_name()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "backup has no name"))?;
+    let canonical_backup = backup_parent.join(backup_name);
+    if canonical_backup.starts_with(&instances) {
+        return Err(MigrationError::BackupOverlap(
+            canonical_backup.display().to_string(),
+        ));
+    }
+    let available = fs2::available_space(&backup_parent)?;
+    let margin = required / 20;
+    let required_with_margin = required
+        .saturating_add(margin)
+        .saturating_add(16 * 1024 * 1024);
+    if available < required_with_margin {
+        return Err(MigrationError::InsufficientSpace {
+            required: required_with_margin,
+            available,
+        });
     }
     Ok(())
 }
@@ -368,13 +497,29 @@ fn move_or_merge(source: &Path, destination: &Path) -> Result<(), MigrationError
         fs::rename(source, destination)?;
         return Ok(());
     }
-    copy_dir_recursive(source, destination)?;
+    merge_dir_without_overwrite(source, destination)?;
     fs::remove_dir_all(source)?;
     Ok(())
 }
 
-fn copy_dir_recursive(source: &Path, destination: &Path) -> io::Result<()> {
-    copy_dir_recursive_with_progress(source, destination, &mut |_, _| {})
+fn merge_dir_without_overwrite(source: &Path, destination: &Path) -> Result<(), MigrationError> {
+    fs::create_dir_all(destination)?;
+    for entry in fs::read_dir(source)? {
+        let entry = entry?;
+        let target = destination.join(entry.file_name());
+        let file_type = entry.file_type()?;
+        if !target.exists() {
+            fs::rename(entry.path(), target)?;
+        } else if file_type.is_dir() && target.is_dir() {
+            merge_dir_without_overwrite(&entry.path(), &target)?;
+            fs::remove_dir(entry.path())?;
+        } else {
+            return Err(MigrationError::MergeConflict {
+                path: target.display().to_string(),
+            });
+        }
+    }
+    Ok(())
 }
 
 fn copy_dir_recursive_with_progress(
@@ -419,15 +564,22 @@ fn load_or_create_journal(
     _instances_dir: &Path,
     metadata: &MetadataPaths,
 ) -> Result<MigrationJournal, MigrationError> {
+    let legacy_journal = metadata.state().join("migration-v2.json");
     if metadata.migration_journal().exists() {
         return Ok(serde_json::from_slice(&fs::read(
             metadata.migration_journal(),
         )?)?);
     }
+    if legacy_journal.exists() {
+        let journal = serde_json::from_slice(&fs::read(&legacy_journal)?)?;
+        write_json_atomic(&metadata.migration_journal(), &journal)?;
+        fs::remove_file(legacy_journal)?;
+        return Ok(journal);
+    }
     let timestamp = chrono::Local::now().format("%Y%m%d-%H%M%S").to_string();
     let journal = MigrationJournal {
         version: LAYOUT_VERSION,
-        backup_dir: metadata.backups().join(format!("layout-v2-{timestamp}")),
+        backup_dir: metadata.backups().join(format!("backup-{timestamp}")),
         completed: Vec::new(),
     };
     write_json_atomic(&metadata.migration_journal(), &journal)?;
@@ -441,7 +593,8 @@ fn latest_layout_backup(metadata: &MetadataPaths) -> Option<PathBuf> {
         .filter_map(|entry| {
             let file_type = entry.file_type().ok()?;
             let name = entry.file_name();
-            (file_type.is_dir() && name.to_string_lossy().starts_with("layout-v2-"))
+            let name = name.to_string_lossy();
+            (file_type.is_dir() && (name.starts_with("backup-") || name.starts_with("layout-v2-")))
                 .then(|| entry.path())
         })
         .collect::<Vec<_>>();
@@ -486,18 +639,7 @@ fn marker_version(path: &Path) -> Option<u32> {
 }
 
 fn write_json_atomic(path: &Path, value: &impl Serialize) -> Result<(), MigrationError> {
-    let parent = path
-        .parent()
-        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "path has no parent"))?;
-    fs::create_dir_all(parent)?;
-    let temporary = parent.join(format!(
-        ".{}.tmp",
-        path.file_name()
-            .and_then(|name| name.to_str())
-            .unwrap_or("state")
-    ));
-    fs::write(&temporary, serde_json::to_vec_pretty(value)?)?;
-    fs::rename(temporary, path)?;
+    crate::storage::write_atomic(path, &serde_json::to_vec_pretty(value)?)?;
     Ok(())
 }
 
@@ -540,7 +682,14 @@ mod tests {
             b"options"
         );
         assert!(backup.join("instances/Example/.minecraft").exists());
-        assert!(backup.join("profiles/main/options.txt").exists());
+        assert!(backup.join("profiles/legacy/main/options.txt").exists());
+        assert!(
+            backup
+                .file_name()
+                .unwrap()
+                .to_string_lossy()
+                .starts_with("backup-")
+        );
         assert!(!meta.join("config-sync").exists());
         assert!(progress.iter().any(|update| {
             update.item_total.is_some_and(|total| total > 0)
@@ -564,5 +713,25 @@ mod tests {
         fs::create_dir_all(instance.join("minecraft")).unwrap();
         let error = migrate_instance(&instance, "Example").unwrap_err();
         assert!(matches!(error, MigrationError::PathConflict { .. }));
+    }
+
+    #[test]
+    fn merge_conflicts_do_not_overwrite_existing_profiles() {
+        let temp = tempfile::tempdir().unwrap();
+        let source = temp.path().join("legacy");
+        let destination = temp.path().join("current");
+        fs::create_dir_all(&source).unwrap();
+        fs::create_dir_all(&destination).unwrap();
+        fs::write(source.join("options.txt"), b"legacy").unwrap();
+        fs::write(destination.join("options.txt"), b"current").unwrap();
+
+        let error = move_or_merge(&source, &destination).unwrap_err();
+
+        assert!(matches!(error, MigrationError::MergeConflict { .. }));
+        assert_eq!(
+            fs::read(destination.join("options.txt")).unwrap(),
+            b"current"
+        );
+        assert_eq!(fs::read(source.join("options.txt")).unwrap(), b"legacy");
     }
 }

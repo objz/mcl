@@ -1,4 +1,8 @@
+use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+
+static TEMP_FILE_ID: AtomicU64 = AtomicU64::new(1);
 
 pub const MINECRAFT_DIR_NAME: &str = "minecraft";
 pub const INSTANCE_STATE_DIR_NAME: &str = "rmcl";
@@ -114,12 +118,60 @@ impl MetadataPaths {
     }
 
     pub fn migration_journal(&self) -> PathBuf {
-        self.state().join("migration-v2.json")
+        self.state().join("migration.json")
     }
 
     pub fn cache_rebuild_pending(&self) -> PathBuf {
         self.state().join("cache-rebuild.pending")
     }
+}
+
+pub fn write_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "path has no parent"))?;
+    std::fs::create_dir_all(parent)?;
+    let id = TEMP_FILE_ID.fetch_add(1, Ordering::Relaxed);
+    let name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("data");
+    let temporary = parent.join(format!(".{name}.{}.{}.tmp", std::process::id(), id));
+    let result = (|| {
+        use std::io::Write;
+
+        let mut file = std::fs::OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .open(&temporary)?;
+        file.write_all(bytes)?;
+        file.sync_all()?;
+        replace_file(&temporary, path)
+    })();
+    if result.is_err() {
+        let _ = std::fs::remove_file(&temporary);
+    }
+    result
+}
+
+#[cfg(not(windows))]
+fn replace_file(source: &Path, destination: &Path) -> io::Result<()> {
+    std::fs::rename(source, destination)
+}
+
+#[cfg(windows)]
+fn replace_file(source: &Path, destination: &Path) -> io::Result<()> {
+    if !destination.exists() {
+        return std::fs::rename(source, destination);
+    }
+    let id = TEMP_FILE_ID.fetch_add(1, Ordering::Relaxed);
+    let backup = destination.with_extension(format!("rmcl-replaced-{id}"));
+    std::fs::rename(destination, &backup)?;
+    if let Err(error) = std::fs::rename(source, destination) {
+        let _ = std::fs::rename(&backup, destination);
+        return Err(error);
+    }
+    std::fs::remove_file(backup)
 }
 
 #[cfg(test)]
@@ -155,5 +207,18 @@ mod tests {
             paths.versions(),
             PathBuf::from("/meta/cache/minecraft/versions")
         );
+        assert_eq!(
+            paths.migration_journal(),
+            PathBuf::from("/meta/state/migration.json")
+        );
+    }
+
+    #[test]
+    fn atomic_write_replaces_existing_file() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("state.json");
+        std::fs::write(&path, b"old").unwrap();
+        write_atomic(&path, b"new").unwrap();
+        assert_eq!(std::fs::read(path).unwrap(), b"new");
     }
 }

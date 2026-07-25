@@ -47,49 +47,45 @@ pub async fn show() -> color_eyre::Result<()> {
         )
     );
 
-    // figure out the terminal's font cell size for rendering images.
-    // falls back to halfblock characters if the terminal doesn't respond
-    let mut picker = ratatui_image::picker::Picker::from_query_stdio()
-        .unwrap_or_else(|_| ratatui_image::picker::Picker::halfblocks());
-    let detected_protocol = picker.protocol_type();
-    let requested_protocol = match crate::config::SETTINGS.ui.image_protocol {
-        crate::config::settings::ImageProtocol::Halfblocks
-        | crate::config::settings::ImageProtocol::Quadrants => {
-            ratatui_image::picker::ProtocolType::Halfblocks
-        }
-        crate::config::settings::ImageProtocol::Kitty
-            if detected_protocol == ratatui_image::picker::ProtocolType::Kitty =>
-        {
-            ratatui_image::picker::ProtocolType::Kitty
-        }
-        crate::config::settings::ImageProtocol::Iterm2
-            if detected_protocol == ratatui_image::picker::ProtocolType::Iterm2 =>
-        {
-            ratatui_image::picker::ProtocolType::Iterm2
-        }
-        _ => ratatui_image::picker::ProtocolType::Halfblocks,
-    };
-    picker.set_protocol_type(requested_protocol);
+    let result = async {
+        // figure out the terminal's font cell size for rendering images.
+        // falls back to halfblock characters if the terminal doesn't respond
+        let mut picker = ratatui_image::picker::Picker::from_query_stdio()
+            .unwrap_or_else(|_| ratatui_image::picker::Picker::halfblocks());
+        let detected_protocol = picker.protocol_type();
+        let requested_protocol = match crate::config::SETTINGS.ui.image_protocol {
+            crate::config::settings::ImageProtocol::Halfblocks
+            | crate::config::settings::ImageProtocol::Quadrants => {
+                ratatui_image::picker::ProtocolType::Halfblocks
+            }
+            crate::config::settings::ImageProtocol::Kitty
+                if detected_protocol == ratatui_image::picker::ProtocolType::Kitty =>
+            {
+                ratatui_image::picker::ProtocolType::Kitty
+            }
+            crate::config::settings::ImageProtocol::Iterm2
+                if detected_protocol == ratatui_image::picker::ProtocolType::Iterm2 =>
+            {
+                ratatui_image::picker::ProtocolType::Iterm2
+            }
+            _ => ratatui_image::picker::ProtocolType::Halfblocks,
+        };
+        picker.set_protocol_type(requested_protocol);
 
-    let mut app = app::App::new(picker);
-    match run_layout_migration_screen(&mut terminal, &mut app).await? {
-        MigrationScreenOutcome::NotNeeded => {}
-        MigrationScreenOutcome::Migrated => {
-            // the modal uses pre-migration state as its background. rebuild the
-            // app after confirmation so no instance or profile data stays stale
-            let picker = app.into_picker();
-            app = app::App::new(picker);
+        let mut app = app::App::new(picker);
+        match run_layout_migration_screen(&mut terminal, &mut app).await? {
+            MigrationScreenOutcome::NotNeeded => {}
+            MigrationScreenOutcome::Migrated => {
+                // the modal uses pre-migration state as its background. rebuild the
+                // app after confirmation so no instance or profile data stays stale
+                let picker = app.into_picker();
+                app = app::App::new(picker);
+            }
+            MigrationScreenOutcome::Quit => return Ok(()),
         }
-        MigrationScreenOutcome::Quit => {
-            let _ = crossterm::execute!(
-                std::io::stdout(),
-                crossterm::event::PopKeyboardEnhancementFlags
-            );
-            ratatui::restore();
-            return Ok(());
-        }
+        app.run(&mut terminal).await
     }
-    let result = app.run(&mut terminal).await;
+    .await;
 
     let _ = crossterm::execute!(
         std::io::stdout(),

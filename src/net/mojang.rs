@@ -266,26 +266,28 @@ pub async fn download_assets_from(
     assets_base: &str,
 ) -> Result<(), NetError> {
     set_action("Downloading assets...");
-    tracing::debug!(
-        "Fetching asset index {} from {}",
-        meta.asset_index.id,
-        meta.asset_index.url
-    );
-
-    let asset_index: AssetIndexContent = match client.get_json(&meta.asset_index.url).await {
-        Ok(index) => index,
-        Err(e) => {
-            clear();
-            return Err(e);
-        }
-    };
-
     let index_path = crate::storage::MetadataPaths::new(meta_dir)
         .assets()
         .join("indexes")
         .join(format!("{}.json", meta.asset_index.id));
-    if !index_path.exists() {
-        match serde_json::to_string(&asset_index) {
+    let asset_index: AssetIndexContent = if index_path.exists() {
+        let bytes = tokio::fs::read(&index_path).await?;
+        serde_json::from_slice(&bytes)
+            .map_err(|error| NetError::Parse(format!("Invalid cached asset index: {error}")))?
+    } else {
+        tracing::debug!(
+            "Fetching asset index {} from {}",
+            meta.asset_index.id,
+            meta.asset_index.url
+        );
+        let index = match client.get_json(&meta.asset_index.url).await {
+            Ok(index) => index,
+            Err(e) => {
+                clear();
+                return Err(e);
+            }
+        };
+        match serde_json::to_string(&index) {
             Ok(json) => {
                 if let Some(parent) = index_path.parent() {
                     match tokio::fs::create_dir_all(parent).await {
@@ -312,7 +314,8 @@ pub async fn download_assets_from(
                 tracing::debug!("Failed to serialize asset index: {}", e);
             }
         }
-    }
+        index
+    };
 
     // assets are stored by hash with the first 2 chars as a directory prefix,
     // e.g. "ab/ab1234..." - same layout mojang uses on their CDN

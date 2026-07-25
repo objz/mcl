@@ -298,29 +298,41 @@ impl InstanceManager {
             std::fs::create_dir_all(directory)?;
         }
 
-        let manifest = crate::net::mojang::fetch_version_manifest(&self.client).await?;
-        let version_entry = manifest
-            .versions
-            .iter()
-            .find(|version| version.id == config.game_version)
-            .ok_or_else(|| {
-                InstanceError::InvalidName(format!(
-                    "Minecraft version '{}' is no longer present in Mojang's manifest",
-                    config.game_version
-                ))
-            })?;
-        let (version_meta, raw_meta) =
-            crate::net::mojang::fetch_version_meta_with_raw(&self.client, version_entry).await?;
-        crate::net::mojang::download_client_jar(&self.client, &version_meta, &self.meta_dir)
-            .await?;
         let meta_path = metadata_paths
             .versions()
             .join(&config.game_version)
             .join("meta.json");
+        let (version_meta, raw_meta) = if meta_path.exists() {
+            let raw = std::fs::read(&meta_path)?;
+            let parsed = serde_json::from_slice(&raw).map_err(|error| {
+                InstanceError::InvalidName(format!(
+                    "Cached metadata for Minecraft {} is invalid: {error}",
+                    config.game_version
+                ))
+            })?;
+            (parsed, raw)
+        } else {
+            let manifest = crate::net::mojang::fetch_version_manifest(&self.client).await?;
+            let version_entry = manifest
+                .versions
+                .iter()
+                .find(|version| version.id == config.game_version)
+                .ok_or_else(|| {
+                    InstanceError::InvalidName(format!(
+                        "Minecraft version '{}' is no longer present in Mojang's manifest",
+                        config.game_version
+                    ))
+                })?;
+            crate::net::mojang::fetch_version_meta_with_raw(&self.client, version_entry).await?
+        };
+        crate::net::mojang::download_client_jar(&self.client, &version_meta, &self.meta_dir)
+            .await?;
         if let Some(parent) = meta_path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        std::fs::write(meta_path, raw_meta)?;
+        if !meta_path.exists() {
+            crate::storage::write_atomic(&meta_path, &raw_meta)?;
+        }
         crate::net::mojang::download_libraries(&self.client, &version_meta, &self.meta_dir).await?;
         crate::net::mojang::download_assets(&self.client, &version_meta, &self.meta_dir).await?;
 
