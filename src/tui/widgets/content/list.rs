@@ -182,6 +182,54 @@ impl Default for ContentListState {
 }
 
 impl ContentListState {
+    pub fn apply_manifest(
+        &mut self,
+        manifest: &crate::instance::ContentManifest,
+        minecraft_dir: &Path,
+        kind: crate::instance::ContentKind,
+        icons: &std::collections::HashMap<(String, String), Vec<u8>>,
+    ) {
+        let mut changed = false;
+        for entry in &mut self.entries {
+            let Ok(relative_path) = entry.path.strip_prefix(minecraft_dir) else {
+                continue;
+            };
+            let Some(record) = manifest
+                .record(relative_path)
+                .filter(|record| record.kind == kind)
+            else {
+                if entry.provider_project.take().is_some() {
+                    changed = true;
+                }
+                continue;
+            };
+            let project = match &record.resolution {
+                crate::instance::Resolution::Resolved { project } => Some(project.clone()),
+                _ => None,
+            };
+            if entry.provider_project != project {
+                entry.provider_project = project.clone();
+                changed = true;
+            }
+            if entry.icon_bytes.is_none()
+                && let Some(project) = project
+                && let Some(bytes) =
+                    icons.get(&(project.provider.clone(), project.project_id.clone()))
+                && let Some(lines) = crate::instance::content::mods::make_icon_pixels(bytes, 6, 3)
+            {
+                entry.icon_bytes = Some(bytes.clone());
+                entry.icon_lines = Some(lines);
+                changed = true;
+            }
+        }
+        if changed {
+            self.images_dirty = true;
+            self.image_protocols.clear();
+            self.requested_images.clear();
+            crate::tui::request_redraw();
+        }
+    }
+
     pub fn start_stream(&mut self, source: impl Into<String>) -> ContentStream {
         self.start_stream_with_order(source, ContentStreamOrder::Sorted)
     }
@@ -319,9 +367,9 @@ impl ContentListState {
 
     // drain streaming entries from the initial load. each entry arrives
     // individually and is inserted in sorted position for a smooth fill-in
-    pub fn drain_pending(&mut self) {
+    pub fn drain_pending(&mut self) -> bool {
         let Some(rx) = &self.stream_rx else {
-            return;
+            return false;
         };
 
         let mut received = false;
@@ -370,6 +418,7 @@ impl ContentListState {
                     }
                 }
                 Ok(ContentStreamUpdate::Retain(file_stems)) => {
+                    received = true;
                     let selected_stem = self.selected_file_stem();
                     self.entries
                         .retain(|entry| file_stems.contains(&entry.file_stem));
@@ -387,6 +436,7 @@ impl ContentListState {
                     path,
                     bytes,
                 }) => {
+                    received = true;
                     if let Some(entry) = self
                         .entries
                         .iter_mut()
@@ -431,13 +481,14 @@ impl ContentListState {
             }
             self.update_scrollbar();
         }
+        received || finished
     }
 
     // pick up the precomputed diff from the notify watcher callback.
     // skip while streaming is in progress to avoid duplicate entries.
-    pub fn drain_watcher(&mut self) {
+    pub fn drain_watcher(&mut self) -> bool {
         if self.stream_rx.is_some() {
-            return;
+            return false;
         }
 
         let diff = match self.watcher_diff.lock() {
@@ -446,7 +497,7 @@ impl ContentListState {
         };
 
         let Some(diff) = diff else {
-            return;
+            return false;
         };
         self.images_dirty = true;
 
@@ -495,6 +546,7 @@ impl ContentListState {
         }
 
         self.update_scrollbar();
+        true
     }
 
     // starts a notify file watcher on the given directory. changes trigger
@@ -510,10 +562,12 @@ impl ContentListState {
         let ext: &'static str = self.content_ext.unwrap_or(".jar");
         let scan_one = self.scan_one_fn;
 
-        let dirty = Arc::new(AtomicBool::new(false));
         let running = Arc::new(AtomicBool::new(false));
-        let dirty_cb = dirty.clone();
         let running_cb = running.clone();
+        let pending_paths = Arc::new(Mutex::new(HashSet::<std::path::PathBuf>::new()));
+        let pending_paths_cb = pending_paths.clone();
+        let needs_rescan = Arc::new(AtomicBool::new(false));
+        let needs_rescan_cb = needs_rescan.clone();
 
         // initialize known stems from the current directory state so existing
         // files are not treated as "new" on the first notify event
@@ -521,18 +575,28 @@ impl ContentListState {
 
         let watch_dir = dir.clone();
         let watcher = notify::recommended_watcher(move |res: Result<notify::Event, _>| {
-            if let Err(e) = &res {
-                tracing::warn!(
-                    "Content watcher event error for {}: {}",
-                    watch_dir.display(),
-                    e
-                );
-                return;
+            let event_paths = match res {
+                Ok(event) => match watcher_event_handling(&event.kind) {
+                    WatcherEventHandling::Ignore => return,
+                    WatcherEventHandling::Paths => event.paths,
+                    WatcherEventHandling::Rescan => {
+                        needs_rescan_cb.store(true, Ordering::Relaxed);
+                        event.paths
+                    }
+                },
+                Err(e) => {
+                    tracing::warn!(
+                        "Content watcher event error for {}: {}",
+                        watch_dir.display(),
+                        e
+                    );
+                    needs_rescan_cb.store(true, Ordering::Relaxed);
+                    Vec::new()
+                }
+            };
+            if let Ok(mut pending) = pending_paths_cb.lock() {
+                pending.extend(event_paths);
             }
-
-            // mark dirty. if a thread is already running it will loop to
-            // pick up the change after its current diff
-            dirty_cb.store(true, Ordering::Relaxed);
 
             if running_cb.swap(true, Ordering::Relaxed) {
                 return;
@@ -540,9 +604,10 @@ impl ContentListState {
 
             let dir = watch_dir.clone();
             let diff_slot = watcher_diff.clone();
-            let dirty = dirty_cb.clone();
             let running = running_cb.clone();
             let known = known_stems.clone();
+            let pending_paths = pending_paths_cb.clone();
+            let needs_rescan = needs_rescan_cb.clone();
 
             std::thread::spawn(move || {
                 // always clear `running` even if we panic
@@ -552,56 +617,50 @@ impl ContentListState {
                         self.0.store(false, Ordering::Relaxed);
                     }
                 }
-                let _guard = ResetOnDrop(running);
+                let _guard = ResetOnDrop(running.clone());
 
                 loop {
-                    dirty.store(false, Ordering::Relaxed);
                     std::thread::sleep(std::time::Duration::from_millis(100));
-
-                    let result = (|| {
-                        let on_disk = read_dir_stems(&dir, ext);
-                        let mut known_map = known.lock().ok()?;
-
-                        let mut toggled = Vec::new();
-                        let mut removed = Vec::new();
-                        let mut added = Vec::new();
-
-                        for (stem, (old_path, old_enabled)) in known_map.iter() {
-                            if let Some((disk_path, disk_enabled)) = on_disk.get(stem) {
-                                if *disk_enabled != *old_enabled || *disk_path != *old_path {
-                                    toggled.push((stem.clone(), *disk_enabled, disk_path.clone()));
-                                }
-                            } else {
-                                removed.push(stem.clone());
-                            }
-                        }
-
-                        for (stem, (path, enabled)) in &on_disk {
-                            if !known_map.contains_key(stem)
-                                && let Some(scan_one) = scan_one
-                            {
-                                added.push(scan_one(path, stem, *enabled));
-                            }
-                        }
-
-                        *known_map = on_disk;
-
-                        Some(WatcherDiff {
-                            toggled,
-                            removed,
-                            added,
-                        })
-                    })();
+                    let paths = pending_paths
+                        .lock()
+                        .ok()
+                        .map(|mut pending| pending.drain().collect::<Vec<_>>())
+                        .unwrap_or_default();
+                    let full_rescan = needs_rescan.swap(false, Ordering::Relaxed);
+                    let result = if full_rescan {
+                        diff_directory(&dir, ext, scan_one, &known)
+                    } else {
+                        diff_event_paths(&dir, &paths, ext, scan_one, &known)
+                    };
 
                     if let Some(diff) = result
                         && let Ok(mut slot) = diff_slot.lock()
                     {
-                        *slot = Some(diff);
+                        if let Some(pending) = slot.as_mut() {
+                            merge_watcher_diff(pending, diff);
+                        } else {
+                            *slot = Some(diff);
+                        }
                         crate::tui::request_redraw();
                     }
 
-                    if !dirty.load(Ordering::Relaxed) {
-                        break;
+                    let no_pending = pending_paths.lock().is_ok_and(|pending| pending.is_empty());
+                    if no_pending && !needs_rescan.load(Ordering::Relaxed) {
+                        // Release ownership before the final check. An event
+                        // racing with this boundary either starts a new worker
+                        // or is observed here and kept by this worker.
+                        running.store(false, Ordering::Release);
+                        let still_empty =
+                            pending_paths.lock().is_ok_and(|pending| pending.is_empty());
+                        if still_empty && !needs_rescan.load(Ordering::Acquire) {
+                            break;
+                        }
+                        if running
+                            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+                            .is_err()
+                        {
+                            break;
+                        }
                     }
                 }
             });
@@ -1580,10 +1639,161 @@ fn square_icon_columns(rows: u16, font_size: (u16, u16)) -> u16 {
     ((u32::from(rows) * height + width / 2) / width).max(1) as u16
 }
 
+#[derive(Debug, PartialEq, Eq)]
+enum WatcherEventHandling {
+    Ignore,
+    Paths,
+    Rescan,
+}
+
+fn watcher_event_handling(kind: &notify::EventKind) -> WatcherEventHandling {
+    match kind {
+        notify::EventKind::Access(_) => WatcherEventHandling::Ignore,
+        notify::EventKind::Create(_)
+        | notify::EventKind::Modify(_)
+        | notify::EventKind::Remove(_) => WatcherEventHandling::Paths,
+        notify::EventKind::Any | notify::EventKind::Other => WatcherEventHandling::Rescan,
+    }
+}
+
 // reads a content directory and builds a stem -> (path, enabled) map.
 // used both by watch_dir to initialize known state and by the watcher
 // thread to detect changes. when ext is empty (worlds), only directories
 // are included.
+fn diff_directory(
+    dir: &std::path::Path,
+    ext: &str,
+    scan_one: Option<ScanOneFn>,
+    known: &Arc<Mutex<HashMap<String, (std::path::PathBuf, bool)>>>,
+) -> Option<WatcherDiff> {
+    let on_disk = read_dir_stems(dir, ext);
+    let mut known_map = known.lock().ok()?;
+    let mut toggled = Vec::new();
+    let mut removed = Vec::new();
+    let mut added = Vec::new();
+    for (stem, (old_path, old_enabled)) in known_map.iter() {
+        if let Some((disk_path, disk_enabled)) = on_disk.get(stem) {
+            if disk_enabled != old_enabled || disk_path != old_path {
+                toggled.push((stem.clone(), *disk_enabled, disk_path.clone()));
+            }
+        } else {
+            removed.push(stem.clone());
+        }
+    }
+    for (stem, (path, enabled)) in &on_disk {
+        if !known_map.contains_key(stem)
+            && let Some(scan_one) = scan_one
+        {
+            added.push(scan_one(path, stem, *enabled));
+        }
+    }
+    *known_map = on_disk;
+    watcher_diff(toggled, removed, added)
+}
+
+fn diff_event_paths(
+    dir: &std::path::Path,
+    paths: &[std::path::PathBuf],
+    ext: &str,
+    scan_one: Option<ScanOneFn>,
+    known: &Arc<Mutex<HashMap<String, (std::path::PathBuf, bool)>>>,
+) -> Option<WatcherDiff> {
+    let mut known_map = known.lock().ok()?;
+    let mut toggled = Vec::new();
+    let mut removed = Vec::new();
+    let mut added = Vec::new();
+    for path in paths {
+        if path.parent() != Some(dir) {
+            continue;
+        }
+        if path.exists() {
+            let Some((stem, enabled)) = watched_stem(path, ext) else {
+                continue;
+            };
+            match known_map.get(&stem) {
+                Some((known_path, known_enabled))
+                    if known_path == path && *known_enabled == enabled =>
+                {
+                    // A modify event still needs a rescan so changed archive
+                    // metadata and icons become visible.
+                    if let Some(scan_one) = scan_one {
+                        removed.push(stem.clone());
+                        added.push(scan_one(path, &stem, enabled));
+                    }
+                }
+                Some(_) => {
+                    toggled.push((stem.clone(), enabled, path.clone()));
+                }
+                None => {
+                    if let Some(scan_one) = scan_one {
+                        added.push(scan_one(path, &stem, enabled));
+                    }
+                }
+            }
+            known_map.insert(stem, (path.clone(), enabled));
+        } else {
+            let removed_stems = known_map
+                .iter()
+                .filter_map(|(stem, (known_path, _))| (known_path == path).then(|| stem.clone()))
+                .collect::<Vec<_>>();
+            for stem in removed_stems {
+                known_map.remove(&stem);
+                removed.push(stem);
+            }
+        }
+    }
+    watcher_diff(toggled, removed, added)
+}
+
+fn watcher_diff(
+    toggled: Vec<(String, bool, std::path::PathBuf)>,
+    removed: Vec<String>,
+    added: Vec<crate::instance::content::mods::ContentEntry>,
+) -> Option<WatcherDiff> {
+    if toggled.is_empty() && removed.is_empty() && added.is_empty() {
+        None
+    } else {
+        Some(WatcherDiff {
+            toggled,
+            removed,
+            added,
+        })
+    }
+}
+
+fn merge_watcher_diff(pending: &mut WatcherDiff, mut next: WatcherDiff) {
+    pending.toggled.append(&mut next.toggled);
+    pending.removed.append(&mut next.removed);
+    pending.added.append(&mut next.added);
+
+    pending.toggled.reverse();
+    pending.toggled.sort_by(|left, right| left.0.cmp(&right.0));
+    pending.toggled.dedup_by(|left, right| left.0 == right.0);
+    pending.removed.sort();
+    pending.removed.dedup();
+    pending.added.reverse();
+    pending
+        .added
+        .sort_by(|left, right| left.file_stem.cmp(&right.file_stem));
+    pending
+        .added
+        .dedup_by(|left, right| left.file_stem == right.file_stem);
+}
+
+fn watched_stem(path: &std::path::Path, ext: &str) -> Option<(String, bool)> {
+    let name = path.file_name()?.to_str()?;
+    if path.is_dir() || ext.is_empty() {
+        let (enabled, stem) = crate::instance::content::parse_enabled_stem_dir(name);
+        return Some((stem, enabled));
+    }
+    let disabled_ext = format!("{ext}.disabled");
+    if let Some(stem) = name.strip_suffix(&disabled_ext) {
+        Some((stem.to_owned(), false))
+    } else {
+        name.strip_suffix(ext).map(|stem| (stem.to_owned(), true))
+    }
+}
+
 fn read_dir_stems(dir: &std::path::Path, ext: &str) -> HashMap<String, (std::path::PathBuf, bool)> {
     let mut map = HashMap::new();
     let Ok(read_dir) = std::fs::read_dir(dir) else {
@@ -1620,7 +1830,11 @@ fn read_dir_stems(dir: &std::path::Path, ext: &str) -> HashMap<String, (std::pat
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::HashSet, path::PathBuf};
+    use std::{
+        collections::{HashMap, HashSet},
+        path::PathBuf,
+        sync::{Arc, Mutex},
+    };
 
     use crate::instance::content::mods::ContentEntry;
     use ratatui::{
@@ -1632,8 +1846,9 @@ mod tests {
     };
 
     use super::{
-        ContentListState, available_description_width, description_text_width, ellipsize,
-        right_aligned_footer_spans, square_icon_columns, title_suffix_spans,
+        ContentListState, WatcherEventHandling, available_description_width,
+        description_text_width, diff_event_paths, ellipsize, right_aligned_footer_spans,
+        square_icon_columns, title_suffix_spans, watcher_event_handling,
     };
 
     fn entry(name: &str) -> ContentEntry {
@@ -1642,6 +1857,7 @@ mod tests {
             name: name.to_owned(),
             source_slug: None,
             installed_path: None,
+            provider_project: None,
             title_suffix: None,
             footer_label: None,
             description: String::new(),
@@ -1650,6 +1866,34 @@ mod tests {
             path: PathBuf::from(name.to_lowercase()),
             icon_lines: None,
         }
+    }
+
+    #[test]
+    fn content_watcher_ignores_file_access_events() {
+        assert_eq!(
+            watcher_event_handling(&notify::EventKind::Access(notify::event::AccessKind::Any)),
+            WatcherEventHandling::Ignore
+        );
+    }
+
+    #[test]
+    fn content_watcher_handles_mutations_without_full_rescan() {
+        assert_eq!(
+            watcher_event_handling(&notify::EventKind::Modify(notify::event::ModifyKind::Any)),
+            WatcherEventHandling::Paths
+        );
+        assert_eq!(
+            watcher_event_handling(&notify::EventKind::Any),
+            WatcherEventHandling::Rescan
+        );
+    }
+
+    #[test]
+    fn irrelevant_watcher_paths_do_not_emit_an_empty_diff() {
+        let temp = tempfile::tempdir().unwrap();
+        let known = Arc::new(Mutex::new(HashMap::new()));
+        let paths = vec![temp.path().join("notes.txt")];
+        assert!(diff_event_paths(temp.path(), &paths, ".jar", None, &known).is_none());
     }
 
     #[test]

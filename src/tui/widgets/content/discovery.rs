@@ -74,6 +74,7 @@ pub struct VersionPopupState {
     pub versions: Vec<VersionInfo>,
     pub selected: usize,
     pub loading: bool,
+    pub confirming: bool,
     pub installing: bool,
     pub error: Option<String>,
 }
@@ -264,6 +265,7 @@ impl DiscoveryState {
             versions: Vec::new(),
             selected: 0,
             loading: true,
+            confirming: false,
             installing: false,
             error: None,
         });
@@ -274,13 +276,21 @@ impl DiscoveryState {
         })
     }
 
-    pub fn refresh_installed_labels(&mut self, installed_entries: &[ContentEntry]) {
+    pub fn refresh_installed_manifest(
+        &mut self,
+        manifest: &crate::instance::ContentManifest,
+        minecraft_dir: &std::path::Path,
+    ) {
         let mut changed = false;
         for entry in &mut self.list.entries {
-            let installed_path = entry
-                .source_slug
-                .as_deref()
-                .and_then(|slug| installed_path_for_identity(&entry.name, slug, installed_entries));
+            let Some(project) = entry.provider_project.as_ref() else {
+                continue;
+            };
+            let installed_path = manifest.resolved_project_path(
+                &project.provider,
+                &project.project_id,
+                minecraft_dir,
+            );
             if entry.installed_path != installed_path {
                 entry.title_suffix = installed_path.is_some().then(|| "Installed".to_owned());
                 entry.installed_path = installed_path;
@@ -294,7 +304,7 @@ impl DiscoveryState {
 
     pub fn begin_install(&mut self) -> Option<InstallRequest> {
         let popup = self.version_popup.as_mut()?;
-        if popup.loading || popup.installing {
+        if popup.loading || popup.installing || !popup.confirming {
             return None;
         }
         let version = popup.versions.get(popup.selected)?.clone();
@@ -307,6 +317,18 @@ impl DiscoveryState {
             installed_path: popup.installed_path.clone(),
             pending: self.pending_actions.clone(),
         })
+    }
+
+    pub fn begin_confirmation(&mut self) -> bool {
+        let Some(popup) = self.version_popup.as_mut() else {
+            return false;
+        };
+        if popup.loading || popup.installing || popup.versions.get(popup.selected).is_none() {
+            return false;
+        }
+        popup.confirming = true;
+        popup.error = None;
+        true
     }
 
     pub fn search_due(&self) -> bool {
@@ -434,6 +456,7 @@ impl DiscoveryState {
                         continue;
                     };
                     popup.installing = false;
+                    popup.confirming = false;
                     match result {
                         Ok(completion) => {
                             if let Some(entry) = self
@@ -501,12 +524,16 @@ pub fn handle_key(key_event: &KeyEvent, state: &mut DiscoveryState) -> bool {
     if let Some(popup) = state.version_popup.as_mut() {
         match key_event.code {
             KeyCode::Esc if !popup.installing => state.version_popup = None,
-            KeyCode::Char('j') | KeyCode::Down if !popup.loading && !popup.installing => {
+            KeyCode::Char('j') | KeyCode::Down
+                if !popup.loading && !popup.installing && !popup.confirming =>
+            {
                 if popup.selected + 1 < popup.versions.len() {
                     popup.selected += 1;
                 }
             }
-            KeyCode::Char('k') | KeyCode::Up if !popup.loading && !popup.installing => {
+            KeyCode::Char('k') | KeyCode::Up
+                if !popup.loading && !popup.installing && !popup.confirming =>
+            {
                 popup.selected = popup.selected.saturating_sub(1);
             }
             _ => {}
@@ -563,6 +590,11 @@ pub(crate) fn project_entry(
         name: project.title,
         source_slug: Some(project.slug),
         installed_path: installed_path.clone(),
+        provider_project: Some(crate::instance::ProviderProject {
+            provider: "modrinth".to_owned(),
+            project_id: project.id.clone(),
+            version_id: String::new(),
+        }),
         title_suffix: installed_path.is_some().then(|| "Installed".to_owned()),
         footer_label: Some(format!("{} downloads", format_downloads(project.downloads))),
         description: project.description,
@@ -571,48 +603,6 @@ pub(crate) fn project_entry(
         path: PathBuf::from(project.id),
         icon_lines: Some(crate::instance::content::mods::fallback_icon()),
     }
-}
-
-pub(crate) fn installed_project_path(
-    project: &DiscoveryProject,
-    installed_entries: &[ContentEntry],
-) -> Option<PathBuf> {
-    installed_path_for_identity(&project.title, &project.slug, installed_entries)
-}
-
-fn installed_path_for_identity(
-    title: &str,
-    slug: &str,
-    installed_entries: &[ContentEntry],
-) -> Option<PathBuf> {
-    installed_entries.iter().find_map(|entry| {
-        let matches = identity_matches(&entry.name, title)
-            || identity_matches(&entry.name, slug)
-            || filename_matches_project(&entry.file_stem, slug)
-            || filename_matches_project(&entry.file_stem, title);
-        matches.then(|| entry.path.clone())
-    })
-}
-
-fn identity_matches(left: &str, right: &str) -> bool {
-    let normalize = |value: &str| {
-        value
-            .chars()
-            .filter(|character| character.is_alphanumeric())
-            .flat_map(char::to_lowercase)
-            .collect::<String>()
-    };
-    let right = normalize(right);
-    !right.is_empty() && normalize(left) == right
-}
-
-fn filename_matches_project(file_stem: &str, project_name: &str) -> bool {
-    let file_stem = file_stem.to_lowercase();
-    let project_name = project_name.to_lowercase().replace(' ', "-");
-    file_stem == project_name
-        || file_stem
-            .strip_prefix(&project_name)
-            .is_some_and(|suffix| suffix.starts_with(['-', '_', '.']))
 }
 
 fn format_downloads(downloads: u64) -> String {
@@ -649,6 +639,7 @@ mod tests {
     fn version(id: &str) -> VersionInfo {
         VersionInfo {
             id: id.to_owned(),
+            project_id: "project".to_owned(),
             name: format!("Version {id}"),
             version_number: id.to_owned(),
             game_versions: vec!["1.21.1".to_owned()],
@@ -683,33 +674,6 @@ mod tests {
         assert_eq!(entry.description, "Project description");
         assert_eq!(entry.path, PathBuf::from("example"));
         assert_eq!(entry.installed_path, Some(PathBuf::from("example.jar")));
-    }
-
-    #[test]
-    fn installed_projects_match_metadata_names_and_versioned_filenames() {
-        let project = DiscoveryProject {
-            id: "P7dR8mSH".to_owned(),
-            slug: "fabric-api".to_owned(),
-            title: "Fabric API".to_owned(),
-            description: String::new(),
-            downloads: 0,
-            icon_url: None,
-            icon_bytes: None,
-        };
-        let mut local = project_entry(project.clone(), None);
-        local.name = "Fabric API".to_owned();
-        local.file_stem = "unrelated-file".to_owned();
-        assert!(installed_project_path(&project, &[local]).is_some());
-
-        let mut local = project_entry(project.clone(), None);
-        local.name = "Unknown".to_owned();
-        local.file_stem = "fabric-api-0.116.0+1.21.1".to_owned();
-        assert!(installed_project_path(&project, &[local]).is_some());
-
-        let mut local = project_entry(project.clone(), None);
-        local.name = "Fabric Language Kotlin".to_owned();
-        local.file_stem = "fabric-language-kotlin".to_owned();
-        assert!(installed_project_path(&project, &[local]).is_none());
     }
 
     #[test]
@@ -819,7 +783,7 @@ mod tests {
     }
 
     #[test]
-    fn installed_labels_follow_the_current_instance_entries() {
+    fn installed_labels_follow_exact_manifest_projects() {
         let project = DiscoveryProject {
             id: "project-id".to_owned(),
             slug: "example-project".to_owned(),
@@ -832,15 +796,25 @@ mod tests {
         let mut state = DiscoveryState::new(DiscoveryKind::Mod);
         state.list.entries.push(project_entry(project, None));
 
-        let mut installed = state.list.entries[0].clone();
-        installed.name = "Example Project".to_owned();
-        installed.file_stem = "example-project-1.0.0".to_owned();
-        installed.path = PathBuf::from("first/mods/example-project-1.0.0.jar");
-        installed.source_slug = None;
-        installed.installed_path = None;
-        installed.title_suffix = None;
-
-        state.refresh_installed_labels(&[installed]);
+        let mut manifest = crate::instance::ContentManifest::default();
+        manifest.upsert(crate::instance::ContentFileRecord {
+            relative_path: PathBuf::from("mods/example-project-1.0.0.jar"),
+            kind: crate::instance::ContentKind::Mod,
+            enabled: true,
+            fingerprint: crate::instance::FileFingerprint {
+                size: 1,
+                modified_ns: 1,
+                hashes: Default::default(),
+            },
+            resolution: crate::instance::Resolution::Resolved {
+                project: crate::instance::ProviderProject {
+                    provider: "modrinth".to_owned(),
+                    project_id: "project-id".to_owned(),
+                    version_id: "version".to_owned(),
+                },
+            },
+        });
+        state.refresh_installed_manifest(&manifest, std::path::Path::new("first"));
         assert_eq!(
             state.list.entries[0].title_suffix.as_deref(),
             Some("Installed")
@@ -850,7 +824,10 @@ mod tests {
             Some(PathBuf::from("first/mods/example-project-1.0.0.jar"))
         );
 
-        state.refresh_installed_labels(&[]);
+        state.refresh_installed_manifest(
+            &crate::instance::ContentManifest::default(),
+            std::path::Path::new("first"),
+        );
         assert_eq!(state.list.entries[0].title_suffix, None);
         assert_eq!(state.list.entries[0].installed_path, None);
         assert_eq!(state.list.entries[0].path, PathBuf::from("project-id"));

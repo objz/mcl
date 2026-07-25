@@ -296,6 +296,7 @@ mod tests {
             guard.versions = LoadState::Loaded(vec![
                 VersionInfo {
                     id: "v1".into(),
+                    project_id: "project".into(),
                     name: "1.0.0".into(),
                     version_number: "1.0.0".into(),
                     game_versions: vec!["1.20.1".into()],
@@ -304,6 +305,7 @@ mod tests {
                 },
                 VersionInfo {
                     id: "v2".into(),
+                    project_id: "project".into(),
                     name: "0.9.0".into(),
                     version_number: "0.9.0".into(),
                     game_versions: vec!["1.20.1".into()],

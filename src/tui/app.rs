@@ -3,7 +3,8 @@
 // kinda pushes you into this pattern since you need mutable access
 // to all the widget states during rendering.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::path::PathBuf;
 use std::sync::{Arc, LazyLock, Mutex};
 
 use tachyonfx::Effect;
@@ -44,6 +45,17 @@ pub struct App {
     pub(super) throbber_tick: u8,
     pub(super) error_effects: HashMap<u64, ErrorEffectState>,
     pub(super) pending_editor: Option<std::path::PathBuf>,
+    pub(super) reconciliation_for: Option<String>,
+    pub(super) content_manifest: Option<(String, crate::instance::ContentManifest)>,
+    pub(super) content_icons: HashMap<(String, String), Vec<u8>>,
+    pub(super) provider_conflict: Option<ProviderConflictState>,
+    pub(super) dismissed_provider_conflicts: HashSet<PathBuf>,
+}
+
+pub(super) struct ProviderConflictState {
+    pub relative_path: PathBuf,
+    pub candidates: Vec<crate::instance::ProviderProject>,
+    pub selected: usize,
 }
 
 // lifecycle of an error toast animation: slide in -> sit there -> fade out
@@ -118,6 +130,15 @@ impl App {
             throbber_tick: 0,
             error_effects: HashMap::new(),
             pending_editor: None,
+            reconciliation_for: None,
+            content_manifest: None,
+            content_icons: HashMap::new(),
+            provider_conflict: None,
+            dismissed_provider_conflicts: HashSet::new(),
         }
+    }
+
+    pub(super) fn into_picker(self) -> ratatui_image::picker::Picker {
+        self.picker
     }
 }

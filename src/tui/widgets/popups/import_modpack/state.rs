@@ -296,7 +296,7 @@ async fn resolve_version_id(
     match modrinth::fetch_version(client, version_id).await {
         Ok(version) => {
             let meta_dir = crate::config::SETTINGS.paths.resolve_meta_dir();
-            let tmp_dir = meta_dir.join("tmp");
+            let tmp_dir = crate::storage::MetadataPaths::new(&meta_dir).temporary();
             if let Err(e) = tokio::fs::create_dir_all(&tmp_dir).await {
                 set_error_and_back(
                     &state_arc,
@@ -368,7 +368,7 @@ fn start_version_download(state: &mut ImportWizardState) {
     tokio::spawn(async move {
         let client = crate::net::HttpClient::new();
         let meta_dir = crate::config::SETTINGS.paths.resolve_meta_dir();
-        let tmp_dir = meta_dir.join("tmp");
+        let tmp_dir = crate::storage::MetadataPaths::new(&meta_dir).temporary();
         if let Err(e) = tokio::fs::create_dir_all(&tmp_dir).await {
             set_error_and_back(
                 &state_arc,

@@ -19,6 +19,14 @@ use crate::tui::widgets::popups::error::{ErrorPopup, popup_area};
 
 impl App {
     pub(super) fn render_frame(&mut self, frame: &mut Frame) {
+        self.render_frame_with_content(frame, true);
+    }
+
+    pub(super) fn render_migration_frame(&mut self, frame: &mut Frame) {
+        self.render_frame_with_content(frame, false);
+    }
+
+    fn render_frame_with_content(&mut self, frame: &mut Frame, load_content: bool) {
         use crate::config::theme::THEME;
         use ratatui::style::Style;
         use ratatui::widgets::Block;
@@ -52,25 +60,34 @@ impl App {
             self.instances_state.selected_instance(),
             &mut self.throbber_state,
         );
-        widgets::content::render(
-            frame,
-            main_chunks[1],
-            self.focused,
-            self.content_tab,
-            self.content_mode,
-            self.instances_state.selected_instance(),
-            &mut self.mods_state,
-            &mut self.mods_discovery_state,
-            &mut self.resource_packs_state,
-            &mut self.resource_packs_discovery_state,
-            &mut self.shaders_state,
-            &mut self.shaders_discovery_state,
-            &mut self.worlds_state,
-            &mut self.screenshots_state,
-            &mut self.logs_state,
-            &self.instance_manager.instances_dir,
-            &self.picker,
-        );
+        if load_content {
+            widgets::content::render(
+                frame,
+                main_chunks[1],
+                self.focused,
+                self.content_tab,
+                self.content_mode,
+                self.instances_state.selected_instance(),
+                &mut self.mods_state,
+                &mut self.mods_discovery_state,
+                &mut self.resource_packs_state,
+                &mut self.resource_packs_discovery_state,
+                &mut self.shaders_state,
+                &mut self.shaders_discovery_state,
+                &mut self.worlds_state,
+                &mut self.screenshots_state,
+                &mut self.logs_state,
+                &self.instance_manager.instances_dir,
+                &self.picker,
+            );
+        } else {
+            frame.render_widget(
+                Block::bordered()
+                    .border_type(crate::config::theme::BORDER_STYLE.to_border_type())
+                    .border_style(Style::default().fg(theme.border())),
+                main_chunks[1],
+            );
+        }
 
         let bottom_chunks = Layout::default()
             .direction(Direction::Horizontal)
@@ -134,6 +151,10 @@ impl App {
         {
             let area = confirm_popup_area(frame.area(), &target);
             frame.render_widget(ConfirmPopup::for_target(&target), area);
+        }
+
+        if let Some(conflict) = &self.provider_conflict {
+            render_provider_conflict(frame, conflict);
         }
     }
 
@@ -330,4 +351,56 @@ impl App {
             }
         }
     }
+}
+
+fn render_provider_conflict(frame: &mut Frame, conflict: &super::app::ProviderConflictState) {
+    use crate::config::theme::{BORDER_STYLE, THEME};
+    use ratatui::{
+        layout::{Constraint, Flex, Layout},
+        style::{Modifier, Style},
+        text::Line,
+        widgets::{Block, Borders, Clear, List, ListItem, ListState},
+    };
+
+    let theme = THEME.as_ref();
+    let [area] = Layout::vertical([Constraint::Length(
+        (conflict.candidates.len() as u16 + 4).min(frame.area().height.saturating_sub(2)),
+    )])
+    .flex(Flex::Center)
+    .areas(frame.area());
+    let [area] = Layout::horizontal([Constraint::Percentage(58)])
+        .flex(Flex::Center)
+        .areas(area);
+    frame.render_widget(Clear, area);
+
+    let title = conflict
+        .relative_path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("content file");
+    let items = conflict.candidates.iter().map(|candidate| {
+        ListItem::new(Line::from(format!(
+            "{}  {}  {}",
+            candidate.provider, candidate.project_id, candidate.version_id
+        )))
+    });
+    let mut state = ListState::default().with_selected(Some(conflict.selected));
+    let list = List::new(items)
+        .block(
+            Block::default()
+                .title(Line::from(format!(" Choose provider for {title} ")))
+                .title_bottom(Line::from(" [j/k] select  [Enter] use  [Esc] later "))
+                .borders(Borders::ALL)
+                .border_type(BORDER_STYLE.to_border_type())
+                .border_style(Style::default().fg(theme.accent())),
+        )
+        .style(Style::default().fg(theme.text()).bg(theme.background()))
+        .highlight_style(
+            Style::default()
+                .fg(theme.accent())
+                .bg(theme.stripe())
+                .add_modifier(Modifier::BOLD),
+        )
+        .highlight_symbol("▌");
+    frame.render_stateful_widget(list, area, &mut state);
 }

@@ -34,19 +34,10 @@ impl App {
             // get scanned/loaded on separate tokio tasks
             self.drain_pending_instances();
             self.drain_pending_last_played();
-            self.mods_state.drain_pending();
-            self.mods_state.drain_watcher();
+            let local_streamed = self.mods_state.drain_pending();
+            let content_changed = self.mods_state.drain_watcher();
             self.mods_state.request_image_loads(&self.picker);
             self.mods_state.drain_image_loads(&self.picker);
-            if self.mods_state.loaded_for.as_deref()
-                == self
-                    .instances_state
-                    .selected_instance()
-                    .map(|instance| instance.name.as_str())
-            {
-                self.mods_discovery_state
-                    .refresh_installed_labels(&self.mods_state.entries);
-            }
             self.mods_discovery_state.drain_pending();
             self.mods_discovery_state.list.drain_pending();
             self.mods_discovery_state
@@ -55,19 +46,10 @@ impl App {
             self.mods_discovery_state
                 .list
                 .drain_image_loads(&self.picker);
-            self.resource_packs_state.drain_pending();
-            self.resource_packs_state.drain_watcher();
+            let local_streamed = self.resource_packs_state.drain_pending() || local_streamed;
+            let content_changed = self.resource_packs_state.drain_watcher() || content_changed;
             self.resource_packs_state.request_image_loads(&self.picker);
             self.resource_packs_state.drain_image_loads(&self.picker);
-            if self.resource_packs_state.loaded_for.as_deref()
-                == self
-                    .instances_state
-                    .selected_instance()
-                    .map(|instance| instance.name.as_str())
-            {
-                self.resource_packs_discovery_state
-                    .refresh_installed_labels(&self.resource_packs_state.entries);
-            }
             self.resource_packs_discovery_state.drain_pending();
             self.resource_packs_discovery_state.list.drain_pending();
             self.resource_packs_discovery_state
@@ -76,19 +58,10 @@ impl App {
             self.resource_packs_discovery_state
                 .list
                 .drain_image_loads(&self.picker);
-            self.shaders_state.drain_pending();
-            self.shaders_state.drain_watcher();
+            let local_streamed = self.shaders_state.drain_pending() || local_streamed;
+            let content_changed = self.shaders_state.drain_watcher() || content_changed;
             self.shaders_state.request_image_loads(&self.picker);
             self.shaders_state.drain_image_loads(&self.picker);
-            if self.shaders_state.loaded_for.as_deref()
-                == self
-                    .instances_state
-                    .selected_instance()
-                    .map(|instance| instance.name.as_str())
-            {
-                self.shaders_discovery_state
-                    .refresh_installed_labels(&self.shaders_state.entries);
-            }
             self.shaders_discovery_state.drain_pending();
             self.shaders_discovery_state.list.drain_pending();
             self.shaders_discovery_state
@@ -108,6 +81,21 @@ impl App {
             self.screenshots_state.drain_pending_entries();
             self.screenshots_state.request_visible_loads();
             self.create_screenshot_protocols();
+            if content_changed {
+                self.reconciliation_for = None;
+                if let Some(instance) = self.instances_state.selected_instance()
+                    && let Ok(mut results) =
+                        crate::instance::content::reconcile::PENDING_RECONCILIATIONS.lock()
+                {
+                    results.retain(|result| result.instance_name != instance.name);
+                }
+            }
+            self.drain_content_reconciliation();
+            self.ensure_content_reconciliation(content_changed);
+            if local_streamed {
+                self.apply_cached_content_manifest();
+            }
+            self.ensure_provider_conflict_popup();
             self.ensure_active_discovery_loaded();
             let progress_active = progress::is_active();
             let spinner_active = progress_active || crate::running::has_active();
@@ -134,6 +122,177 @@ impl App {
             }
         }
         Ok(())
+    }
+
+    fn ensure_content_reconciliation(&mut self, changed: bool) {
+        let Some(instance) = self.instances_state.selected_instance().cloned() else {
+            self.reconciliation_for = None;
+            self.content_manifest = None;
+            self.content_icons.clear();
+            return;
+        };
+        if !changed && self.reconciliation_for.as_deref() == Some(instance.name.as_str()) {
+            return;
+        }
+        if self.reconciliation_for.as_deref() != Some(instance.name.as_str()) {
+            self.provider_conflict = None;
+            self.dismissed_provider_conflicts.clear();
+        }
+        self.reconciliation_for = Some(instance.name.clone());
+        self.content_manifest = None;
+        self.content_icons.clear();
+        for discovery in [
+            &mut self.mods_discovery_state,
+            &mut self.resource_packs_discovery_state,
+            &mut self.shaders_discovery_state,
+        ] {
+            discovery.refresh_installed_manifest(
+                &crate::instance::ContentManifest::default(),
+                &crate::storage::InstancePaths::new(
+                    self.instance_manager.instances_dir.join(&instance.name),
+                )
+                .minecraft(),
+            );
+        }
+        if changed {
+            crate::instance::content::reconcile::spawn_after_change(
+                instance,
+                self.instance_manager.instances_dir.clone(),
+                self.instance_manager.meta_dir.clone(),
+                crate::net::HttpClient::new(),
+            );
+        } else {
+            crate::instance::content::reconcile::spawn(
+                instance,
+                self.instance_manager.instances_dir.clone(),
+                self.instance_manager.meta_dir.clone(),
+                crate::net::HttpClient::new(),
+            );
+        }
+    }
+
+    fn drain_content_reconciliation(&mut self) {
+        let Some(selected) = self.instances_state.selected_instance() else {
+            return;
+        };
+        let result = match crate::instance::content::reconcile::PENDING_RECONCILIATIONS.lock() {
+            Ok(mut results) => results
+                .iter()
+                .position(|result| result.instance_name == selected.name)
+                .map(|index| results.remove(index)),
+            Err(_) => return,
+        };
+        let Some(result) = result else {
+            return;
+        };
+        self.reconciliation_for = Some(result.instance_name.clone());
+        if let Some(error) = result.error {
+            tracing::warn!(
+                "Content reconciliation for {} was incomplete: {}",
+                result.instance_name,
+                error
+            );
+        }
+        let minecraft_dir = crate::storage::InstancePaths::new(
+            self.instance_manager.instances_dir.join(&selected.name),
+        )
+        .minecraft();
+        self.mods_state.apply_manifest(
+            &result.manifest,
+            &minecraft_dir,
+            crate::instance::ContentKind::Mod,
+            &result.icons,
+        );
+        self.resource_packs_state.apply_manifest(
+            &result.manifest,
+            &minecraft_dir,
+            crate::instance::ContentKind::ResourcePack,
+            &result.icons,
+        );
+        self.shaders_state.apply_manifest(
+            &result.manifest,
+            &minecraft_dir,
+            crate::instance::ContentKind::Shader,
+            &result.icons,
+        );
+        self.mods_discovery_state
+            .refresh_installed_manifest(&result.manifest, &minecraft_dir);
+        self.resource_packs_discovery_state
+            .refresh_installed_manifest(&result.manifest, &minecraft_dir);
+        self.shaders_discovery_state
+            .refresh_installed_manifest(&result.manifest, &minecraft_dir);
+        self.content_icons = result.icons;
+        self.content_manifest = Some((result.instance_name, result.manifest));
+    }
+
+    fn apply_cached_content_manifest(&mut self) {
+        let Some((instance_name, manifest)) = &self.content_manifest else {
+            return;
+        };
+        if self
+            .instances_state
+            .selected_instance()
+            .is_none_or(|instance| instance.name != *instance_name)
+        {
+            return;
+        }
+        let minecraft_dir = crate::storage::InstancePaths::new(
+            self.instance_manager.instances_dir.join(instance_name),
+        )
+        .minecraft();
+        self.mods_state.apply_manifest(
+            manifest,
+            &minecraft_dir,
+            crate::instance::ContentKind::Mod,
+            &self.content_icons,
+        );
+        self.resource_packs_state.apply_manifest(
+            manifest,
+            &minecraft_dir,
+            crate::instance::ContentKind::ResourcePack,
+            &self.content_icons,
+        );
+        self.shaders_state.apply_manifest(
+            manifest,
+            &minecraft_dir,
+            crate::instance::ContentKind::Shader,
+            &self.content_icons,
+        );
+    }
+
+    fn ensure_provider_conflict_popup(&mut self) {
+        if !crate::config::SETTINGS.content.ask_on_provider_conflict
+            || self.focused != super::app::FocusedArea::Content
+            || self.provider_conflict.is_some()
+        {
+            return;
+        }
+        let Some((instance_name, manifest)) = &self.content_manifest else {
+            return;
+        };
+        if self
+            .instances_state
+            .selected_instance()
+            .is_none_or(|instance| instance.name != *instance_name)
+        {
+            return;
+        }
+        self.provider_conflict = manifest.files.iter().find_map(|record| {
+            if self
+                .dismissed_provider_conflicts
+                .contains(&record.relative_path)
+            {
+                return None;
+            }
+            let crate::instance::Resolution::Ambiguous { candidates } = &record.resolution else {
+                return None;
+            };
+            Some(super::app::ProviderConflictState {
+                relative_path: record.relative_path.clone(),
+                candidates: candidates.clone(),
+                selected: 0,
+            })
+        });
     }
 
     // polls for input with a 16ms timeout (~60fps). only key presses are handled,

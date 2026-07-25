@@ -306,7 +306,7 @@ pub fn render(
                 if mods_state.loaded_for.as_deref() != Some(instance.name.as_str()) {
                     let content_dir = instances_dir
                         .join(&instance.name)
-                        .join(".minecraft")
+                        .join(crate::storage::MINECRAFT_DIR_NAME)
                         .join("mods");
                     mods_state.start_load(
                         &content_dir,
@@ -349,7 +349,7 @@ pub fn render(
                 if resource_packs_state.loaded_for.as_deref() != Some(instance.name.as_str()) {
                     let content_dir = instances_dir
                         .join(&instance.name)
-                        .join(".minecraft")
+                        .join(crate::storage::MINECRAFT_DIR_NAME)
                         .join("resourcepacks");
                     resource_packs_state.start_load(
                         &content_dir,
@@ -392,7 +392,7 @@ pub fn render(
                 if shaders_state.loaded_for.as_deref() != Some(instance.name.as_str()) {
                     let content_dir = instances_dir
                         .join(&instance.name)
-                        .join(".minecraft")
+                        .join(crate::storage::MINECRAFT_DIR_NAME)
                         .join("shaderpacks");
                     shaders_state.start_load(
                         &content_dir,
@@ -473,7 +473,7 @@ pub fn render(
                 if worlds_state.loaded_for.as_deref() != Some(instance.name.as_str()) {
                     let content_dir = instances_dir
                         .join(&instance.name)
-                        .join(".minecraft")
+                        .join(crate::storage::MINECRAFT_DIR_NAME)
                         .join("saves");
                     worlds_state.start_load(
                         &content_dir,
@@ -547,8 +547,16 @@ fn render_version_popup(frame: &mut Frame, area: Rect, state: &DiscoveryState) {
     let title = popup.title();
     let loading = popup.loading;
     let installing = popup.installing;
+    let confirming = popup.confirming;
     let error = popup.error.clone();
     let selected = popup.selected;
+    let selected_version = popup
+        .versions
+        .get(selected)
+        .map(|version| version.version_number.clone())
+        .unwrap_or_default();
+    let project_title = popup.project_title.clone();
+    let replacing = popup.installed_path.is_some();
     let items = popup
         .versions
         .iter()
@@ -561,11 +569,15 @@ fn render_version_popup(frame: &mut Frame, area: Rect, state: &DiscoveryState) {
         title: styled_title(&title, false),
         border_color: theme.accent(),
         bg: Some(theme.surface()),
-        keybinds: Some(crate::tui::widgets::popups::keybind_line(&[
-            ("j/k", " navigate"),
-            ("Enter", " install"),
-            ("Esc", " close"),
-        ])),
+        keybinds: Some(crate::tui::widgets::popups::keybind_line(if confirming {
+            &[("Enter", " confirm"), ("Esc", " cancel")]
+        } else {
+            &[
+                ("j/k", " navigate"),
+                ("Enter", " continue"),
+                ("Esc", " close"),
+            ]
+        })),
         search_line: None,
         content: Box::new(move |area, buffer| {
             if installing {
@@ -581,6 +593,14 @@ fn render_version_popup(frame: &mut Frame, area: Rect, state: &DiscoveryState) {
                     .style(Style::default().fg(THEME.as_ref().error()))
                     .wrap(Wrap { trim: true })
                     .render(area, buffer);
+            } else if confirming {
+                let action = if replacing { "Change" } else { "Install" };
+                Paragraph::new(format!(
+                    "{action} {project_title} version {selected_version}?\n\nThe file is changed only after the download succeeds."
+                ))
+                .style(Style::default().fg(THEME.as_ref().text()))
+                .wrap(Wrap { trim: true })
+                .render(area, buffer);
             } else if items.is_empty() {
                 Paragraph::new("No compatible versions found.")
                     .style(Style::default().fg(THEME.as_ref().text_dim()))
@@ -743,6 +763,7 @@ mod tests {
     fn discovery_version_rows_only_show_the_version_number() {
         let version = crate::net::modrinth::VersionInfo {
             id: "version-id".to_owned(),
+            project_id: "project-id".to_owned(),
             name: "A descriptive release title".to_owned(),
             version_number: "3.2.4-fabric-26.1".to_owned(),
             game_versions: vec![],

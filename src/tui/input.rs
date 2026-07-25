@@ -13,6 +13,45 @@ use crate::tui::error_buffer;
 
 impl App {
     pub(super) fn handle_key_event(&mut self, key_event: KeyEvent) -> color_eyre::Result<()> {
+        if let Some(conflict) = self.provider_conflict.as_mut() {
+            match key_event.code {
+                KeyCode::Char('j') | KeyCode::Down => {
+                    conflict.selected =
+                        (conflict.selected + 1).min(conflict.candidates.len().saturating_sub(1));
+                }
+                KeyCode::Char('k') | KeyCode::Up => {
+                    conflict.selected = conflict.selected.saturating_sub(1);
+                }
+                KeyCode::Enter => {
+                    let relative_path = conflict.relative_path.clone();
+                    let project = conflict.candidates.get(conflict.selected).cloned();
+                    if let Some(project) = project
+                        && let Some((instance_name, manifest)) = &mut self.content_manifest
+                        && let Some(record) = manifest
+                            .files
+                            .iter_mut()
+                            .find(|record| record.relative_path == relative_path)
+                    {
+                        record.resolution = crate::instance::Resolution::Resolved { project };
+                        let manifest_path = crate::storage::InstancePaths::new(
+                            self.instance_manager.instances_dir.join(instance_name),
+                        )
+                        .content_manifest();
+                        manifest.save(&manifest_path)?;
+                        self.provider_conflict = None;
+                        self.reconciliation_for = None;
+                    }
+                }
+                KeyCode::Esc => {
+                    self.dismissed_provider_conflicts
+                        .insert(conflict.relative_path.clone());
+                    self.provider_conflict = None;
+                }
+                _ => {}
+            }
+            return Ok(());
+        }
+
         // log overlay eats all input when open, including its own search sub-mode
         if self.focused == FocusedArea::OverviewExpanded {
             if self.log_overlay_search.active {
@@ -166,7 +205,15 @@ impl App {
                 return Ok(());
             }
             if popup_open && key_event.code == KeyCode::Enter {
-                self.spawn_active_discovery_install();
+                let confirming = self
+                    .active_discovery_state_mut()
+                    .and_then(|state| state.version_popup.as_ref())
+                    .is_some_and(|popup| popup.confirming);
+                if confirming {
+                    self.spawn_active_discovery_install();
+                } else if let Some(state) = self.active_discovery_state_mut() {
+                    state.begin_confirmation();
+                }
                 return Ok(());
             }
             let handled = {
@@ -469,7 +516,7 @@ impl App {
                                 .instance_manager
                                 .instances_dir
                                 .join(&instance.name)
-                                .join(".minecraft");
+                                .join(crate::storage::MINECRAFT_DIR_NAME);
                             if let Err(e) = open::that_detached(&dir) {
                                 tracing::error!("Failed to open instance directory: {}", e);
                             }
@@ -595,16 +642,20 @@ impl App {
             return;
         };
         tokio::spawn(async move {
-            let client = crate::net::HttpClient::new();
-            let result = crate::net::modrinth::fetch_content_versions(
-                &client,
-                &request.project_id,
-                kind,
-                &instance.game_version,
-                instance.loader,
-            )
-            .await
-            .map_err(|error| error.to_string());
+            let registry =
+                crate::content_provider::ProviderRegistry::modrinth(crate::net::HttpClient::new());
+            let result = match registry.preferred("modrinth") {
+                Some(provider) => provider
+                    .compatible_versions(
+                        &request.project_id,
+                        discovery_content_kind(kind),
+                        &instance.game_version,
+                        instance.loader,
+                    )
+                    .await
+                    .map_err(|error| error.to_string()),
+                None => Err("Modrinth content provider is unavailable".to_owned()),
+            };
             widgets::content::DiscoveryState::push_action_result(
                 &request.pending,
                 widgets::content::discovery::DiscoveryActionResult::Versions {
@@ -638,39 +689,80 @@ impl App {
             .instance_manager
             .instances_dir
             .join(&instance.name)
-            .join(".minecraft")
+            .join(crate::storage::MINECRAFT_DIR_NAME)
             .join(match kind {
                 crate::net::modrinth::DiscoveryKind::Mod => "mods",
                 crate::net::modrinth::DiscoveryKind::ResourcePack => "resourcepacks",
                 crate::net::modrinth::DiscoveryKind::Shader => "shaderpacks",
             });
+        let instance_paths = crate::storage::InstancePaths::new(
+            self.instance_manager.instances_dir.join(&instance.name),
+        );
+        let manifest_path = instance_paths.content_manifest();
+        let minecraft_dir = instance_paths.minecraft();
+        let content_kind = match kind {
+            crate::net::modrinth::DiscoveryKind::Mod => crate::instance::ContentKind::Mod,
+            crate::net::modrinth::DiscoveryKind::ResourcePack => {
+                crate::instance::ContentKind::ResourcePack
+            }
+            crate::net::modrinth::DiscoveryKind::Shader => crate::instance::ContentKind::Shader,
+        };
         tokio::spawn(async move {
             let client = crate::net::HttpClient::new();
             let result = async {
                 tokio::fs::create_dir_all(&destination)
                     .await
                     .map_err(crate::net::NetError::from)?;
-                let outcome = if let Some(installed_path) = request.installed_path.as_deref() {
-                    crate::net::modrinth::download_version_file_for_update(
-                        &client,
+                let registry = crate::content_provider::ProviderRegistry::modrinth(client);
+                let provider = registry.preferred("modrinth").ok_or_else(|| {
+                    crate::net::NetError::Parse(
+                        "Modrinth content provider is unavailable".to_owned(),
+                    )
+                })?;
+                let outcome = provider
+                    .download_version(
                         &request.version,
                         &destination,
-                        installed_path,
+                        request.installed_path.as_deref(),
                     )
-                    .await?
-                } else {
-                    crate::net::modrinth::download_version_file(
-                        &client,
-                        &request.version,
-                        &destination,
-                    )
-                    .await?
-                };
+                    .await?;
                 let (path, skipped) = match outcome {
                     crate::net::modrinth::DownloadOutcome::Downloaded(path) => (path, false),
                     crate::net::modrinth::DownloadOutcome::SkippedExisting(path) => (path, true),
                 };
                 let replaced = request.installed_path.is_some() && !skipped;
+                let mut manifest = crate::instance::ContentManifest::load(&manifest_path)
+                    .map_err(|error| crate::net::NetError::Parse(error.to_string()))?;
+                if let Some(old_path) = request.installed_path.as_ref()
+                    && let Ok(relative) = old_path.strip_prefix(&minecraft_dir)
+                    && old_path != &path
+                {
+                    manifest.remove(relative);
+                }
+                let relative_path = path
+                    .strip_prefix(&minecraft_dir)
+                    .map_err(|error| crate::net::NetError::Parse(error.to_string()))?
+                    .to_path_buf();
+                let fingerprint = crate::instance::content::manifest::fingerprint(&path)?;
+                manifest.upsert(crate::instance::ContentFileRecord {
+                    relative_path,
+                    kind: content_kind,
+                    enabled: !path
+                        .file_name()
+                        .and_then(|name| name.to_str())
+                        .is_some_and(|name| name.ends_with(".disabled")),
+                    fingerprint,
+                    resolution: crate::instance::Resolution::Resolved {
+                        project: crate::instance::ProviderProject {
+                            provider: "modrinth".to_owned(),
+                            project_id: request.project_id.clone(),
+                            version_id: request.version.id.clone(),
+                        },
+                    },
+                });
+                manifest
+                    .save(&manifest_path)
+                    .map_err(|error| crate::net::NetError::Parse(error.to_string()))?;
                 if !skipped
                     && let Some(old_path) = request
                         .installed_path
@@ -702,28 +794,17 @@ impl App {
         let Some(instance) = self.instances_state.selected_instance().cloned() else {
             return;
         };
-        let installed_entries = match self.content_tab {
-            widgets::content::ContentTab::Mods
-                if self.mods_state.loaded_for.as_deref() == Some(instance.name.as_str()) =>
-            {
-                self.mods_state.entries.clone()
-            }
-            widgets::content::ContentTab::ResourcePacks
-                if self.resource_packs_state.loaded_for.as_deref()
-                    == Some(instance.name.as_str()) =>
-            {
-                self.resource_packs_state.entries.clone()
-            }
-            widgets::content::ContentTab::Shaders
-                if self.shaders_state.loaded_for.as_deref() == Some(instance.name.as_str()) =>
-            {
-                self.shaders_state.entries.clone()
-            }
-            widgets::content::ContentTab::Mods
-            | widgets::content::ContentTab::ResourcePacks
-            | widgets::content::ContentTab::Shaders => Vec::new(),
-            _ => return,
-        };
+        let manifest = self
+            .content_manifest
+            .as_ref()
+            .filter(|(name, _)| name == &instance.name)
+            .map(|(_, manifest)| manifest.clone());
+        let minecraft_dir = crate::storage::InstancePaths::new(
+            self.instance_manager.instances_dir.join(&instance.name),
+        )
+        .minecraft();
+        let icon_cache = crate::storage::MetadataPaths::new(&self.instance_manager.meta_dir)
+            .provider_icons("modrinth");
         let state = match self.content_tab {
             widgets::content::ContentTab::Mods => &mut self.mods_discovery_state,
             widgets::content::ContentTab::ResourcePacks => &mut self.resource_packs_discovery_state,
@@ -733,35 +814,32 @@ impl App {
         let kind = state.kind;
         let query = state.search.query.clone();
         let request = state.begin_search(&instance);
-        Self::spawn_discovery_request(instance, kind, query, installed_entries, request);
+        Self::spawn_discovery_request(
+            instance,
+            kind,
+            query,
+            manifest,
+            minecraft_dir,
+            icon_cache,
+            request,
+        );
     }
 
     fn spawn_active_discovery_page(&mut self) {
         let Some(instance) = self.instances_state.selected_instance().cloned() else {
             return;
         };
-        let installed_entries = match self.content_tab {
-            widgets::content::ContentTab::Mods
-                if self.mods_state.loaded_for.as_deref() == Some(instance.name.as_str()) =>
-            {
-                self.mods_state.entries.clone()
-            }
-            widgets::content::ContentTab::ResourcePacks
-                if self.resource_packs_state.loaded_for.as_deref()
-                    == Some(instance.name.as_str()) =>
-            {
-                self.resource_packs_state.entries.clone()
-            }
-            widgets::content::ContentTab::Shaders
-                if self.shaders_state.loaded_for.as_deref() == Some(instance.name.as_str()) =>
-            {
-                self.shaders_state.entries.clone()
-            }
-            widgets::content::ContentTab::Mods
-            | widgets::content::ContentTab::ResourcePacks
-            | widgets::content::ContentTab::Shaders => Vec::new(),
-            _ => return,
-        };
+        let manifest = self
+            .content_manifest
+            .as_ref()
+            .filter(|(name, _)| name == &instance.name)
+            .map(|(_, manifest)| manifest.clone());
+        let minecraft_dir = crate::storage::InstancePaths::new(
+            self.instance_manager.instances_dir.join(&instance.name),
+        )
+        .minecraft();
+        let icon_cache = crate::storage::MetadataPaths::new(&self.instance_manager.meta_dir)
+            .provider_icons("modrinth");
         let state = match self.content_tab {
             widgets::content::ContentTab::Mods => &mut self.mods_discovery_state,
             widgets::content::ContentTab::ResourcePacks => &mut self.resource_packs_discovery_state,
@@ -773,14 +851,24 @@ impl App {
         let Some(request) = state.begin_next_page() else {
             return;
         };
-        Self::spawn_discovery_request(instance, kind, query, installed_entries, request);
+        Self::spawn_discovery_request(
+            instance,
+            kind,
+            query,
+            manifest,
+            minecraft_dir,
+            icon_cache,
+            request,
+        );
     }
 
     fn spawn_discovery_request(
         instance: crate::instance::InstanceConfig,
         kind: crate::net::modrinth::DiscoveryKind,
         query: String,
-        installed_entries: Vec<crate::instance::ContentEntry>,
+        manifest: Option<crate::instance::ContentManifest>,
+        minecraft_dir: std::path::PathBuf,
+        icon_cache: std::path::PathBuf,
         request: widgets::content::discovery::DiscoveryRequest,
     ) {
         let widgets::content::discovery::DiscoveryRequest {
@@ -794,16 +882,23 @@ impl App {
 
         tokio::spawn(async move {
             let client = crate::net::HttpClient::new();
-            let result = crate::net::modrinth::search_discovery(
-                &client,
-                kind,
-                &query,
-                &instance.game_version,
-                instance.loader,
-                offset,
-                widgets::content::discovery::PAGE_SIZE,
-            )
-            .await;
+            let registry = crate::content_provider::ProviderRegistry::modrinth(client.clone());
+            let result = match registry.preferred("modrinth") {
+                Some(provider) => {
+                    provider
+                        .search(
+                            discovery_content_kind(kind),
+                            &query,
+                            &instance,
+                            offset,
+                            widgets::content::discovery::PAGE_SIZE,
+                        )
+                        .await
+                }
+                None => Err(crate::net::NetError::Parse(
+                    "Modrinth content provider is unavailable".to_owned(),
+                )),
+            };
             let result = match result {
                 Ok(results) => {
                     let total_hits = results.total_hits;
@@ -812,13 +907,21 @@ impl App {
                     let icon_slots = std::sync::Arc::new(tokio::sync::Semaphore::new(8));
                     for mut project in results.projects {
                         returned_stems.insert(project.id.clone());
-                        let installed_path = widgets::content::discovery::installed_project_path(
-                            &project,
-                            &installed_entries,
-                        );
-                        let icon_url = (!loaded_icon_stems.contains(&project.id))
-                            .then(|| project.icon_url.take())
-                            .flatten();
+                        let project_id = project.id.clone();
+                        let installed_path = manifest.as_ref().and_then(|manifest| {
+                            manifest.resolved_project_path("modrinth", &project.id, &minecraft_dir)
+                        });
+                        let cached_icon = icon_cache.join(format!("{project_id}.img"));
+                        if !loaded_icon_stems.contains(&project.id)
+                            && let Ok(bytes) = tokio::fs::read(&cached_icon).await
+                            && !bytes.is_empty()
+                        {
+                            project.icon_bytes = Some(bytes);
+                        }
+                        let icon_url = (!loaded_icon_stems.contains(&project.id)
+                            && project.icon_bytes.is_none())
+                        .then(|| project.icon_url.take())
+                        .flatten();
                         let entry =
                             widgets::content::discovery::project_entry(project, installed_path);
                         let icon =
@@ -830,13 +933,22 @@ impl App {
                             let client = client.clone();
                             let stream = stream.clone();
                             let icon_slots = icon_slots.clone();
+                            let cached_icon = cached_icon.clone();
                             tokio::spawn(async move {
                                 let Ok(_permit) = icon_slots.acquire_owned().await else {
                                     return;
                                 };
+                                let progress = crate::tui::progress::ProgressTask::start(format!(
+                                    "Downloading icon for {file_stem}"
+                                ));
                                 match client.get_bytes(&url).await {
                                     Ok(bytes) if !bytes.is_empty() => {
+                                        if let Some(parent) = cached_icon.parent() {
+                                            let _ = tokio::fs::create_dir_all(parent).await;
+                                        }
+                                        let _ = tokio::fs::write(cached_icon, &bytes).await;
                                         stream.send_icon(file_stem, path, bytes);
+                                        progress.finish();
                                     }
                                     Ok(_) => tracing::debug!(
                                         "Modrinth icon for '{}' was empty; using fallback",
@@ -900,6 +1012,18 @@ impl App {
         self.worlds_state.remove_path(path);
         self.screenshots_state.remove_path(path);
         self.logs_state.remove_path(path);
+    }
+}
+
+fn discovery_content_kind(
+    kind: crate::net::modrinth::DiscoveryKind,
+) -> crate::instance::ContentKind {
+    match kind {
+        crate::net::modrinth::DiscoveryKind::Mod => crate::instance::ContentKind::Mod,
+        crate::net::modrinth::DiscoveryKind::ResourcePack => {
+            crate::instance::ContentKind::ResourcePack
+        }
+        crate::net::modrinth::DiscoveryKind::Shader => crate::instance::ContentKind::Shader,
     }
 }
 
