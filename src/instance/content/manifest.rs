@@ -36,9 +36,10 @@ pub struct ProviderProject {
     pub version_id: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "status", rename_all = "snake_case")]
 pub enum Resolution {
+    #[default]
     Pending,
     Resolved {
         project: ProviderProject,
@@ -50,12 +51,6 @@ pub enum Resolution {
     Ambiguous {
         candidates: Vec<ProviderProject>,
     },
-}
-
-impl Default for Resolution {
-    fn default() -> Self {
-        Self::Pending
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

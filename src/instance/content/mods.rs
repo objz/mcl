@@ -34,6 +34,7 @@ pub struct ContentEntry {
     pub description: String,
     pub enabled: bool,
     pub icon_bytes: Option<Vec<u8>>,
+    pub provider_icon: bool,
     pub path: PathBuf,
     pub icon_lines: Option<Vec<Vec<IconCell>>>,
 }
@@ -121,6 +122,7 @@ pub fn scan_one_mod(path: &Path, file_stem: &str, enabled: bool) -> ContentEntry
         description,
         enabled,
         icon_bytes,
+        provider_icon: false,
         path: path.to_path_buf(),
         icon_lines,
     }
@@ -722,6 +724,7 @@ mod tests {
             description: String::new(),
             enabled: false,
             icon_bytes: None,
+            provider_icon: false,
             path: disabled_path.clone(),
             icon_lines: None,
         };
@@ -998,6 +1001,7 @@ description = "A neoforge mod"
             description: String::new(),
             enabled: true,
             icon_bytes: None,
+            provider_icon: false,
             path: enabled_path.clone(),
             icon_lines: None,
         };

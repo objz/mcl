@@ -30,6 +30,7 @@ pub fn scan_one_shader(path: &Path, file_stem: &str, enabled: bool) -> ContentEn
         description,
         enabled,
         icon_bytes,
+        provider_icon: false,
         path: path.to_path_buf(),
         icon_lines,
     }

@@ -199,6 +199,11 @@ impl ContentListState {
                 .filter(|record| record.kind == kind)
             else {
                 if entry.provider_project.take().is_some() {
+                    if entry.provider_icon {
+                        entry.icon_bytes = None;
+                        entry.icon_lines = Some(crate::instance::content::mods::fallback_icon());
+                        entry.provider_icon = false;
+                    }
                     changed = true;
                 }
                 continue;
@@ -208,6 +213,11 @@ impl ContentListState {
                 _ => None,
             };
             if entry.provider_project != project {
+                if entry.provider_icon {
+                    entry.icon_bytes = None;
+                    entry.icon_lines = Some(crate::instance::content::mods::fallback_icon());
+                    entry.provider_icon = false;
+                }
                 entry.provider_project = project.clone();
                 changed = true;
             }
@@ -219,6 +229,7 @@ impl ContentListState {
             {
                 entry.icon_bytes = Some(bytes.clone());
                 entry.icon_lines = Some(lines);
+                entry.provider_icon = true;
                 changed = true;
             }
         }
@@ -408,7 +419,7 @@ impl ContentListState {
                         .iter_mut()
                         .find(|existing| existing.file_stem == entry.file_stem)
                     {
-                        if entry.icon_bytes.is_none() {
+                        if entry.icon_bytes.is_none() && !existing.provider_icon {
                             entry.icon_bytes = existing.icon_bytes.take();
                             entry.icon_lines = existing.icon_lines.take();
                         }
@@ -443,6 +454,7 @@ impl ContentListState {
                         .find(|entry| entry.file_stem == file_stem && entry.path == path)
                     {
                         entry.icon_bytes = Some(bytes);
+                        entry.provider_icon = true;
                         self.requested_images.remove(&file_stem);
                         self.images_dirty = true;
                     }
@@ -1570,7 +1582,11 @@ fn available_description_width(
     has_icon: bool,
 ) -> usize {
     let selector_and_scrollbar = 2;
-    let icon_and_gap = has_icon.then_some(rendered_icon_columns + 1).unwrap_or(0);
+    let icon_and_gap = if has_icon {
+        rendered_icon_columns + 1
+    } else {
+        0
+    };
     row_width.saturating_sub(selector_and_scrollbar + icon_and_gap)
 }
 
@@ -1592,9 +1608,11 @@ fn right_aligned_footer_spans(
     footer_label: &str,
     footer_style: Style,
 ) -> Vec<Span<'static>> {
-    let description_width = has_description
-        .then(|| Span::raw(description).width())
-        .unwrap_or(0);
+    let description_width = if has_description {
+        Span::raw(description).width()
+    } else {
+        0
+    };
     let footer_width = Span::raw(footer_label).width();
     let padding = available_width.saturating_sub(description_width + footer_width);
     vec![
@@ -1734,7 +1752,8 @@ fn diff_event_paths(
         } else {
             let removed_stems = known_map
                 .iter()
-                .filter_map(|(stem, (known_path, _))| (known_path == path).then(|| stem.clone()))
+                .filter(|(_, (known_path, _))| known_path == path)
+                .map(|(stem, _)| stem.clone())
                 .collect::<Vec<_>>();
             for stem in removed_stems {
                 known_map.remove(&stem);
@@ -1863,6 +1882,7 @@ mod tests {
             description: String::new(),
             enabled: true,
             icon_bytes: None,
+            provider_icon: false,
             path: PathBuf::from(name.to_lowercase()),
             icon_lines: None,
         }

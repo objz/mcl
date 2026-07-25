@@ -199,17 +199,20 @@ pub fn set_sub_action(text: impl Into<String>) {
 pub fn clear() {
     match PROGRESS.lock() {
         Ok(mut state) => {
-            state.current_action = None;
-            state.progress = None;
-            state.sub_action = None;
-            state.tasks.clear();
             state.legacy_active = false;
+            refresh_visible(&mut state);
             crate::tui::request_redraw();
         }
         Err(e) => {
             tracing::error!("Progress lock poisoned: {}", e);
         }
     }
+}
+
+pub fn is_active() -> bool {
+    PROGRESS
+        .lock()
+        .is_ok_and(|state| state.current_action.is_some())
 }
 
 #[cfg(test)]
@@ -256,10 +259,20 @@ mod tests {
         assert!(!is_active());
         clear();
     }
-}
 
-pub fn is_active() -> bool {
-    PROGRESS
-        .lock()
-        .is_ok_and(|state| state.current_action.is_some())
+    #[test]
+    fn clearing_legacy_progress_keeps_owned_tasks() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        clear();
+        let task = ProgressTask::start("indexing");
+        set_action("legacy download");
+        clear();
+
+        let state = PROGRESS.lock().unwrap();
+        assert_eq!(state.current_action.as_deref(), Some("indexing"));
+        drop(state);
+
+        task.finish();
+        clear();
+    }
 }

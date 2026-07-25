@@ -600,6 +600,7 @@ pub(crate) fn project_entry(
         description: project.description,
         enabled: true,
         icon_bytes: project.icon_bytes,
+        provider_icon: true,
         path: PathBuf::from(project.id),
         icon_lines: Some(crate::instance::content::mods::fallback_icon()),
     }

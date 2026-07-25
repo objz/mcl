@@ -73,6 +73,7 @@ pub fn scan_one_resource_pack(path: &Path, file_stem: &str, enabled: bool) -> Co
         description,
         enabled,
         icon_bytes,
+        provider_icon: false,
         path: path.to_path_buf(),
         icon_lines,
     }

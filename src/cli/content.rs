@@ -133,6 +133,7 @@ mod tests {
             description: String::new(),
             enabled: true,
             icon_bytes: None,
+            provider_icon: false,
             path: PathBuf::from(file_stem),
             icon_lines: None,
         }

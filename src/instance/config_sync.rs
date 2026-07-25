@@ -221,6 +221,7 @@ fn acquire_lock(profile_dir: &Path) -> Result<ConfigSyncLock, ConfigSyncError> {
         .read(true)
         .write(true)
         .create(true)
+        .truncate(false)
         .open(path)?;
     file.lock()?;
     Ok(ConfigSyncLock { file })

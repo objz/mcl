@@ -6,8 +6,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use crate::content_provider::{FingerprintQuery, ProviderRegistry};
 use crate::instance::InstanceConfig;
 use crate::instance::content::manifest::{
-    ContentFileRecord, ContentKind, ContentManifest, ProviderProject, Resolution, fingerprint,
-    fingerprint_metadata,
+    ContentFileRecord, ContentKind, ContentManifest, FileFingerprint, ProviderProject, Resolution,
+    fingerprint, fingerprint_metadata,
 };
 use crate::storage::{InstancePaths, MetadataPaths};
 use crate::tui::progress::{ProgressTask, ProgressTaskHandle};
@@ -170,7 +170,7 @@ async fn reconcile(job: ReconcileJob, task: &ProgressTask) -> ReconcileResult {
     })
     .await;
 
-    let result = match inventory {
+    match inventory {
         Ok(Ok((mut inventory, manifest_path))) => {
             let registry = ProviderRegistry::modrinth(client);
             task.set_action(format!("Identifying content for {instance_name}"));
@@ -193,7 +193,7 @@ async fn reconcile(job: ReconcileJob, task: &ProgressTask) -> ReconcileResult {
                         &registry,
                         &inventory.manifest,
                         &MetadataPaths::new(&meta_dir),
-                        &task,
+                        task,
                     )
                     .await;
                     match save_reconciled_manifest(
@@ -242,8 +242,7 @@ async fn reconcile(job: ReconcileJob, task: &ProgressTask) -> ReconcileResult {
             icons: HashMap::new(),
             error: Some(error.to_string()),
         },
-    };
-    result
+    }
 }
 
 fn save_reconciled_manifest(
@@ -329,21 +328,34 @@ fn reconcile_inventory(
             .and_then(|name| name.to_str())
             .is_some_and(|name| name.ends_with(".disabled"));
         let metadata = std::fs::metadata(&path)?;
-        let modified_ns = metadata
-            .modified()
-            .unwrap_or(SystemTime::UNIX_EPOCH)
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_nanos();
+        let is_directory = metadata.is_dir();
+        let metadata_fingerprint = if is_directory {
+            directory_fingerprint_metadata(&path)?
+        } else {
+            fingerprint_metadata(&path)?
+        };
+        let modified_ns = metadata_fingerprint.modified_ns;
         let existing = previous.record(&relative_path);
         let unchanged = existing.is_some_and(|record| {
-            record.fingerprint.size == metadata.len()
+            record.fingerprint.size == metadata_fingerprint.size
                 && record.fingerprint.modified_ns == modified_ns
         });
-        let oversized = max_fingerprint_size_mib > 0
+        let oversized = !is_directory
+            && max_fingerprint_size_mib > 0
             && metadata.len() > max_fingerprint_size_mib.saturating_mul(1024 * 1024);
         let mut record = if unchanged {
             existing.cloned().unwrap()
+        } else if is_directory {
+            ContentFileRecord {
+                relative_path: relative_path.clone(),
+                kind,
+                enabled,
+                fingerprint: metadata_fingerprint,
+                resolution: Resolution::Unmatched {
+                    checked_at: now,
+                    providers: Vec::new(),
+                },
+            }
         } else if oversized {
             tracing::debug!(
                 "Skipping automatic provider matching for {} ({} bytes exceeds {} MiB limit)",
@@ -379,7 +391,8 @@ fn reconcile_inventory(
                 providers: Vec::new(),
             };
         }
-        let should_query = !oversized
+        let should_query = !is_directory
+            && !oversized
             && match &record.resolution {
                 Resolution::Pending => true,
                 Resolution::Unmatched { checked_at, .. } => {
@@ -635,7 +648,7 @@ fn content_files(minecraft_dir: &Path) -> std::io::Result<Vec<(ContentKind, Path
         };
         for entry in entries.flatten() {
             let path = entry.path();
-            if path.is_file() && supported_file(kind, &path) {
+            if supported_content_path(kind, &path) {
                 files.push((kind, path));
             }
         }
@@ -644,7 +657,13 @@ fn content_files(minecraft_dir: &Path) -> std::io::Result<Vec<(ContentKind, Path
     Ok(files)
 }
 
-fn supported_file(kind: ContentKind, path: &Path) -> bool {
+fn supported_content_path(kind: ContentKind, path: &Path) -> bool {
+    if path.is_dir() {
+        return matches!(kind, ContentKind::ResourcePack | ContentKind::Shader);
+    }
+    if !path.is_file() {
+        return false;
+    }
     let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
         return false;
     };
@@ -654,6 +673,37 @@ fn supported_file(kind: ContentKind, path: &Path) -> bool {
             name.ends_with(".zip") || name.ends_with(".zip.disabled")
         }
     }
+}
+
+fn directory_fingerprint_metadata(path: &Path) -> Result<FileFingerprint, std::io::Error> {
+    fn accumulate(path: &Path, size: &mut u64, modified_ns: &mut u128) -> std::io::Result<()> {
+        for entry in std::fs::read_dir(path)? {
+            let entry = entry?;
+            let metadata = entry.metadata()?;
+            let modified = metadata
+                .modified()
+                .unwrap_or(SystemTime::UNIX_EPOCH)
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos();
+            *modified_ns = (*modified_ns).max(modified);
+            if metadata.is_dir() {
+                accumulate(&entry.path(), size, modified_ns)?;
+            } else if metadata.is_file() {
+                *size = size.saturating_add(metadata.len());
+            }
+        }
+        Ok(())
+    }
+
+    let mut size = 0;
+    let mut modified_ns = 0;
+    accumulate(path, &mut size, &mut modified_ns)?;
+    Ok(FileFingerprint {
+        size,
+        modified_ns,
+        hashes: Default::default(),
+    })
 }
 
 #[cfg(test)]
@@ -750,5 +800,29 @@ mod tests {
             reconcile_inventory(&manifest_path, &minecraft, 24, 512, &NoopProgress).unwrap();
         assert!(second.queries.is_empty());
         assert_eq!(second.manifest.files[0].fingerprint, fingerprint);
+    }
+
+    #[test]
+    fn directory_packs_are_indexed_without_provider_queries() {
+        let temp = tempfile::tempdir().unwrap();
+        let minecraft = temp.path().join("minecraft");
+        let pack = minecraft.join("resourcepacks/example");
+        std::fs::create_dir_all(&pack).unwrap();
+        std::fs::write(pack.join("pack.mcmeta"), b"{}").unwrap();
+
+        let inventory = reconcile_inventory(
+            &temp.path().join("manifest.json"),
+            &minecraft,
+            24,
+            512,
+            &NoopProgress,
+        )
+        .unwrap();
+
+        assert!(inventory.queries.is_empty());
+        assert_eq!(
+            inventory.manifest.files[0].relative_path,
+            PathBuf::from("resourcepacks/example")
+        );
     }
 }
