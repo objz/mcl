@@ -7,12 +7,15 @@
 pub mod auth;
 mod cli;
 pub mod config;
+pub mod content_provider;
 pub mod instance;
 pub mod instance_logs;
 pub mod launch_profile;
+pub mod layout_migration;
 mod migrate;
 pub mod net;
 pub mod running;
+pub mod storage;
 pub mod tui;
 
 pub use cli::init as cli_init;

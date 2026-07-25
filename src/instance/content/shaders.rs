@@ -16,13 +16,15 @@ pub fn scan_one_shader(path: &Path, file_stem: &str, enabled: bool) -> ContentEn
 
     let icon_lines = icon_bytes
         .as_ref()
-        .and_then(|bytes| make_icon_pixels(bytes, 6, 3));
+        .and_then(|bytes| make_icon_pixels(bytes, 6, 3))
+        .or_else(|| Some(super::mods::fallback_icon()));
 
     ContentEntry {
         file_stem: file_stem.to_owned(),
         name: file_stem.to_owned(),
         source_slug: None,
         installed_path: None,
+        provider_project: None,
         title_suffix: None,
         footer_label: None,
         description,
@@ -36,7 +38,7 @@ pub fn scan_one_shader(path: &Path, file_stem: &str, enabled: bool) -> ContentEn
 pub fn scan_shaders(instances_dir: &Path, instance_name: &str) -> Vec<ContentEntry> {
     let shaders_dir = instances_dir
         .join(instance_name)
-        .join(".minecraft")
+        .join(crate::storage::MINECRAFT_DIR_NAME)
         .join("shaderpacks");
 
     let read_dir = match std::fs::read_dir(&shaders_dir) {

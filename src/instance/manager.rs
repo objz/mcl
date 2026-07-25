@@ -126,7 +126,7 @@ impl InstanceManager {
         loader_version: Option<&str>,
         instance_dir: &std::path::Path,
     ) -> Result<InstanceConfig, InstanceError> {
-        let minecraft_dir = instance_dir.join(".minecraft");
+        let minecraft_dir = instance_dir.join(crate::storage::MINECRAFT_DIR_NAME);
         tracing::debug!(
             "Preparing Minecraft directory for '{}': {}",
             name,
@@ -149,11 +149,12 @@ impl InstanceManager {
             );
         }
 
+        let metadata_paths = crate::storage::MetadataPaths::new(&self.meta_dir);
         for meta_subdir in &[
-            self.meta_dir.join("versions"),
-            self.meta_dir.join("libraries"),
-            self.meta_dir.join("assets").join("objects"),
-            self.meta_dir.join("assets").join("indexes"),
+            metadata_paths.versions(),
+            metadata_paths.libraries(),
+            metadata_paths.assets().join("objects"),
+            metadata_paths.assets().join("indexes"),
         ] {
             std::fs::create_dir_all(meta_subdir)?;
             tracing::trace!("Ensured metadata directory {}", meta_subdir.display());
@@ -198,9 +199,8 @@ impl InstanceManager {
         crate::net::mojang::download_client_jar(&self.client, &version_meta, &self.meta_dir)
             .await?;
 
-        let meta_json_path = self
-            .meta_dir
-            .join("versions")
+        let meta_json_path = metadata_paths
+            .versions()
             .join(game_version)
             .join("meta.json");
         if let Some(parent) = meta_json_path.parent()
@@ -279,6 +279,90 @@ impl InstanceManager {
 
         crate::tui::progress::clear();
         Ok(config)
+    }
+
+    pub async fn repair_runtime_cache(&self, config: &InstanceConfig) -> Result<(), InstanceError> {
+        let task = crate::tui::progress::ProgressTask::start(format!(
+            "Rebuilding runtime for '{}'",
+            config.name
+        ));
+        task.set_sub_action(format!("Minecraft {}", config.game_version));
+        let metadata_paths = crate::storage::MetadataPaths::new(&self.meta_dir);
+        for directory in [
+            metadata_paths.versions(),
+            metadata_paths.libraries(),
+            metadata_paths.assets().join("objects"),
+            metadata_paths.assets().join("indexes"),
+            metadata_paths.loader_profiles(),
+        ] {
+            std::fs::create_dir_all(directory)?;
+        }
+
+        let manifest = crate::net::mojang::fetch_version_manifest(&self.client).await?;
+        let version_entry = manifest
+            .versions
+            .iter()
+            .find(|version| version.id == config.game_version)
+            .ok_or_else(|| {
+                InstanceError::InvalidName(format!(
+                    "Minecraft version '{}' is no longer present in Mojang's manifest",
+                    config.game_version
+                ))
+            })?;
+        let (version_meta, raw_meta) =
+            crate::net::mojang::fetch_version_meta_with_raw(&self.client, version_entry).await?;
+        crate::net::mojang::download_client_jar(&self.client, &version_meta, &self.meta_dir)
+            .await?;
+        let meta_path = metadata_paths
+            .versions()
+            .join(&config.game_version)
+            .join("meta.json");
+        if let Some(parent) = meta_path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::write(meta_path, raw_meta)?;
+        crate::net::mojang::download_libraries(&self.client, &version_meta, &self.meta_dir).await?;
+        crate::net::mojang::download_assets(&self.client, &version_meta, &self.meta_dir).await?;
+
+        if config.loader != ModLoader::Vanilla {
+            let loader_version = config.loader_version.as_deref().ok_or_else(|| {
+                InstanceError::InvalidName(format!(
+                    "Instance '{}' has no {} loader version",
+                    config.name, config.loader
+                ))
+            })?;
+            let profile_name = match config.loader {
+                ModLoader::Fabric => {
+                    format!("fabric-{}-{loader_version}.json", config.game_version)
+                }
+                ModLoader::Quilt => {
+                    format!("quilt-{}-{loader_version}.json", config.game_version)
+                }
+                ModLoader::Forge => {
+                    format!("forge-{}-{loader_version}.json", config.game_version)
+                }
+                ModLoader::NeoForge => format!("neoforge-{loader_version}.json"),
+                ModLoader::Vanilla => unreachable!(),
+            };
+            if !metadata_paths.loader_profiles().join(profile_name).exists() {
+                task.set_sub_action(format!("{} {}", config.loader, loader_version));
+                crate::instance::loader::get_installer(config.loader)
+                    .install(
+                        &self.client,
+                        &config.game_version,
+                        loader_version,
+                        &self.instances_dir.join(&config.name),
+                        &self.meta_dir,
+                    )
+                    .await
+                    .map_err(|error| match error {
+                        InstallError::Download(error) => InstanceError::Download(error),
+                        InstallError::Installer(error) => InstanceError::InstallerError(error),
+                    })?;
+            }
+        }
+        task.finish();
+        Ok(())
     }
 
     pub fn delete(&self, name: &str) -> Result<(), InstanceError> {

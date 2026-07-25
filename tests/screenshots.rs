@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use rmcl::instance::screenshots::scan_screenshots;
 
 fn setup_screenshots_dir(tmp: &Path, instance: &str) -> PathBuf {
-    let dir = tmp.join(instance).join(".minecraft").join("screenshots");
+    let dir = tmp.join(instance).join("minecraft").join("screenshots");
     std::fs::create_dir_all(&dir).unwrap();
     dir
 }

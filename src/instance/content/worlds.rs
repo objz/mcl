@@ -20,6 +20,7 @@ pub fn scan_one_world(path: &Path, file_stem: &str, enabled: bool) -> ContentEnt
         file_stem: file_stem.to_owned(),
         source_slug: None,
         installed_path: None,
+        provider_project: None,
         title_suffix: None,
         footer_label: None,
         description,
@@ -33,7 +34,7 @@ pub fn scan_one_world(path: &Path, file_stem: &str, enabled: bool) -> ContentEnt
 pub fn scan_worlds(instances_dir: &Path, instance_name: &str) -> Vec<ContentEntry> {
     let saves_dir = instances_dir
         .join(instance_name)
-        .join(".minecraft")
+        .join(crate::storage::MINECRAFT_DIR_NAME)
         .join("saves");
 
     let read_dir = match std::fs::read_dir(&saves_dir) {

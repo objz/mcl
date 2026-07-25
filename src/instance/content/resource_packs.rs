@@ -67,6 +67,7 @@ pub fn scan_one_resource_pack(path: &Path, file_stem: &str, enabled: bool) -> Co
         name: display_name,
         source_slug: None,
         installed_path: None,
+        provider_project: None,
         title_suffix: None,
         footer_label: None,
         description,
@@ -80,7 +81,7 @@ pub fn scan_one_resource_pack(path: &Path, file_stem: &str, enabled: bool) -> Co
 pub fn scan_resource_packs(instances_dir: &Path, instance_name: &str) -> Vec<ContentEntry> {
     let packs_dir = instances_dir
         .join(instance_name)
-        .join(".minecraft")
+        .join(crate::storage::MINECRAFT_DIR_NAME)
         .join("resourcepacks");
 
     let read_dir = match std::fs::read_dir(&packs_dir) {

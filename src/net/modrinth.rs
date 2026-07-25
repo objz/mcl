@@ -4,16 +4,22 @@
 use serde::Deserialize;
 use std::collections::HashMap;
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, serde::Serialize)]
 pub struct ProjectInfo {
     pub id: String,
     pub slug: String,
     pub title: String,
+    #[serde(default)]
+    pub description: String,
+    #[serde(default)]
+    pub icon_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct VersionInfo {
     pub id: String,
+    #[serde(default)]
+    pub project_id: String,
     pub name: String,
     pub version_number: String,
     pub game_versions: Vec<String>,
@@ -27,6 +33,8 @@ pub struct VersionFile {
     pub filename: String,
     pub size: u64,
     pub primary: bool,
+    #[serde(default)]
+    pub hashes: HashMap<String, String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -129,6 +137,11 @@ pub async fn search_discovery(
     offset: usize,
     limit: usize,
 ) -> Result<DiscoveryResults, crate::net::NetError> {
+    let progress = crate::tui::progress::ProgressTask::start(if query.trim().is_empty() {
+        "Loading Modrinth discovery".to_owned()
+    } else {
+        format!("Searching Modrinth for '{}'", query.trim())
+    });
     let facets = discovery_facets(kind, game_version, loader);
     let query = query.trim();
     let index = if query.is_empty() {
@@ -141,7 +154,14 @@ pub async fn search_discovery(
         url_encode(query),
         url_encode(&facets),
     );
-    let results: DiscoverySearchResponse = client.get_json(&url).await?;
+    let results: DiscoverySearchResponse = match client.get_json(&url).await {
+        Ok(results) => results,
+        Err(error) => {
+            progress.fail(&error);
+            return Err(error);
+        }
+    };
+    progress.finish();
 
     Ok(DiscoveryResults {
         total_hits: results.total_hits.max(0) as usize,
@@ -267,6 +287,7 @@ pub async fn fetch_content_versions(
     game_version: &str,
     loader: ModLoader,
 ) -> Result<Vec<VersionInfo>, crate::net::NetError> {
+    let progress = crate::tui::progress::ProgressTask::start("Loading compatible project versions");
     let url = content_versions_url(API_BASE, project_id, kind, game_version, loader);
     tracing::debug!(
         "Fetching compatible Modrinth versions for '{}' ({}, {})",
@@ -274,7 +295,16 @@ pub async fn fetch_content_versions(
         game_version,
         loader
     );
-    client.get_json(&url).await
+    match client.get_json(&url).await {
+        Ok(versions) => {
+            progress.finish();
+            Ok(versions)
+        }
+        Err(error) => {
+            progress.fail(&error);
+            Err(error)
+        }
+    }
 }
 
 fn content_versions_url(
@@ -331,7 +361,13 @@ pub async fn download_version_file(
     if path.exists() {
         return Ok(DownloadOutcome::SkippedExisting(path));
     }
-    crate::net::download_file(client, &file.url, &path, |_, _| {}).await?;
+    let progress =
+        crate::tui::progress::ProgressTask::start(format!("Downloading {}", file.filename));
+    crate::net::download_file(client, &file.url, &path, |current, total| {
+        progress.set_progress(current, total);
+    })
+    .await?;
+    progress.finish();
     Ok(DownloadOutcome::Downloaded(path))
 }
 
@@ -356,7 +392,13 @@ pub async fn download_version_file_for_update(
         )));
     }
 
-    crate::net::download_file(client, &file.url, &temporary, |_, _| {}).await?;
+    let progress =
+        crate::tui::progress::ProgressTask::start(format!("Downloading {}", file.filename));
+    crate::net::download_file(client, &file.url, &temporary, |current, total| {
+        progress.set_progress(current, total);
+    })
+    .await?;
+    progress.finish();
     replace_installed_file(&temporary, &target, installed_path, &backup).await?;
     Ok(DownloadOutcome::Downloaded(target))
 }
@@ -393,6 +435,28 @@ pub async fn fetch_version(
         version.files.len()
     );
     Ok(version)
+}
+
+#[derive(Debug, serde::Serialize)]
+struct VersionFilesRequest<'a> {
+    hashes: &'a [String],
+    algorithm: &'a str,
+}
+
+pub async fn resolve_version_files(
+    client: &crate::net::HttpClient,
+    hashes: &[String],
+    algorithm: &str,
+) -> Result<HashMap<String, VersionInfo>, crate::net::NetError> {
+    if hashes.is_empty() {
+        return Ok(HashMap::new());
+    }
+    client
+        .post_json(
+            &format!("{API_BASE}/version_files"),
+            &VersionFilesRequest { hashes, algorithm },
+        )
+        .await
 }
 
 // grabs the primary file from a version, falling back to the first file
@@ -442,6 +506,7 @@ mod tests {
     fn version_with_files(files: Vec<VersionFile>) -> VersionInfo {
         VersionInfo {
             id: "version-id".to_owned(),
+            project_id: "project-id".to_owned(),
             name: "Version 1".to_owned(),
             version_number: "1.0.0".to_owned(),
             game_versions: vec!["1.21.1".to_owned()],
@@ -510,12 +575,14 @@ mod tests {
                 filename: "first.jar".to_owned(),
                 size: 1,
                 primary: false,
+                hashes: HashMap::new(),
             },
             VersionFile {
                 url: "https://example.test/primary.jar".to_owned(),
                 filename: "primary.jar".to_owned(),
                 size: 1,
                 primary: true,
+                hashes: HashMap::new(),
             },
         ]);
         assert_eq!(
@@ -528,6 +595,7 @@ mod tests {
             filename: "first.jar".to_owned(),
             size: 1,
             primary: false,
+            hashes: HashMap::new(),
         }]);
         assert_eq!(
             select_primary_file(&fallback).unwrap().filename,
@@ -545,6 +613,7 @@ mod tests {
             filename: "example.jar".to_owned(),
             size: 1,
             primary: true,
+            hashes: HashMap::new(),
         }]);
 
         let outcome =

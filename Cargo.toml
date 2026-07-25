@@ -36,6 +36,8 @@ ratatui-textarea = { version = "0.9.1", features = ["crossterm"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls"] }
 serde = { version = "1.0.217", features = ["derive"] }
 serde_json = "1.0"
+sha1 = "0.10"
+sha2 = "0.10"
 toml = "1.1.2"
 tachyonfx = "0.25"
 throbber-widgets-tui = "0.11"

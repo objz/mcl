@@ -152,8 +152,8 @@ pub async fn download_client_jar(
     meta: &VersionMeta,
     meta_dir: &Path,
 ) -> Result<(), NetError> {
-    let jar_path = meta_dir
-        .join("versions")
+    let jar_path = crate::storage::MetadataPaths::new(meta_dir)
+        .versions()
         .join(&meta.id)
         .join(format!("{}.jar", meta.id));
 
@@ -225,7 +225,9 @@ pub async fn download_libraries(
             }
         };
 
-        let destination = meta_dir.join("libraries").join(&artifact.path);
+        let destination = crate::storage::MetadataPaths::new(meta_dir)
+            .libraries()
+            .join(&artifact.path);
 
         if destination.exists() {
             tracing::trace!("Library already cached: {}", artifact.path);
@@ -278,8 +280,8 @@ pub async fn download_assets_from(
         }
     };
 
-    let index_path = meta_dir
-        .join("assets")
+    let index_path = crate::storage::MetadataPaths::new(meta_dir)
+        .assets()
         .join("indexes")
         .join(format!("{}.json", meta.asset_index.id));
     if !index_path.exists() {
@@ -326,8 +328,8 @@ pub async fn download_assets_from(
 
         let prefix = &object.hash[..2];
         let url = format!("{}/{}/{}", assets_base, prefix, object.hash);
-        let destination = meta_dir
-            .join("assets")
+        let destination = crate::storage::MetadataPaths::new(meta_dir)
+            .assets()
             .join("objects")
             .join(prefix)
             .join(&object.hash);

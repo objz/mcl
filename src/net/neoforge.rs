@@ -182,7 +182,7 @@ pub async fn run_neoforge_installer(
         .arg("-jar")
         .arg(installer_path)
         .arg("--installClient")
-        .current_dir(instance_dir.join(".minecraft"))
+        .current_dir(instance_dir.join(crate::storage::MINECRAFT_DIR_NAME))
         .output()
         .await
     {

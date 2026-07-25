@@ -24,6 +24,49 @@ pub async fn init() {
         return;
     }
 
+    let instances_dir = crate::config::SETTINGS.paths.resolve_instances_dir();
+    let meta_dir = crate::config::SETTINGS.paths.resolve_meta_dir();
+    if crate::layout_migration::is_needed(&instances_dir, &meta_dir) {
+        let config = crate::config::get_config_path().join("config.toml");
+        if let Err(error) =
+            crate::layout_migration::run(&instances_dir, &meta_dir, &config, |progress| {
+                eprintln!(
+                    "{}: {} ({}/{})",
+                    progress.phase, progress.item, progress.current, progress.total
+                );
+            })
+        {
+            eprintln!("error: layout migration failed safely: {error}");
+            std::process::exit(1);
+        }
+    } else if let Err(error) = crate::layout_migration::initialize_new_layout(&meta_dir) {
+        eprintln!("error: cannot initialize metadata layout: {error}");
+        std::process::exit(1);
+    }
+    if crate::layout_migration::cache_rebuild_pending(&meta_dir) {
+        let manager = crate::instance::InstanceManager::new(&instances_dir, &meta_dir);
+        let instances = manager.load_all();
+        for (index, instance) in instances.iter().enumerate() {
+            eprintln!(
+                "Rebuilding runtime cache: {} ({}/{})",
+                instance.name,
+                index + 1,
+                instances.len()
+            );
+            if let Err(error) = manager.repair_runtime_cache(instance).await {
+                eprintln!(
+                    "error: runtime cache rebuild stopped safely for '{}': {error}",
+                    instance.name
+                );
+                std::process::exit(1);
+            }
+        }
+        if let Err(error) = crate::layout_migration::finish_cache_rebuild(&meta_dir) {
+            eprintln!("error: cannot finish runtime cache migration: {error}");
+            std::process::exit(1);
+        }
+    }
+
     let result = match matches.subcommand() {
         Some(("instance", sub_matches)) => instance::handle_instance(sub_matches).await,
         Some(("mod", sub_matches)) => content::handle_mod(sub_matches),

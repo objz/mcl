@@ -45,7 +45,7 @@ impl ModLoaderInstaller for NeoForgeInstaller {
         meta_dir: &Path,
     ) -> Result<(), InstallError> {
         let installer_jar = instance_dir
-            .join(".minecraft")
+            .join(crate::storage::MINECRAFT_DIR_NAME)
             .join("neoforge-installer.jar");
         tracing::info!("Installing NeoForge {}", loader_version);
         tracing::debug!("NeoForge installer path: {}", installer_jar.display());

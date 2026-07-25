@@ -62,6 +62,7 @@ pub static SETTINGS: LazyLock<Config> = LazyLock::new(|| {
             paths: settings::Paths::default(),
             defaults: settings::Defaults::default(),
             ui: settings::Ui::default(),
+            content: settings::Content::default(),
         }
     })
 });

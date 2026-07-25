@@ -170,7 +170,7 @@ async fn download_libraries_writes_artifact_to_meta_dir() {
 
     let written = tmp
         .path()
-        .join("libraries/org/slf4j/slf4j-api/2.0.7/slf4j-api-2.0.7.jar");
+        .join("cache/minecraft/libraries/org/slf4j/slf4j-api/2.0.7/slf4j-api-2.0.7.jar");
     assert!(written.exists(), "expected library file at {written:?}");
     let contents = std::fs::read(&written).unwrap();
     assert_eq!(contents, b"jar-bytes");
@@ -193,7 +193,7 @@ async fn download_libraries_skips_when_destination_exists() {
     let tmp = tempfile::tempdir().unwrap();
     let existing = tmp
         .path()
-        .join("libraries/org/slf4j/slf4j-api/2.0.7/slf4j-api-2.0.7.jar");
+        .join("cache/minecraft/libraries/org/slf4j/slf4j-api/2.0.7/slf4j-api-2.0.7.jar");
     std::fs::create_dir_all(existing.parent().unwrap()).unwrap();
     std::fs::write(&existing, b"already there").unwrap();
 
@@ -240,11 +240,11 @@ async fn download_assets_from_writes_index_and_assets() {
         .await
         .expect("download_assets_from");
 
-    let index_path = tmp.path().join("assets/indexes/5.json");
+    let index_path = tmp.path().join("cache/minecraft/assets/indexes/5.json");
     assert!(index_path.exists(), "index file missing");
     let asset_path = tmp
         .path()
-        .join("assets/objects/ab/ab1234567890abcdef1234567890abcdef123456");
+        .join("cache/minecraft/assets/objects/ab/ab1234567890abcdef1234567890abcdef123456");
     assert!(asset_path.exists(), "asset file missing");
     assert_eq!(std::fs::read(&asset_path).unwrap(), b"asset-bytes");
 }
@@ -269,7 +269,7 @@ async fn download_assets_writes_index_when_objects_is_empty() {
         .await
         .expect("download_assets index-only");
 
-    let index_path = tmp.path().join("assets/indexes/5.json");
+    let index_path = tmp.path().join("cache/minecraft/assets/indexes/5.json");
     assert!(
         index_path.exists(),
         "expected asset index at {index_path:?}"

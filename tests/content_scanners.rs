@@ -1,5 +1,5 @@
 // integration tests for the public content-scanner APIs: shaders, worlds,
-// and resource packs. each scanner walks an instance's .minecraft subdir
+// and resource packs. each scanner walks an instance's minecraft subdir
 // and returns ContentEntry rows; shape varies slightly per content type
 // (worlds are directories only, packs and shaders accept .zip or dir, etc.).
 
@@ -10,7 +10,7 @@ use rmcl::instance::content::shaders::scan_shaders;
 use rmcl::instance::content::worlds::scan_worlds;
 
 fn setup_subdir(tmp: &Path, instance: &str, sub: &str) -> PathBuf {
-    let dir = tmp.join(instance).join(".minecraft").join(sub);
+    let dir = tmp.join(instance).join("minecraft").join(sub);
     std::fs::create_dir_all(&dir).unwrap();
     dir
 }

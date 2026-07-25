@@ -249,7 +249,7 @@ async fn migrate_legacy_loader_profile_if_needed(
     };
 
     let installer_json_path = instance_dir
-        .join(".minecraft")
+        .join(crate::storage::MINECRAFT_DIR_NAME)
         .join("versions")
         .join(&version_dir)
         .join(format!("{version_dir}.json"));
@@ -318,10 +318,11 @@ pub async fn build_launch_invocation(
     auth: &LaunchAuth<'_>,
 ) -> Result<LaunchInvocation, LaunchError> {
     let instance_dir = instances_dir.join(&config.name);
-    let minecraft_dir = instance_dir.join(".minecraft");
+    let minecraft_dir = instance_dir.join(crate::storage::MINECRAFT_DIR_NAME);
 
-    let meta_path = meta_dir
-        .join("versions")
+    let metadata_paths = crate::storage::MetadataPaths::new(meta_dir);
+    let meta_path = metadata_paths
+        .versions()
         .join(&config.game_version)
         .join("meta.json");
     if !meta_path.exists() {
@@ -348,7 +349,7 @@ pub async fn build_launch_invocation(
         .map(|ai| ai.id.clone())
         .unwrap_or_default();
 
-    let lib_dir = meta_dir.join("libraries");
+    let lib_dir = metadata_paths.libraries();
 
     let lv = config.loader_version.as_deref().unwrap_or("unknown");
     let profile_filename = match config.loader {
@@ -364,7 +365,7 @@ pub async fn build_launch_invocation(
     // the vanilla meta migration above ensured is fresh on disk). when no
     // loader is configured we use the already-loaded vanilla meta directly.
     let merged_profile: LaunchProfile = if let Some(filename) = &profile_filename {
-        let profile_path = meta_dir.join("loader-profiles").join(filename);
+        let profile_path = metadata_paths.loader_profiles().join(filename);
         if !profile_path.exists() {
             return Err(LaunchError::MetaNotFound(
                 profile_path.display().to_string(),
@@ -453,8 +454,8 @@ pub async fn build_launch_invocation(
     }
 
     classpath.push(
-        meta_dir
-            .join("versions")
+        metadata_paths
+            .versions()
             .join(&config.game_version)
             .join(format!("{}.jar", config.game_version)),
     );
@@ -497,9 +498,9 @@ pub async fn build_launch_invocation(
     )
     .await?;
 
-    let assets_root = meta_dir.join("assets");
-    let natives_dir = meta_dir
-        .join("versions")
+    let assets_root = metadata_paths.assets();
+    let natives_dir = metadata_paths
+        .versions()
         .join(&config.game_version)
         .join("natives");
     let version_type = merged_profile.type_.as_deref().unwrap_or("release");

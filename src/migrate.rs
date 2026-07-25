@@ -97,7 +97,7 @@ fn cleanup_instance_leftovers(instances_dir: &Path) {
         return;
     };
     for entry in entries.flatten() {
-        let mc = entry.path().join(".minecraft");
+        let mc = entry.path().join(crate::storage::MINECRAFT_DIR_NAME);
         for leftover in [".mcl-shim.jar", ".mcl-log4j2.xml"] {
             let p = mc.join(leftover);
             if p.exists() {
@@ -239,7 +239,9 @@ mod tests {
     fn cleanup_instance_leftovers_removes_shim_and_log4j() {
         let tmp = tempfile::tempdir().unwrap();
         let instances = tmp.path().join("instances");
-        let mc = instances.join("Test").join(".minecraft");
+        let mc = instances
+            .join("Test")
+            .join(crate::storage::MINECRAFT_DIR_NAME);
         fs::create_dir_all(&mc).unwrap();
         fs::write(mc.join(".mcl-shim.jar"), b"jar").unwrap();
         fs::write(mc.join(".mcl-log4j2.xml"), b"xml").unwrap();

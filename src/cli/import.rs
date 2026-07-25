@@ -58,7 +58,7 @@ pub async fn handle_import(matches: &ArgMatches) -> CliResult {
                 version.game_versions.first().unwrap_or(&"?".to_string())
             );
 
-            let tmp_dir = manager.meta_dir.join("tmp");
+            let tmp_dir = crate::storage::MetadataPaths::new(&manager.meta_dir).temporary();
             std::fs::create_dir_all(&tmp_dir)?;
             modrinth::download_mrpack(&client, version, &tmp_dir)
                 .await
@@ -79,7 +79,7 @@ pub async fn handle_import(matches: &ArgMatches) -> CliResult {
                 version.game_versions.first().unwrap_or(&"?".to_string())
             );
 
-            let tmp_dir = manager.meta_dir.join("tmp");
+            let tmp_dir = crate::storage::MetadataPaths::new(&manager.meta_dir).temporary();
             std::fs::create_dir_all(&tmp_dir)?;
             modrinth::download_mrpack(&client, &version, &tmp_dir)
                 .await

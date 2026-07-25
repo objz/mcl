@@ -127,6 +127,7 @@ mod tests {
             name: file_stem.to_string(),
             source_slug: None,
             installed_path: None,
+            provider_project: None,
             title_suffix: None,
             footer_label: None,
             description: String::new(),

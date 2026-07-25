@@ -1,4 +1,4 @@
-// per-launch log files stored under .minecraft/logs/launches/
+// per-launch log files stored under minecraft/logs/launches/
 // each launch gets its own timestamped file so you can go back and see what
 // crashed last tuesday at 3am
 
@@ -13,7 +13,7 @@ pub struct LogFileEntry {
 pub fn log_dir(instances_dir: &Path, instance_name: &str) -> PathBuf {
     instances_dir
         .join(instance_name)
-        .join(".minecraft")
+        .join(crate::storage::MINECRAFT_DIR_NAME)
         .join("logs")
         .join("launches")
 }
@@ -66,7 +66,7 @@ mod tests {
         let p = log_dir(Path::new("/instances"), "my-world");
         assert_eq!(
             p,
-            PathBuf::from("/instances/my-world/.minecraft/logs/launches")
+            PathBuf::from("/instances/my-world/minecraft/logs/launches")
         );
     }
 }

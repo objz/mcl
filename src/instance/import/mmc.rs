@@ -114,7 +114,10 @@ pub async fn execute_import(
         .await
         .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> { Box::new(e) })?;
 
-    let minecraft_dir = manager.instances_dir.join(&name).join(".minecraft");
+    let minecraft_dir = manager
+        .instances_dir
+        .join(&name)
+        .join(crate::storage::MINECRAFT_DIR_NAME);
     extract_mmc_archive(&summary.archive_path, &minecraft_dir)?;
 
     progress::clear();

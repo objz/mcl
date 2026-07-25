@@ -1,7 +1,9 @@
 // scanning and toggling instance content (mods, resource packs, shaders, worlds).
 // minecraft uses a ".disabled" suffix convention for disabled content, so this leans on that heavily.
 
+pub mod manifest;
 pub mod mods;
+pub mod reconcile;
 pub mod resource_packs;
 pub mod shaders;
 pub mod worlds;

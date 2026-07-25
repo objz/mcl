@@ -9,6 +9,7 @@ pub mod neoforge;
 pub mod quilt;
 
 use reqwest::Client;
+use serde::Serialize;
 use serde::de::DeserializeOwned;
 use std::path::Path;
 use thiserror::Error;
@@ -95,6 +96,35 @@ impl HttpClient {
             |resp| async move { Ok(resp.bytes().await?.to_vec()) },
         )
         .await
+    }
+
+    pub async fn post_json<B, T>(&self, url: &str, body: &B) -> Result<T, NetError>
+    where
+        B: Serialize + ?Sized,
+        T: DeserializeOwned,
+    {
+        for attempt in 0..=MAX_RETRIES {
+            tracing::trace!("HTTP POST {}", url);
+            let result = async {
+                let response = self.inner.post(url).json(body).send().await?;
+                if !response.status().is_success() {
+                    return Err(NetError::StatusError {
+                        status: response.status().as_u16(),
+                        url: url.to_owned(),
+                    });
+                }
+                Ok(response.json().await?)
+            }
+            .await;
+            match result {
+                Ok(value) => return Ok(value),
+                Err(error) if is_retryable(&error) && attempt < MAX_RETRIES => {
+                    sleep_before_retry("request", url, attempt, &error).await;
+                }
+                Err(error) => return Err(error),
+            }
+        }
+        unreachable!("retry loop returns on success or final error")
     }
 
     // fetch JSON and also keep the raw bytes. used by install paths that

@@ -149,7 +149,7 @@ pub async fn download_quilt_libraries(
     profile: &QuiltProfile,
     meta_dir: &Path,
 ) -> Result<(), NetError> {
-    let libraries_dir = meta_dir.join("libraries");
+    let libraries_dir = crate::storage::MetadataPaths::new(meta_dir).libraries();
     tracing::debug!(
         "Resolving {} Quilt libraries into {}",
         profile.libraries.len(),

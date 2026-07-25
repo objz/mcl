@@ -45,7 +45,9 @@ impl ModLoaderInstaller for ForgeInstaller {
         instance_dir: &Path,
         meta_dir: &Path,
     ) -> Result<(), InstallError> {
-        let installer_jar = instance_dir.join(".minecraft").join("forge-installer.jar");
+        let installer_jar = instance_dir
+            .join(crate::storage::MINECRAFT_DIR_NAME)
+            .join("forge-installer.jar");
         tracing::info!(
             "Installing Forge {} for Minecraft {}",
             loader_version,

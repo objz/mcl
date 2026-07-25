@@ -73,9 +73,9 @@ fn fake_java(tmp: &TempDir, major: u32) -> String {
 }
 
 // builds the on-disk layout that build_launch_invocation expects:
-//   <tmp>/instances/<name>/.minecraft/        (instance dir, created empty)
+//   <tmp>/instances/<name>/minecraft/         (instance dir, created empty)
 //   <tmp>/meta/versions/<game_version>/meta.json
-//   <tmp>/meta/loader-profiles/               (created empty)
+//   <tmp>/meta/cache/loaders/profiles/         (created empty)
 //   <tmp>/meta/libraries/                     (created empty)
 struct Fixture {
     _tmp: TempDir,
@@ -89,12 +89,12 @@ impl Fixture {
         let instances_dir = tmp.path().join("instances");
         let meta_dir = tmp.path().join("meta");
 
-        let instance_minecraft = instances_dir.join(instance_name).join(".minecraft");
+        let instance_minecraft = instances_dir.join(instance_name).join("minecraft");
         std::fs::create_dir_all(&instance_minecraft).unwrap();
 
-        std::fs::create_dir_all(meta_dir.join("libraries")).unwrap();
-        std::fs::create_dir_all(meta_dir.join("loader-profiles")).unwrap();
-        let version_dir = meta_dir.join("versions").join(game_version);
+        std::fs::create_dir_all(meta_dir.join("cache/minecraft/libraries")).unwrap();
+        std::fs::create_dir_all(meta_dir.join("cache/loaders/profiles")).unwrap();
+        let version_dir = meta_dir.join("cache/minecraft/versions").join(game_version);
         std::fs::create_dir_all(&version_dir).unwrap();
         std::fs::write(
             version_dir.join("meta.json"),
@@ -111,7 +111,7 @@ impl Fixture {
 
     fn write_loader_profile(&self, filename: &str, content: serde_json::Value) {
         std::fs::write(
-            self.meta_dir.join("loader-profiles").join(filename),
+            self.meta_dir.join("cache/loaders/profiles").join(filename),
             serde_json::to_vec_pretty(&content).unwrap(),
         )
         .unwrap();
@@ -120,7 +120,7 @@ impl Fixture {
     fn instance_libraries_dir(&self, instance_name: &str) -> PathBuf {
         self.instances_dir
             .join(instance_name)
-            .join(".minecraft")
+            .join("minecraft")
             .join("libraries")
     }
 }
@@ -209,7 +209,11 @@ async fn vanilla_modern_builds_complete_invocation() {
     assert_eq!(inv.main_class, "net.minecraft.client.main.Main");
     assert!(inv.extra_args.is_empty());
 
-    let expected_natives = fx.meta_dir.join("versions").join("1.20.1").join("natives");
+    let expected_natives = fx
+        .meta_dir
+        .join("cache/minecraft/versions")
+        .join("1.20.1")
+        .join("natives");
     assert!(
         inv.jvm_args
             .iter()
@@ -225,16 +229,18 @@ async fn vanilla_modern_builds_complete_invocation() {
         inv.jvm_args
     );
 
-    // working_dir is <instances_dir>/<name>/.minecraft
+    // working_dir is <instances_dir>/<name>/minecraft
     assert_eq!(
         inv.working_dir,
-        fx.instances_dir.join("v1").join(".minecraft")
+        fx.instances_dir.join("v1").join("minecraft")
     );
     // classpath = the one vanilla lib + the vanilla client jar
     let slf4j = fx
         .meta_dir
-        .join("libraries/org/slf4j/slf4j-api/2.0.7/slf4j-api-2.0.7.jar");
-    let client_jar = fx.meta_dir.join("versions/1.20.1/1.20.1.jar");
+        .join("cache/minecraft/libraries/org/slf4j/slf4j-api/2.0.7/slf4j-api-2.0.7.jar");
+    let client_jar = fx
+        .meta_dir
+        .join("cache/minecraft/versions/1.20.1/1.20.1.jar");
     assert!(inv.classpath.contains(&slf4j));
     assert!(inv.classpath.contains(&client_jar));
 }
@@ -422,12 +428,12 @@ async fn fabric_implicit_inheritsfrom_resolves() {
         "net.fabricmc.loader.impl.launch.knot.KnotClient"
     );
     // both fabric-loader and vanilla slf4j must appear on the merged classpath
-    let fabric_loader = fx
-        .meta_dir
-        .join("libraries/net/fabricmc/fabric-loader/0.15.0/fabric-loader-0.15.0.jar");
+    let fabric_loader = fx.meta_dir.join(
+        "cache/minecraft/libraries/net/fabricmc/fabric-loader/0.15.0/fabric-loader-0.15.0.jar",
+    );
     let slf4j = fx
         .meta_dir
-        .join("libraries/org/slf4j/slf4j-api/2.0.7/slf4j-api-2.0.7.jar");
+        .join("cache/minecraft/libraries/org/slf4j/slf4j-api/2.0.7/slf4j-api-2.0.7.jar");
     assert!(
         inv.classpath.contains(&fabric_loader),
         "fabric-loader missing from classpath: {:?}",
@@ -631,8 +637,8 @@ async fn meta_not_found_returns_error() {
     let tmp = tempfile::tempdir().unwrap();
     let instances_dir = tmp.path().join("instances");
     let meta_dir = tmp.path().join("meta");
-    std::fs::create_dir_all(instances_dir.join("ghost").join(".minecraft")).unwrap();
-    std::fs::create_dir_all(meta_dir.join("versions")).unwrap();
+    std::fs::create_dir_all(instances_dir.join("ghost").join("minecraft")).unwrap();
+    std::fs::create_dir_all(meta_dir.join("cache/minecraft/versions")).unwrap();
 
     let config = make_config("ghost", "1.20.1", ModLoader::Vanilla);
     let err = build_launch_invocation(&config, &instances_dir, &meta_dir, &test_auth())

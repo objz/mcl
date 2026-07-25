@@ -87,7 +87,10 @@ pub async fn execute_import(
         .await
         .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> { Box::new(e) })?;
 
-    let minecraft_dir = manager.instances_dir.join(&name).join(".minecraft");
+    let minecraft_dir = manager
+        .instances_dir
+        .join(&name)
+        .join(crate::storage::MINECRAFT_DIR_NAME);
 
     let index = crate::net::modrinth::parse_mrpack(&summary.archive_path)
         .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> { e.into() })?;

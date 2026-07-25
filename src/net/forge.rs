@@ -150,7 +150,7 @@ pub async fn run_forge_installer(
         .arg("-jar")
         .arg(installer_path)
         .arg("--installClient")
-        .current_dir(instance_dir.join(".minecraft"))
+        .current_dir(instance_dir.join(crate::storage::MINECRAFT_DIR_NAME))
         .output()
         .await
     {
@@ -289,7 +289,9 @@ pub(crate) async fn install_forge_from_profile(
         })?;
 
     set_sub_action("Extracting universal JAR...");
-    let universal_dest = meta_dir.join("libraries").join(&universal_maven_path);
+    let universal_dest = crate::storage::MetadataPaths::new(meta_dir)
+        .libraries()
+        .join(&universal_maven_path);
     if let Some(parent) = universal_dest.parent() {
         std::fs::create_dir_all(parent)
             .map_err(|e| InstallError::Installer(InstallerError::Io(e)))?;
@@ -318,7 +320,7 @@ pub(crate) async fn install_forge_from_profile(
     // are forge-hosted, libs without one are typically from mojang's library
     // server. old forge versions reference libs like launchwrapper that aren't
     // in mojang's modern version metadata, so we fetch those too.
-    let libraries_dir = meta_dir.join("libraries");
+    let libraries_dir = crate::storage::MetadataPaths::new(meta_dir).libraries();
     for lib in libraries {
         let name = lib.get("name").and_then(|v| v.as_str()).unwrap_or_default();
 

@@ -23,3 +23,14 @@ error_fly_out_ms = 300
 
 # don’t let this blow up endlessly
 max_error_events = 50
+
+[content]
+# ask before choosing when the same file exists on multiple providers
+ask_on_provider_conflict = true
+# used automatically when conflict prompts are disabled
+preferred_provider = "modrinth"
+# retry unchanged files that were not found after this many hours
+unmatched_retry_hours = 24
+# avoid hashing enormous external packs during automatic provider matching;
+# set to 0 to remove the limit
+max_fingerprint_size_mib = 512

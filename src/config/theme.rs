@@ -229,12 +229,13 @@ accent = "Red"
 
     #[test]
     fn resolve_builtin_theme() {
-        let config = ThemeConfig {
-            theme: "dracula".to_owned(),
-            ..ThemeConfig::default()
+        let theme = resolve_theme("dracula");
+        let expected = if std::env::var_os("NO_COLOR").is_some() {
+            "no-color"
+        } else {
+            "dracula"
         };
-        let theme = resolve_app_theme(&config);
-        assert_eq!(theme.id(), "dracula");
+        assert_eq!(theme.id(), expected);
     }
 
     #[test]

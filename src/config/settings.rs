@@ -19,6 +19,45 @@ pub enum ImageProtocol {
 pub struct General {}
 
 #[derive(Debug, Deserialize)]
+pub struct Content {
+    #[serde(default = "default_true")]
+    pub ask_on_provider_conflict: bool,
+    #[serde(default = "default_provider")]
+    pub preferred_provider: String,
+    #[serde(default = "default_unmatched_retry_hours")]
+    pub unmatched_retry_hours: u64,
+    #[serde(default = "default_max_fingerprint_size_mib")]
+    pub max_fingerprint_size_mib: u64,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+fn default_provider() -> String {
+    "modrinth".to_owned()
+}
+
+fn default_unmatched_retry_hours() -> u64 {
+    24
+}
+
+fn default_max_fingerprint_size_mib() -> u64 {
+    512
+}
+
+impl Default for Content {
+    fn default() -> Self {
+        Self {
+            ask_on_provider_conflict: true,
+            preferred_provider: default_provider(),
+            unmatched_retry_hours: default_unmatched_retry_hours(),
+            max_fingerprint_size_mib: default_max_fingerprint_size_mib(),
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
 pub struct Paths {
     #[serde(default = "default_instances_dir")]
     pub instances_dir: String,
@@ -159,6 +198,8 @@ pub struct Config {
     pub defaults: Defaults,
     #[serde(default)]
     pub ui: Ui,
+    #[serde(default)]
+    pub content: Content,
 }
 
 #[cfg(test)]

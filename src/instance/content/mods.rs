@@ -28,6 +28,7 @@ pub struct ContentEntry {
     pub name: String,
     pub source_slug: Option<String>,
     pub installed_path: Option<PathBuf>,
+    pub provider_project: Option<super::manifest::ProviderProject>,
     pub title_suffix: Option<String>,
     pub footer_label: Option<String>,
     pub description: String,
@@ -114,6 +115,7 @@ pub fn scan_one_mod(path: &Path, file_stem: &str, enabled: bool) -> ContentEntry
         name: display_name,
         source_slug: None,
         installed_path: None,
+        provider_project: None,
         title_suffix: None,
         footer_label: None,
         description,
@@ -127,7 +129,7 @@ pub fn scan_one_mod(path: &Path, file_stem: &str, enabled: bool) -> ContentEntry
 pub fn scan_mods(instances_dir: &Path, instance_name: &str) -> Vec<ContentEntry> {
     let mods_dir = instances_dir
         .join(instance_name)
-        .join(".minecraft")
+        .join(crate::storage::MINECRAFT_DIR_NAME)
         .join("mods");
 
     let read_dir = match std::fs::read_dir(&mods_dir) {
@@ -633,7 +635,10 @@ mod tests {
     }
 
     fn setup_mods_dir(tmp: &Path, instance: &str) -> PathBuf {
-        let dir = tmp.join(instance).join(".minecraft").join("mods");
+        let dir = tmp
+            .join(instance)
+            .join(crate::storage::MINECRAFT_DIR_NAME)
+            .join("mods");
         std::fs::create_dir_all(&dir).unwrap();
         dir
     }
@@ -711,6 +716,7 @@ mod tests {
             name: "mymod".to_string(),
             source_slug: None,
             installed_path: None,
+            provider_project: None,
             title_suffix: None,
             footer_label: None,
             description: String::new(),
@@ -986,6 +992,7 @@ description = "A neoforge mod"
             name: "mymod".to_string(),
             source_slug: None,
             installed_path: None,
+            provider_project: None,
             title_suffix: None,
             footer_label: None,
             description: String::new(),

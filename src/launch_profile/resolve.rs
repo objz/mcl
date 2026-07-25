@@ -128,7 +128,10 @@ pub async fn resolve(
             return Err(ResolveError::CircularInheritance(parent_id));
         }
 
-        let parent_path = meta_dir.join("versions").join(&parent_id).join("meta.json");
+        let parent_path = crate::storage::MetadataPaths::new(meta_dir)
+            .versions()
+            .join(&parent_id)
+            .join("meta.json");
         if !parent_path.exists() {
             return Err(ResolveError::ParentNotFound(
                 parent_path.display().to_string(),
@@ -411,7 +414,7 @@ mod tests {
 
     fn write_profile(meta_dir: &Path, profile: &LaunchProfile) {
         let path = meta_dir
-            .join("versions")
+            .join("cache/minecraft/versions")
             .join(&profile.id)
             .join("meta.json");
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -470,7 +473,11 @@ mod tests {
     async fn resolve_errors_when_parent_is_invalid_json() {
         let tmp = TempDir::new().unwrap();
 
-        let parent_path = tmp.path().join("versions").join("1.20.1").join("meta.json");
+        let parent_path = tmp
+            .path()
+            .join("cache/minecraft/versions")
+            .join("1.20.1")
+            .join("meta.json");
         std::fs::create_dir_all(parent_path.parent().unwrap()).unwrap();
         std::fs::write(&parent_path, "{ not valid json").unwrap();
 

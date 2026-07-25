@@ -203,18 +203,15 @@ fn profile_dir(meta_dir: &Path, profile: &str) -> PathBuf {
 }
 
 fn profiles_dir(meta_dir: &Path) -> PathBuf {
-    meta_dir.join("config-sync").join("profiles")
+    crate::storage::MetadataPaths::new(meta_dir).profiles()
 }
 
 fn minecraft_dir(instance_dir: &Path) -> PathBuf {
-    instance_dir.join(".minecraft")
+    instance_dir.join(crate::storage::MINECRAFT_DIR_NAME)
 }
 
 fn local_backup_dir(instance_dir: &Path) -> PathBuf {
-    instance_dir
-        .join(".rmcl")
-        .join("config-sync")
-        .join("local-config")
+    crate::storage::InstancePaths::new(instance_dir).local_config()
 }
 
 fn acquire_lock(profile_dir: &Path) -> Result<ConfigSyncLock, ConfigSyncError> {
@@ -339,7 +336,7 @@ mod tests {
     fn first_prepare_seeds_shared_config() {
         let tmp = tempfile::tempdir().unwrap();
         let meta = tmp.path().join("meta");
-        let minecraft = tmp.path().join("instance/.minecraft");
+        let minecraft = tmp.path().join("instance/minecraft");
         create_profile(&meta, "main").unwrap();
         std::fs::create_dir_all(minecraft.join("config/nested")).unwrap();
         std::fs::write(minecraft.join("options.txt"), "local-options").unwrap();
@@ -350,21 +347,19 @@ mod tests {
         assert!(prepare(Some("main"), &meta, &minecraft).unwrap());
 
         assert_eq!(
-            std::fs::read_to_string(meta.join("config-sync/profiles/main/options.txt")).unwrap(),
+            std::fs::read_to_string(meta.join("state/profiles/main/options.txt")).unwrap(),
             "local-options"
         );
         assert_eq!(
-            std::fs::read_to_string(meta.join("config-sync/profiles/main/optionsshaders.txt"))
-                .unwrap(),
+            std::fs::read_to_string(meta.join("state/profiles/main/optionsshaders.txt")).unwrap(),
             "shader-options"
         );
         assert_eq!(
-            std::fs::read_to_string(meta.join("config-sync/profiles/main/config/options.txt"))
-                .unwrap(),
+            std::fs::read_to_string(meta.join("state/profiles/main/config/options.txt")).unwrap(),
             "local-config"
         );
         assert_eq!(
-            std::fs::read_to_string(meta.join("config-sync/profiles/main/config/nested/mod.toml"))
+            std::fs::read_to_string(meta.join("state/profiles/main/config/nested/mod.toml"))
                 .unwrap(),
             "nested"
         );
@@ -374,16 +369,16 @@ mod tests {
     fn prepare_mirrors_shared_config_into_instance() {
         let tmp = tempfile::tempdir().unwrap();
         let meta = tmp.path().join("meta");
-        let minecraft = tmp.path().join("instance/.minecraft");
-        std::fs::create_dir_all(meta.join("config-sync/profiles/main/config")).unwrap();
+        let minecraft = tmp.path().join("instance/minecraft");
+        std::fs::create_dir_all(meta.join("state/profiles/main/config")).unwrap();
         std::fs::create_dir_all(minecraft.join("config")).unwrap();
         std::fs::write(
-            meta.join("config-sync/profiles/main/options.txt"),
+            meta.join("state/profiles/main/options.txt"),
             "shared-options",
         )
         .unwrap();
         std::fs::write(
-            meta.join("config-sync/profiles/main/config/shared.toml"),
+            meta.join("state/profiles/main/config/shared.toml"),
             "shared",
         )
         .unwrap();
@@ -407,13 +402,9 @@ mod tests {
     fn finish_mirrors_instance_config_back_to_shared() {
         let tmp = tempfile::tempdir().unwrap();
         let meta = tmp.path().join("meta");
-        let minecraft = tmp.path().join("instance/.minecraft");
-        std::fs::create_dir_all(meta.join("config-sync/profiles/main/config")).unwrap();
-        std::fs::write(
-            meta.join("config-sync/profiles/main/config/old.toml"),
-            "old",
-        )
-        .unwrap();
+        let minecraft = tmp.path().join("instance/minecraft");
+        std::fs::create_dir_all(meta.join("state/profiles/main/config")).unwrap();
+        std::fs::write(meta.join("state/profiles/main/config/old.toml"), "old").unwrap();
         std::fs::create_dir_all(minecraft.join("config")).unwrap();
         std::fs::write(minecraft.join("options.txt"), "new-options").unwrap();
         std::fs::write(minecraft.join("config/new.toml"), "new").unwrap();
@@ -421,31 +412,26 @@ mod tests {
         finish(Some("main"), &meta, &minecraft).unwrap();
 
         assert_eq!(
-            std::fs::read_to_string(meta.join("config-sync/profiles/main/options.txt")).unwrap(),
+            std::fs::read_to_string(meta.join("state/profiles/main/options.txt")).unwrap(),
             "new-options"
         );
         assert_eq!(
-            std::fs::read_to_string(meta.join("config-sync/profiles/main/config/new.toml"))
-                .unwrap(),
+            std::fs::read_to_string(meta.join("state/profiles/main/config/new.toml")).unwrap(),
             "new"
         );
-        assert!(
-            !meta
-                .join("config-sync/profiles/main/config/old.toml")
-                .exists()
-        );
+        assert!(!meta.join("state/profiles/main/config/old.toml").exists());
     }
 
     #[test]
     fn prepare_releases_lock_for_another_instance() {
         let tmp = tempfile::tempdir().unwrap();
         let meta = tmp.path().join("meta");
-        let minecraft = tmp.path().join("instance/.minecraft");
+        let minecraft = tmp.path().join("instance/minecraft");
         create_profile(&meta, "main").unwrap();
         std::fs::create_dir_all(minecraft.join("config")).unwrap();
 
         assert!(prepare(Some("main"), &meta, &minecraft).unwrap());
-        let second = tmp.path().join("second/.minecraft");
+        let second = tmp.path().join("second/minecraft");
         std::fs::create_dir_all(second.join("config")).unwrap();
 
         assert!(prepare(Some("main"), &meta, &second).unwrap());
@@ -477,13 +463,13 @@ mod tests {
     fn prepare_ignores_deleted_profile() {
         let tmp = tempfile::tempdir().unwrap();
         let meta = tmp.path().join("meta");
-        let minecraft = tmp.path().join("instance/.minecraft");
+        let minecraft = tmp.path().join("instance/minecraft");
         std::fs::create_dir_all(minecraft.join("config")).unwrap();
 
         let lock = prepare(Some("deleted"), &meta, &minecraft).unwrap();
 
         assert!(!lock);
-        assert!(!meta.join("config-sync/profiles/deleted").exists());
+        assert!(!meta.join("state/profiles/deleted").exists());
     }
 
     #[test]
@@ -512,7 +498,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let meta = tmp.path().join("meta");
         let instance = tmp.path().join("instance");
-        let minecraft = instance.join(".minecraft");
+        let minecraft = instance.join(crate::storage::MINECRAFT_DIR_NAME);
         std::fs::create_dir_all(minecraft.join("config")).unwrap();
         std::fs::write(minecraft.join("options.txt"), "local-options").unwrap();
         std::fs::write(minecraft.join("config/local.txt"), "local").unwrap();
@@ -520,15 +506,11 @@ mod tests {
         let selected = switch_profile("inst", None, Some("main"), &meta, &instance).unwrap();
         assert_eq!(selected.as_deref(), Some("main"));
         assert_eq!(
-            std::fs::read_to_string(instance.join(".rmcl/config-sync/local-config/options.txt"))
-                .unwrap(),
+            std::fs::read_to_string(instance.join("rmcl/content/config/options.txt")).unwrap(),
             "local-options"
         );
         assert_eq!(
-            std::fs::read_to_string(
-                instance.join(".rmcl/config-sync/local-config/config/local.txt")
-            )
-            .unwrap(),
+            std::fs::read_to_string(instance.join("rmcl/content/config/config/local.txt")).unwrap(),
             "local"
         );
 
@@ -538,12 +520,11 @@ mod tests {
 
         assert_eq!(selected, None);
         assert_eq!(
-            std::fs::read_to_string(meta.join("config-sync/profiles/main/options.txt")).unwrap(),
+            std::fs::read_to_string(meta.join("state/profiles/main/options.txt")).unwrap(),
             "shared-options"
         );
         assert_eq!(
-            std::fs::read_to_string(meta.join("config-sync/profiles/main/config/shared.txt"))
-                .unwrap(),
+            std::fs::read_to_string(meta.join("state/profiles/main/config/shared.txt")).unwrap(),
             "shared"
         );
         assert_eq!(
@@ -562,17 +543,17 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let meta = tmp.path().join("meta");
         let instance = tmp.path().join("instance");
-        let minecraft = instance.join(".minecraft");
+        let minecraft = instance.join(crate::storage::MINECRAFT_DIR_NAME);
         std::fs::create_dir_all(minecraft.join("config")).unwrap();
-        std::fs::create_dir_all(instance.join(".rmcl/config-sync/local-config/config")).unwrap();
+        std::fs::create_dir_all(instance.join("rmcl/content/config/config")).unwrap();
         std::fs::write(minecraft.join("options.txt"), "deleted-profile-options").unwrap();
         std::fs::write(
-            instance.join(".rmcl/config-sync/local-config/options.txt"),
+            instance.join("rmcl/content/config/options.txt"),
             "local-options",
         )
         .unwrap();
         std::fs::write(
-            instance.join(".rmcl/config-sync/local-config/config/local.txt"),
+            instance.join("rmcl/content/config/config/local.txt"),
             "local",
         )
         .unwrap();
@@ -588,7 +569,7 @@ mod tests {
             std::fs::read_to_string(minecraft.join("config/local.txt")).unwrap(),
             "local"
         );
-        assert!(!meta.join("config-sync/profiles/deleted").exists());
+        assert!(!meta.join("state/profiles/deleted").exists());
     }
 
     #[test]
@@ -596,32 +577,28 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let meta = tmp.path().join("meta");
         let instance = tmp.path().join("instance");
-        let minecraft = instance.join(".minecraft");
+        let minecraft = instance.join(crate::storage::MINECRAFT_DIR_NAME);
         std::fs::create_dir_all(minecraft.join("config")).unwrap();
         std::fs::write(minecraft.join("options.txt"), "changed-a-options").unwrap();
         std::fs::write(minecraft.join("config/a.txt"), "changed-a").unwrap();
         create_profile(&meta, "a").unwrap();
-        std::fs::create_dir_all(meta.join("config-sync/profiles/b/config")).unwrap();
+        std::fs::create_dir_all(meta.join("state/profiles/b/config")).unwrap();
         std::fs::write(
-            meta.join("config-sync/profiles/b/options.txt"),
+            meta.join("state/profiles/b/options.txt"),
             "profile-b-options",
         )
         .unwrap();
-        std::fs::write(
-            meta.join("config-sync/profiles/b/config/b.txt"),
-            "profile-b",
-        )
-        .unwrap();
+        std::fs::write(meta.join("state/profiles/b/config/b.txt"), "profile-b").unwrap();
 
         let selected = switch_profile("inst", Some("a"), Some("b"), &meta, &instance).unwrap();
 
         assert_eq!(selected.as_deref(), Some("b"));
         assert_eq!(
-            std::fs::read_to_string(meta.join("config-sync/profiles/a/options.txt")).unwrap(),
+            std::fs::read_to_string(meta.join("state/profiles/a/options.txt")).unwrap(),
             "changed-a-options"
         );
         assert_eq!(
-            std::fs::read_to_string(meta.join("config-sync/profiles/a/config/a.txt")).unwrap(),
+            std::fs::read_to_string(meta.join("state/profiles/a/config/a.txt")).unwrap(),
             "changed-a"
         );
         assert_eq!(
@@ -639,9 +616,9 @@ mod tests {
     fn second_instance_uses_profile_options_saved_by_first_instance() {
         let tmp = tempfile::tempdir().unwrap();
         let meta = tmp.path().join("meta");
-        let first = tmp.path().join("first/.minecraft");
+        let first = tmp.path().join("first/minecraft");
         let second_instance = tmp.path().join("second");
-        let second = second_instance.join(".minecraft");
+        let second = second_instance.join(crate::storage::MINECRAFT_DIR_NAME);
         std::fs::create_dir_all(first.join("config")).unwrap();
         std::fs::create_dir_all(second.join("config")).unwrap();
         std::fs::write(first.join("options.txt"), "first-default").unwrap();
@@ -659,10 +636,8 @@ mod tests {
             "changed-in-main"
         );
         assert_eq!(
-            std::fs::read_to_string(
-                second_instance.join(".rmcl/config-sync/local-config/options.txt")
-            )
-            .unwrap(),
+            std::fs::read_to_string(second_instance.join("rmcl/content/config/options.txt"))
+                .unwrap(),
             "second-local"
         );
     }

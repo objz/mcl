@@ -74,7 +74,7 @@ pub(crate) fn save_profile_bytes(
     filename: &str,
     bytes: &[u8],
 ) -> std::io::Result<()> {
-    let profiles_dir = meta_dir.join("loader-profiles");
+    let profiles_dir = crate::storage::MetadataPaths::new(meta_dir).loader_profiles();
     std::fs::create_dir_all(&profiles_dir)?;
     std::fs::write(profiles_dir.join(filename), bytes)
 }
@@ -92,7 +92,7 @@ pub(crate) fn save_installer_profile(
     profile_filename: &str,
 ) -> Result<(), InstallerError> {
     let ver_json_path = instance_dir
-        .join(".minecraft")
+        .join(crate::storage::MINECRAFT_DIR_NAME)
         .join("versions")
         .join(version_dir_name)
         .join(format!("{version_dir_name}.json"));
@@ -115,7 +115,7 @@ pub(crate) fn save_installer_profile(
     );
     let raw = std::fs::read(&ver_json_path)?;
 
-    let profiles_dir = meta_dir.join("loader-profiles");
+    let profiles_dir = crate::storage::MetadataPaths::new(meta_dir).loader_profiles();
     std::fs::create_dir_all(&profiles_dir)?;
     let profile_path = profiles_dir.join(profile_filename);
     std::fs::write(&profile_path, &raw)?;
@@ -186,7 +186,7 @@ mod tests {
         }"#;
 
         let ver_dir = instance_dir
-            .join(".minecraft")
+            .join(crate::storage::MINECRAFT_DIR_NAME)
             .join("versions")
             .join("1.20.1-forge-47.2.0");
         std::fs::create_dir_all(&ver_dir).unwrap();
@@ -203,7 +203,7 @@ mod tests {
 
         let saved = std::fs::read(
             meta_dir
-                .join("loader-profiles")
+                .join("cache/loaders/profiles")
                 .join("forge-1.20.1-47.2.0.json"),
         )
         .unwrap();

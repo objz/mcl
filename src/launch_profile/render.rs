@@ -265,7 +265,11 @@ mod tests {
         use tempfile::TempDir;
 
         let tmp = TempDir::new().unwrap();
-        let vanilla_path = tmp.path().join("versions").join("1.20.1").join("meta.json");
+        let vanilla_path = tmp
+            .path()
+            .join("cache/minecraft/versions")
+            .join("1.20.1")
+            .join("meta.json");
         std::fs::create_dir_all(vanilla_path.parent().unwrap()).unwrap();
         let vanilla_json = br#"{
             "id": "1.20.1",
