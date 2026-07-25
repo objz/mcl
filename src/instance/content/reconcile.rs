@@ -157,10 +157,11 @@ async fn reconcile(job: ReconcileJob, task: &ProgressTask) -> ReconcileResult {
     let retry_hours = crate::config::SETTINGS.content.unmatched_retry_hours;
     let max_fingerprint_size_mib = crate::config::SETTINGS.content.max_fingerprint_size_mib;
     let inventory_progress = task.handle();
+    let inventory_minecraft_dir = minecraft_dir.clone();
     let inventory = tokio::task::spawn_blocking(move || {
         reconcile_inventory(
             &manifest_path,
-            &minecraft_dir,
+            &inventory_minecraft_dir,
             retry_hours,
             max_fingerprint_size_mib,
             &inventory_progress,
@@ -195,27 +196,38 @@ async fn reconcile(job: ReconcileJob, task: &ProgressTask) -> ReconcileResult {
                         &task,
                     )
                     .await;
-                    match inventory.manifest.save(&manifest_path) {
-                        Ok(()) => ReconcileResult {
+                    match save_reconciled_manifest(
+                        &manifest_path,
+                        &minecraft_dir,
+                        inventory.manifest,
+                    ) {
+                        Ok(manifest) => ReconcileResult {
                             instance_name,
-                            manifest: inventory.manifest,
+                            manifest,
                             icons: icon_result.unwrap_or_default(),
                             error: None,
                         },
                         Err(error) => ReconcileResult {
                             instance_name,
-                            manifest: inventory.manifest,
+                            manifest: ContentManifest::default(),
                             icons: HashMap::new(),
                             error: Some(error.to_string()),
                         },
                     }
                 }
-                Err(error) => ReconcileResult {
-                    instance_name,
-                    manifest: inventory.manifest,
-                    icons: HashMap::new(),
-                    error: Some(error.to_string()),
-                },
+                Err(error) => {
+                    let saved = save_reconciled_manifest(
+                        &manifest_path,
+                        &minecraft_dir,
+                        inventory.manifest,
+                    );
+                    ReconcileResult {
+                        instance_name,
+                        manifest: saved.unwrap_or_default(),
+                        icons: HashMap::new(),
+                        error: Some(error.to_string()),
+                    }
+                }
             }
         }
         Ok(Err(error)) => ReconcileResult {
@@ -232,6 +244,36 @@ async fn reconcile(job: ReconcileJob, task: &ProgressTask) -> ReconcileResult {
         },
     };
     result
+}
+
+fn save_reconciled_manifest(
+    manifest_path: &Path,
+    minecraft_dir: &Path,
+    reconciled: ContentManifest,
+) -> Result<ContentManifest, crate::instance::content::manifest::ManifestError> {
+    let reconciled_paths = reconciled
+        .files
+        .iter()
+        .map(|record| record.relative_path.clone())
+        .collect::<HashSet<_>>();
+    ContentManifest::update(manifest_path, |current| {
+        current.files.retain(|record| {
+            reconciled_paths.contains(&record.relative_path)
+                || minecraft_dir.join(&record.relative_path).exists()
+        });
+        for record in reconciled.files {
+            let keep_resolved = current
+                .record(&record.relative_path)
+                .is_some_and(|existing| {
+                    existing.fingerprint == record.fingerprint
+                        && matches!(existing.resolution, Resolution::Resolved { .. })
+                });
+            if !keep_resolved {
+                current.upsert(record);
+            }
+        }
+        Ok(current.clone())
+    })
 }
 
 struct Inventory {
@@ -369,6 +411,7 @@ async fn resolve_queries(
     }
     let mut matches: HashMap<String, Vec<ProviderProject>> = HashMap::new();
     let mut checked = Vec::new();
+    let mut last_error = None;
     for provider in registry.providers() {
         let provider_id = provider.id();
         match tokio::time::timeout(
@@ -390,13 +433,20 @@ async fn resolve_queries(
                 tracing::warn!(
                     "Skipping {provider_id} content matching after provider error: {error}"
                 );
+                last_error = Some(error.to_string());
             }
             Err(_) => {
                 tracing::warn!(
                     "Skipping {provider_id} content matching after the 10 second timeout"
                 );
+                last_error = Some(format!("{provider_id} content matching timed out"));
             }
         }
+    }
+    if checked.is_empty() {
+        return Err(crate::net::NetError::TaskFailed(last_error.unwrap_or_else(
+            || "No content providers are available".to_owned(),
+        )));
     }
     let query_keys = queries
         .iter()
@@ -483,13 +533,30 @@ async fn load_project_icons(
             break;
         }
         task.set_sub_action(&project_id);
-        match tokio::time::timeout(
-            remaining.min(std::time::Duration::from_secs(3)),
-            provider.project(&project_id),
-        )
-        .await
-        {
-            Ok(Ok(project)) => {
+        let cached_project = metadata
+            .provider_projects(&provider_id)
+            .join(format!("{project_id}.json"));
+        let project_result = match tokio::fs::read(&cached_project).await {
+            Ok(bytes) => serde_json::from_slice(&bytes)
+                .map_err(|error| crate::net::NetError::Parse(error.to_string())),
+            Err(_) => match tokio::time::timeout(
+                remaining.min(std::time::Duration::from_secs(3)),
+                provider.project(&project_id),
+            )
+            .await
+            {
+                Ok(result) => result,
+                Err(_) => {
+                    tracing::debug!(
+                        "Timed out loading {provider_id} project {project_id}; using fallback"
+                    );
+                    task.set_progress(index as u64 + 1, project_count);
+                    continue;
+                }
+            },
+        };
+        match project_result {
+            Ok(project) => {
                 if let Err(error) = cache_project(metadata, &provider_id, &project) {
                     tracing::warn!("Failed to cache {provider_id} project {project_id}: {error}");
                 }
@@ -527,12 +594,9 @@ async fn load_project_icons(
                     }
                 }
             }
-            Ok(Err(error)) => {
+            Err(error) => {
                 tracing::warn!("Failed to load {provider_id} project {project_id}: {error}")
             }
-            Err(_) => tracing::debug!(
-                "Timed out loading {provider_id} project {project_id}; using fallback"
-            ),
         }
         task.set_progress(index as u64 + 1, project_count);
     }
@@ -550,9 +614,9 @@ fn cache_project(
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    std::fs::write(
-        path,
-        serde_json::to_vec_pretty(project)
+    crate::storage::write_atomic(
+        &path,
+        &serde_json::to_vec_pretty(project)
             .map_err(|error| crate::net::NetError::Parse(error.to_string()))?,
     )?;
     Ok(())

@@ -1,12 +1,15 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::io::Read;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, LazyLock, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 use sha1::Digest as _;
 
 const MANIFEST_VERSION: u32 = 1;
+static MANIFEST_LOCKS: LazyLock<Mutex<HashMap<PathBuf, Arc<Mutex<()>>>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -112,16 +115,29 @@ impl ContentManifest {
             ManifestError::InvalidPath(format!("{} has no parent", path.display()))
         })?;
         std::fs::create_dir_all(parent)?;
-        let temporary = parent.join(format!(
-            ".{}.tmp",
-            path.file_name()
-                .and_then(|name| name.to_str())
-                .unwrap_or("manifest")
-        ));
         let bytes = serde_json::to_vec_pretty(self)?;
-        std::fs::write(&temporary, bytes)?;
-        std::fs::rename(temporary, path)?;
+        crate::storage::write_atomic(path, &bytes)?;
         Ok(())
+    }
+
+    pub fn update<T>(
+        path: &Path,
+        update: impl FnOnce(&mut Self) -> Result<T, ManifestError>,
+    ) -> Result<T, ManifestError> {
+        let lock = {
+            let mut locks = MANIFEST_LOCKS
+                .lock()
+                .map_err(|_| ManifestError::LockPoisoned)?;
+            locks
+                .entry(path.to_owned())
+                .or_insert_with(|| Arc::new(Mutex::new(())))
+                .clone()
+        };
+        let _guard = lock.lock().map_err(|_| ManifestError::LockPoisoned)?;
+        let mut manifest = Self::load(path)?;
+        let result = update(&mut manifest)?;
+        manifest.save(path)?;
+        Ok(result)
     }
 
     pub fn record(&self, relative_path: &Path) -> Option<&ContentFileRecord> {
@@ -175,6 +191,8 @@ pub enum ManifestError {
     UnsupportedVersion(u32),
     #[error("Invalid manifest path: {0}")]
     InvalidPath(String),
+    #[error("Content manifest lock was poisoned")]
+    LockPoisoned,
 }
 
 pub fn fingerprint(path: &Path) -> Result<FileFingerprint, std::io::Error> {

@@ -26,18 +26,25 @@ impl App {
                     let relative_path = conflict.relative_path.clone();
                     let project = conflict.candidates.get(conflict.selected).cloned();
                     if let Some(project) = project
-                        && let Some((instance_name, manifest)) = &mut self.content_manifest
-                        && let Some(record) = manifest
-                            .files
-                            .iter_mut()
-                            .find(|record| record.relative_path == relative_path)
+                        && let Some((instance_name, _)) = &self.content_manifest
                     {
-                        record.resolution = crate::instance::Resolution::Resolved { project };
                         let manifest_path = crate::storage::InstancePaths::new(
                             self.instance_manager.instances_dir.join(instance_name),
                         )
                         .content_manifest();
-                        manifest.save(&manifest_path)?;
+                        let updated =
+                            crate::instance::ContentManifest::update(&manifest_path, |manifest| {
+                                if let Some(record) = manifest
+                                    .files
+                                    .iter_mut()
+                                    .find(|record| record.relative_path == relative_path)
+                                {
+                                    record.resolution =
+                                        crate::instance::Resolution::Resolved { project };
+                                }
+                                Ok(manifest.clone())
+                            })?;
+                        self.content_manifest = Some((instance_name.clone(), updated));
                         self.provider_conflict = None;
                         self.reconciliation_for = None;
                     }
@@ -641,11 +648,19 @@ impl App {
         let Some(request) = state.begin_versions() else {
             return;
         };
+        let version_cache = crate::storage::MetadataPaths::new(&self.instance_manager.meta_dir)
+            .provider_versions("modrinth")
+            .join(&request.project_id)
+            .join(format!(
+                "{}-{}.json",
+                instance.game_version,
+                instance.loader.to_string().to_lowercase()
+            ));
         tokio::spawn(async move {
             let registry =
                 crate::content_provider::ProviderRegistry::modrinth(crate::net::HttpClient::new());
             let result = match registry.preferred("modrinth") {
-                Some(provider) => provider
+                Some(provider) => match provider
                     .compatible_versions(
                         &request.project_id,
                         discovery_content_kind(kind),
@@ -653,7 +668,21 @@ impl App {
                         instance.loader,
                     )
                     .await
-                    .map_err(|error| error.to_string()),
+                {
+                    Ok(versions) => {
+                        if let Ok(bytes) = serde_json::to_vec_pretty(&versions) {
+                            let _ = crate::storage::write_atomic(&version_cache, &bytes);
+                        }
+                        Ok(versions)
+                    }
+                    Err(error) => match std::fs::read(&version_cache)
+                        .ok()
+                        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+                    {
+                        Some(versions) => Ok(versions),
+                        None => Err(error.to_string()),
+                    },
+                },
                 None => Err("Modrinth content provider is unavailable".to_owned()),
             };
             widgets::content::DiscoveryState::push_action_result(
@@ -731,20 +760,12 @@ impl App {
                     crate::net::modrinth::DownloadOutcome::SkippedExisting(path) => (path, true),
                 };
                 let replaced = request.installed_path.is_some() && !skipped;
-                let mut manifest = crate::instance::ContentManifest::load(&manifest_path)
-                    .map_err(|error| crate::net::NetError::Parse(error.to_string()))?;
-                if let Some(old_path) = request.installed_path.as_ref()
-                    && let Ok(relative) = old_path.strip_prefix(&minecraft_dir)
-                    && old_path != &path
-                {
-                    manifest.remove(relative);
-                }
                 let relative_path = path
                     .strip_prefix(&minecraft_dir)
                     .map_err(|error| crate::net::NetError::Parse(error.to_string()))?
                     .to_path_buf();
                 let fingerprint = crate::instance::content::manifest::fingerprint(&path)?;
-                manifest.upsert(crate::instance::ContentFileRecord {
+                let record = crate::instance::ContentFileRecord {
                     relative_path,
                     kind: content_kind,
                     enabled: !path
@@ -759,10 +780,18 @@ impl App {
                             version_id: request.version.id.clone(),
                         },
                     },
-                });
-                manifest
-                    .save(&manifest_path)
-                    .map_err(|error| crate::net::NetError::Parse(error.to_string()))?;
+                };
+                crate::instance::ContentManifest::update(&manifest_path, |manifest| {
+                    if let Some(old_path) = request.installed_path.as_ref()
+                        && let Ok(relative) = old_path.strip_prefix(&minecraft_dir)
+                        && old_path != &path
+                    {
+                        manifest.remove(relative);
+                    }
+                    manifest.upsert(record);
+                    Ok(())
+                })
+                .map_err(|error| crate::net::NetError::Parse(error.to_string()))?;
                 if !skipped
                     && let Some(old_path) = request
                         .installed_path

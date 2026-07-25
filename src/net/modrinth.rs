@@ -15,7 +15,7 @@ pub struct ProjectInfo {
     pub icon_url: Option<String>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, serde::Serialize)]
 pub struct VersionInfo {
     pub id: String,
     #[serde(default)]
@@ -27,7 +27,7 @@ pub struct VersionInfo {
     pub files: Vec<VersionFile>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, serde::Serialize)]
 pub struct VersionFile {
     pub url: String,
     pub filename: String,
@@ -359,14 +359,32 @@ pub async fn download_version_file(
     let file = select_primary_file(version)?;
     let path = destination.join(&file.filename);
     if path.exists() {
-        return Ok(DownloadOutcome::SkippedExisting(path));
+        if verify_version_file(&path, file)? {
+            return Ok(DownloadOutcome::SkippedExisting(path));
+        }
+        return Err(crate::net::NetError::Parse(format!(
+            "Existing file '{}' does not match the selected Modrinth version",
+            path.display()
+        )));
+    }
+    let temporary = destination.join(format!(".{}.{}.rmcl-download", file.filename, version.id));
+    if temporary.exists() {
+        tokio::fs::remove_file(&temporary).await?;
     }
     let progress =
         crate::tui::progress::ProgressTask::start(format!("Downloading {}", file.filename));
-    crate::net::download_file(client, &file.url, &path, |current, total| {
+    crate::net::download_file(client, &file.url, &temporary, |current, total| {
         progress.set_progress(current, total);
     })
     .await?;
+    if !verify_version_file(&temporary, file)? {
+        let _ = tokio::fs::remove_file(&temporary).await;
+        return Err(crate::net::NetError::Parse(format!(
+            "Downloaded file '{}' failed its size or hash verification",
+            file.filename
+        )));
+    }
+    tokio::fs::rename(&temporary, &path).await?;
     progress.finish();
     Ok(DownloadOutcome::Downloaded(path))
 }
@@ -385,11 +403,15 @@ pub async fn download_version_file_for_update(
 
     let temporary = destination.join(format!(".{}.{}.rmcl-download", file.filename, version.id));
     let backup = destination.join(format!(".{}.{}.rmcl-backup", file.filename, version.id));
-    if temporary.exists() || backup.exists() {
-        return Err(crate::net::NetError::Parse(format!(
-            "A previous update of '{}' did not finish cleanly",
-            file.filename
-        )));
+    if backup.exists() {
+        if !installed_path.exists() {
+            tokio::fs::rename(&backup, installed_path).await?;
+        } else {
+            tokio::fs::remove_file(&backup).await?;
+        }
+    }
+    if temporary.exists() {
+        tokio::fs::remove_file(&temporary).await?;
     }
 
     let progress =
@@ -398,9 +420,34 @@ pub async fn download_version_file_for_update(
         progress.set_progress(current, total);
     })
     .await?;
-    progress.finish();
+    if !verify_version_file(&temporary, file)? {
+        let _ = tokio::fs::remove_file(&temporary).await;
+        return Err(crate::net::NetError::Parse(format!(
+            "Downloaded file '{}' failed its size or hash verification",
+            file.filename
+        )));
+    }
     replace_installed_file(&temporary, &target, installed_path, &backup).await?;
+    progress.finish();
     Ok(DownloadOutcome::Downloaded(target))
+}
+
+fn verify_version_file(
+    path: &std::path::Path,
+    expected: &VersionFile,
+) -> Result<bool, crate::net::NetError> {
+    let fingerprint = crate::instance::content::manifest::fingerprint(path)?;
+    if expected.size > 0 && fingerprint.size != expected.size {
+        return Ok(false);
+    }
+    for algorithm in ["sha512", "sha1"] {
+        if let Some(expected_hash) = expected.hashes.get(algorithm)
+            && fingerprint.hash(algorithm) != Some(expected_hash.as_str())
+        {
+            return Ok(false);
+        }
+    }
+    Ok(true)
 }
 
 async fn replace_installed_file(
@@ -611,7 +658,7 @@ mod tests {
         let version = version_with_files(vec![VersionFile {
             url: "https://example.test/example.jar".to_owned(),
             filename: "example.jar".to_owned(),
-            size: 1,
+            size: b"existing".len() as u64,
             primary: true,
             hashes: HashMap::new(),
         }]);

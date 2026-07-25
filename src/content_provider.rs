@@ -101,29 +101,35 @@ impl ContentProvider for ModrinthProvider {
         &self,
         files: &[FingerprintQuery],
     ) -> Result<Vec<ResolvedFile>, crate::net::NetError> {
-        let by_hash = files
-            .iter()
-            .filter_map(|file| {
-                file.fingerprint
-                    .hash("sha512")
-                    .map(|hash| (hash.to_owned(), file.key.clone()))
-            })
-            .collect::<HashMap<_, _>>();
+        let mut by_hash = HashMap::<String, Vec<String>>::new();
+        for file in files {
+            if let Some(hash) = file.fingerprint.hash("sha512") {
+                by_hash
+                    .entry(hash.to_owned())
+                    .or_default()
+                    .push(file.key.clone());
+            }
+        }
         let hashes = by_hash.keys().cloned().collect::<Vec<_>>();
         let versions =
             crate::net::modrinth::resolve_version_files(&self.client, &hashes, "sha512").await?;
         Ok(versions
             .into_iter()
-            .filter_map(|(hash, version)| {
-                let key = by_hash.get(&hash)?.clone();
-                (!version.project_id.is_empty()).then_some(ResolvedFile {
-                    key,
-                    project: ProviderProject {
-                        provider: self.id().to_owned(),
-                        project_id: version.project_id,
-                        version_id: version.id,
-                    },
-                })
+            .flat_map(|(hash, version)| {
+                let keys = by_hash.get(&hash).cloned().unwrap_or_default();
+                if version.project_id.is_empty() {
+                    return Vec::new();
+                }
+                keys.into_iter()
+                    .map(|key| ResolvedFile {
+                        key,
+                        project: ProviderProject {
+                            provider: self.id().to_owned(),
+                            project_id: version.project_id.clone(),
+                            version_id: version.id.clone(),
+                        },
+                    })
+                    .collect()
             })
             .collect())
     }

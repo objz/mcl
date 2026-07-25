@@ -205,23 +205,28 @@ pub async fn download_file(
 ) -> Result<(), NetError> {
     tracing::debug!("Downloading {} to {}", url, dest.display());
 
-    for attempt in 0..=MAX_RETRIES {
-        match download_file_once(client, url, dest, &progress_cb).await {
-            Ok(()) => {
-                tracing::debug!("Downloaded {} to {}", url, dest.display());
-                return Ok(());
-            }
-            Err(e) if is_retryable(&e) => {
-                if attempt == MAX_RETRIES {
-                    return Err(e);
+    let result = 'download: {
+        for attempt in 0..=MAX_RETRIES {
+            match download_file_once(client, url, dest, &progress_cb).await {
+                Ok(()) => {
+                    tracing::debug!("Downloaded {} to {}", url, dest.display());
+                    break 'download Ok(());
                 }
-                sleep_before_retry("download", url, attempt, &e).await;
+                Err(e) if is_retryable(&e) => {
+                    if attempt == MAX_RETRIES {
+                        break 'download Err(e);
+                    }
+                    sleep_before_retry("download", url, attempt, &e).await;
+                }
+                Err(e) => break 'download Err(e),
             }
-            Err(e) => return Err(e),
         }
+        unreachable!("retry loop returns on success or final error")
+    };
+    if result.is_err() {
+        let _ = tokio::fs::remove_file(dest).await;
     }
-
-    unreachable!("retry loop returns on success or final error")
+    result
 }
 
 // single attempt at downloading a file to disk
