@@ -1947,9 +1947,11 @@ enum WatcherEventHandling {
 fn watcher_event_handling(kind: &notify::EventKind) -> WatcherEventHandling {
     match kind {
         notify::EventKind::Access(_) => WatcherEventHandling::Ignore,
-        notify::EventKind::Create(_)
-        | notify::EventKind::Modify(_)
-        | notify::EventKind::Remove(_) => WatcherEventHandling::Paths,
+        notify::EventKind::Create(_) | notify::EventKind::Remove(_) => WatcherEventHandling::Paths,
+        notify::EventKind::Modify(notify::event::ModifyKind::Name(_)) => {
+            WatcherEventHandling::Rescan
+        }
+        notify::EventKind::Modify(_) => WatcherEventHandling::Paths,
         notify::EventKind::Any | notify::EventKind::Other => WatcherEventHandling::Rescan,
     }
 }
@@ -2146,8 +2148,8 @@ mod tests {
 
     use super::{
         ContentListState, WatcherEventHandling, available_description_width,
-        description_text_width, diff_event_paths, ellipsize, load_provider_icon,
-        right_aligned_footer_spans, square_icon_columns, title_suffix_spans,
+        description_text_width, diff_directory, diff_event_paths, ellipsize, load_provider_icon,
+        read_dir_stems, right_aligned_footer_spans, square_icon_columns, title_suffix_spans,
         watcher_event_handling,
     };
 
@@ -2184,9 +2186,31 @@ mod tests {
             WatcherEventHandling::Paths
         );
         assert_eq!(
+            watcher_event_handling(&notify::EventKind::Modify(notify::event::ModifyKind::Name(
+                notify::event::RenameMode::Both
+            ))),
+            WatcherEventHandling::Rescan
+        );
+        assert_eq!(
             watcher_event_handling(&notify::EventKind::Any),
             WatcherEventHandling::Rescan
         );
+    }
+
+    #[test]
+    fn content_watcher_keeps_a_renamed_disabled_entry() {
+        let temp = tempfile::tempdir().unwrap();
+        let enabled = temp.path().join("example.jar");
+        let disabled = temp.path().join("example.jar.disabled");
+        std::fs::write(&enabled, b"mod").unwrap();
+        let known = Arc::new(Mutex::new(read_dir_stems(temp.path(), ".jar")));
+
+        std::fs::rename(enabled, &disabled).unwrap();
+        let diff = diff_directory(temp.path(), ".jar", None, &known).unwrap();
+
+        assert_eq!(diff.toggled, vec![("example".to_owned(), false, disabled)]);
+        assert!(diff.removed.is_empty());
+        assert!(diff.added.is_empty());
     }
 
     #[test]
