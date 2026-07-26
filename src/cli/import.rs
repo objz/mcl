@@ -39,18 +39,7 @@ pub async fn handle_import(matches: &ArgMatches) -> CliResult {
                 .await
                 .map_err(|e| format!("Failed to fetch versions: {e}"))?;
 
-            if versions.is_empty() {
-                return Err("No versions found for this modpack".into());
-            }
-
-            let version = if let Some(version_name) = override_version {
-                versions
-                    .iter()
-                    .find(|v| v.version_number == *version_name || v.name == *version_name)
-                    .ok_or_else(|| format!("Version '{version_name}' not found"))?
-            } else {
-                &versions[0]
-            };
+            let version = select_version(&versions, override_version.map(String::as_str))?;
 
             println!(
                 "Using version {} ({})",
@@ -110,3 +99,25 @@ pub async fn handle_import(matches: &ArgMatches) -> CliResult {
     println!("Instance '{}' created successfully.", config.name);
     Ok(())
 }
+
+fn select_version<'a>(
+    versions: &'a [modrinth::VersionInfo],
+    requested: Option<&str>,
+) -> Result<&'a modrinth::VersionInfo, String> {
+    requested.map_or_else(
+        || {
+            versions
+                .first()
+                .ok_or_else(|| "No versions found for this modpack".to_owned())
+        },
+        |name| {
+            versions
+                .iter()
+                .find(|version| version.version_number == name || version.name == name)
+                .ok_or_else(|| format!("Version '{name}' not found"))
+        },
+    )
+}
+
+#[cfg(test)]
+mod tests;
