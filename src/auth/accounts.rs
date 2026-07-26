@@ -196,7 +196,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn offline_uuid_is_valid_format() {
+    fn offline_uuid_has_valid_v3_shape() {
         let uuid = offline_uuid("Steve");
         let parts: Vec<&str> = uuid.split('-').collect();
         assert_eq!(parts.len(), 5, "UUID must have 5 dash-separated parts");
@@ -205,19 +205,8 @@ mod tests {
         assert_eq!(parts[2].len(), 4);
         assert_eq!(parts[3].len(), 4);
         assert_eq!(parts[4].len(), 12);
-    }
-
-    #[test]
-    fn offline_uuid_version_3_marker() {
-        let uuid = offline_uuid("Steve");
-        assert!(uuid.split('-').nth(2).unwrap().starts_with('3'));
-    }
-
-    #[test]
-    fn offline_uuid_variant_bit_set() {
-        let uuid = offline_uuid("Steve");
-        let part3 = uuid.split('-').nth(3).unwrap();
-        let first_nibble = u8::from_str_radix(&part3[..1], 16).unwrap();
+        assert!(parts[2].starts_with('3'));
+        let first_nibble = u8::from_str_radix(&parts[3][..1], 16).unwrap();
         assert!((0x8..=0xb).contains(&first_nibble));
     }
 

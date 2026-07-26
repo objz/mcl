@@ -357,22 +357,9 @@ mod tests {
     }
 
     #[test]
-    fn maven_invalid_too_few_parts() {
-        assert_eq!(maven_coord_to_path("org.example:artifact"), None);
-    }
-
-    #[test]
-    fn maven_invalid_too_many_parts() {
-        assert_eq!(maven_coord_to_path("a:b:c:d:e"), None);
-    }
-
-    #[test]
-    fn maven_invalid_single_part() {
-        assert_eq!(maven_coord_to_path("just-a-string"), None);
-    }
-
-    #[test]
-    fn maven_empty_string() {
-        assert_eq!(maven_coord_to_path(""), None);
+    fn maven_invalid_coordinates() {
+        for coordinate in ["org.example:artifact", "a:b:c:d:e", "just-a-string", ""] {
+            assert_eq!(maven_coord_to_path(coordinate), None);
+        }
     }
 }

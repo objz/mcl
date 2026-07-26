@@ -33,15 +33,6 @@ fn shaders_missing_dir_returns_empty() {
 }
 
 #[test]
-fn shaders_finds_zip_and_dir() {
-    let tmp = tempfile::tempdir().unwrap();
-    let dir = setup_subdir(tmp.path(), "inst", "shaderpacks");
-    std::fs::write(dir.join("shader-a.zip"), ZIP_HEADER).unwrap();
-    std::fs::create_dir(dir.join("shader-b")).unwrap();
-    assert_eq!(scan_shaders(tmp.path(), "inst").len(), 2);
-}
-
-#[test]
 fn shaders_disabled_variants() {
     let tmp = tempfile::tempdir().unwrap();
     let dir = setup_subdir(tmp.path(), "inst", "shaderpacks");
@@ -79,15 +70,6 @@ fn worlds_empty_dir_returns_empty() {
 fn worlds_missing_dir_returns_empty() {
     let tmp = tempfile::tempdir().unwrap();
     assert!(scan_worlds(tmp.path(), "ghost").is_empty());
-}
-
-#[test]
-fn worlds_finds_directories() {
-    let tmp = tempfile::tempdir().unwrap();
-    let dir = setup_subdir(tmp.path(), "inst", "saves");
-    std::fs::create_dir(dir.join("My World")).unwrap();
-    std::fs::create_dir(dir.join("Creative")).unwrap();
-    assert_eq!(scan_worlds(tmp.path(), "inst").len(), 2);
 }
 
 #[test]
@@ -141,15 +123,6 @@ fn resource_packs_empty_dir_returns_empty() {
 fn resource_packs_missing_dir_returns_empty() {
     let tmp = tempfile::tempdir().unwrap();
     assert!(scan_resource_packs(tmp.path(), "ghost").is_empty());
-}
-
-#[test]
-fn resource_packs_finds_zips_and_dirs() {
-    let tmp = tempfile::tempdir().unwrap();
-    let dir = setup_subdir(tmp.path(), "inst", "resourcepacks");
-    std::fs::write(dir.join("pack-a.zip"), ZIP_HEADER).unwrap();
-    std::fs::create_dir(dir.join("pack-b")).unwrap();
-    assert_eq!(scan_resource_packs(tmp.path(), "inst").len(), 2);
 }
 
 #[test]

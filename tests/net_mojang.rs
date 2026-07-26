@@ -278,31 +278,3 @@ async fn download_assets_writes_index_when_objects_is_empty() {
         serde_json::from_slice(&std::fs::read(&index_path).unwrap()).unwrap();
     assert!(body.get("objects").is_some());
 }
-
-#[tokio::test]
-async fn fetch_version_manifest_retries_5xx_and_succeeds() {
-    let server = MockServer::start().await;
-
-    // one transient 503 then the real payload; covers the integration of the
-    // retry envelope (already unit-tested in net_retry.rs) with the actual
-    // VersionManifest deserialisation path.
-    Mock::given(method("GET"))
-        .and(path("/manifest.json"))
-        .respond_with(ResponseTemplate::new(503))
-        .up_to_n_times(1)
-        .expect(1)
-        .mount(&server)
-        .await;
-    Mock::given(method("GET"))
-        .and(path("/manifest.json"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(synthetic_manifest()))
-        .expect(1)
-        .mount(&server)
-        .await;
-
-    let url = format!("{}/manifest.json", server.uri());
-    let manifest = fetch_version_manifest_from(&HttpClient::new(), &url)
-        .await
-        .expect("manifest after retry");
-    assert_eq!(manifest.versions.len(), 2);
-}

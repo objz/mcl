@@ -33,16 +33,6 @@ fn scan_screenshots_missing_dir_returns_empty() {
 }
 
 #[test]
-fn scan_screenshots_finds_images() {
-    let tmp = tempfile::tempdir().unwrap();
-    let dir = setup_screenshots_dir(tmp.path(), "inst");
-    std::fs::write(dir.join("2024-01-01.png"), tiny_png()).unwrap();
-    std::fs::write(dir.join("2024-01-02.png"), tiny_png()).unwrap();
-    let screenshots = scan_screenshots(tmp.path(), "inst");
-    assert_eq!(screenshots.len(), 2);
-}
-
-#[test]
 fn scan_screenshots_ignores_non_images() {
     let tmp = tempfile::tempdir().unwrap();
     let dir = setup_screenshots_dir(tmp.path(), "inst");

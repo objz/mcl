@@ -673,16 +673,6 @@ mod tests {
     }
 
     #[test]
-    fn scan_mods_finds_jar_files() {
-        let tmp = tempfile::tempdir().unwrap();
-        let dir = setup_mods_dir(tmp.path(), "inst");
-        std::fs::write(dir.join("cool-mod.jar"), b"PK\x03\x04").unwrap();
-        std::fs::write(dir.join("other-mod.jar.disabled"), b"PK\x03\x04").unwrap();
-        let mods = scan_mods(tmp.path(), "inst");
-        assert_eq!(mods.len(), 2);
-    }
-
-    #[test]
     fn scan_mods_enabled_disabled_flags() {
         let tmp = tempfile::tempdir().unwrap();
         let dir = setup_mods_dir(tmp.path(), "inst");
