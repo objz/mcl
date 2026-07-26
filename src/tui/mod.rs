@@ -30,6 +30,7 @@ pub async fn show() -> color_eyre::Result<()> {
     std::panic::set_hook(Box::new(move |info| {
         let _ = crossterm::execute!(
             std::io::stdout(),
+            crossterm::event::DisableMouseCapture,
             crossterm::event::PopKeyboardEnhancementFlags
         );
         ratatui::restore();
@@ -41,6 +42,7 @@ pub async fn show() -> color_eyre::Result<()> {
     // opt into enhanced keyboard protocol to distinguish key press vs release
     let _ = crossterm::execute!(
         std::io::stdout(),
+        crossterm::event::EnableMouseCapture,
         crossterm::event::PushKeyboardEnhancementFlags(
             crossterm::event::KeyboardEnhancementFlags::REPORT_EVENT_TYPES
                 | crossterm::event::KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES
@@ -89,6 +91,7 @@ pub async fn show() -> color_eyre::Result<()> {
 
     let _ = crossterm::execute!(
         std::io::stdout(),
+        crossterm::event::DisableMouseCapture,
         crossterm::event::PopKeyboardEnhancementFlags
     );
 

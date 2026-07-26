@@ -3,7 +3,9 @@
 // keypress, and fall through to global bindings if nobody claimed it.
 // vim-style navigation (j/k/g/G) where it makes sense.
 
-use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use ratatui::crossterm::event::{
+    KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
+};
 
 use super::app::{App, FocusedArea};
 use super::widgets::{
@@ -12,6 +14,32 @@ use super::widgets::{
 use crate::tui::error_buffer;
 
 impl App {
+    pub(super) fn handle_mouse_event(&mut self, event: MouseEvent) {
+        if event.kind != MouseEventKind::Down(MouseButton::Left)
+            || self.focused != FocusedArea::Content
+            || self.content_mode != widgets::content::ContentMode::Discover
+        {
+            return;
+        }
+        let link = match self.content_tab {
+            widgets::content::ContentTab::Mods => self
+                .mods_discovery_state
+                .project_link_at(event.column, event.row),
+            widgets::content::ContentTab::ResourcePacks => self
+                .resource_packs_discovery_state
+                .project_link_at(event.column, event.row),
+            widgets::content::ContentTab::Shaders => self
+                .shaders_discovery_state
+                .project_link_at(event.column, event.row),
+            _ => None,
+        };
+        if let Some(link) = link
+            && let Err(error) = open::that_detached(link)
+        {
+            tracing::warn!("Failed to open project link {link}: {error}");
+        }
+    }
+
     pub(super) fn handle_key_event(&mut self, key_event: KeyEvent) -> color_eyre::Result<()> {
         if let Some(conflict) = self.provider_conflict.as_mut() {
             match key_event.code {

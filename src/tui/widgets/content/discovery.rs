@@ -395,6 +395,10 @@ impl DiscoveryState {
         self.project_page.is_some()
     }
 
+    pub fn project_link_at(&self, x: u16, y: u16) -> Option<&str> {
+        self.project_page.as_ref()?.document.as_ref()?.link_at(x, y)
+    }
+
     pub fn refresh_installed_manifest(
         &mut self,
         manifest: &crate::instance::ContentManifest,

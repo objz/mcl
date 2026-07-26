@@ -10,10 +10,10 @@ use image::DynamicImage;
 use pulldown_cmark::{Event, Options as MarkdownOptions, Parser, Tag, TagEnd};
 use ratatui::{
     Frame,
-    layout::{Rect, Size},
+    layout::{Alignment, Rect, Size},
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
-    widgets::{Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState, StatefulWidget, Wrap},
+    widgets::{Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState, StatefulWidget},
 };
 use ratatui_image::{
     Resize,
@@ -40,12 +40,31 @@ struct TextRender {
     width: u16,
     text: Text<'static>,
     height: usize,
+    links: Vec<TextLink>,
+}
+
+struct TextLink {
+    x: u16,
+    y: usize,
+    width: u16,
+    url: String,
+}
+
+struct LinkTarget {
+    width: usize,
+    url: String,
+}
+
+struct LinkHit {
+    area: Rect,
+    url: String,
 }
 
 #[derive(Clone)]
 struct ImageReference {
     url: String,
     alt: String,
+    link: Option<String>,
     size: ImageSizeHint,
 }
 
@@ -115,6 +134,7 @@ pub struct Document {
     blocks: Vec<DocumentBlock>,
     images: HashMap<String, DocumentImage>,
     prepared_images: Arc<Mutex<Vec<PreparedImageResult>>>,
+    link_hits: Vec<LinkHit>,
 }
 
 impl Document {
@@ -138,6 +158,7 @@ impl Document {
             blocks,
             images,
             prepared_images: Arc::new(Mutex::new(Vec::new())),
+            link_hits: Vec::new(),
         }
     }
 
@@ -158,6 +179,13 @@ impl Document {
         };
         image.prepared = None;
         image.pending = None;
+    }
+
+    pub fn link_at(&self, x: u16, y: u16) -> Option<&str> {
+        self.link_hits
+            .iter()
+            .find(|link| link.area.contains((x, y).into()))
+            .map(|link| link.url.as_str())
     }
 
     fn drain_prepared_images(&mut self) {
@@ -188,6 +216,7 @@ struct FoundImage {
     range: Range<usize>,
     url: String,
     alt: String,
+    link: Option<String>,
     alignment: ImageAlignment,
 }
 
@@ -424,16 +453,21 @@ fn split_images(
 ) -> Vec<DocumentBlock> {
     let mut images = Vec::<FoundImage>::new();
     let mut image_stack = Vec::<FoundImage>::new();
-    let mut link_stack = Vec::<(usize, usize)>::new();
+    let mut link_stack = Vec::<(usize, usize, String)>::new();
 
     for (event, range) in Parser::new_ext(source, markdown_options()).into_offset_iter() {
         match event {
-            Event::Start(Tag::Link { .. }) => link_stack.push((range.start, images.len())),
+            Event::Start(Tag::Link { dest_url, .. }) => {
+                link_stack.push((range.start, images.len(), dest_url.into_string()));
+            }
             Event::End(TagEnd::Link) => {
-                if let Some((start, first_image)) = link_stack.pop()
+                if let Some((start, first_image, url)) = link_stack.pop()
                     && first_image < images.len()
                 {
                     images[first_image].range.start = start;
+                    for image in &mut images[first_image..] {
+                        image.link = Some(url.clone());
+                    }
                     if let Some(last) = images.last_mut() {
                         last.range.end = range.end;
                     }
@@ -444,6 +478,7 @@ fn split_images(
                     range: range.start..range.end,
                     url: dest_url.to_string(),
                     alt: String::new(),
+                    link: None,
                     alignment: image_alignments
                         .get(dest_url.as_ref())
                         .copied()
@@ -495,6 +530,7 @@ fn split_images(
                 size: image_sizes.get(&image.url).copied().unwrap_or_default(),
                 url: image.url,
                 alt: image.alt,
+                link: image.link,
             },
             image.alignment,
         ));
@@ -533,16 +569,19 @@ fn push_text_block(blocks: &mut Vec<DocumentBlock>, source: &str) {
     }
 }
 
+#[cfg(test)]
 fn formatted_text(source: &str, width: u16) -> Text<'static> {
-    external_markdown_text(source, width)
+    external_markdown_text(source, width).0
 }
 
-fn external_markdown_text(source: &str, width: u16) -> Text<'static> {
+fn external_markdown_text(source: &str, width: u16) -> (Text<'static>, Vec<LinkTarget>) {
     let theme = markdown_theme();
     let rule_style = theme.rule;
     let list_marker_style = theme.list_marker;
+    let table_separator_style = theme.table_separator;
     let code_style = theme.code_block;
     let code_language_style = theme.code_block_lang;
+    let links = markdown_links(source);
     let renderer = RendererBuilder::new()
         .with_theme(theme)
         .with_heading(|_, spans| vec![Line::from(spans)])
@@ -566,12 +605,251 @@ fn external_markdown_text(source: &str, width: u16) -> Text<'static> {
             }
         }
     }
-    text.lines = text
-        .lines
+    text.lines = wrap_tables(text.lines, width, table_separator_style)
         .into_iter()
         .flat_map(|line| wrap_list_line(line, width, list_marker_style))
+        .flat_map(|line| wrap_line(line, width))
         .collect();
-    text
+    (text, links)
+}
+
+fn markdown_links(source: &str) -> Vec<LinkTarget> {
+    let mut links = Vec::new();
+    let mut current = None::<(String, String)>;
+    let mut in_table = false;
+    for event in Parser::new_ext(source, markdown_options()) {
+        match event {
+            Event::Start(Tag::Table(_)) => in_table = true,
+            Event::End(TagEnd::Table) => in_table = false,
+            Event::Start(Tag::Link { dest_url, .. }) if !in_table => {
+                current = Some((dest_url.into_string(), String::new()));
+            }
+            Event::Text(text) | Event::Code(text) if current.is_some() => {
+                if let Some((_, label)) = current.as_mut() {
+                    label.push_str(&text);
+                }
+            }
+            Event::End(TagEnd::Link) => {
+                if let Some((url, label)) = current.take() {
+                    links.push(LinkTarget {
+                        width: Span::raw(label).width(),
+                        url,
+                    });
+                }
+            }
+            _ => {}
+        }
+    }
+    links
+}
+
+fn wrap_tables(
+    lines: Vec<Line<'static>>,
+    width: u16,
+    separator_style: Style,
+) -> Vec<Line<'static>> {
+    let mut output = Vec::new();
+    let mut lines = lines.into_iter().peekable();
+    while let Some(header) = lines.next() {
+        let Some(separator) = lines.peek() else {
+            output.push(header);
+            break;
+        };
+        let Some(columns) = table_column_count(separator, separator_style) else {
+            output.push(header);
+            continue;
+        };
+        let Some(header_cells) = table_cells(&header, columns, separator_style) else {
+            output.push(header);
+            continue;
+        };
+
+        lines.next();
+        let mut rows = vec![header_cells];
+        while let Some(line) = lines.peek() {
+            let Some(cells) = table_cells(line, columns, separator_style) else {
+                break;
+            };
+            rows.push(cells);
+            lines.next();
+        }
+        output.extend(render_table_rows(rows, width, separator_style));
+    }
+    output
+}
+
+fn table_column_count(line: &Line<'_>, separator_style: Style) -> Option<usize> {
+    let text = line
+        .spans
+        .iter()
+        .map(|span| span.content.as_ref())
+        .collect::<String>();
+    (!text.is_empty()
+        && line.spans.iter().all(|span| span.style == separator_style)
+        && text.chars().all(|character| matches!(character, '─' | '┼')))
+    .then(|| text.chars().filter(|character| *character == '┼').count() + 1)
+}
+
+fn table_cells(
+    line: &Line<'static>,
+    columns: usize,
+    separator_style: Style,
+) -> Option<Vec<Vec<Span<'static>>>> {
+    let mut cells = vec![Vec::new()];
+    for span in &line.spans {
+        if span.style == separator_style && span.content.contains('│') {
+            cells.push(Vec::new());
+        } else {
+            cells.last_mut()?.push(span.clone());
+        }
+    }
+    if cells.len() != columns {
+        return None;
+    }
+    for cell in &mut cells {
+        trim_span_end(cell);
+    }
+    Some(cells)
+}
+
+fn trim_span_end(spans: &mut Vec<Span<'static>>) {
+    while let Some(last) = spans.last_mut() {
+        let trimmed = last.content.trim_end_matches(char::is_whitespace);
+        if trimmed.is_empty() {
+            spans.pop();
+        } else {
+            last.content = trimmed.to_owned().into();
+            break;
+        }
+    }
+}
+
+fn render_table_rows(
+    rows: Vec<Vec<Vec<Span<'static>>>>,
+    width: u16,
+    separator_style: Style,
+) -> Vec<Line<'static>> {
+    let columns = rows.first().map_or(0, Vec::len);
+    if columns == 0 {
+        return Vec::new();
+    }
+    let width = usize::from(width.max(1));
+    let spaced_separator = " │ ";
+    let compact_separator = "│";
+    let separator = if width >= columns.saturating_add(3 * columns.saturating_sub(1)) {
+        spaced_separator
+    } else {
+        compact_separator
+    };
+    let separator_width = Span::raw(separator).width() * columns.saturating_sub(1);
+    if width <= separator_width || width.saturating_sub(separator_width) < columns {
+        return rows
+            .into_iter()
+            .map(|row| Line::from(row.into_iter().flatten().collect::<Vec<Span<'static>>>()))
+            .flat_map(|line| wrap_line(line, width as u16))
+            .collect();
+    }
+
+    let available = width - separator_width;
+    let natural = (0..columns)
+        .map(|column| {
+            rows.iter()
+                .map(|row| row[column].iter().map(Span::width).sum::<usize>())
+                .max()
+                .unwrap_or(1)
+                .max(1)
+        })
+        .collect::<Vec<_>>();
+    let widths = fit_column_widths(&natural, available);
+    let mut output = Vec::new();
+    for (row_index, row) in rows.into_iter().enumerate() {
+        if row_index == 1 {
+            output.push(table_rule(&widths, separator, separator_style));
+        }
+        output.extend(render_table_row(row, &widths, separator, separator_style));
+    }
+    if output.len() == 1 {
+        output.push(table_rule(&widths, separator, separator_style));
+    }
+    output
+}
+
+fn fit_column_widths(natural: &[usize], available: usize) -> Vec<usize> {
+    if natural.iter().sum::<usize>() <= available {
+        return natural.to_vec();
+    }
+    let mut widths = vec![1; natural.len()];
+    for _ in 0..available.saturating_sub(natural.len()) {
+        let Some((column, _)) = natural.iter().zip(&widths).enumerate().max_by(
+            |(_, (left_natural, left_width)), (_, (right_natural, right_width))| {
+                (*left_natural * *right_width).cmp(&(*right_natural * *left_width))
+            },
+        ) else {
+            break;
+        };
+        widths[column] += 1;
+    }
+    widths
+}
+
+fn render_table_row(
+    cells: Vec<Vec<Span<'static>>>,
+    widths: &[usize],
+    separator: &str,
+    separator_style: Style,
+) -> Vec<Line<'static>> {
+    let wrapped = cells
+        .iter()
+        .zip(widths)
+        .map(|(cell, width)| wrap_styled_spans(cell, *width))
+        .collect::<Vec<_>>();
+    let height = wrapped.iter().map(Vec::len).max().unwrap_or(1);
+    (0..height)
+        .map(|line_index| {
+            let mut spans = Vec::new();
+            for (column, width) in widths.iter().enumerate() {
+                if column > 0 {
+                    spans.push(Span::styled(separator.to_owned(), separator_style));
+                }
+                let cell_line = wrapped[column].get(line_index).cloned().unwrap_or_default();
+                let cell_width = cell_line.iter().map(Span::width).sum::<usize>();
+                spans.extend(cell_line);
+                spans.push(Span::raw(" ".repeat(width.saturating_sub(cell_width))));
+            }
+            Line::from(spans)
+        })
+        .collect()
+}
+
+fn table_rule(widths: &[usize], separator: &str, style: Style) -> Line<'static> {
+    let junction = if separator == " │ " {
+        "─┼─"
+    } else {
+        "┼"
+    };
+    let mut spans = Vec::new();
+    for (column, width) in widths.iter().enumerate() {
+        if column > 0 {
+            spans.push(Span::styled(junction.to_owned(), style));
+        }
+        spans.push(Span::styled("─".repeat(*width), style));
+    }
+    Line::from(spans)
+}
+
+fn wrap_line(line: Line<'static>, width: u16) -> Vec<Line<'static>> {
+    let width = usize::from(width.max(1));
+    if line.width() <= width {
+        return vec![line];
+    }
+    wrap_styled_spans(&line.spans, width)
+        .into_iter()
+        .map(|spans| Line {
+            style: line.style,
+            alignment: line.alignment,
+            spans,
+        })
+        .collect()
 }
 
 fn code_block_lines(
@@ -633,7 +911,11 @@ fn split_display_width(source: &str, width: usize) -> Vec<String> {
 }
 
 fn wrap_list_line(line: Line<'static>, width: u16, marker_style: Style) -> Vec<Line<'static>> {
-    let Some(marker) = line.spans.first().filter(|span| span.style == marker_style) else {
+    let Some(marker) = line
+        .spans
+        .first()
+        .filter(|span| span.style == marker_style && is_list_marker(&span.content))
+    else {
         return vec![line];
     };
     let marker = format!("  {}", marker.content);
@@ -663,6 +945,14 @@ fn wrap_list_line(line: Line<'static>, width: u16, marker_style: Style) -> Vec<L
             }
         })
         .collect()
+}
+
+fn is_list_marker(marker: &str) -> bool {
+    let marker = marker.trim();
+    marker == "•"
+        || marker
+            .strip_suffix('.')
+            .is_some_and(|number| !number.is_empty() && number.chars().all(|c| c.is_ascii_digit()))
 }
 
 fn wrap_styled_spans(spans: &[Span<'static>], width: usize) -> Vec<Vec<Span<'static>>> {
@@ -769,19 +1059,66 @@ impl TextBlock {
             .as_ref()
             .is_none_or(|rendered| rendered.width != width)
         {
-            let text = formatted_text(&self.source, width);
-            let height = Paragraph::new(text.clone())
-                .wrap(Wrap { trim: false })
-                .line_count(width)
-                .max(1);
+            let (text, targets) = external_markdown_text(&self.source, width);
+            let height = text.lines.len().max(1);
+            let links = layout_links(&text, &targets, width);
             self.rendered = Some(TextRender {
                 width,
                 text,
                 height,
+                links,
             });
         }
         self.rendered.as_ref().expect("text was prepared")
     }
+}
+
+fn layout_links(text: &Text<'static>, targets: &[LinkTarget], width: u16) -> Vec<TextLink> {
+    let mut links = Vec::<TextLink>::new();
+    let mut target = 0usize;
+    let mut remaining = targets.first().map_or(0, |target| target.width);
+    for (y, line) in text.lines.iter().enumerate() {
+        let line_width = line.width().min(usize::from(width));
+        let mut x = match line.alignment.unwrap_or(Alignment::Left) {
+            Alignment::Left => 0,
+            Alignment::Center => usize::from(width).saturating_sub(line_width) / 2,
+            Alignment::Right => usize::from(width).saturating_sub(line_width),
+        };
+        for span in &line.spans {
+            let is_link = span.style.add_modifier.contains(Modifier::UNDERLINED);
+            for grapheme in span.content.graphemes(true) {
+                let grapheme_width = Span::raw(grapheme).width();
+                if is_link && grapheme_width > 0 {
+                    while remaining == 0 && target + 1 < targets.len() {
+                        target += 1;
+                        remaining = targets[target].width;
+                    }
+                    if let Some(link) = targets.get(target) {
+                        let width = grapheme_width.min(remaining);
+                        if width > 0 {
+                            if let Some(last) = links.last_mut()
+                                && last.y == y
+                                && usize::from(last.x) + usize::from(last.width) == x
+                                && last.url == link.url
+                            {
+                                last.width = last.width.saturating_add(width as u16);
+                            } else {
+                                links.push(TextLink {
+                                    x: x.min(usize::from(u16::MAX)) as u16,
+                                    y,
+                                    width: width.min(usize::from(u16::MAX)) as u16,
+                                    url: link.url.clone(),
+                                });
+                            }
+                            remaining = remaining.saturating_sub(width);
+                        }
+                    }
+                }
+                x = x.saturating_add(grapheme_width);
+            }
+        }
+    }
+    links
 }
 
 pub fn render(
@@ -804,8 +1141,13 @@ pub fn render(
         ..area
     };
     document.drain_prepared_images();
+    document.link_hits.clear();
     let pending_preparations = document.prepared_images.clone();
-    let (blocks, images) = (&mut document.blocks, &mut document.images);
+    let (blocks, images, link_hits) = (
+        &mut document.blocks,
+        &mut document.images,
+        &mut document.link_hits,
+    );
     let mut heights = Vec::with_capacity(blocks.len());
     let mut image_rows = HashMap::new();
     for (index, block) in blocks.iter_mut().enumerate() {
@@ -847,9 +1189,30 @@ pub fn render(
             };
             match block {
                 DocumentBlock::Text(text) => {
-                    let paragraph = Paragraph::new(text.prepare(content_area.width).text.clone())
+                    let rendered = text.prepare(content_area.width);
+                    for link in &rendered.links {
+                        let link_y = document_y.saturating_add(link.y);
+                        if link_y < viewport_start || link_y >= viewport_end {
+                            continue;
+                        }
+                        let x = content_area.x.saturating_add(link.x);
+                        let width = link.width.min(content_area.right().saturating_sub(x));
+                        if width > 0 {
+                            link_hits.push(LinkHit {
+                                area: Rect {
+                                    x,
+                                    y: area.y.saturating_add(
+                                        link_y.saturating_sub(viewport_start) as u16
+                                    ),
+                                    width,
+                                    height: 1,
+                                },
+                                url: link.url.clone(),
+                            });
+                        }
+                    }
+                    let paragraph = Paragraph::new(rendered.text.clone())
                         .style(Style::default().fg(THEME.as_ref().text()))
-                        .wrap(Wrap { trim: false })
                         .scroll((hidden_top.min(usize::from(u16::MAX)) as u16, 0));
                     frame.render_widget(paragraph, block_area);
                 }
@@ -864,6 +1227,7 @@ pub fn render(
                             hidden_top,
                             picker,
                             &pending_preparations,
+                            link_hits,
                         );
                     }
                 }
@@ -999,6 +1363,7 @@ fn render_image_row(
     hidden_top: usize,
     picker: &ratatui_image::picker::Picker,
     pending: &Arc<Mutex<Vec<PreparedImageResult>>>,
+    link_hits: &mut Vec<LinkHit>,
 ) {
     let row_start = match layout.alignment {
         ImageAlignment::Left => area.x,
@@ -1022,6 +1387,12 @@ fn render_image_row(
                 width: *width,
                 height: visible_height as u16,
             };
+            if let Some(url) = &reference.link {
+                link_hits.push(LinkHit {
+                    area: image_area,
+                    url: url.clone(),
+                });
+            }
             if let Some(image) = images.get_mut(&reference.url) {
                 render_image(
                     frame,
@@ -1370,6 +1741,7 @@ mod tests {
             &document.blocks[0],
             super::DocumentBlock::ImageRow { images, alignment }
                 if images.len() == 1 && images[0].url == "https://cdn.example/button.png"
+                    && images[0].link.as_deref() == Some("https://example.com/donate")
                     && *alignment == super::ImageAlignment::Left
         ));
     }
@@ -1675,16 +2047,69 @@ mod tests {
     }
 
     #[test]
-    fn tables_are_rendered_by_the_external_renderer() {
+    fn tables_wrap_cells_without_breaking_the_columns() {
         let text = super::formatted_text(
             "| Mod | Status | Note |\n| --- | --- | --- |\n| Player Animator | Supported | This means mods that use it like Better Combat and Emotecraft |",
             48,
         );
+        assert!(text.lines.len() > 3);
+        assert!(text.lines.iter().all(|line| line.width() <= 48));
         assert!(
             text.lines
                 .iter()
                 .flat_map(|line| &line.spans)
                 .any(|span| span.content.contains("Emotecraft"))
+        );
+        let column_offsets = text
+            .lines
+            .iter()
+            .filter_map(|line| {
+                let mut offset = 0;
+                let separators = line
+                    .spans
+                    .iter()
+                    .filter_map(|span| {
+                        let start = offset;
+                        offset += span.width();
+                        span.content.contains('│').then_some(start)
+                    })
+                    .collect::<Vec<_>>();
+                (!separators.is_empty()).then_some(separators)
+            })
+            .collect::<Vec<_>>();
+        assert!(
+            column_offsets.windows(2).all(|pair| pair[0] == pair[1]),
+            "{column_offsets:?}\n{:#?}",
+            text.lines
+                .iter()
+                .map(|line| line
+                    .spans
+                    .iter()
+                    .map(|span| span.content.as_ref())
+                    .collect::<String>())
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn rendered_links_keep_click_targets_after_wrapping() {
+        let backend = TestBackend::new(24, 5);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let picker = ratatui_image::picker::Picker::halfblocks();
+        let mut document = super::Document::new(
+            "Project",
+            "Open the [project documentation](https://example.com/docs) here.",
+        );
+        let mut scroll = 0;
+        terminal
+            .draw(|frame| {
+                super::render(frame, frame.area(), &mut document, &mut scroll, &picker);
+            })
+            .unwrap();
+        let hit = document.link_hits.first().unwrap();
+        assert_eq!(
+            document.link_at(hit.area.x, hit.area.y),
+            Some("https://example.com/docs")
         );
     }
 

@@ -351,6 +351,10 @@ impl App {
                         .wrap_err_with(|| format!("handling key event failed:\n{key_event:#?}"))?;
                     Ok(true)
                 }
+                Ok(Event::Mouse(mouse_event)) => {
+                    self.handle_mouse_event(mouse_event);
+                    Ok(true)
+                }
                 Ok(_) => Ok(true),
                 Err(e) => {
                     tracing::error!("Event read error: {}", e);
@@ -436,6 +440,7 @@ impl App {
     fn run_editor(terminal: &mut ratatui::DefaultTerminal, path: &std::path::Path) -> bool {
         use ratatui::crossterm::{
             ExecutableCommand,
+            event::{DisableMouseCapture, EnableMouseCapture},
             terminal::{
                 EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
             },
@@ -467,6 +472,7 @@ impl App {
         );
 
         if is_tui_editor {
+            let _ = stdout().execute(DisableMouseCapture);
             let _ = stdout().execute(LeaveAlternateScreen);
             let _ = disable_raw_mode();
 
@@ -478,6 +484,7 @@ impl App {
                 .status();
 
             let _ = stdout().execute(EnterAlternateScreen);
+            let _ = stdout().execute(EnableMouseCapture);
             let _ = enable_raw_mode();
             let _ = terminal.clear();
 
