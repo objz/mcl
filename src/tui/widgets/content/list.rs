@@ -464,6 +464,7 @@ impl ContentListState {
             .retain(|stem| valid_stems.contains(stem.as_str()));
 
         let font_size = picker.font_size();
+        let font_dimensions = (font_size.width, font_size.height);
         for entry in &self.entries {
             if entry.icon_bytes.is_none() || !self.requested_images.insert(entry.file_stem.clone())
             {
@@ -473,7 +474,7 @@ impl ContentListState {
             let path = entry.path.clone();
             let bytes = entry.icon_bytes.clone().unwrap_or_default();
             let rows = entry.icon_lines.as_ref().map_or(3, Vec::len) as u32;
-            let columns = square_icon_columns(rows as u16, font_size);
+            let columns = square_icon_columns(rows as u16, font_dimensions);
             let pending = self.pending_images.clone();
 
             tokio::spawn(async move {
@@ -499,7 +500,7 @@ impl ContentListState {
                             rows as u16,
                         )
                     };
-                    let side = rows * u32::from(font_size.1.max(1));
+                    let side = rows * u32::from(font_size.height.max(1));
                     let image = use_image_protocol.then(|| {
                         image.resize_exact(side, side, image::imageops::FilterType::Lanczos3)
                     });
@@ -1926,7 +1927,8 @@ fn protocol_icon_columns(
     picker: &ratatui_image::picker::Picker,
 ) -> u16 {
     let rows = entry.icon_lines.as_ref().map_or(3, Vec::len) as u16;
-    square_icon_columns(rows, picker.font_size())
+    let font_size = picker.font_size();
+    square_icon_columns(rows, (font_size.width, font_size.height))
 }
 
 fn square_icon_columns(rows: u16, font_size: (u16, u16)) -> u16 {

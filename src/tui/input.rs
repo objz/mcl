@@ -193,26 +193,45 @@ impl App {
         if self.focused == FocusedArea::Content
             && self.content_mode == widgets::content::ContentMode::Discover
         {
-            let (search_active, popup_open) = match self.content_tab {
+            let (search_active, popup_open, project_page_open) = match self.content_tab {
                 widgets::content::ContentTab::Mods => (
                     self.mods_discovery_state.search.active,
                     self.mods_discovery_state.version_popup.is_some(),
+                    self.mods_discovery_state.project_page_open(),
                 ),
                 widgets::content::ContentTab::ResourcePacks => (
                     self.resource_packs_discovery_state.search.active,
                     self.resource_packs_discovery_state.version_popup.is_some(),
+                    self.resource_packs_discovery_state.project_page_open(),
                 ),
                 widgets::content::ContentTab::Shaders => (
                     self.shaders_discovery_state.search.active,
                     self.shaders_discovery_state.version_popup.is_some(),
+                    self.shaders_discovery_state.project_page_open(),
                 ),
-                _ => (false, false),
+                _ => (false, false, false),
             };
-            if !search_active && !popup_open && key_event.code == KeyCode::Char('i') {
+            if !search_active
+                && !popup_open
+                && !project_page_open
+                && key_event.code == KeyCode::Enter
+            {
+                self.spawn_active_discovery_project_page();
+                return Ok(());
+            }
+            if !search_active
+                && !popup_open
+                && !project_page_open
+                && key_event.code == KeyCode::Char('i')
+            {
                 self.spawn_active_discovery_versions();
                 return Ok(());
             }
-            if !search_active && !popup_open && key_event.code == KeyCode::Char('d') {
+            if !search_active
+                && !popup_open
+                && !project_page_open
+                && key_event.code == KeyCode::Char('d')
+            {
                 if let Some(pending) = self
                     .active_discovery_state_mut()
                     .and_then(|state| state.pending_installed_delete())
@@ -704,6 +723,118 @@ impl App {
                     result,
                 },
             );
+        });
+    }
+
+    fn spawn_active_discovery_project_page(&mut self) {
+        let Some(request) = self
+            .active_discovery_state_mut()
+            .and_then(widgets::content::DiscoveryState::begin_project_page)
+        else {
+            return;
+        };
+        tokio::spawn(async move {
+            let client = crate::net::HttpClient::new();
+            let mut image_urls = request.image_urls;
+            let project = match request.cached_project {
+                Some(project) => project,
+                None => {
+                    let progress = crate::tui::progress::ProgressTask::start(format!(
+                        "Loading {} from Modrinth",
+                        request.project_title
+                    ));
+                    match crate::net::modrinth::fetch_project(&client, &request.project_id).await {
+                        Ok(project) => {
+                            image_urls = crate::tui::widgets::markdown::image_urls(
+                                &project.title,
+                                &project.body,
+                            );
+                            widgets::content::DiscoveryState::push_action_result(
+                                &request.pending,
+                                widgets::content::discovery::DiscoveryActionResult::ProjectPage {
+                                    request_id: request.request_id,
+                                    project_id: request.project_id.clone(),
+                                    result: Ok(project.clone()),
+                                },
+                            );
+                            progress.finish();
+                            project
+                        }
+                        Err(error) => {
+                            progress.fail(&error);
+                            widgets::content::DiscoveryState::push_action_result(
+                                &request.pending,
+                                widgets::content::discovery::DiscoveryActionResult::ProjectPage {
+                                    request_id: request.request_id,
+                                    project_id: request.project_id,
+                                    result: Err(error.to_string()),
+                                },
+                            );
+                            return;
+                        }
+                    }
+                }
+            };
+
+            if image_urls.is_empty() {
+                return;
+            }
+            image_urls.sort();
+            image_urls.dedup();
+            let progress = crate::tui::progress::ProgressTask::start(format!(
+                "Loading images for {}",
+                project.title
+            ));
+            progress.set_progress(0, image_urls.len() as u64);
+            let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(4));
+            let mut tasks = tokio::task::JoinSet::new();
+            for url in image_urls {
+                let client = client.clone();
+                let semaphore = semaphore.clone();
+                tasks.spawn(async move {
+                    let result = async {
+                        let _permit = semaphore
+                            .acquire_owned()
+                            .await
+                            .map_err(|error| error.to_string())?;
+                        let bytes = client
+                            .get_bytes(&url)
+                            .await
+                            .map_err(|error| error.to_string())?;
+                        tokio::task::spawn_blocking(move || {
+                            crate::tui::widgets::markdown::decode_image(&bytes)
+                        })
+                        .await
+                        .map_err(|error| error.to_string())?
+                    }
+                    .await;
+                    (url, result)
+                });
+            }
+
+            let total = tasks.len() as u64;
+            let mut completed = 0;
+            while let Some(result) = tasks.join_next().await {
+                completed += 1;
+                progress.set_progress(completed, total);
+                let (url, result) = match result {
+                    Ok(result) => result,
+                    Err(error) => {
+                        tracing::debug!("Modrinth project image task failed: {error}");
+                        continue;
+                    }
+                };
+                widgets::content::DiscoveryState::push_action_result(
+                    &request.pending,
+                    widgets::content::discovery::DiscoveryActionResult::ProjectImage {
+                        request_id: request.request_id,
+                        project_id: request.project_id.clone(),
+                        url,
+                        result,
+                    },
+                );
+            }
+            progress.finish();
         });
     }
 

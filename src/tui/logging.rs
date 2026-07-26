@@ -150,8 +150,17 @@ fn should_record_app_log(target: &str, level: Level) -> bool {
     if target == MINECRAFT_LOG_TARGET {
         return false;
     }
+    if is_svg_renderer_target(target) {
+        return false;
+    }
 
     target == "rmcl" || target.starts_with("rmcl::") || level <= Level::WARN
+}
+
+fn is_svg_renderer_target(target: &str) -> bool {
+    ["usvg", "resvg", "tiny_skia", "fontdb"]
+        .iter()
+        .any(|renderer| target == *renderer || target.starts_with(&format!("{renderer}::")))
 }
 
 #[derive(Default)]
@@ -205,5 +214,11 @@ mod tests {
     #[test]
     fn dependency_warnings_are_general_app_logs() {
         assert!(should_record_app_log("notify", Level::WARN));
+    }
+
+    #[test]
+    fn svg_renderer_warnings_do_not_interrupt_the_ui() {
+        assert!(!should_record_app_log("usvg::text", Level::WARN));
+        assert!(!should_record_app_log("usvg::parser::filter", Level::WARN));
     }
 }

@@ -217,13 +217,23 @@ pub fn render(
         ContentTab::Shaders => shaders_discovery_state.selected_is_installed(),
         _ => false,
     };
+    let discovery_page_open = match tab {
+        ContentTab::Mods => mods_discovery_state.project_page_open(),
+        ContentTab::ResourcePacks => resource_packs_discovery_state.project_page_open(),
+        ContentTab::Shaders => shaders_discovery_state.project_page_open(),
+        _ => false,
+    };
 
     // keybinds change depending on which tab is active and whether
     // the content panel or instances panel has focus
     let kb: Option<&[(&str, &str)]> = if is_focused {
         Some(match (mode, tab) {
+            (ContentMode::Discover, _) if discovery_page_open => {
+                &[("j/k", " scroll"), ("g/G", " top/bottom"), ("h", " back")]
+            }
             (ContentMode::Discover, _) if discovery_can_delete => &[
                 ("j/k", " navigate"),
+                ("Enter", " view"),
                 ("i", " versions"),
                 ("d", " delete"),
                 ("h/l", " tabs"),
@@ -232,6 +242,7 @@ pub fn render(
             ],
             (ContentMode::Discover, _) => &[
                 ("j/k", " navigate"),
+                ("Enter", " view"),
                 ("i", " versions"),
                 ("h/l", " tabs"),
                 ("/", " search"),
@@ -527,6 +538,31 @@ fn render_discovery(
     picker: &ratatui_image::picker::Picker,
 ) {
     state.set_viewport_rows(area.height);
+    if let Some(page) = state.project_page.as_mut() {
+        if let Some(error) = page.error.as_deref() {
+            frame.render_widget(
+                Paragraph::new(error)
+                    .style(Style::default().fg(THEME.as_ref().error()))
+                    .wrap(Wrap { trim: true }),
+                area,
+            );
+        } else if let Some(document) = page.document.as_mut() {
+            page.max_scroll = crate::tui::widgets::markdown::render(
+                frame,
+                area,
+                document,
+                &mut page.scroll,
+                picker,
+            );
+        } else {
+            frame.render_widget(
+                Paragraph::new(format!("Loading {}...", page.title))
+                    .style(Style::default().fg(THEME.as_ref().text_dim())),
+                area,
+            );
+        }
+        return;
+    }
     let empty_text = state.empty_text().to_string();
     super::list::render(
         frame,

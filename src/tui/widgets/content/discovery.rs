@@ -95,6 +95,25 @@ pub struct VersionsRequest {
     pub pending: PendingActions,
 }
 
+pub struct ProjectPageRequest {
+    pub request_id: u64,
+    pub project_id: String,
+    pub project_title: String,
+    pub cached_project: Option<crate::net::modrinth::ProjectInfo>,
+    pub image_urls: Vec<String>,
+    pub pending: PendingActions,
+}
+
+pub struct ProjectPageState {
+    request_id: u64,
+    project_id: String,
+    pub title: String,
+    pub document: Option<crate::tui::widgets::markdown::Document>,
+    pub error: Option<String>,
+    pub scroll: usize,
+    pub max_scroll: usize,
+}
+
 pub struct InstallRequest {
     pub request_id: u64,
     pub generation: u64,
@@ -112,6 +131,17 @@ pub struct InstallCompletion {
 }
 
 pub enum DiscoveryActionResult {
+    ProjectPage {
+        request_id: u64,
+        project_id: String,
+        result: Result<crate::net::modrinth::ProjectInfo, String>,
+    },
+    ProjectImage {
+        request_id: u64,
+        project_id: String,
+        url: String,
+        result: Result<image::DynamicImage, String>,
+    },
     Versions {
         request_id: u64,
         project_id: String,
@@ -138,6 +168,9 @@ pub struct DiscoveryState {
     generation: u64,
     pending: PendingDiscovery,
     pending_actions: PendingActions,
+    project_pages: std::collections::HashMap<String, crate::net::modrinth::ProjectInfo>,
+    project_images: std::collections::HashMap<(String, String), image::DynamicImage>,
+    pub project_page: Option<ProjectPageState>,
     pub version_popup: Option<VersionPopupState>,
     next_action_request_id: u64,
     stream: Option<ContentStream>,
@@ -162,6 +195,9 @@ impl DiscoveryState {
             generation: 0,
             pending: Arc::new(Mutex::new(Vec::new())),
             pending_actions: Arc::new(Mutex::new(Vec::new())),
+            project_pages: std::collections::HashMap::new(),
+            project_images: std::collections::HashMap::new(),
+            project_page: None,
             version_popup: None,
             next_action_request_id: 0,
             stream: None,
@@ -181,6 +217,7 @@ impl DiscoveryState {
 
     pub fn begin_search(&mut self, instance: &InstanceConfig) -> DiscoveryRequest {
         self.generation = self.generation.wrapping_add(1);
+        self.project_page = None;
         self.version_popup = None;
         let context = discovery_context(instance);
         let reconcile =
@@ -278,6 +315,68 @@ impl DiscoveryState {
             project_id,
             pending: self.pending_actions.clone(),
         })
+    }
+
+    pub fn begin_project_page(&mut self) -> Option<ProjectPageRequest> {
+        let filtered = self.list.filtered_indices();
+        let index = self
+            .list
+            .list_state
+            .selected
+            .and_then(|selected| filtered.get(selected))?;
+        let entry = self.list.entries.get(*index)?;
+        let project_id = entry.file_stem.clone();
+        let project_title = entry.name.clone();
+        self.next_action_request_id = self.next_action_request_id.wrapping_add(1);
+        let request_id = self.next_action_request_id;
+        let cached = self.project_pages.get(&project_id);
+        let mut document = cached.map(|project| {
+            crate::tui::widgets::markdown::Document::new(&project.title, &project.body)
+        });
+        if let Some(document) = document.as_mut() {
+            for url in document.image_urls() {
+                if let Some(image) = self.project_images.get(&(project_id.clone(), url.clone())) {
+                    document.set_image(&url, Ok(image.clone()));
+                }
+            }
+        }
+        let image_urls = document
+            .as_ref()
+            .map(crate::tui::widgets::markdown::Document::image_urls)
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|url| {
+                !self
+                    .project_images
+                    .contains_key(&(project_id.clone(), url.clone()))
+            })
+            .collect::<Vec<_>>();
+        self.project_page = Some(ProjectPageState {
+            request_id,
+            project_id: project_id.clone(),
+            title: cached
+                .map(|project| project.title.clone())
+                .unwrap_or_else(|| project_title.clone()),
+            document,
+            error: None,
+            scroll: 0,
+            max_scroll: 0,
+        });
+        if cached.is_some() && image_urls.is_empty() {
+            return None;
+        }
+        Some(ProjectPageRequest {
+            request_id,
+            project_id,
+            project_title,
+            cached_project: cached.cloned(),
+            image_urls,
+            pending: self.pending_actions.clone(),
+        })
+    }
+
+    pub fn project_page_open(&self) -> bool {
+        self.project_page.is_some()
     }
 
     pub fn refresh_installed_manifest(
@@ -473,6 +572,59 @@ impl DiscoveryState {
         };
         for result in results {
             match result {
+                DiscoveryActionResult::ProjectPage {
+                    request_id,
+                    project_id,
+                    result,
+                } => {
+                    let Some(page) = self.project_page.as_mut().filter(|page| {
+                        page.request_id == request_id && page.project_id == project_id
+                    }) else {
+                        continue;
+                    };
+                    match result {
+                        Ok(project) => {
+                            page.title.clone_from(&project.title);
+                            page.document = Some(crate::tui::widgets::markdown::Document::new(
+                                &project.title,
+                                &project.body,
+                            ));
+                            if let Some(document) = page.document.as_mut() {
+                                for url in document.image_urls() {
+                                    if let Some(image) =
+                                        self.project_images.get(&(project_id.clone(), url.clone()))
+                                    {
+                                        document.set_image(&url, Ok(image.clone()));
+                                    }
+                                }
+                            }
+                            page.error = None;
+                            page.scroll = 0;
+                            page.max_scroll = 0;
+                            self.project_pages.insert(project.id.clone(), project);
+                        }
+                        Err(error) => page.error = Some(error),
+                    }
+                }
+                DiscoveryActionResult::ProjectImage {
+                    request_id,
+                    project_id,
+                    url,
+                    result,
+                } => {
+                    if let Ok(image) = &result {
+                        self.project_images
+                            .insert((project_id.clone(), url.clone()), image.clone());
+                    }
+                    let Some(page) = self.project_page.as_mut().filter(|page| {
+                        page.request_id == request_id && page.project_id == project_id
+                    }) else {
+                        continue;
+                    };
+                    if let Some(document) = page.document.as_mut() {
+                        document.set_image(&url, result);
+                    }
+                }
                 DiscoveryActionResult::Versions {
                     request_id,
                     project_id,
@@ -571,6 +723,27 @@ impl DiscoveryState {
 }
 
 pub fn handle_key(key_event: &KeyEvent, state: &mut DiscoveryState) -> bool {
+    if let Some(page) = state.project_page.as_mut() {
+        match key_event.code {
+            KeyCode::Esc | KeyCode::Left | KeyCode::Char('h') => state.project_page = None,
+            KeyCode::Char('j') | KeyCode::Down => {
+                page.scroll = page.scroll.saturating_add(1).min(page.max_scroll);
+            }
+            KeyCode::Char('k') | KeyCode::Up => {
+                page.scroll = page.scroll.saturating_sub(1);
+            }
+            KeyCode::PageDown | KeyCode::Char('d') => {
+                page.scroll = page.scroll.saturating_add(10).min(page.max_scroll);
+            }
+            KeyCode::PageUp | KeyCode::Char('u') => {
+                page.scroll = page.scroll.saturating_sub(10);
+            }
+            KeyCode::Char('g') | KeyCode::Home => page.scroll = 0,
+            KeyCode::Char('G') | KeyCode::End => page.scroll = page.max_scroll,
+            _ => {}
+        }
+        return true;
+    }
     if let Some(popup) = state.version_popup.as_mut() {
         if popup.confirming
             && matches!(key_event.code, KeyCode::Left | KeyCode::Char('h'))
@@ -803,6 +976,85 @@ mod tests {
         assert!(!popup.loading);
         assert_eq!(popup.versions.len(), 2);
         assert_eq!(popup.selected, 0);
+    }
+
+    #[test]
+    fn project_page_loads_for_the_selected_discovery_entry() {
+        let project = DiscoveryProject {
+            id: "project".to_owned(),
+            slug: "project".to_owned(),
+            title: "Project".to_owned(),
+            description: String::new(),
+            downloads: 0,
+            icon_url: None,
+            icon_bytes: None,
+        };
+        let mut state = DiscoveryState::new(DiscoveryKind::Mod);
+        state.list.entries.push(project_entry(project, None));
+        state.list.list_state.selected = Some(0);
+
+        let request = state.begin_project_page().unwrap();
+        assert!(state.project_page_open());
+        DiscoveryState::push_action_result(
+            &request.pending,
+            DiscoveryActionResult::ProjectPage {
+                request_id: request.request_id,
+                project_id: request.project_id,
+                result: Ok(crate::net::modrinth::ProjectInfo {
+                    id: "project".to_owned(),
+                    slug: "project".to_owned(),
+                    title: "Project page".to_owned(),
+                    description: "Short description".to_owned(),
+                    body: "Long **Markdown** description.".to_owned(),
+                    icon_url: None,
+                }),
+            },
+        );
+
+        state.drain_pending();
+        let page = state.project_page.as_ref().unwrap();
+        assert_eq!(page.title, "Project page");
+        assert!(page.document.is_some());
+        state.project_page = None;
+        assert!(state.begin_project_page().is_none());
+        assert!(
+            state
+                .project_page
+                .as_ref()
+                .is_some_and(|page| page.document.is_some())
+        );
+    }
+
+    #[test]
+    fn project_page_navigation_is_bounded_and_can_go_back() {
+        let mut state = DiscoveryState::new(DiscoveryKind::Mod);
+        state.project_page = Some(ProjectPageState {
+            request_id: 1,
+            project_id: "project".to_owned(),
+            title: "Project".to_owned(),
+            document: Some(crate::tui::widgets::markdown::Document::new(
+                "Project", "Body",
+            )),
+            error: None,
+            scroll: 0,
+            max_scroll: 20,
+        });
+
+        handle_key(
+            &KeyEvent::new(KeyCode::Char('d'), KeyModifiers::NONE),
+            &mut state,
+        );
+        assert_eq!(state.project_page.as_ref().unwrap().scroll, 10);
+        handle_key(
+            &KeyEvent::new(KeyCode::Char('G'), KeyModifiers::NONE),
+            &mut state,
+        );
+        assert_eq!(state.project_page.as_ref().unwrap().scroll, 20);
+        handle_key(
+            &KeyEvent::new(KeyCode::Char('h'), KeyModifiers::NONE),
+            &mut state,
+        );
+        assert!(!state.project_page_open());
     }
 
     #[test]

@@ -128,7 +128,8 @@ impl App {
             settings_state: widgets::settings::SettingsState::new(manager.meta_dir.clone()),
             screenshots_state: {
                 let mut s = widgets::screenshots_grid::ScreenshotsState::default();
-                s.font_size = picker.font_size();
+                let font_size = picker.font_size();
+                s.font_size = (font_size.width, font_size.height);
                 s
             },
             picker,

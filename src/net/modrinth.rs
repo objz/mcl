@@ -12,6 +12,8 @@ pub struct ProjectInfo {
     #[serde(default)]
     pub description: String,
     #[serde(default)]
+    pub body: String,
+    #[serde(default)]
     pub icon_url: Option<String>,
 }
 
