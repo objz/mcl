@@ -18,12 +18,15 @@ use ratatui_image::{
     sliced::{SignedPosition, SlicedImage, SlicedProtocol},
 };
 use the_other_tui_markdown::{RendererBuilder, Theme as MarkdownTheme, into_text_with_renderer};
+use unicode_segmentation::UnicodeSegmentation;
 
 use crate::config::settings::ImageProtocol;
 use crate::config::theme::THEME;
 use crate::instance::content::mods::{
     IconCell, fallback_icon, make_icon_pixels_from_image, make_icon_quadrants_from_image,
 };
+
+const MAX_DOCUMENT_WIDTH: u16 = 110;
 
 struct TextBlock {
     source: String,
@@ -461,10 +464,16 @@ fn formatted_text(source: &str, width: u16) -> Text<'static> {
 fn external_markdown_text(source: &str, width: u16) -> Text<'static> {
     let theme = markdown_theme();
     let rule_style = theme.rule;
+    let list_marker_style = theme.list_marker;
+    let code_style = theme.code_block;
+    let code_language_style = theme.code_block_lang;
     let renderer = RendererBuilder::new()
         .with_theme(theme)
         .with_heading(|_, spans| vec![Line::from(spans)])
         .with_rule(move || vec![Line::styled("─".repeat(usize::from(width)), rule_style)])
+        .with_code_block(move |language, content| {
+            code_block_lines(language, content, width, code_style, code_language_style)
+        })
         .build();
     let mut text = into_text_with_renderer(source, &renderer);
     for line in &mut text.lines {
@@ -481,7 +490,168 @@ fn external_markdown_text(source: &str, width: u16) -> Text<'static> {
             }
         }
     }
+    text.lines = text
+        .lines
+        .into_iter()
+        .flat_map(|line| wrap_list_line(line, width, list_marker_style))
+        .collect();
     text
+}
+
+fn code_block_lines(
+    language: &str,
+    content: &str,
+    width: u16,
+    code_style: Style,
+    language_style: Style,
+) -> Vec<Line<'static>> {
+    let width = usize::from(width.max(1));
+    let inner_width = width.saturating_sub(2).max(1);
+    let mut lines = Vec::new();
+    if !language.is_empty() {
+        lines.push(padded_code_line(
+            &format!("[{language}]"),
+            width,
+            language_style,
+        ));
+    }
+    for source_line in content.strip_suffix('\n').unwrap_or(content).split('\n') {
+        for line in split_display_width(source_line, inner_width) {
+            lines.push(padded_code_line(&line, width, code_style));
+        }
+    }
+    if lines.is_empty() {
+        lines.push(Line::styled(" ".repeat(width), code_style));
+    }
+    lines
+}
+
+fn padded_code_line(content: &str, width: usize, style: Style) -> Line<'static> {
+    let inner_width = width.saturating_sub(2);
+    let content_width = Span::raw(content).width().min(inner_width);
+    Line::styled(
+        format!(
+            " {content}{} ",
+            " ".repeat(inner_width.saturating_sub(content_width))
+        ),
+        style,
+    )
+}
+
+fn split_display_width(source: &str, width: usize) -> Vec<String> {
+    let mut lines = vec![String::new()];
+    let mut line_width = 0usize;
+    for grapheme in source.graphemes(true) {
+        let grapheme_width = Span::raw(grapheme).width();
+        if line_width > 0 && line_width.saturating_add(grapheme_width) > width {
+            lines.push(String::new());
+            line_width = 0;
+        }
+        lines
+            .last_mut()
+            .expect("display line exists")
+            .push_str(grapheme);
+        line_width = line_width.saturating_add(grapheme_width);
+    }
+    lines
+}
+
+fn wrap_list_line(line: Line<'static>, width: u16, marker_style: Style) -> Vec<Line<'static>> {
+    let Some(marker) = line.spans.first().filter(|span| span.style == marker_style) else {
+        return vec![line];
+    };
+    let marker = format!("  {}", marker.content);
+    let marker_width = Span::raw(&marker).width();
+    let content_width = usize::from(width).saturating_sub(marker_width).max(1);
+    let wrapped = wrap_styled_spans(&line.spans[1..], content_width);
+    let continuation = " ".repeat(marker_width);
+    wrapped
+        .into_iter()
+        .enumerate()
+        .map(|(index, mut spans)| {
+            spans.insert(
+                0,
+                Span::styled(
+                    if index == 0 {
+                        marker.clone()
+                    } else {
+                        continuation.clone()
+                    },
+                    marker_style,
+                ),
+            );
+            Line {
+                style: line.style,
+                alignment: line.alignment,
+                spans,
+            }
+        })
+        .collect()
+}
+
+fn wrap_styled_spans(spans: &[Span<'static>], width: usize) -> Vec<Vec<Span<'static>>> {
+    let mut lines = Vec::new();
+    let mut line = Vec::new();
+    let mut line_width = 0usize;
+    let mut whitespace = Vec::new();
+    let mut whitespace_width = 0usize;
+
+    for span in spans {
+        for part in span.content.split_word_bounds() {
+            if part.chars().all(char::is_whitespace) {
+                push_styled(&mut whitespace, part, span.style);
+                whitespace_width = whitespace_width.saturating_add(Span::raw(part).width());
+                continue;
+            }
+
+            let part_width = Span::raw(part).width();
+            if line_width > 0
+                && line_width
+                    .saturating_add(whitespace_width)
+                    .saturating_add(part_width)
+                    > width
+            {
+                lines.push(std::mem::take(&mut line));
+                line_width = 0;
+                whitespace.clear();
+                whitespace_width = 0;
+            } else if line_width > 0 {
+                line.append(&mut whitespace);
+                line_width = line_width.saturating_add(whitespace_width);
+                whitespace_width = 0;
+            } else {
+                whitespace.clear();
+                whitespace_width = 0;
+            }
+
+            for grapheme in part.graphemes(true) {
+                let grapheme_width = Span::raw(grapheme).width();
+                if line_width > 0 && line_width.saturating_add(grapheme_width) > width {
+                    lines.push(std::mem::take(&mut line));
+                    line_width = 0;
+                }
+                push_styled(&mut line, grapheme, span.style);
+                line_width = line_width.saturating_add(grapheme_width);
+            }
+        }
+    }
+    if !line.is_empty() {
+        lines.push(line);
+    }
+    if lines.is_empty() {
+        lines.push(Vec::new());
+    }
+    lines
+}
+
+fn push_styled(spans: &mut Vec<Span<'static>>, content: &str, style: Style) {
+    if let Some(last) = spans.last_mut()
+        && last.style == style
+    {
+        last.content.to_mut().push_str(content);
+    } else {
+        spans.push(Span::styled(content.to_owned(), style));
+    }
 }
 
 fn markdown_theme() -> MarkdownTheme {
@@ -500,7 +670,9 @@ fn markdown_theme() -> MarkdownTheme {
         .fg(THEME.as_ref().text())
         .bg(THEME.as_ref().surface());
     theme.code_block = theme.inline_code;
-    theme.code_block_lang = Style::default().fg(THEME.as_ref().text_dim());
+    theme.code_block_lang = Style::default()
+        .fg(THEME.as_ref().text_dim())
+        .bg(THEME.as_ref().surface());
     theme.link = Style::default()
         .fg(THEME.as_ref().info())
         .add_modifier(Modifier::UNDERLINED);
@@ -547,7 +719,7 @@ pub fn render(
         *scroll = 0;
         return 0;
     }
-    let content_width = area.width.min(120);
+    let content_width = area.width.min(MAX_DOCUMENT_WIDTH);
     let content_area = Rect {
         x: area
             .x
@@ -1226,7 +1398,24 @@ mod tests {
                     .collect::<String>()
             })
             .collect::<Vec<_>>();
-        assert_eq!(rendered, ["• first", "  • nested", "• second"]);
+        assert_eq!(rendered, ["  • first", "    • nested", "  • second"]);
+    }
+
+    #[test]
+    fn wrapped_list_items_keep_a_hanging_indent() {
+        let text = super::formatted_text("- one two three four", 16);
+        let rendered = text
+            .lines
+            .iter()
+            .map(|line| {
+                line.spans
+                    .iter()
+                    .map(|span| span.content.as_ref())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(rendered, ["  • one two", "    three four"]);
+        assert!(text.lines.iter().all(|line| line.width() <= 16));
     }
 
     #[test]
@@ -1344,6 +1533,17 @@ mod tests {
                 .any(|line| line.contains("\"enabled\": true"))
         );
         assert!(rendered.iter().all(|line| !line.contains("```")));
+        let code_lines = text
+            .lines
+            .iter()
+            .filter(|line| line.width() == 24)
+            .collect::<Vec<_>>();
+        assert_eq!(code_lines.len(), 4);
+        assert!(
+            code_lines.iter().all(|line| {
+                line.style.bg == Some(crate::config::theme::THEME.as_ref().surface())
+            })
+        );
     }
 
     #[test]

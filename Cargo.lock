@@ -3626,6 +3626,7 @@ dependencies = [
  "tui-prompts",
  "tui-scrollview",
  "tui-widget-list",
+ "unicode-segmentation",
  "which",
  "wiremock",
  "zip",
