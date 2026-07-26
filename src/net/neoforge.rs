@@ -220,35 +220,6 @@ pub async fn run_neoforge_installer(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::net::HttpClient;
-
-    #[tokio::test]
-    #[ignore = "hits live NeoForge API"]
-    async fn test_fetch_versions() {
-        let client = HttpClient::new();
-        match fetch_neoforge_versions(&client, "1.21").await {
-            Ok(versions) => {
-                assert!(
-                    !versions.is_empty(),
-                    "Should have NeoForge versions for 1.21"
-                );
-            }
-            Err(e) => panic!("fetch_neoforge_versions failed: {}", e),
-        }
-    }
-
-    #[tokio::test]
-    #[ignore = "hits live NeoForge API"]
-    async fn test_fetch_game_versions() {
-        let client = HttpClient::new();
-        match fetch_neoforge_game_versions(&client).await {
-            Ok(versions) => {
-                assert!(!versions.is_empty(), "Should have NeoForge game versions");
-                assert!(versions.iter().any(|version| version.id == "1.21"));
-            }
-            Err(e) => panic!("fetch_neoforge_game_versions failed: {}", e),
-        }
-    }
 
     #[test]
     fn test_game_version_to_neoforge_prefix() {

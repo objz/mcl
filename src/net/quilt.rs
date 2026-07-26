@@ -187,37 +187,3 @@ pub async fn download_quilt_libraries(
     tracing::debug!("Quilt library resolution complete for {}", profile.id);
     Ok(())
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::net::HttpClient;
-
-    #[tokio::test]
-    #[ignore = "hits live Quilt API"]
-    async fn test_fetch_versions() {
-        let client = HttpClient::new();
-        match fetch_quilt_versions(&client, "1.20.1").await {
-            Ok(versions) => {
-                assert!(
-                    !versions.is_empty(),
-                    "Should have Quilt versions for 1.20.1"
-                );
-            }
-            Err(e) => panic!("fetch_quilt_versions failed: {}", e),
-        }
-    }
-
-    #[tokio::test]
-    #[ignore = "hits live Quilt API"]
-    async fn test_fetch_game_versions() {
-        let client = HttpClient::new();
-        match fetch_quilt_game_versions(&client).await {
-            Ok(versions) => {
-                assert!(!versions.is_empty(), "Should have Quilt game versions");
-                assert!(versions.iter().any(|version| version.id == "1.20.1"));
-            }
-            Err(e) => panic!("fetch_quilt_game_versions failed: {}", e),
-        }
-    }
-}

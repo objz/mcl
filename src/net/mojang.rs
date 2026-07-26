@@ -447,22 +447,3 @@ fn spawn_download_task(
         })
     });
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::net::HttpClient;
-
-    #[tokio::test]
-    #[ignore = "hits live Mojang API"]
-    async fn test_fetch_manifest_contains_1_20_1() {
-        let client = HttpClient::new();
-        match fetch_version_manifest(&client).await {
-            Ok(manifest) => {
-                let found = manifest.versions.iter().any(|v| v.id == "1.20.1");
-                assert!(found, "1.20.1 should be in the manifest");
-            }
-            Err(e) => panic!("fetch_version_manifest failed: {}", e),
-        }
-    }
-}

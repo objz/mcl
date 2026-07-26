@@ -768,64 +768,6 @@ mod tests {
         assert!(DiscoveryProject::from(hit).icon_url.is_none());
     }
 
-    #[tokio::test]
-    #[ignore = "hits live Modrinth API"]
-    async fn search_discovery_returns_compatible_mods() {
-        let client = crate::net::HttpClient::new();
-        let result = search_discovery(
-            &client,
-            DiscoveryKind::Mod,
-            "sodium",
-            "1.21.1",
-            ModLoader::Fabric,
-            0,
-            100,
-        )
-        .await
-        .unwrap();
-
-        assert!(!result.projects.is_empty());
-        assert!(result.total_hits >= result.projects.len());
-        let icon_url = result
-            .projects
-            .iter()
-            .find_map(|project| project.icon_url.as_deref())
-            .expect("expected at least one project icon");
-        let icon = client.get_bytes(icon_url).await.unwrap();
-        assert!(
-            image::load_from_memory(&icon).is_ok(),
-            "failed to decode {icon_url}; first bytes: {:?}",
-            icon.get(..icon.len().min(16))
-        );
-
-        let mut seen = result
-            .projects
-            .iter()
-            .map(|project| project.id.clone())
-            .collect::<std::collections::HashSet<_>>();
-        let end = result.total_hits.min(300);
-        for offset in (100..end).step_by(100) {
-            let next = search_discovery(
-                &client,
-                DiscoveryKind::Mod,
-                "sodium",
-                "1.21.1",
-                ModLoader::Fabric,
-                offset,
-                100,
-            )
-            .await
-            .unwrap();
-            assert!(!next.projects.is_empty(), "empty page at offset {offset}");
-            assert!(
-                next.projects
-                    .iter()
-                    .all(|project| seen.insert(project.id.clone())),
-                "duplicate project at offset {offset}"
-            );
-        }
-    }
-
     // covers each branch of url_encode: unreserved bytes pass through; the
     // reserved set + spaces + non-ascii bytes get percent-encoded. emoji
     // exercises multi-byte UTF-8 since the encoder operates on bytes, not
@@ -907,33 +849,5 @@ mod tests {
             game_version_from_dependencies(&index.dependencies),
             Some("1.21.4".to_string())
         );
-    }
-
-    #[tokio::test]
-    #[ignore = "hits live Modrinth API"]
-    async fn test_fetch_project() {
-        let client = crate::net::HttpClient::new();
-        let project = fetch_project(&client, "fabulously-optimized").await;
-        match project {
-            Ok(p) => {
-                assert_eq!(p.slug, "fabulously-optimized");
-                assert!(!p.title.is_empty());
-            }
-            Err(e) => panic!("fetch_project failed: {e}"),
-        }
-    }
-
-    #[tokio::test]
-    #[ignore = "hits live Modrinth API"]
-    async fn test_fetch_versions() {
-        let client = crate::net::HttpClient::new();
-        let versions = fetch_versions(&client, "fabulously-optimized").await;
-        match versions {
-            Ok(v) => {
-                assert!(!v.is_empty());
-                assert!(!v[0].files.is_empty());
-            }
-            Err(e) => panic!("fetch_versions failed: {e}"),
-        }
     }
 }

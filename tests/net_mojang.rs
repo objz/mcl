@@ -1,7 +1,7 @@
 // integration tests for the public mojang fetchers. wiremock stands in for
 // Mojang so tests are fast, deterministic, and don't depend on the live
 // endpoint. these are different from the #[ignore = "hits live Mojang API"]
-// tests in src/net/mojang.rs which verify the upstream schema hasn't drifted;
+// tests in tests/live_apis.rs which verify the upstream schema hasn't drifted;
 // these here verify our parsing + retry envelope on synthetic responses.
 
 use serde_json::json;

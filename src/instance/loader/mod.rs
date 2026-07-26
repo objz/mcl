@@ -155,16 +155,6 @@ mod tests {
         assert_eq!(installer.loader_type(), loader);
     }
 
-    #[tokio::test]
-    #[ignore = "hits live Mojang API"]
-    async fn test_vanilla_get_game_versions() {
-        let client = HttpClient::new();
-        let installer = VanillaInstaller;
-        let versions = installer.get_game_versions(&client).await.unwrap();
-        assert!(!versions.is_empty());
-        assert!(versions.iter().any(|v| v.id == "1.20.1"));
-    }
-
     #[test]
     fn save_installer_profile_copies_raw_bytes_verbatim() {
         use tempfile::TempDir;
