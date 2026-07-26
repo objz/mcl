@@ -34,6 +34,19 @@ struct McProfile {
     name: String,
 }
 
+fn normalize_profile_uuid(id: &str) -> Option<String> {
+    (id.len() == 32 && id.bytes().all(|byte| byte.is_ascii_hexdigit())).then(|| {
+        format!(
+            "{}-{}-{}-{}-{}",
+            &id[..8],
+            &id[8..12],
+            &id[12..16],
+            &id[16..20],
+            &id[20..32],
+        )
+    })
+}
+
 // shared slot so the TUI can poll for the device code to show the user
 pub static DEVICE_CODE_DISPLAY: LazyLock<Arc<Mutex<Option<DeviceCodeInfo>>>> =
     LazyLock::new(|| Arc::new(Mutex::new(None)));
@@ -136,17 +149,9 @@ async fn exchange_and_build_account(
     };
 
     // mojang returns uuids without dashes
-    let uuid = if profile.id.len() == 32 {
-        format!(
-            "{}-{}-{}-{}-{}",
-            &profile.id[..8],
-            &profile.id[8..12],
-            &profile.id[12..16],
-            &profile.id[16..20],
-            &profile.id[20..32],
-        )
-    } else {
-        profile.id.clone()
+    let uuid = match normalize_profile_uuid(&profile.id) {
+        Some(uuid) => uuid,
+        None => return AuthResult::Error("Profile returned an invalid UUID".to_owned()),
     };
 
     AuthResult::Success(Account {
@@ -273,5 +278,21 @@ mod tests {
         let account = microsoft_account(None);
 
         assert!(valid_cached_mc_token(&account, 1_000).is_none());
+    }
+
+    #[test]
+    fn profile_uuid_is_normalized_without_slicing_unicode() {
+        assert_eq!(
+            normalize_profile_uuid("0123456789abcdef0123456789abcdef"),
+            Some("01234567-89ab-cdef-0123-456789abcdef".to_owned())
+        );
+
+        let unicode_id = format!("{}é{}", "a".repeat(7), "b".repeat(23));
+        assert_eq!(unicode_id.len(), 32);
+        assert_eq!(normalize_profile_uuid(&unicode_id), None);
+        assert_eq!(
+            normalize_profile_uuid("not-a-valid-minecraft-profile-id"),
+            None
+        );
     }
 }
