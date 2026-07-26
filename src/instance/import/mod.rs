@@ -170,6 +170,20 @@ pub async fn execute_import(
     }
 }
 
+fn cleanup_failed_import(manager: &InstanceManager, name: &str) {
+    crate::tui::progress::clear();
+    let instance_dir = manager.instances_dir.join(name);
+    if let Err(error) = std::fs::remove_dir_all(&instance_dir)
+        && error.kind() != std::io::ErrorKind::NotFound
+    {
+        tracing::warn!(
+            "Failed to clean up incomplete imported instance {}: {}",
+            instance_dir.display(),
+            error
+        );
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -329,5 +343,18 @@ mod tests {
             parse_import_input("  fabulously-optimized  "),
             ImportInput::ProjectSlug("fabulously-optimized".to_string())
         );
+    }
+
+    #[test]
+    fn failed_import_cleanup_removes_the_partial_instance() {
+        let tmp = tempfile::tempdir().unwrap();
+        let manager = InstanceManager::new(tmp.path().join("instances"), tmp.path().join("meta"));
+        let instance_dir = manager.instances_dir.join("Broken");
+        std::fs::create_dir_all(&instance_dir).unwrap();
+        std::fs::write(instance_dir.join("partial"), b"data").unwrap();
+
+        cleanup_failed_import(&manager, "Broken");
+
+        assert!(!instance_dir.exists());
     }
 }

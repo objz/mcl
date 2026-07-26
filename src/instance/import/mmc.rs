@@ -118,7 +118,10 @@ pub async fn execute_import(
         .instances_dir
         .join(&name)
         .join(crate::storage::MINECRAFT_DIR_NAME);
-    extract_mmc_archive(&summary.archive_path, &minecraft_dir)?;
+    if let Err(error) = extract_mmc_archive(&summary.archive_path, &minecraft_dir) {
+        super::cleanup_failed_import(manager, &name);
+        return Err(error);
+    }
 
     progress::clear();
     tracing::info!(
@@ -158,11 +161,25 @@ fn extract_mmc_archive(
         let mut entry = archive.by_index(i)?;
         let entry_name = entry.name().to_string();
 
-        let Some(relative) = entry_name.strip_prefix(&minecraft_prefix) else {
+        if !entry_name.starts_with(&minecraft_prefix) {
             continue;
-        };
+        }
+        let enclosed = entry.enclosed_name().ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("Unsafe archive path: {entry_name}"),
+            )
+        })?;
+        let relative = enclosed
+            .strip_prefix(minecraft_prefix.trim_end_matches('/'))
+            .map_err(|_| {
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!("Invalid archive path: {entry_name}"),
+                )
+            })?;
 
-        if relative.is_empty() || entry_name.ends_with('/') {
+        if relative.as_os_str().is_empty() || entry_name.ends_with('/') {
             std::fs::create_dir_all(minecraft_dir.join(relative))?;
             dirs += 1;
             continue;
@@ -173,7 +190,10 @@ fn extract_mmc_archive(
             std::fs::create_dir_all(parent)?;
         }
 
-        let filename = relative.rsplit('/').next().unwrap_or(relative);
+        let filename = relative
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or_default();
         progress::set_sub_action(filename.to_string());
 
         let mut buf = Vec::new();
@@ -367,5 +387,28 @@ mod tests {
             !dest.join("mmc-pack.json").exists(),
             "mmc-pack.json should not land in the instance dir"
         );
+    }
+
+    #[test]
+    fn extract_mmc_archive_rejects_path_traversal() {
+        use std::io::Write;
+
+        let tmp = tempfile::tempdir().unwrap();
+        let archive_path = tmp.path().join("pack.zip");
+        let dest = tmp.path().join("instance/minecraft");
+        let file = std::fs::File::create(&archive_path).unwrap();
+        let mut zip = zip::ZipWriter::new(file);
+        let options: zip::write::SimpleFileOptions = Default::default();
+        zip.start_file("Pack/mmc-pack.json", options).unwrap();
+        zip.write_all(b"{}").unwrap();
+        zip.start_file("Pack/.minecraft/../../escaped.txt", options)
+            .unwrap();
+        zip.write_all(b"escaped").unwrap();
+        zip.finish().unwrap();
+
+        let error = extract_mmc_archive(&archive_path, &dest).unwrap_err();
+
+        assert!(error.to_string().contains("archive path"));
+        assert!(!tmp.path().join("escaped.txt").exists());
     }
 }

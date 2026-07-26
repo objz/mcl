@@ -92,12 +92,18 @@ pub async fn execute_import(
         .join(&name)
         .join(crate::storage::MINECRAFT_DIR_NAME);
 
-    let index = crate::net::modrinth::parse_mrpack(&summary.archive_path)
-        .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> { e.into() })?;
-
-    download_mod_files(&index, &minecraft_dir).await?;
-
-    extract_overrides(&summary.archive_path, &minecraft_dir)?;
+    let result: Result<(), Box<dyn std::error::Error + Send + Sync>> = async {
+        let index = crate::net::modrinth::parse_mrpack(&summary.archive_path)
+            .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> { e.into() })?;
+        download_mod_files(&index, &minecraft_dir).await?;
+        extract_overrides(&summary.archive_path, &minecraft_dir)?;
+        Ok(())
+    }
+    .await;
+    if let Err(error) = result {
+        super::cleanup_failed_import(manager, &name);
+        return Err(error);
+    }
 
     progress::clear();
     tracing::info!("Imported Modrinth pack '{}' as '{}'", summary.name, name);
