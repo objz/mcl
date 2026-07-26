@@ -80,6 +80,17 @@ impl DiscoveryKind {
             Self::Shader => "shader",
         }
     }
+
+    pub fn unavailable_message(self, loader: ModLoader) -> Option<&'static str> {
+        if loader != ModLoader::Vanilla {
+            return None;
+        }
+        match self {
+            Self::Mod => Some("Vanilla does not support mods."),
+            Self::Shader => Some("Vanilla does not support shaders."),
+            Self::ResourcePack => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -586,6 +597,26 @@ mod tests {
         assert_eq!(
             serde_json::from_str::<Vec<Vec<String>>>(&facets).unwrap(),
             vec![vec!["project_type:resourcepack"], vec!["versions:1.20.1"]]
+        );
+    }
+
+    #[test]
+    fn vanilla_discovery_only_supports_resource_packs() {
+        assert_eq!(
+            DiscoveryKind::Mod.unavailable_message(ModLoader::Vanilla),
+            Some("Vanilla does not support mods.")
+        );
+        assert_eq!(
+            DiscoveryKind::Shader.unavailable_message(ModLoader::Vanilla),
+            Some("Vanilla does not support shaders.")
+        );
+        assert_eq!(
+            DiscoveryKind::ResourcePack.unavailable_message(ModLoader::Vanilla),
+            None
+        );
+        assert_eq!(
+            DiscoveryKind::Mod.unavailable_message(ModLoader::Fabric),
+            None
         );
     }
 

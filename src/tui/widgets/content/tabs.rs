@@ -223,11 +223,25 @@ pub fn render(
         ContentTab::Shaders => shaders_discovery_state.project_page_open(),
         _ => false,
     };
+    let discovery_unavailable = mode == ContentMode::Discover
+        && instance.is_some_and(|instance| match tab {
+            ContentTab::Mods => mods_discovery_state.unavailable_message(instance).is_some(),
+            ContentTab::ResourcePacks => resource_packs_discovery_state
+                .unavailable_message(instance)
+                .is_some(),
+            ContentTab::Shaders => shaders_discovery_state
+                .unavailable_message(instance)
+                .is_some(),
+            _ => false,
+        });
 
     // keybinds change depending on which tab is active and whether
     // the content panel or instances panel has focus
     let kb: Option<&[(&str, &str)]> = if is_focused {
         Some(match (mode, tab) {
+            (ContentMode::Discover, _) if discovery_unavailable => {
+                &[("h/l", " tabs"), ("Tab", " installed")]
+            }
             (ContentMode::Discover, _) if discovery_page_open => {
                 &[("j/k", " scroll"), ("g/G", " top/bottom"), ("h", " back")]
             }
@@ -347,6 +361,7 @@ pub fn render(
                         frame,
                         content_area,
                         mods_discovery_state,
+                        instance,
                         is_focused,
                         "Searching Modrinth...",
                         picker,
@@ -390,6 +405,7 @@ pub fn render(
                         frame,
                         content_area,
                         resource_packs_discovery_state,
+                        instance,
                         is_focused,
                         "Searching Modrinth...",
                         picker,
@@ -433,6 +449,7 @@ pub fn render(
                         frame,
                         content_area,
                         shaders_discovery_state,
+                        instance,
                         is_focused,
                         "Searching Modrinth...",
                         picker,
@@ -533,11 +550,19 @@ fn render_discovery(
     frame: &mut Frame,
     area: Rect,
     state: &mut DiscoveryState,
+    instance: &crate::instance::InstanceConfig,
     is_focused: bool,
     loading_text: &str,
     picker: &ratatui_image::picker::Picker,
 ) {
     state.set_viewport_rows(area.height);
+    if let Some(message) = state.unavailable_message(instance) {
+        frame.render_widget(
+            Paragraph::new(message).style(Style::default().fg(THEME.as_ref().text_dim())),
+            area,
+        );
+        return;
+    }
     if let Some(page) = state.project_page.as_mut() {
         if let Some(error) = page.error.as_deref() {
             frame.render_widget(

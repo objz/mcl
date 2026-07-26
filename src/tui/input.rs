@@ -632,21 +632,15 @@ impl App {
         let Some(instance) = self.instances_state.selected_instance().cloned() else {
             return;
         };
-        let (needs_search, search_due) = match self.content_tab {
-            widgets::content::ContentTab::Mods => (
-                self.mods_discovery_state.needs_search(&instance),
-                self.mods_discovery_state.search_due(),
-            ),
-            widgets::content::ContentTab::ResourcePacks => (
-                self.resource_packs_discovery_state.needs_search(&instance),
-                self.resource_packs_discovery_state.search_due(),
-            ),
-            widgets::content::ContentTab::Shaders => (
-                self.shaders_discovery_state.needs_search(&instance),
-                self.shaders_discovery_state.search_due(),
-            ),
-            _ => (false, false),
+        let Some(state) = self.active_discovery_state_mut() else {
+            return;
         };
+        if state.unavailable_message(&instance).is_some() {
+            state.set_unavailable(&instance);
+            return;
+        }
+        let needs_search = state.needs_search(&instance);
+        let search_due = state.search_due();
         if needs_search || search_due {
             self.spawn_active_discovery_search();
         } else {
@@ -996,6 +990,10 @@ impl App {
             widgets::content::ContentTab::Shaders => &mut self.shaders_discovery_state,
             _ => return,
         };
+        if state.unavailable_message(&instance).is_some() {
+            state.set_unavailable(&instance);
+            return;
+        }
         let kind = state.kind;
         let query = state.search.query.clone();
         let request = state.begin_search(&instance);
@@ -1031,6 +1029,10 @@ impl App {
             widgets::content::ContentTab::Shaders => &mut self.shaders_discovery_state,
             _ => return,
         };
+        if state.unavailable_message(&instance).is_some() {
+            state.set_unavailable(&instance);
+            return;
+        }
         let kind = state.kind;
         let query = state.search.query.clone();
         let Some(request) = state.begin_next_page() else {

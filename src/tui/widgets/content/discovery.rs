@@ -215,6 +215,22 @@ impl DiscoveryState {
         self.context.as_deref() != Some(discovery_context(instance).as_str())
     }
 
+    pub fn unavailable_message(&self, instance: &InstanceConfig) -> Option<&'static str> {
+        self.kind.unavailable_message(instance.loader)
+    }
+
+    pub fn set_unavailable(&mut self, instance: &InstanceConfig) {
+        let context = discovery_context(instance);
+        if self.context.as_deref() == Some(&context) && self.list.entries.is_empty() {
+            return;
+        }
+        self.context = None;
+        drop(self.begin_search(instance));
+        self.stream = None;
+        self.page_loading = false;
+        self.exhausted = true;
+    }
+
     pub fn begin_search(&mut self, instance: &InstanceConfig) -> DiscoveryRequest {
         self.generation = self.generation.wrapping_add(1);
         self.project_page = None;
@@ -1250,6 +1266,31 @@ mod tests {
 
         assert!(!state.needs_search(&first));
         assert!(state.needs_search(&second));
+    }
+
+    #[test]
+    fn unavailable_vanilla_discovery_clears_cached_results() {
+        let mut state = DiscoveryState::new(DiscoveryKind::Mod);
+        state.list.entries.push(project_entry(
+            DiscoveryProject {
+                id: "cached".to_owned(),
+                slug: "cached".to_owned(),
+                title: "Cached".to_owned(),
+                description: String::new(),
+                downloads: 0,
+                icon_url: None,
+                icon_bytes: None,
+            },
+            None,
+        ));
+        let mut vanilla = instance("vanilla", "1.21.1");
+        vanilla.loader = ModLoader::Vanilla;
+
+        state.set_unavailable(&vanilla);
+
+        assert!(state.list.entries.is_empty());
+        assert!(!state.page_loading);
+        assert!(state.exhausted);
     }
 
     #[test]
