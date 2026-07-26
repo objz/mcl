@@ -2,7 +2,10 @@ use std::collections::HashMap;
 use std::ops::Range;
 use std::sync::{Arc, Mutex};
 
-use html_to_markdown_rs::{ConversionOptions, ImageMetadata};
+use html_to_markdown_rs::{
+    ConversionOptions, ImageMetadata,
+    visitor::{HtmlVisitor, NodeContext, VisitResult, VisitorHandle},
+};
 use image::DynamicImage;
 use pulldown_cmark::{Event, Options as MarkdownOptions, Parser, Tag, TagEnd};
 use ratatui::{
@@ -118,7 +121,11 @@ impl Document {
     pub fn new(title: &str, body: &str) -> Self {
         let normalized = normalize_html(body);
         let source = strip_duplicate_title(&normalized.markdown, title);
-        let blocks = split_images(&source, &normalized.image_sizes);
+        let blocks = split_images(
+            &source,
+            &normalized.image_sizes,
+            &normalized.image_alignments,
+        );
         let images = blocks
             .iter()
             .flat_map(|block| match block {
@@ -218,6 +225,7 @@ fn markdown_options() -> MarkdownOptions {
 struct NormalizedDocument {
     markdown: String,
     image_sizes: HashMap<String, ImageSizeHint>,
+    image_alignments: HashMap<String, ImageAlignment>,
 }
 
 fn normalize_html(source: &str) -> NormalizedDocument {
@@ -253,11 +261,13 @@ fn normalize_html(source: &str) -> NormalizedDocument {
 
     let mut normalized = source.to_owned();
     let mut image_sizes = HashMap::new();
+    let mut image_alignments = HashMap::new();
     for range in regions.into_iter().rev() {
         let html = &source[range.clone()];
         match convert_html_fragment(html) {
             Ok(fragment) => {
                 image_sizes.extend(fragment.image_sizes);
+                image_alignments.extend(fragment.image_alignments);
                 normalized.replace_range(range, &fragment.markdown);
             }
             Err(error) => {
@@ -268,13 +278,20 @@ fn normalize_html(source: &str) -> NormalizedDocument {
     NormalizedDocument {
         markdown: normalized,
         image_sizes,
+        image_alignments,
     }
 }
 
 fn convert_html_fragment(html: &str) -> Result<NormalizedDocument, String> {
+    let image_alignments = Arc::new(Mutex::new(HashMap::new()));
+    let visitor: VisitorHandle = Arc::new(Mutex::new(ImageAlignmentVisitor {
+        centered: Vec::new(),
+        image_alignments: image_alignments.clone(),
+    }));
     let options = ConversionOptions {
         compact_tables: true,
         strip_tags: vec!["ins".to_owned(), "u".to_owned()],
+        visitor: Some(visitor),
         ..ConversionOptions::default()
     };
     let result = html_to_markdown_rs::convert(&format!("<div>{html}</div>"), Some(options))
@@ -285,10 +302,62 @@ fn convert_html_fragment(html: &str) -> Result<NormalizedDocument, String> {
         .iter()
         .filter_map(image_size_hint)
         .collect();
+    let image_alignments = image_alignments
+        .lock()
+        .map(|alignments| alignments.clone())
+        .unwrap_or_default();
     Ok(NormalizedDocument {
         markdown: result.content.unwrap_or_default(),
         image_sizes,
+        image_alignments,
     })
+}
+
+#[derive(Debug)]
+struct ImageAlignmentVisitor {
+    centered: Vec<bool>,
+    image_alignments: Arc<Mutex<HashMap<String, ImageAlignment>>>,
+}
+
+impl HtmlVisitor for ImageAlignmentVisitor {
+    fn visit_element_start(&mut self, context: &NodeContext<'_>) -> VisitResult {
+        let attributes = context.attributes();
+        let centered = self.centered.last().copied().unwrap_or_default()
+            || context.tag_name.eq_ignore_ascii_case("center")
+            || attributes
+                .get("align")
+                .is_some_and(|align| align.eq_ignore_ascii_case("center"))
+            || attributes.get("style").is_some_and(|style| {
+                style.split(';').any(|declaration| {
+                    declaration.split_once(':').is_some_and(|(name, value)| {
+                        name.trim().eq_ignore_ascii_case("text-align")
+                            && value.trim().eq_ignore_ascii_case("center")
+                    })
+                })
+            });
+        self.centered.push(centered);
+        VisitResult::Continue
+    }
+
+    fn visit_element_end(&mut self, _context: &NodeContext<'_>, _output: &str) -> VisitResult {
+        self.centered.pop();
+        VisitResult::Continue
+    }
+
+    fn visit_image(
+        &mut self,
+        _context: &NodeContext<'_>,
+        source: &str,
+        _alt: &str,
+        _title: Option<&str>,
+    ) -> VisitResult {
+        if self.centered.last().copied().unwrap_or_default()
+            && let Ok(mut alignments) = self.image_alignments.lock()
+        {
+            alignments.insert(source.to_owned(), ImageAlignment::Center);
+        }
+        VisitResult::Continue
+    }
 }
 
 fn image_size_hint(image: &ImageMetadata) -> Option<(String, ImageSizeHint)> {
@@ -348,7 +417,11 @@ fn strip_duplicate_title(source: &str, title: &str) -> String {
     source.to_owned()
 }
 
-fn split_images(source: &str, image_sizes: &HashMap<String, ImageSizeHint>) -> Vec<DocumentBlock> {
+fn split_images(
+    source: &str,
+    image_sizes: &HashMap<String, ImageSizeHint>,
+    image_alignments: &HashMap<String, ImageAlignment>,
+) -> Vec<DocumentBlock> {
     let mut images = Vec::<FoundImage>::new();
     let mut image_stack = Vec::<FoundImage>::new();
     let mut link_stack = Vec::<(usize, usize)>::new();
@@ -369,9 +442,12 @@ fn split_images(source: &str, image_sizes: &HashMap<String, ImageSizeHint>) -> V
             Event::Start(Tag::Image { dest_url, .. }) => {
                 image_stack.push(FoundImage {
                     range: range.start..range.end,
-                    url: dest_url.into_string(),
+                    url: dest_url.to_string(),
                     alt: String::new(),
-                    alignment: ImageAlignment::Center,
+                    alignment: image_alignments
+                        .get(dest_url.as_ref())
+                        .copied()
+                        .unwrap_or(ImageAlignment::Left),
                 });
             }
             Event::Text(text) if !image_stack.is_empty() => {
@@ -930,7 +1006,7 @@ fn render_image_row(
     };
     let mut x = row_start;
     for (reference, (width, height)) in row.iter().zip(&layout.items) {
-        let item_y = usize::from(layout.height.saturating_sub(*height) / 2);
+        let item_y = usize::from(layout.height.saturating_sub(*height));
         let item_end = item_y.saturating_add(usize::from(*height));
         let viewport_start = hidden_top;
         let viewport_end = hidden_top.saturating_add(usize::from(area.height));
@@ -1050,6 +1126,7 @@ fn prepare_image_render(
     let protocol = if key.protocol == ProtocolType::Halfblocks {
         None
     } else {
+        let image = bottom_align_to_cells(image, key, picker);
         Some(
             SlicedProtocol::new_with_resize(
                 picker,
@@ -1061,6 +1138,29 @@ fn prepare_image_render(
         )
     };
     Ok(PreparedImage { protocol, raster })
+}
+
+fn bottom_align_to_cells(
+    image: DynamicImage,
+    key: ImageRenderKey,
+    picker: &ratatui_image::picker::Picker,
+) -> DynamicImage {
+    let font = picker.font_size();
+    let width = u32::from(key.width) * u32::from(font.width.max(1));
+    let height = u32::from(key.height) * u32::from(font.height.max(1));
+    let fitted = image.resize(width, height, image::imageops::FilterType::Lanczos3);
+    if fitted.width() == width && fitted.height() == height {
+        return fitted;
+    }
+
+    let mut canvas = image::RgbaImage::new(width, height);
+    image::imageops::overlay(
+        &mut canvas,
+        &fitted,
+        0,
+        i64::from(height.saturating_sub(fitted.height())),
+    );
+    DynamicImage::ImageRgba8(canvas)
 }
 
 fn render_fallback(frame: &mut Frame, area: Rect, hidden_top: usize, alt: &str) {
@@ -1270,7 +1370,7 @@ mod tests {
             &document.blocks[0],
             super::DocumentBlock::ImageRow { images, alignment }
                 if images.len() == 1 && images[0].url == "https://cdn.example/button.png"
-                    && *alignment == super::ImageAlignment::Center
+                    && *alignment == super::ImageAlignment::Left
         ));
     }
 
@@ -1309,6 +1409,34 @@ mod tests {
             super::DocumentBlock::ImageRow { images, alignment }
                 if images.len() == 2 && *alignment == super::ImageAlignment::Center
         ));
+    }
+
+    #[test]
+    fn only_explicitly_centered_project_images_are_centered() {
+        let document = super::Document::new(
+            "Project",
+            concat!(
+                "![Badge](https://cdn.example/badge.png)\n\n",
+                "<center><img src=\"https://cdn.example/comparison.png\"></center>\n\n",
+                "![Loader](https://cdn.example/loader.png)"
+            ),
+        );
+        let alignments = document
+            .blocks
+            .iter()
+            .filter_map(|block| match block {
+                super::DocumentBlock::ImageRow { alignment, .. } => Some(*alignment),
+                super::DocumentBlock::Text(_) => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            alignments,
+            [
+                super::ImageAlignment::Left,
+                super::ImageAlignment::Center,
+                super::ImageAlignment::Left
+            ]
+        );
     }
 
     #[test]
@@ -1570,6 +1698,42 @@ mod tests {
         .unwrap();
         assert_eq!(image.width(), 32);
         assert_eq!(image.height(), 16);
+    }
+
+    #[test]
+    fn gif_images_decode_their_first_frame() {
+        let image = super::decode_image(&[
+            0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 0x01, 0x00, 0x01, 0x00, 0x80, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0xff, 0xff, 0xff, 0x2c, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00,
+            0x00, 0x02, 0x02, 0x44, 0x01, 0x00, 0x3b,
+        ])
+        .unwrap();
+        assert_eq!(image.width(), 1);
+        assert_eq!(image.height(), 1);
+    }
+
+    #[test]
+    fn image_rows_align_fitted_images_to_the_bottom() {
+        let picker = ratatui_image::picker::Picker::halfblocks();
+        let image = image::DynamicImage::ImageRgba8(image::RgbaImage::from_pixel(
+            1,
+            3,
+            image::Rgba([255, 255, 255, 255]),
+        ));
+        let aligned = super::bottom_align_to_cells(
+            image,
+            super::ImageRenderKey {
+                width: 1,
+                height: 2,
+                protocol: picker.protocol_type(),
+                mode: crate::config::settings::ImageProtocol::Halfblocks,
+            },
+            &picker,
+        )
+        .to_rgba8();
+
+        assert_eq!(aligned.get_pixel(0, 0).0[3], 0);
+        assert_eq!(aligned.get_pixel(0, aligned.height() - 1).0[3], 255);
     }
 
     #[test]

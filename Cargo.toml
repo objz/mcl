@@ -35,7 +35,7 @@ ratatui-themekit = { version = "0.6", features = ["serde"] }
 ratatui-textarea = { version = "0.9.1", features = ["crossterm"] }
 the-other-tui-markdown = "0.1.0"
 pulldown-cmark = { version = "0.13.4", default-features = false }
-html-to-markdown-rs = "3.9.0"
+html-to-markdown-rs = { version = "3.9.0", features = ["visitor"] }
 resvg = "0.47"
 reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls"] }
 serde = { version = "1.0.217", features = ["derive"] }
