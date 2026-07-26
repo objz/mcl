@@ -96,7 +96,9 @@ pub fn popup_area(frame_area: Rect, message: &str, base_y: u16, elapsed_ms: u128
 }
 
 #[cfg(test)]
+#[path = "../../tests/widgets/popups/error/render.rs"]
 mod render_tests;
 
 #[cfg(test)]
+#[path = "../../tests/widgets/popups/error/area.rs"]
 mod area_tests;

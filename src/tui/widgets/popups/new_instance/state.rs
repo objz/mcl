@@ -482,4 +482,5 @@ fn sort_versions_semver(versions: &mut [GameVersion]) {
 }
 
 #[cfg(test)]
+#[path = "../../../tests/widgets/popups/new_instance/state.rs"]
 mod tests;

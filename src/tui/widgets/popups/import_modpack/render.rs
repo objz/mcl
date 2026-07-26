@@ -240,4 +240,5 @@ fn step_keybinds(state: &ImportWizardState) -> Line<'static> {
 }
 
 #[cfg(test)]
+#[path = "../../../tests/widgets/popups/import_modpack/render.rs"]
 mod tests;

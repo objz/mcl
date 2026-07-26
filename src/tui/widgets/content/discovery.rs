@@ -872,4 +872,5 @@ fn format_downloads(downloads: u64) -> String {
 }
 
 #[cfg(test)]
+#[path = "../../tests/widgets/content/discovery.rs"]
 mod tests;

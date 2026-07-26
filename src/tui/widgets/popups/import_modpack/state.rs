@@ -467,4 +467,5 @@ fn clamp_version_index(state: &mut ImportWizardState) {
 }
 
 #[cfg(test)]
+#[path = "../../../tests/widgets/popups/import_modpack/state.rs"]
 mod tests;

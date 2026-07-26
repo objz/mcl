@@ -118,4 +118,5 @@ impl SearchState {
 }
 
 #[cfg(test)]
+#[path = "../tests/widgets/search.rs"]
 mod tests;

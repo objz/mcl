@@ -3,11 +3,12 @@
 // also keeps an in-memory ring buffer of log lines for the log overlay viewer.
 
 use std::fmt;
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use tracing::field::{Field, Visit};
 use tracing::{Level, Subscriber};
-use tracing_appender::non_blocking::WorkerGuard;
+use tracing_appender::non_blocking::{NonBlocking, WorkerGuard};
 use tracing_subscriber::filter::filter_fn;
 use tracing_subscriber::layer::Context;
 use tracing_subscriber::prelude::*;
@@ -47,20 +48,8 @@ pub fn init() -> WorkerGuard {
         Some(d) => d.join("rmcl"),
         None => std::path::PathBuf::from("./cache"),
     };
-    match std::fs::create_dir_all(&log_dir) {
-        Ok(_) => {}
-        Err(e) => {
-            eprintln!(
-                "Warning: failed to create log directory {}: {}",
-                log_dir.display(),
-                e
-            );
-        }
-    }
 
-    let now = chrono::Local::now().format("%Y-%m-%d_%H-%M-%S");
-    let file_appender = tracing_appender::rolling::never(&log_dir, format!("rmcl_{now}.log"));
-    let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
+    let (non_blocking, guard) = open_log_writer(&log_dir);
 
     let file_filter =
         EnvFilter::try_from_env("RUST_LOG").unwrap_or_else(|_| EnvFilter::new(DEFAULT_FILE_FILTER));
@@ -102,6 +91,28 @@ pub fn init() -> WorkerGuard {
         .init();
 
     guard
+}
+
+fn open_log_writer(log_dir: &Path) -> (NonBlocking, WorkerGuard) {
+    let now = chrono::Local::now().format("%Y-%m-%d_%H-%M-%S");
+    let file = std::fs::create_dir_all(log_dir).and_then(|_| {
+        std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(log_dir.join(format!("rmcl_{now}.log")))
+    });
+
+    match file {
+        Ok(file) => tracing_appender::non_blocking(file),
+        Err(error) => {
+            eprintln!(
+                "Warning: failed to open log file in {}: {}",
+                log_dir.display(),
+                error
+            );
+            tracing_appender::non_blocking(std::io::sink())
+        }
+    }
 }
 
 // custom tracing layer that intercepts all log events:
@@ -190,4 +201,5 @@ impl Visit for MessageVisitor {
 }
 
 #[cfg(test)]
+#[path = "tests/logging.rs"]
 mod tests;

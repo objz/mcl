@@ -10,7 +10,7 @@ pub mod new_instance;
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Layout, Rect},
-    text::Line,
+    text::{Line, Span},
     widgets::Paragraph,
 };
 
@@ -26,7 +26,7 @@ pub fn word_wrap_size(text: &str, max_inner_width: usize) -> (usize, usize) {
     let mut widest_line: usize = 0;
 
     for word in text.split_whitespace() {
-        let word_len = word.len().min(max_inner_width);
+        let word_len = Span::raw(word).width().min(max_inner_width);
         if current_line_len == 0 {
             current_line_len = word_len;
         } else if current_line_len + 1 + word_len <= max_inner_width {
@@ -153,4 +153,5 @@ pub fn render_keybind_overflow(frame: &mut Frame, area: Rect, lines: &[Line<'sta
 }
 
 #[cfg(test)]
+#[path = "../../tests/widgets/popups/mod.rs"]
 mod tests;

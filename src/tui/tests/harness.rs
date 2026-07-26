@@ -25,6 +25,8 @@ impl UiHarness {
             .lock()
             .unwrap_or_else(|error| error.into_inner());
         widgets::popups::confirm::clear_pending();
+        widgets::popups::new_instance::reset_for_test();
+        widgets::popups::import_modpack::reset_for_test();
         crate::tui::error_buffer::ERROR_EVENTS
             .lock()
             .expect("error buffer")

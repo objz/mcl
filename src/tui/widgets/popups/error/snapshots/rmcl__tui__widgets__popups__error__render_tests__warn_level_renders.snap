@@ -1,9 +1,0 @@
----
-source: src/tui/widgets/popups/error/render_tests.rs
-expression: term.backend()
----
-"╭ WARN ────────────────────────────────╮"
-"│Disk space low                        │"
-"│                                      │"
-"│                                      │"
-"╰──────────────────────────────────────╯"

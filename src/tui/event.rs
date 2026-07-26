@@ -616,4 +616,5 @@ fn editor_runs_in_terminal(editor: &str) -> bool {
 }
 
 #[cfg(test)]
+#[path = "tests/event.rs"]
 mod tests;

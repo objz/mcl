@@ -165,7 +165,7 @@ pub fn confirm_popup_area(frame_area: Rect, target: &ConfirmTarget) -> Rect {
     use super::word_wrap_size;
     use ratatui::layout::Constraint;
     const MAX_W: usize = 48;
-    let title_w = target.name().len() + 12;
+    let title_w = Span::raw(target.name()).width() + 12;
     let (body_w, _) = word_wrap_size(target.body(), MAX_W);
     let inner_w = title_w.max(body_w).min(MAX_W);
     let (_, lines) = word_wrap_size(target.body(), inner_w);

@@ -867,4 +867,5 @@ pub fn title(
 }
 
 #[cfg(test)]
+#[path = "../../tests/widgets/content/tabs.rs"]
 mod tests;

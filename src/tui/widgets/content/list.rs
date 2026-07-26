@@ -2218,4 +2218,5 @@ fn read_dir_stems(dir: &std::path::Path, ext: &str) -> HashMap<String, (std::pat
 }
 
 #[cfg(test)]
+#[path = "../../tests/widgets/content/list.rs"]
 mod tests;

@@ -338,4 +338,5 @@ pub fn render(frame: &mut Frame, area: Rect, focused: FocusedArea, state: &mut S
 }
 
 #[cfg(test)]
+#[path = "../tests/widgets/instances.rs"]
 mod tests;

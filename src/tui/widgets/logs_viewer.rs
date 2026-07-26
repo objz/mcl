@@ -689,4 +689,5 @@ fn line_level_style(line: &str) -> Style {
 }
 
 #[cfg(test)]
+#[path = "../tests/widgets/logs_viewer.rs"]
 mod tests;

@@ -568,4 +568,5 @@ pub fn handle_key(
 }
 
 #[cfg(test)]
+#[path = "../tests/widgets/settings.rs"]
 mod tests;

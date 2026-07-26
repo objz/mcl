@@ -216,4 +216,5 @@ pub fn is_active() -> bool {
 }
 
 #[cfg(test)]
+#[path = "tests/progress.rs"]
 mod tests;

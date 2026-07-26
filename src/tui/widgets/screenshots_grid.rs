@@ -11,9 +11,11 @@ use ratatui::{
     Frame,
     layout::{Constraint, Layout, Rect},
     style::{Modifier, Style},
+    text::Span,
     widgets::{Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState},
 };
 use ratatui_image::{Resize, StatefulImage, protocol::StatefulProtocol};
+use unicode_segmentation::UnicodeSegmentation;
 
 use crate::config::theme::THEME;
 use crate::instance::screenshots::ScreenshotEntry;
@@ -27,6 +29,24 @@ const NAME_ROW_HEIGHT: u16 = 1;
 const GAP: u16 = 1;
 
 type PendingScreenshots = Arc<Mutex<Option<(String, Vec<ScreenshotEntry>)>>>;
+
+fn truncate_to_width(text: &str, max_width: usize) -> &str {
+    if Span::raw(text).width() <= max_width {
+        return text;
+    }
+
+    let mut end = 0;
+    let mut width = 0;
+    for (offset, grapheme) in text.grapheme_indices(true) {
+        let grapheme_width = Span::raw(grapheme).width();
+        if width + grapheme_width > max_width {
+            break;
+        }
+        width += grapheme_width;
+        end = offset + grapheme.len();
+    }
+    &text[..end]
+}
 
 pub struct ScreenshotsState {
     pub entries: Vec<ScreenshotEntry>,
@@ -415,11 +435,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &mut ScreenshotsState, is_fo
                 Style::default().fg(theme.text_dim())
             };
 
-            let truncated = if name.len() > cell_width as usize {
-                &name[..cell_width as usize]
-            } else {
-                name
-            };
+            let truncated = truncate_to_width(name, name_area.width as usize);
             frame.render_widget(
                 Paragraph::new(state.search.highlight_line(truncated, name_style)),
                 name_area,
@@ -451,4 +467,5 @@ pub fn render(frame: &mut Frame, area: Rect, state: &mut ScreenshotsState, is_fo
 }
 
 #[cfg(test)]
+#[path = "../tests/widgets/screenshots_grid.rs"]
 mod tests;

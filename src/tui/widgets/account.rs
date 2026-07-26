@@ -534,4 +534,5 @@ fn render_device_code_popup(frame: &mut Frame, info: &DeviceCodeInfo) {
 }
 
 #[cfg(test)]
+#[path = "../tests/widgets/account.rs"]
 mod tests;

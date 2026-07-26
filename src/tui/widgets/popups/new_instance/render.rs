@@ -320,4 +320,5 @@ fn render_confirm_step(state: &WizardState, area: Rect, buf: &mut ratatui::buffe
 }
 
 #[cfg(test)]
+#[path = "../../../tests/widgets/popups/new_instance/render.rs"]
 mod tests;

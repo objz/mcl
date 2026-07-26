@@ -1,0 +1,16 @@
+---
+source: src/tui/tests/widgets/popups/new_instance/render.rs
+expression: terminal.backend()
+---
+"╭New Instance──────────────────────────────────────────────╮"
+"│▶ Vanilla                                                 │"
+"│  Fabric                                                  │"
+"│  Forge                                                   │"
+"│  NeoForge                                                │"
+"│  Quilt                                                   │"
+"│                                                          │"
+"│                                                          │"
+"│                                                          │"
+"│                                                          │"
+"│                                                          │"
+"╰──────────────────────────────────[h] back  [Enter] select╯"

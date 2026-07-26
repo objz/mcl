@@ -1583,4 +1583,5 @@ fn render_raster(frame: &mut Frame, area: Rect, raster: &[Vec<IconCell>], hidden
 }
 
 #[cfg(test)]
+#[path = "../tests/widgets/markdown.rs"]
 mod tests;

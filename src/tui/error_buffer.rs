@@ -86,4 +86,5 @@ pub fn peek_all_errors() -> Vec<ErrorEvent> {
 }
 
 #[cfg(test)]
+#[path = "tests/error_buffer.rs"]
 mod tests;
