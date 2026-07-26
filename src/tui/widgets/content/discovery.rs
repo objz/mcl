@@ -97,7 +97,9 @@ pub struct VersionsRequest {
 
 pub struct InstallRequest {
     pub request_id: u64,
+    pub generation: u64,
     pub project_id: String,
+    pub project_title: String,
     pub version: VersionInfo,
     pub installed_path: Option<PathBuf>,
     pub pending: PendingActions,
@@ -117,7 +119,9 @@ pub enum DiscoveryActionResult {
     },
     Install {
         request_id: u64,
+        generation: u64,
         project_id: String,
+        project_title: String,
         result: Result<InstallCompletion, String>,
     },
 }
@@ -302,21 +306,65 @@ impl DiscoveryState {
         }
     }
 
+    pub fn selected_is_installed(&self) -> bool {
+        self.selected_installed_entry().is_some()
+    }
+
+    pub fn pending_installed_delete(
+        &self,
+    ) -> Option<crate::tui::widgets::content::list::PendingContentDelete> {
+        let entry = self.selected_installed_entry()?;
+        Some(crate::tui::widgets::content::list::PendingContentDelete {
+            name: entry.name.clone(),
+            path: entry.installed_path.clone()?,
+        })
+    }
+
+    pub fn clear_installed_path(&mut self, path: &std::path::Path) -> bool {
+        let Some(entry) = self
+            .list
+            .entries
+            .iter_mut()
+            .find(|entry| entry.installed_path.as_deref() == Some(path))
+        else {
+            return false;
+        };
+        entry.installed_path = None;
+        entry.title_suffix = None;
+        crate::tui::request_redraw();
+        true
+    }
+
+    fn selected_installed_entry(&self) -> Option<&ContentEntry> {
+        let filtered = self.list.filtered_indices();
+        let index = self
+            .list
+            .list_state
+            .selected
+            .and_then(|selected| filtered.get(selected))?;
+        self.list
+            .entries
+            .get(*index)
+            .filter(|entry| entry.installed_path.is_some())
+    }
+
     pub fn begin_install(&mut self) -> Option<InstallRequest> {
-        let popup = self.version_popup.as_mut()?;
+        let popup = self.version_popup.as_ref()?;
         if popup.loading || popup.installing || !popup.confirming {
             return None;
         }
         let version = popup.versions.get(popup.selected)?.clone();
-        popup.installing = true;
-        popup.error = None;
-        Some(InstallRequest {
+        let request = InstallRequest {
             request_id: popup.request_id,
+            generation: self.generation,
             project_id: popup.project_id.clone(),
+            project_title: popup.project_title.clone(),
             version,
             installed_path: popup.installed_path.clone(),
             pending: self.pending_actions.clone(),
-        })
+        };
+        self.version_popup = None;
+        Some(request)
     }
 
     pub fn begin_confirmation(&mut self) -> bool {
@@ -447,47 +495,49 @@ impl DiscoveryState {
                 }
                 DiscoveryActionResult::Install {
                     request_id,
+                    generation,
                     project_id,
+                    project_title,
                     result,
-                } => {
-                    let Some(popup) = self.version_popup.as_mut().filter(|popup| {
-                        popup.request_id == request_id && popup.project_id == project_id
-                    }) else {
-                        continue;
-                    };
-                    popup.installing = false;
-                    popup.confirming = false;
-                    match result {
-                        Ok(completion) => {
-                            if let Some(entry) = self
+                } => match result {
+                    Ok(completion) => {
+                        if generation == self.generation
+                            && let Some(entry) = self
                                 .list
                                 .entries
                                 .iter_mut()
                                 .find(|entry| entry.file_stem == project_id)
-                            {
-                                entry.title_suffix = Some("Installed".to_owned());
-                                entry.installed_path = Some(completion.path.clone());
-                            }
-                            let action = if completion.skipped {
-                                "already installed"
-                            } else if completion.replaced {
-                                "version changed"
-                            } else {
-                                "installed"
-                            };
-                            crate::tui::error_buffer::push_error(
-                                crate::tui::error_buffer::ErrorEvent {
-                                    id: 0,
-                                    level: tracing::Level::INFO,
-                                    message: format!("{}: {action}", popup.project_title),
-                                    pushed_at: std::time::Instant::now(),
-                                },
-                            );
-                            self.version_popup = None;
+                        {
+                            entry.title_suffix = Some("Installed".to_owned());
+                            entry.installed_path = Some(completion.path.clone());
                         }
-                        Err(error) => popup.error = Some(error),
+                        let action = if completion.skipped {
+                            "already installed"
+                        } else if completion.replaced {
+                            "version changed"
+                        } else {
+                            "installed"
+                        };
+                        crate::tui::error_buffer::push_error(
+                            crate::tui::error_buffer::ErrorEvent {
+                                id: request_id,
+                                level: tracing::Level::INFO,
+                                message: format!("{project_title}: {action}"),
+                                pushed_at: std::time::Instant::now(),
+                            },
+                        );
                     }
-                }
+                    Err(error) => {
+                        crate::tui::error_buffer::push_error(
+                            crate::tui::error_buffer::ErrorEvent {
+                                id: request_id,
+                                level: tracing::Level::ERROR,
+                                message: format!("{project_title}: {error}"),
+                                pushed_at: std::time::Instant::now(),
+                            },
+                        );
+                    }
+                },
             }
         }
     }
@@ -522,6 +572,14 @@ impl DiscoveryState {
 
 pub fn handle_key(key_event: &KeyEvent, state: &mut DiscoveryState) -> bool {
     if let Some(popup) = state.version_popup.as_mut() {
+        if popup.confirming
+            && matches!(key_event.code, KeyCode::Left | KeyCode::Char('h'))
+            && !popup.installing
+        {
+            popup.confirming = false;
+            popup.error = None;
+            return true;
+        }
         match key_event.code {
             KeyCode::Esc if !popup.installing => state.version_popup = None,
             KeyCode::Char('j') | KeyCode::Down
@@ -650,6 +708,7 @@ mod tests {
             version_number: id.to_owned(),
             game_versions: vec!["1.21.1".to_owned()],
             loaders: vec!["fabric".to_owned()],
+            date_published: "2026-01-02T12:00:00Z".to_owned(),
             files: Vec::new(),
         }
     }
@@ -747,7 +806,7 @@ mod tests {
     }
 
     #[test]
-    fn successful_install_marks_the_project_and_closes_the_popup() {
+    fn confirmation_can_return_to_version_selection() {
         let project = DiscoveryProject {
             id: "project".to_owned(),
             slug: "project".to_owned(),
@@ -763,9 +822,100 @@ mod tests {
         let request = state.begin_versions().unwrap();
         DiscoveryState::push_action_result(
             &request.pending,
-            DiscoveryActionResult::Install {
+            DiscoveryActionResult::Versions {
                 request_id: request.request_id,
                 project_id: request.project_id,
+                result: Ok(vec![version("1.0.0")]),
+            },
+        );
+        state.drain_pending();
+        assert!(state.begin_confirmation());
+
+        handle_key(
+            &KeyEvent::new(KeyCode::Char('h'), KeyModifiers::NONE),
+            &mut state,
+        );
+
+        assert!(!state.version_popup.as_ref().unwrap().confirming);
+        assert!(state.version_popup.is_some());
+    }
+
+    #[test]
+    fn discovery_delete_only_clears_the_matching_installed_badge() {
+        let first_path = PathBuf::from("mods/first.jar");
+        let second_path = PathBuf::from("mods/second.jar");
+        let project = |id: &str| DiscoveryProject {
+            id: id.to_owned(),
+            slug: id.to_owned(),
+            title: id.to_owned(),
+            description: String::new(),
+            downloads: 0,
+            icon_url: None,
+            icon_bytes: None,
+        };
+        let mut state = DiscoveryState::new(DiscoveryKind::Mod);
+        state
+            .list
+            .entries
+            .push(project_entry(project("first"), Some(first_path.clone())));
+        state
+            .list
+            .entries
+            .push(project_entry(project("second"), Some(second_path.clone())));
+        state.list.list_state.selected = Some(0);
+
+        let pending = state.pending_installed_delete().unwrap();
+        assert_eq!(pending.path, first_path);
+        assert!(state.clear_installed_path(&pending.path));
+
+        assert_eq!(state.list.entries.len(), 2);
+        assert!(state.list.entries[0].installed_path.is_none());
+        assert!(state.list.entries[0].title_suffix.is_none());
+        assert_eq!(
+            state.list.entries[1].installed_path.as_deref(),
+            Some(second_path.as_path())
+        );
+        assert_eq!(
+            state.list.entries[1].title_suffix.as_deref(),
+            Some("Installed")
+        );
+        assert!(state.pending_installed_delete().is_none());
+    }
+
+    #[test]
+    fn successful_install_marks_the_project_and_closes_the_popup() {
+        let project = DiscoveryProject {
+            id: "project".to_owned(),
+            slug: "project".to_owned(),
+            title: "Project".to_owned(),
+            description: String::new(),
+            downloads: 0,
+            icon_url: None,
+            icon_bytes: None,
+        };
+        let mut state = DiscoveryState::new(DiscoveryKind::Mod);
+        state.list.entries.push(project_entry(project, None));
+        state.list.list_state.selected = Some(0);
+        let versions_request = state.begin_versions().unwrap();
+        DiscoveryState::push_action_result(
+            &versions_request.pending,
+            DiscoveryActionResult::Versions {
+                request_id: versions_request.request_id,
+                project_id: versions_request.project_id,
+                result: Ok(vec![version("1.0.0")]),
+            },
+        );
+        state.drain_pending();
+        assert!(state.begin_confirmation());
+        let install = state.begin_install().unwrap();
+        assert!(state.version_popup.is_none());
+        DiscoveryState::push_action_result(
+            &install.pending,
+            DiscoveryActionResult::Install {
+                request_id: install.request_id,
+                generation: install.generation,
+                project_id: install.project_id,
+                project_title: install.project_title,
                 result: Ok(InstallCompletion {
                     path: PathBuf::from("mods/project.jar"),
                     replaced: false,
@@ -775,7 +925,6 @@ mod tests {
         );
 
         state.drain_pending();
-
         assert!(state.version_popup.is_none());
         assert_eq!(
             state.list.entries[0].title_suffix.as_deref(),

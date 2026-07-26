@@ -211,10 +211,25 @@ pub fn render(
         block = block.title_top(sl);
     }
 
+    let discovery_can_delete = match tab {
+        ContentTab::Mods => mods_discovery_state.selected_is_installed(),
+        ContentTab::ResourcePacks => resource_packs_discovery_state.selected_is_installed(),
+        ContentTab::Shaders => shaders_discovery_state.selected_is_installed(),
+        _ => false,
+    };
+
     // keybinds change depending on which tab is active and whether
     // the content panel or instances panel has focus
     let kb: Option<&[(&str, &str)]> = if is_focused {
         Some(match (mode, tab) {
+            (ContentMode::Discover, _) if discovery_can_delete => &[
+                ("j/k", " navigate"),
+                ("i", " versions"),
+                ("d", " delete"),
+                ("h/l", " tabs"),
+                ("/", " search"),
+                ("Tab", " installed"),
+            ],
             (ContentMode::Discover, _) => &[
                 ("j/k", " navigate"),
                 ("i", " versions"),
@@ -531,18 +546,16 @@ fn render_version_popup(frame: &mut Frame, area: Rect, state: &DiscoveryState) {
     let Some(popup) = state.version_popup.as_ref() else {
         return;
     };
-    let [_, vertical, _] = Layout::vertical([
-        Constraint::Percentage(10),
-        Constraint::Percentage(80),
-        Constraint::Percentage(10),
-    ])
-    .areas(area);
-    let [_, popup_area, _] = Layout::horizontal([
-        Constraint::Percentage(12),
-        Constraint::Percentage(76),
-        Constraint::Percentage(12),
-    ])
-    .areas(vertical);
+    let desired_height = version_popup_height(
+        popup.versions.len(),
+        popup.confirming,
+        popup.loading || popup.installing,
+        popup.error.is_some(),
+    );
+    let popup_area = area.centered(
+        Constraint::Percentage(50),
+        Constraint::Length(desired_height.min(area.height.saturating_sub(2))),
+    );
     let theme = THEME.as_ref();
     let title = popup.title();
     let loading = popup.loading;
@@ -555,7 +568,21 @@ fn render_version_popup(frame: &mut Frame, area: Rect, state: &DiscoveryState) {
         .get(selected)
         .map(|version| version.version_number.clone())
         .unwrap_or_default();
-    let project_title = popup.project_title.clone();
+    let minecraft_versions = popup
+        .versions
+        .get(selected)
+        .map(|version| confirmation_values(&version.game_versions))
+        .unwrap_or_else(|| "Unknown".to_owned());
+    let loaders = popup
+        .versions
+        .get(selected)
+        .map(|version| confirmation_loaders(&version.loaders))
+        .unwrap_or_else(|| "Unknown".to_owned());
+    let release_date = popup
+        .versions
+        .get(selected)
+        .map(|version| confirmation_release_date(&version.date_published))
+        .unwrap_or_else(|| "Unknown".to_owned());
     let replacing = popup.installed_path.is_some();
     let items = popup
         .versions
@@ -564,20 +591,24 @@ fn render_version_popup(frame: &mut Frame, area: Rect, state: &DiscoveryState) {
             ListItem::new(discovery_version_label(version)).style(Style::default().fg(theme.text()))
         })
         .collect::<Vec<_>>();
+    let keybinds = if confirming {
+        crate::tui::widgets::popups::keybind_line(&[
+            ("h", " back"),
+            ("Enter", if replacing { " change" } else { " install" }),
+        ])
+    } else {
+        crate::tui::widgets::popups::keybind_line(&[
+            ("j/k", " navigate"),
+            ("Enter", " continue"),
+            ("Esc", " close"),
+        ])
+    };
 
     let popup = crate::tui::widgets::popups::base::PopupFrame {
         title: styled_title(&title, false),
         border_color: theme.accent(),
         bg: Some(theme.surface()),
-        keybinds: Some(crate::tui::widgets::popups::keybind_line(if confirming {
-            &[("Enter", " confirm"), ("Esc", " cancel")]
-        } else {
-            &[
-                ("j/k", " navigate"),
-                ("Enter", " continue"),
-                ("Esc", " close"),
-            ]
-        })),
+        keybinds: Some(keybinds),
         search_line: None,
         content: Box::new(move |area, buffer| {
             if installing {
@@ -594,13 +625,16 @@ fn render_version_popup(frame: &mut Frame, area: Rect, state: &DiscoveryState) {
                     .wrap(Wrap { trim: true })
                     .render(area, buffer);
             } else if confirming {
-                let action = if replacing { "Change" } else { "Install" };
-                Paragraph::new(format!(
-                    "{action} {project_title} version {selected_version}?\n\nThe file is changed only after the download succeeds."
-                ))
-                .style(Style::default().fg(THEME.as_ref().text()))
-                .wrap(Wrap { trim: true })
-                .render(area, buffer);
+                crate::tui::widgets::popups::base::render_summary(
+                    &[
+                        ("Version", selected_version.as_str()),
+                        ("Minecraft", minecraft_versions.as_str()),
+                        ("Loader", loaders.as_str()),
+                        ("Released", release_date.as_str()),
+                    ],
+                    area,
+                    buffer,
+                );
             } else if items.is_empty() {
                 Paragraph::new("No compatible versions found.")
                     .style(Style::default().fg(THEME.as_ref().text_dim()))
@@ -616,6 +650,49 @@ fn render_version_popup(frame: &mut Frame, area: Rect, state: &DiscoveryState) {
         }),
     };
     frame.render_widget(popup, popup_area);
+}
+
+fn version_popup_height(version_count: usize, confirming: bool, compact: bool, error: bool) -> u16 {
+    if confirming || error {
+        8
+    } else if compact {
+        5
+    } else {
+        (version_count as u16).saturating_add(2).clamp(6, 18)
+    }
+}
+
+fn confirmation_values(values: &[String]) -> String {
+    if values.is_empty() {
+        "Unknown".to_owned()
+    } else {
+        values.join(", ")
+    }
+}
+
+fn confirmation_loaders(loaders: &[String]) -> String {
+    let loaders = loaders
+        .iter()
+        .map(|loader| match loader.as_str() {
+            "fabric" => "Fabric",
+            "forge" => "Forge",
+            "neoforge" => "NeoForge",
+            "quilt" => "Quilt",
+            "minecraft" => "Minecraft",
+            other => other,
+        })
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    confirmation_values(&loaders)
+}
+
+fn confirmation_release_date(value: &str) -> String {
+    if value.is_empty() {
+        return "Unknown".to_owned();
+    }
+    chrono::DateTime::parse_from_rfc3339(value)
+        .map(|date| date.format("%Y-%m-%d").to_string())
+        .unwrap_or_else(|_| value.to_owned())
 }
 
 fn discovery_version_label(version: &crate::net::modrinth::VersionInfo) -> String {
@@ -768,9 +845,32 @@ mod tests {
             version_number: "3.2.4-fabric-26.1".to_owned(),
             game_versions: vec![],
             loaders: vec![],
+            date_published: String::new(),
             files: vec![],
         };
 
         assert_eq!(discovery_version_label(&version), "3.2.4-fabric-26.1");
+    }
+
+    #[test]
+    fn discovery_version_popup_uses_compact_heights() {
+        assert_eq!(version_popup_height(1, false, false, false), 6);
+        assert_eq!(version_popup_height(100, false, false, false), 18);
+        assert_eq!(version_popup_height(1, true, false, false), 8);
+        assert_eq!(version_popup_height(0, false, true, false), 5);
+        assert_eq!(version_popup_height(0, false, false, true), 8);
+    }
+
+    #[test]
+    fn confirmation_metadata_is_human_readable() {
+        assert_eq!(
+            confirmation_loaders(&["fabric".to_owned(), "neoforge".to_owned()]),
+            "Fabric, NeoForge"
+        );
+        assert_eq!(
+            confirmation_release_date("2026-07-26T14:30:00Z"),
+            "2026-07-26"
+        );
+        assert_eq!(confirmation_values(&[]), "Unknown");
     }
 }

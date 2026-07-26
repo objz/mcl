@@ -8,7 +8,7 @@ use super::state::{
 use crate::config::theme::THEME;
 use crate::instance::models::ModLoader;
 use crate::tui::app::FocusedArea;
-use crate::tui::widgets::popups::base::PopupFrame;
+use crate::tui::widgets::popups::base::{PopupFrame, render_summary};
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
@@ -294,7 +294,6 @@ fn render_loader_version_step(state: &WizardState, area: Rect, buf: &mut ratatui
 }
 
 fn render_confirm_step(state: &WizardState, area: Rect, buf: &mut ratatui::buffer::Buffer) {
-    let theme = THEME.as_ref();
     let game_version = state
         .selected_version()
         .map(|version| version.id.as_str())
@@ -307,30 +306,17 @@ fn render_confirm_step(state: &WizardState, area: Rect, buf: &mut ratatui::buffe
             .selected_loader_version()
             .unwrap_or_else(|| "<not selected>".to_string())
     };
-
-    let label_style = Style::default().fg(theme.text_dim());
-
-    Paragraph::new(vec![
-        Line::from(vec![
-            Span::styled("Name: ", label_style),
-            Span::raw(state.name_state.value()),
-        ]),
-        Line::from(vec![
-            Span::styled("MC: ", label_style),
-            Span::raw(game_version),
-        ]),
-        Line::from(vec![
-            Span::styled("Loader: ", label_style),
-            Span::raw(loader.to_string()),
-        ]),
-        Line::from(vec![
-            Span::styled("Loader version: ", label_style),
-            Span::raw(loader_version),
-        ]),
-    ])
-    .style(Style::default().fg(theme.text()))
-    .wrap(Wrap { trim: true })
-    .render(area, buf);
+    let loader = loader.to_string();
+    render_summary(
+        &[
+            ("Name", state.name_state.value()),
+            ("MC", game_version),
+            ("Loader", &loader),
+            ("Loader version", &loader_version),
+        ],
+        area,
+        buf,
+    );
 }
 
 #[cfg(test)]

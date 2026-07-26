@@ -84,14 +84,12 @@ impl App {
             self.screenshots_state.drain_pending_entries();
             self.screenshots_state.request_visible_loads();
             self.create_screenshot_protocols();
-            if content_changed {
-                self.reconciliation_for = None;
-                if let Some(instance) = self.instances_state.selected_instance()
-                    && let Ok(mut results) =
-                        crate::instance::content::reconcile::PENDING_RECONCILIATIONS.lock()
-                {
-                    results.retain(|result| result.instance_name != instance.name);
-                }
+            if content_changed
+                && let Some(instance) = self.instances_state.selected_instance()
+                && let Ok(mut results) =
+                    crate::instance::content::reconcile::PENDING_RECONCILIATIONS.lock()
+            {
+                results.retain(|result| result.instance_name != instance.name);
             }
             self.drain_content_reconciliation();
             self.ensure_content_reconciliation(content_changed);
@@ -136,25 +134,26 @@ impl App {
         if !changed && self.reconciliation_for.as_deref() == Some(instance.name.as_str()) {
             return;
         }
-        if self.reconciliation_for.as_deref() != Some(instance.name.as_str()) {
+        let instance_changed = self.reconciliation_for.as_deref() != Some(instance.name.as_str());
+        if instance_changed {
             self.provider_conflict = None;
             self.dismissed_provider_conflicts.clear();
+            self.content_manifest = None;
+            for discovery in [
+                &mut self.mods_discovery_state,
+                &mut self.resource_packs_discovery_state,
+                &mut self.shaders_discovery_state,
+            ] {
+                discovery.refresh_installed_manifest(
+                    &crate::instance::ContentManifest::default(),
+                    &crate::storage::InstancePaths::new(
+                        self.instance_manager.instances_dir.join(&instance.name),
+                    )
+                    .minecraft(),
+                );
+            }
         }
         self.reconciliation_for = Some(instance.name.clone());
-        self.content_manifest = None;
-        for discovery in [
-            &mut self.mods_discovery_state,
-            &mut self.resource_packs_discovery_state,
-            &mut self.shaders_discovery_state,
-        ] {
-            discovery.refresh_installed_manifest(
-                &crate::instance::ContentManifest::default(),
-                &crate::storage::InstancePaths::new(
-                    self.instance_manager.instances_dir.join(&instance.name),
-                )
-                .minecraft(),
-            );
-        }
         if changed {
             crate::instance::content::reconcile::spawn_after_change(
                 instance,

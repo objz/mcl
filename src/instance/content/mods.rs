@@ -524,40 +524,39 @@ fn color_distance(left: [u8; 3], right: [u8; 3]) -> u32 {
         .sum()
 }
 
-// 6x3 fallback icon showing a "?" pattern for mods without icons.
+// 6 columns by 3 terminal rows is physically square with the usual 1:2 cell ratio.
 pub(crate) fn fallback_icon() -> Vec<Vec<IconCell>> {
-    let b = IconCell {
+    const MASK: [[bool; 6]; 6] = [
+        [false, true, true, true, true, false],
+        [true, false, false, false, false, true],
+        [false, false, false, true, true, false],
+        [false, false, true, true, false, false],
+        [false, false, false, false, false, false],
+        [false, false, true, true, false, false],
+    ];
+    MASK.chunks_exact(2)
+        .map(|pair| {
+            pair[0]
+                .iter()
+                .zip(pair[1])
+                .map(|(&top, bottom)| fallback_cell(top, bottom))
+                .collect()
+        })
+        .collect()
+}
+
+fn fallback_cell(top: bool, bottom: bool) -> IconCell {
+    let background = if top { 150 } else { 45 };
+    let foreground = if bottom { 150 } else { 45 };
+    IconCell {
         symbol: '\u{2584}',
-        bg_r: 50,
-        bg_g: 50,
-        bg_b: 50,
-        fg_r: 50,
-        fg_g: 50,
-        fg_b: 50,
-    };
-    let tb = IconCell {
-        symbol: '\u{2584}',
-        bg_r: 50,
-        bg_g: 50,
-        bg_b: 50,
-        fg_r: 130,
-        fg_g: 130,
-        fg_b: 130,
-    };
-    let bt = IconCell {
-        symbol: '\u{2584}',
-        bg_r: 130,
-        bg_g: 130,
-        bg_b: 130,
-        fg_r: 50,
-        fg_g: 50,
-        fg_b: 50,
-    };
-    vec![
-        vec![b, tb, tb, tb, tb, b],
-        vec![b, b, b, bt, bt, b],
-        vec![b, b, bt, bt, b, b],
-    ]
+        bg_r: background,
+        bg_g: background,
+        bg_b: background,
+        fg_r: foreground,
+        fg_g: foreground,
+        fg_b: foreground,
+    }
 }
 
 // 12x6 fallback icon showing a "?" pattern for worlds without icons.
@@ -634,6 +633,17 @@ mod tests {
         assert_eq!(rows.len(), 3);
         assert!(rows.iter().all(|row| row.len() == 7));
         assert!(rows.iter().flatten().all(|cell| cell.symbol == '\u{2588}'));
+    }
+
+    #[test]
+    fn fallback_icon_is_square_and_contains_a_separate_question_mark_dot() {
+        let icon = fallback_icon();
+
+        assert_eq!(icon.len(), 3);
+        assert!(icon.iter().all(|row| row.len() == 6));
+        assert_eq!(icon[2][2].bg_r, 45);
+        assert_eq!(icon[2][2].fg_r, 150);
+        assert_eq!(icon[2][3].fg_r, 150);
     }
 
     fn setup_mods_dir(tmp: &Path, instance: &str) -> PathBuf {

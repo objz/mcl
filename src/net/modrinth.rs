@@ -24,6 +24,8 @@ pub struct VersionInfo {
     pub version_number: String,
     pub game_versions: Vec<String>,
     pub loaders: Vec<String>,
+    #[serde(default)]
+    pub date_published: String,
     pub files: Vec<VersionFile>,
 }
 
@@ -558,6 +560,7 @@ mod tests {
             version_number: "1.0.0".to_owned(),
             game_versions: vec!["1.21.1".to_owned()],
             loaders: vec!["fabric".to_owned()],
+            date_published: String::new(),
             files,
         }
     }

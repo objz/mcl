@@ -6,8 +6,8 @@ use ratatui::{
     buffer::Buffer,
     layout::{Alignment, Rect},
     style::{Color, Style},
-    text::Line,
-    widgets::{Block, Clear, Widget},
+    text::{Line, Span},
+    widgets::{Block, Clear, Paragraph, Widget},
 };
 
 use crate::config::theme::BORDER_STYLE;
@@ -49,4 +49,19 @@ impl<'a> Widget for PopupFrame<'a> {
         block.render(area, buf);
         (self.content)(inner, buf);
     }
+}
+
+pub fn render_summary(rows: &[(&str, &str)], area: Rect, buf: &mut Buffer) {
+    let theme = crate::config::theme::THEME.as_ref();
+    let label_style = Style::default().fg(theme.text_dim());
+    let lines = rows
+        .iter()
+        .map(|(label, value)| {
+            Line::from(vec![
+                Span::styled(format!("{label}: "), label_style),
+                Span::styled(*value, Style::default().fg(theme.text())),
+            ])
+        })
+        .collect::<Vec<_>>();
+    Paragraph::new(lines).render(area, buf);
 }

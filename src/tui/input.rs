@@ -155,6 +155,7 @@ impl App {
                             match delete_content_path(&path) {
                                 Ok(()) => {
                                     self.remove_content_path_from_states(&path);
+                                    self.remove_content_path_from_manifest(&path);
                                 }
                                 Err(e) => {
                                     tracing::error!("Failed to delete content '{}': {}", name, e);
@@ -209,6 +210,16 @@ impl App {
             };
             if !search_active && !popup_open && key_event.code == KeyCode::Char('i') {
                 self.spawn_active_discovery_versions();
+                return Ok(());
+            }
+            if !search_active && !popup_open && key_event.code == KeyCode::Char('d') {
+                if let Some(pending) = self
+                    .active_discovery_state_mut()
+                    .and_then(|state| state.pending_installed_delete())
+                {
+                    confirm_popup::set_pending_content_delete(pending.name, pending.path);
+                    self.focused = FocusedArea::ConfirmDelete;
+                }
                 return Ok(());
             }
             if popup_open && key_event.code == KeyCode::Enter {
@@ -737,6 +748,13 @@ impl App {
             crate::net::modrinth::DiscoveryKind::Shader => crate::instance::ContentKind::Shader,
         };
         tokio::spawn(async move {
+            let action = if request.installed_path.is_some() {
+                format!("Changing {} version", request.project_title)
+            } else {
+                format!("Installing {}", request.project_title)
+            };
+            let progress = crate::tui::progress::ProgressTask::start(action);
+            progress.set_sub_action(&request.version.version_number);
             let client = crate::net::HttpClient::new();
             let result = async {
                 tokio::fs::create_dir_all(&destination)
@@ -808,11 +826,18 @@ impl App {
             }
             .await
             .map_err(|error| error.to_string());
+            if let Err(error) = &result {
+                progress.fail(error);
+            } else {
+                progress.finish();
+            }
             widgets::content::DiscoveryState::push_action_result(
                 &request.pending,
                 widgets::content::discovery::DiscoveryActionResult::Install {
                     request_id: request.request_id,
+                    generation: request.generation,
                     project_id: request.project_id,
+                    project_title: request.project_title,
                     result,
                 },
             );
@@ -1047,6 +1072,41 @@ impl App {
         self.worlds_state.remove_path(path);
         self.screenshots_state.remove_path(path);
         self.logs_state.remove_path(path);
+        self.mods_discovery_state.clear_installed_path(path);
+        self.resource_packs_discovery_state
+            .clear_installed_path(path);
+        self.shaders_discovery_state.clear_installed_path(path);
+    }
+
+    fn remove_content_path_from_manifest(&mut self, path: &std::path::Path) {
+        let Some(instance) = self.instances_state.selected_instance() else {
+            return;
+        };
+        let instance_paths = crate::storage::InstancePaths::new(
+            self.instance_manager.instances_dir.join(&instance.name),
+        );
+        let minecraft_dir = instance_paths.minecraft();
+        let Ok(relative_path) = path.strip_prefix(&minecraft_dir) else {
+            return;
+        };
+        if let Some((instance_name, manifest)) = self.content_manifest.as_mut()
+            && *instance_name == instance.name
+        {
+            manifest.remove(relative_path);
+        }
+        if let Err(error) = crate::instance::ContentManifest::update(
+            &instance_paths.content_manifest(),
+            |manifest| {
+                manifest.remove(relative_path);
+                Ok(())
+            },
+        ) {
+            tracing::warn!(
+                "Failed to remove '{}' from the content manifest: {}",
+                relative_path.display(),
+                error
+            );
+        }
     }
 }
 

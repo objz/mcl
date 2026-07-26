@@ -301,6 +301,7 @@ mod tests {
                     version_number: "1.0.0".into(),
                     game_versions: vec!["1.20.1".into()],
                     loaders: vec!["fabric".into()],
+                    date_published: String::new(),
                     files: vec![],
                 },
                 VersionInfo {
@@ -310,6 +311,7 @@ mod tests {
                     version_number: "0.9.0".into(),
                     game_versions: vec!["1.20.1".into()],
                     loaders: vec!["fabric".into()],
+                    date_published: String::new(),
                     files: vec![],
                 },
             ]);
