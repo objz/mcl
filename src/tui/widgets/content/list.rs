@@ -132,6 +132,7 @@ struct PendingProviderIcon {
     provider: String,
     project_id: String,
     bytes: Vec<u8>,
+    description: String,
 }
 
 struct DisplayMetadata {
@@ -252,6 +253,10 @@ impl ContentListState {
                         entry.provider_icon = false;
                         invalidated_icons.push(entry.file_stem.clone());
                     }
+                    if entry.provider_description {
+                        entry.description.clear();
+                        entry.provider_description = false;
+                    }
                     changed = true;
                 }
                 continue;
@@ -267,6 +272,10 @@ impl ContentListState {
                     entry.provider_icon = false;
                     invalidated_icons.push(entry.file_stem.clone());
                 }
+                if entry.provider_description {
+                    entry.description.clear();
+                    entry.provider_description = false;
+                }
                 entry.provider_project = project.clone();
                 changed = true;
             }
@@ -277,6 +286,7 @@ impl ContentListState {
                 self.requested_images.remove(&stem);
                 self.pending_entry_images.remove(&stem);
             }
+            self.rebuild_display_metadata();
             crate::tui::request_redraw();
         }
     }
@@ -296,14 +306,25 @@ impl ContentListState {
             Err(_) => return false,
         };
         let mut changed = false;
-        for icon in pending {
+        for metadata in pending {
             for entry in &mut self.entries {
                 let matches_project = entry.provider_project.as_ref().is_some_and(|project| {
-                    project.provider == icon.provider && project.project_id == icon.project_id
+                    project.provider == metadata.provider
+                        && project.project_id == metadata.project_id
                 });
-                if matches_project && entry.icon_bytes.is_none() {
-                    entry.icon_bytes = Some(icon.bytes.clone());
+                if !matches_project {
+                    continue;
+                }
+                if entry.icon_bytes.is_none() && !metadata.bytes.is_empty() {
+                    entry.icon_bytes = Some(metadata.bytes.clone());
                     entry.provider_icon = true;
+                    changed = true;
+                }
+                if entry.description.trim().is_empty() && !metadata.description.trim().is_empty() {
+                    entry.description = metadata.description.clone();
+                    entry.provider_description = true;
+                    self.display_metadata
+                        .insert(entry.file_stem.clone(), display_metadata(entry));
                     changed = true;
                 }
             }
@@ -336,22 +357,30 @@ impl ContentListState {
                 let Ok(_permit) = slots.acquire_owned().await else {
                     return;
                 };
-                match load_provider_icon(&client, &meta_dir, &project.provider, &project.project_id)
-                    .await
+                match load_provider_metadata(
+                    &client,
+                    &meta_dir,
+                    &project.provider,
+                    &project.project_id,
+                )
+                .await
                 {
-                    Ok(bytes) if !bytes.is_empty() => {
+                    Ok((bytes, description))
+                        if !bytes.is_empty() || !description.trim().is_empty() =>
+                    {
                         if let Ok(mut pending) = pending.lock() {
                             pending.push(PendingProviderIcon {
                                 provider: project.provider,
                                 project_id: project.project_id,
                                 bytes,
+                                description,
                             });
                             crate::tui::request_redraw();
                         }
                     }
                     Ok(_) => {}
                     Err(error) => tracing::debug!(
-                        "Could not load provider icon for {} project {}: {}",
+                        "Could not load provider metadata for {} project {}: {}",
                         project.provider,
                         project.project_id,
                         error
@@ -612,6 +641,13 @@ impl ContentListState {
                         } else if entry.icon_bytes != existing.icon_bytes {
                             self.image_protocols.remove(&entry.file_stem);
                             self.requested_images.remove(&entry.file_stem);
+                        }
+                        if entry.description.trim().is_empty()
+                            && same_source
+                            && existing.provider_description
+                        {
+                            entry.description = std::mem::take(&mut existing.description);
+                            entry.provider_description = true;
                         }
                         *existing = entry;
                     } else {
@@ -1223,27 +1259,25 @@ fn handle_search_keys(key_event: &KeyEvent, state: &mut ContentListState) -> boo
     false
 }
 
-async fn load_provider_icon(
+async fn load_provider_metadata(
     client: &crate::net::HttpClient,
     meta_dir: &Path,
     provider_id: &str,
     project_id: &str,
-) -> Result<Vec<u8>, crate::net::NetError> {
+) -> Result<(Vec<u8>, String), crate::net::NetError> {
     if provider_id != "modrinth" {
         return Err(crate::net::NetError::Parse(format!(
-            "Content provider '{provider_id}' does not support lazy icons"
+            "Content provider '{provider_id}' does not support lazy metadata"
         )));
     }
     let metadata = crate::storage::MetadataPaths::new(meta_dir);
     let icon_path = metadata
         .provider_icons(provider_id)
         .join(format!("{project_id}.img"));
-    if let Ok(bytes) = tokio::fs::read(&icon_path).await
-        && !bytes.is_empty()
-        && image::load_from_memory(&bytes).is_ok()
-    {
-        return Ok(bytes);
-    }
+    let cached_icon = tokio::fs::read(&icon_path)
+        .await
+        .ok()
+        .filter(|bytes| !bytes.is_empty() && image::load_from_memory(bytes).is_ok());
 
     let registry = crate::content_provider::ProviderRegistry::modrinth(client.clone());
     let provider = registry.preferred(provider_id).ok_or_else(|| {
@@ -1259,7 +1293,12 @@ async fn load_provider_icon(
     let project = match cached_project {
         Some(project) => project,
         None => {
-            let project = provider.project(project_id).await?;
+            let project = match provider.project(project_id).await {
+                Ok(project) => project,
+                Err(error) => {
+                    return cached_icon.map(|bytes| (bytes, String::new())).ok_or(error);
+                }
+            };
             crate::storage::write_atomic(
                 &project_path,
                 &serde_json::to_vec_pretty(&project)
@@ -1268,17 +1307,25 @@ async fn load_provider_icon(
             project
         }
     };
+    if let Some(bytes) = cached_icon {
+        return Ok((bytes, project.description));
+    }
     let Some(url) = project.icon_url.as_deref() else {
-        return Ok(Vec::new());
+        return Ok((Vec::new(), project.description));
     };
-    let bytes = provider.icon(url).await?;
+    let bytes = match provider.icon(url).await {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            tracing::debug!("Could not fetch icon for project '{project_id}': {error}");
+            return Ok((Vec::new(), project.description));
+        }
+    };
     if bytes.is_empty() || image::load_from_memory(&bytes).is_err() {
-        return Err(crate::net::NetError::Parse(format!(
-            "Provider returned an invalid icon for project '{project_id}'"
-        )));
+        tracing::debug!("Provider returned an invalid icon for project '{project_id}'");
+        return Ok((Vec::new(), project.description));
     }
     crate::storage::write_atomic(&icon_path, &bytes)?;
-    Ok(bytes)
+    Ok((bytes, project.description))
 }
 
 pub fn handle_key_no_toggle(key_event: &KeyEvent, state: &mut ContentListState) -> bool {
@@ -2189,9 +2236,9 @@ mod tests {
 
     use super::{
         ContentListState, WatcherEventHandling, available_description_width,
-        description_text_width, diff_directory, diff_event_paths, ellipsize, load_provider_icon,
-        read_dir_stems, right_aligned_footer_spans, square_icon_columns, title_suffix_spans,
-        watcher_event_handling,
+        description_text_width, diff_directory, diff_event_paths, ellipsize,
+        load_provider_metadata, read_dir_stems, right_aligned_footer_spans, square_icon_columns,
+        title_suffix_spans, watcher_event_handling,
     };
 
     fn entry(name: &str) -> ContentEntry {
@@ -2207,6 +2254,7 @@ mod tests {
             enabled: true,
             icon_bytes: None,
             provider_icon: false,
+            provider_description: false,
             path: PathBuf::from(name.to_lowercase()),
             icon_lines: None,
         }
@@ -2584,8 +2632,34 @@ mod tests {
         assert!(state.image_protocols.contains_key("installed"));
     }
 
+    #[test]
+    fn provider_metadata_fills_a_missing_installed_description() {
+        let mut state = ContentListState::default();
+        let mut installed = entry("Shader");
+        installed.provider_project = Some(crate::instance::ProviderProject {
+            provider: "modrinth".to_owned(),
+            project_id: "shader-project".to_owned(),
+            version_id: "version".to_owned(),
+        });
+        state.entries.push(installed);
+        state
+            .pending_provider_icons
+            .lock()
+            .unwrap()
+            .push(super::PendingProviderIcon {
+                provider: "modrinth".to_owned(),
+                project_id: "shader-project".to_owned(),
+                bytes: Vec::new(),
+                description: "A cached shader description".to_owned(),
+            });
+
+        assert!(state.drain_provider_icons());
+        assert_eq!(state.entries[0].description, "A cached shader description");
+        assert!(state.entries[0].provider_description);
+    }
+
     #[tokio::test]
-    async fn provider_icons_load_from_cache_without_network() {
+    async fn provider_metadata_loads_from_cache_without_network() {
         let temp = tempfile::tempdir().unwrap();
         let mut png = std::io::Cursor::new(Vec::new());
         image::DynamicImage::new_rgba8(1, 1)
@@ -2597,8 +2671,25 @@ mod tests {
             .join("cached-project.img");
         std::fs::create_dir_all(icon_path.parent().unwrap()).unwrap();
         std::fs::write(&icon_path, &png).unwrap();
+        let project_path = crate::storage::MetadataPaths::new(temp.path())
+            .provider_projects("modrinth")
+            .join("cached-project.json");
+        std::fs::create_dir_all(project_path.parent().unwrap()).unwrap();
+        std::fs::write(
+            project_path,
+            serde_json::to_vec(&crate::net::modrinth::ProjectInfo {
+                id: "cached-project".to_owned(),
+                slug: "cached-project".to_owned(),
+                title: "Cached project".to_owned(),
+                description: "Cached description".to_owned(),
+                body: String::new(),
+                icon_url: None,
+            })
+            .unwrap(),
+        )
+        .unwrap();
 
-        let bytes = load_provider_icon(
+        let (bytes, description) = load_provider_metadata(
             &crate::net::HttpClient::new(),
             temp.path(),
             "modrinth",
@@ -2608,5 +2699,6 @@ mod tests {
         .unwrap();
 
         assert_eq!(bytes, png);
+        assert_eq!(description, "Cached description");
     }
 }

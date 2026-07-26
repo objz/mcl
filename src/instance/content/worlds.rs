@@ -27,6 +27,7 @@ pub fn scan_one_world(path: &Path, file_stem: &str, enabled: bool) -> ContentEnt
         enabled,
         icon_bytes,
         provider_icon: false,
+        provider_description: false,
         path: path.to_path_buf(),
         icon_lines,
     }

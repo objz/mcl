@@ -35,6 +35,7 @@ pub struct ContentEntry {
     pub enabled: bool,
     pub icon_bytes: Option<Vec<u8>>,
     pub provider_icon: bool,
+    pub provider_description: bool,
     pub path: PathBuf,
     pub icon_lines: Option<Vec<Vec<IconCell>>>,
 }
@@ -123,6 +124,7 @@ pub fn scan_one_mod(path: &Path, file_stem: &str, enabled: bool) -> ContentEntry
         enabled,
         icon_bytes,
         provider_icon: false,
+        provider_description: false,
         path: path.to_path_buf(),
         icon_lines,
     }
@@ -735,6 +737,7 @@ mod tests {
             enabled: false,
             icon_bytes: None,
             provider_icon: false,
+            provider_description: false,
             path: disabled_path.clone(),
             icon_lines: None,
         };
@@ -1012,6 +1015,7 @@ description = "A neoforge mod"
             enabled: true,
             icon_bytes: None,
             provider_icon: false,
+            provider_description: false,
             path: enabled_path.clone(),
             icon_lines: None,
         };

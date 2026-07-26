@@ -134,6 +134,7 @@ mod tests {
             enabled: true,
             icon_bytes: None,
             provider_icon: false,
+            provider_description: false,
             path: PathBuf::from(file_stem),
             icon_lines: None,
         }
