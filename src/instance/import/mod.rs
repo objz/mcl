@@ -253,7 +253,8 @@ mod tests {
 
     #[test]
     fn detect_format_errors_on_missing_file() {
-        let err = detect_format(Path::new("/nonexistent/pack.zip")).unwrap_err();
+        let tmp = tempfile::tempdir().unwrap();
+        let err = detect_format(&tmp.path().join("missing.zip")).unwrap_err();
         assert!(err.contains("Cannot open"), "got: {err}");
     }
 

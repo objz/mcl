@@ -438,7 +438,8 @@ mod tests {
 
     #[test]
     fn parse_add_opens_returns_none_for_missing_file() {
-        assert!(parse_add_opens(Path::new("/nonexistent/x.zip")).is_none());
+        let tmp = tempfile::tempdir().unwrap();
+        assert!(parse_add_opens(&tmp.path().join("missing.zip")).is_none());
     }
 
     #[test]

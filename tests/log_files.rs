@@ -61,7 +61,8 @@ fn read_log_file_returns_lines() {
 
 #[test]
 fn read_log_file_missing_returns_empty() {
-    let lines = read_log_file(Path::new("/nonexistent/test.log"));
+    let tmp = tempfile::tempdir().unwrap();
+    let lines = read_log_file(&tmp.path().join("missing.log"));
     assert!(lines.is_empty());
 }
 

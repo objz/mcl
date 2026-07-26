@@ -351,13 +351,17 @@ async fn streamed_entries_wait_for_their_rendered_icon() {
 
     let picker = ratatui_image::picker::Picker::halfblocks();
     state.request_image_loads(&picker);
-    for _ in 0..20 {
-        tokio::time::sleep(std::time::Duration::from_millis(5)).await;
-        state.drain_image_loads(&picker);
-        if !state.filtered_indices().is_empty() {
-            break;
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        loop {
+            state.drain_image_loads(&picker);
+            if !state.filtered_indices().is_empty() {
+                break;
+            }
+            tokio::task::yield_now().await;
         }
-    }
+    })
+    .await
+    .expect("icon render completed");
 
     assert_eq!(state.filtered_indices(), vec![0]);
 }

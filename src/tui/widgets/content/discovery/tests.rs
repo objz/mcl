@@ -1,4 +1,5 @@
 use super::*;
+use crate::tui::tests::UI_TEST_LOCK;
 use chrono::Utc;
 use crossterm::event::KeyModifiers;
 
@@ -282,6 +283,9 @@ fn discovery_delete_only_clears_the_matching_installed_badge() {
 
 #[test]
 fn successful_install_marks_the_project_and_closes_the_popup() {
+    let _guard = UI_TEST_LOCK
+        .lock()
+        .unwrap_or_else(|error| error.into_inner());
     let project = DiscoveryProject {
         id: "project".to_owned(),
         slug: "project".to_owned(),
