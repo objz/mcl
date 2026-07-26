@@ -39,6 +39,12 @@ impl Default for HttpClient {
     }
 }
 
+impl From<Client> for HttpClient {
+    fn from(inner: Client) -> Self {
+        Self { inner }
+    }
+}
+
 impl NetError {
     pub(crate) fn is_retryable(&self) -> bool {
         matches!(self, Self::StatusError { status: 429, .. }) || is_retryable(self)

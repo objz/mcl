@@ -90,21 +90,6 @@ async fn neoforge_game_versions_are_available() {
 
 #[tokio::test]
 #[ignore = "hits live Mojang API"]
-async fn mojang_manifest_contains_a_known_release() {
-    let manifest = net::mojang::fetch_version_manifest(&HttpClient::new())
-        .await
-        .unwrap();
-
-    assert!(
-        manifest
-            .versions
-            .iter()
-            .any(|version| version.id == "1.20.1")
-    );
-}
-
-#[tokio::test]
-#[ignore = "hits live Mojang API"]
 async fn vanilla_installer_lists_game_versions() {
     use rmcl::instance::ModLoaderInstaller;
 
@@ -113,7 +98,11 @@ async fn vanilla_installer_lists_game_versions() {
         .await
         .unwrap();
 
-    assert!(versions.iter().any(|version| version.id == "1.20.1"));
+    assert!(
+        versions
+            .iter()
+            .any(|version| version.id == "1.20.1" && version.stable)
+    );
 }
 
 #[tokio::test]
