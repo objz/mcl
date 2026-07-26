@@ -231,15 +231,27 @@ fn extract_overrides(
         let mut entry = archive.by_index(i)?;
         let entry_name = entry.name().to_string();
 
-        let relative = entry_name
-            .strip_prefix("overrides/")
-            .or_else(|| entry_name.strip_prefix("client-overrides/"));
-
-        let Some(relative) = relative else {
+        let root = if entry_name.starts_with("overrides/") {
+            "overrides"
+        } else if entry_name.starts_with("client-overrides/") {
+            "client-overrides"
+        } else {
             continue;
         };
+        let enclosed = entry.enclosed_name().ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("Unsafe override path: {entry_name}"),
+            )
+        })?;
+        let relative = enclosed.strip_prefix(root).map_err(|_| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("Invalid override path: {entry_name}"),
+            )
+        })?;
 
-        if relative.is_empty() || entry_name.ends_with('/') {
+        if relative.as_os_str().is_empty() || entry_name.ends_with('/') {
             let dir = minecraft_dir.join(relative);
             std::fs::create_dir_all(dir)?;
             dirs += 1;
@@ -271,3 +283,6 @@ fn extract_overrides(
     );
     Ok(())
 }
+
+#[cfg(test)]
+mod tests;
