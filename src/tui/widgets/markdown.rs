@@ -17,74 +17,13 @@ use ratatui_image::{
     picker::ProtocolType,
     sliced::{SignedPosition, SlicedImage, SlicedProtocol},
 };
+use the_other_tui_markdown::{RendererBuilder, Theme as MarkdownTheme, into_text_with_renderer};
 
 use crate::config::settings::ImageProtocol;
 use crate::config::theme::THEME;
 use crate::instance::content::mods::{
     IconCell, fallback_icon, make_icon_pixels_from_image, make_icon_quadrants_from_image,
 };
-
-#[derive(Clone)]
-struct RmclMarkdownStyle;
-
-impl tui_markdown::StyleSheet for RmclMarkdownStyle {
-    fn heading(&self, level: u8) -> Style {
-        let _ = level;
-        Style::default()
-            .fg(THEME.as_ref().accent())
-            .add_modifier(Modifier::BOLD)
-    }
-
-    fn code(&self) -> Style {
-        Style::default()
-            .fg(THEME.as_ref().text())
-            .bg(THEME.as_ref().surface())
-    }
-
-    fn link(&self) -> Style {
-        Style::default()
-            .fg(THEME.as_ref().info())
-            .add_modifier(Modifier::UNDERLINED)
-    }
-
-    fn blockquote(&self) -> Style {
-        Style::default().fg(THEME.as_ref().text_dim())
-    }
-
-    fn heading_meta(&self) -> Style {
-        Style::default().fg(THEME.as_ref().text_dim())
-    }
-
-    fn metadata_block(&self) -> Style {
-        Style::default().fg(THEME.as_ref().text_dim())
-    }
-
-    fn heading_marker(&self, _level: u8) -> &str {
-        ""
-    }
-
-    fn code_block_fence(&self) -> &str {
-        ""
-    }
-
-    fn html(&self) -> Style {
-        Style::default().fg(THEME.as_ref().text_dim())
-    }
-
-    fn table_header(&self) -> Style {
-        Style::default()
-            .fg(THEME.as_ref().accent())
-            .add_modifier(Modifier::BOLD)
-    }
-
-    fn table_cell(&self) -> Style {
-        Style::default().fg(THEME.as_ref().text())
-    }
-
-    fn table_border(&self) -> Style {
-        Style::default().fg(THEME.as_ref().border())
-    }
-}
 
 struct TextBlock {
     source: String,
@@ -281,7 +220,7 @@ struct NormalizedDocument {
 fn normalize_html(source: &str) -> NormalizedDocument {
     let mut regions = Vec::new();
     let mut html_block_start = None;
-    let mut paragraph = None;
+    let mut inline_container = None;
     for (event, range) in Parser::new_ext(source, markdown_options()).into_offset_iter() {
         match event {
             Event::Start(Tag::HtmlBlock) => html_block_start = Some(range.start),
@@ -290,14 +229,16 @@ fn normalize_html(source: &str) -> NormalizedDocument {
                     regions.push(start..range.end);
                 }
             }
-            Event::Start(Tag::Paragraph) => paragraph = Some((range.start, false)),
+            Event::Start(Tag::Paragraph | Tag::Heading { .. }) => {
+                inline_container = Some((range.start, false));
+            }
             Event::InlineHtml(_) => {
-                if let Some((_, contains_html)) = paragraph.as_mut() {
+                if let Some((_, contains_html)) = inline_container.as_mut() {
                     *contains_html = true;
                 }
             }
-            Event::End(TagEnd::Paragraph) => {
-                if let Some((start, true)) = paragraph.take() {
+            Event::End(TagEnd::Paragraph | TagEnd::Heading(_)) => {
+                if let Some((start, true)) = inline_container.take() {
                     regions.push(start..range.end);
                 }
             }
@@ -407,24 +348,22 @@ fn strip_duplicate_title(source: &str, title: &str) -> String {
 fn split_images(source: &str, image_sizes: &HashMap<String, ImageSizeHint>) -> Vec<DocumentBlock> {
     let mut images = Vec::<FoundImage>::new();
     let mut image_stack = Vec::<FoundImage>::new();
-    let mut link_stack = Vec::<(usize, bool)>::new();
+    let mut link_stack = Vec::<(usize, usize)>::new();
 
     for (event, range) in Parser::new_ext(source, markdown_options()).into_offset_iter() {
         match event {
-            Event::Start(Tag::Link { .. }) => link_stack.push((range.start, false)),
+            Event::Start(Tag::Link { .. }) => link_stack.push((range.start, images.len())),
             Event::End(TagEnd::Link) => {
-                if let Some((start, contains_image)) = link_stack.pop()
-                    && contains_image
-                    && let Some(image) = images.last_mut()
-                    && image.range.start >= start
+                if let Some((start, first_image)) = link_stack.pop()
+                    && first_image < images.len()
                 {
-                    image.range = start..range.end;
+                    images[first_image].range.start = start;
+                    if let Some(last) = images.last_mut() {
+                        last.range.end = range.end;
+                    }
                 }
             }
             Event::Start(Tag::Image { dest_url, .. }) => {
-                if let Some((_, contains_image)) = link_stack.last_mut() {
-                    *contains_image = true;
-                }
                 image_stack.push(FoundImage {
                     range: range.start..range.end,
                     url: dest_url.into_string(),
@@ -452,6 +391,15 @@ fn split_images(source: &str, image_sizes: &HashMap<String, ImageSizeHint>) -> V
     let mut image_row = Vec::new();
     let mut cursor = 0;
     for image in images {
+        if image.range.start < cursor
+            || image.range.end < image.range.start
+            || image.range.end > source.len()
+            || !source.is_char_boundary(image.range.start)
+            || !source.is_char_boundary(image.range.end)
+        {
+            tracing::debug!("Ignoring invalid project image source range");
+            continue;
+        }
         let between = &source[cursor..image.range.start];
         let stays_in_row = !image_row.is_empty()
             && between.trim().is_empty()
@@ -510,40 +458,60 @@ fn formatted_text(source: &str, width: u16) -> Text<'static> {
     external_markdown_text(source, width)
 }
 
-fn external_markdown_text(source: &str, _width: u16) -> Text<'static> {
-    let options = tui_markdown::Options::new(RmclMarkdownStyle);
-    let text = tui_markdown::from_str_with_options(source, &options);
-    let mut lines = Vec::with_capacity(text.lines.len());
-    for line in text.lines {
-        let mut spans = Vec::with_capacity(line.spans.len());
-        let mut index = 0;
-        while index < line.spans.len() {
-            if index + 2 < line.spans.len()
-                && line.spans[index].content.as_ref() == " ("
-                && line.spans[index + 2].content.as_ref() == ")"
-                && line.spans[index + 1]
-                    .style
-                    .add_modifier
-                    .contains(Modifier::UNDERLINED)
-            {
-                index += 3;
-                continue;
-            }
-            let content = line.spans[index].content.replace('*', "").replace("__", "");
-            spans.push(Span::styled(content, line.spans[index].style));
-            index += 1;
-        }
-        lines.push(Line {
-            style: line.style,
-            alignment: line.alignment,
-            spans,
+fn external_markdown_text(source: &str, width: u16) -> Text<'static> {
+    let theme = markdown_theme();
+    let rule_style = theme.rule;
+    let renderer = RendererBuilder::new()
+        .with_theme(theme)
+        .with_heading(|_, spans| vec![Line::from(spans)])
+        .with_rule(move || vec![Line::styled("─".repeat(usize::from(width)), rule_style)])
+        .build();
+    let mut text = into_text_with_renderer(source, &renderer);
+    for line in &mut text.lines {
+        line.spans.retain(|span| {
+            let content = span.content.as_ref();
+            content != "*"
+                && !(span.style.add_modifier.contains(Modifier::UNDERLINED)
+                    && content.starts_with("(http")
+                    && content.ends_with(')'))
         });
+        for span in &mut line.spans {
+            if span.content.contains("**") {
+                span.content = span.content.replace("**", "").into();
+            }
+        }
     }
-    Text {
-        alignment: text.alignment,
-        style: text.style,
-        lines,
-    }
+    text
+}
+
+fn markdown_theme() -> MarkdownTheme {
+    let mut theme = MarkdownTheme::default();
+    let heading = Style::default()
+        .fg(THEME.as_ref().accent())
+        .add_modifier(Modifier::BOLD);
+    theme.base = Style::default().fg(THEME.as_ref().text());
+    theme.h1 = heading;
+    theme.h2 = heading;
+    theme.h3 = heading;
+    theme.h4 = heading;
+    theme.h5 = heading;
+    theme.h6 = heading;
+    theme.inline_code = Style::default()
+        .fg(THEME.as_ref().text())
+        .bg(THEME.as_ref().surface());
+    theme.code_block = theme.inline_code;
+    theme.code_block_lang = Style::default().fg(THEME.as_ref().text_dim());
+    theme.link = Style::default()
+        .fg(THEME.as_ref().info())
+        .add_modifier(Modifier::UNDERLINED);
+    theme.block_quote = Style::default().fg(THEME.as_ref().text_dim());
+    theme.list_marker = Style::default().fg(THEME.as_ref().text_dim());
+    theme.table_header = heading;
+    theme.table_cell = Style::default().fg(THEME.as_ref().text());
+    theme.table_separator = Style::default().fg(THEME.as_ref().border());
+    theme.rule = theme.table_separator;
+    theme.html = Style::default().fg(THEME.as_ref().text_dim());
+    theme
 }
 
 impl TextBlock {
@@ -1172,7 +1140,7 @@ mod tests {
     }
 
     #[test]
-    fn headings_hide_markers_and_rules_are_delegated_to_the_renderer() {
+    fn headings_hide_markers_and_rules_use_terminal_lines() {
         let text = super::formatted_text("## Known Issues\n\n---", 12);
         let rendered = text
             .lines
@@ -1185,7 +1153,8 @@ mod tests {
             })
             .collect::<Vec<_>>();
         assert!(rendered.iter().any(|line| line == "Known Issues"));
-        assert!(rendered.iter().any(|line| line == "---"));
+        assert!(rendered.iter().any(|line| line == "────────────"));
+        assert!(!rendered.iter().any(|line| line == "---"));
         assert!(!rendered.iter().any(|line| line.starts_with('#')));
     }
 
@@ -1201,12 +1170,11 @@ mod tests {
                     .any(|span| span.content.contains("Performance"))
             })
             .unwrap();
-        assert!(
-            heading
-                .style
+        assert!(heading.spans.iter().any(|span| {
+            span.style
                 .add_modifier
                 .contains(ratatui::style::Modifier::BOLD)
-        );
+        }));
     }
 
     #[test]
@@ -1246,8 +1214,8 @@ mod tests {
     }
 
     #[test]
-    fn lists_are_rendered_by_tui_markdown() {
-        let text = super::formatted_text("- first\n- second", 20);
+    fn lists_use_terminal_bullets() {
+        let text = super::formatted_text("- first\n  - nested\n- second", 20);
         let rendered = text
             .lines
             .iter()
@@ -1258,7 +1226,31 @@ mod tests {
                     .collect::<String>()
             })
             .collect::<Vec<_>>();
-        assert_eq!(rendered, ["- first", "- second"]);
+        assert_eq!(rendered, ["• first", "  • nested", "• second"]);
+    }
+
+    #[test]
+    fn markdown_headings_with_inline_html_are_converted_as_one_block() {
+        let document = super::Document::new(
+            "Project",
+            r#"### Follow me? <a href="https://example.com"><span style="text-decoration: underline;">example.com</span></a>"#,
+        );
+        let source = document
+            .blocks
+            .iter()
+            .find_map(|block| match block {
+                super::DocumentBlock::Text(text) => Some(text.source.as_str()),
+                _ => None,
+            })
+            .unwrap();
+        assert!(!source.contains('<'), "{source}");
+        let rendered = super::formatted_text(source, 80)
+            .lines
+            .iter()
+            .flat_map(|line| &line.spans)
+            .map(|span| span.content.as_ref())
+            .collect::<String>();
+        assert_eq!(rendered, "Follow me? example.com");
     }
 
     #[test]
@@ -1355,7 +1347,7 @@ mod tests {
     }
 
     #[test]
-    fn tables_are_rendered_by_tui_markdown() {
+    fn tables_are_rendered_by_the_external_renderer() {
         let text = super::formatted_text(
             "| Mod | Status | Note |\n| --- | --- | --- |\n| Player Animator | Supported | This means mods that use it like Better Combat and Emotecraft |",
             48,
@@ -1417,5 +1409,22 @@ mod tests {
             .unwrap();
         assert_eq!(scroll, max_scroll);
         assert_eq!(terminal.backend().buffer()[(39, 7)].symbol(), "█");
+    }
+
+    #[test]
+    fn multiple_images_inside_one_link_do_not_overlap() {
+        let document = super::Document::new(
+            "Project",
+            "[![First](https://cdn.example/first.png) ![Second](https://cdn.example/second.png)](https://example.com)",
+        );
+        let mut urls = document.image_urls();
+        urls.sort();
+        assert_eq!(
+            urls,
+            [
+                "https://cdn.example/first.png",
+                "https://cdn.example/second.png"
+            ]
+        );
     }
 }
