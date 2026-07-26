@@ -480,3 +480,6 @@ fn compare_semver(a: &str, b: &str) -> std::cmp::Ordering {
 fn sort_versions_semver(versions: &mut [GameVersion]) {
     versions.sort_by(|a, b| compare_semver(&b.id, &a.id));
 }
+
+#[cfg(test)]
+mod tests;

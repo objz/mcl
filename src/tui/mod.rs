@@ -9,6 +9,9 @@ pub mod progress;
 mod render;
 pub mod widgets;
 
+#[cfg(test)]
+mod tests;
+
 use std::sync::atomic::{AtomicBool, Ordering};
 
 static REDRAW_REQUESTED: AtomicBool = AtomicBool::new(true);

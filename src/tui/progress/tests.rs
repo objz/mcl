@@ -1,0 +1,57 @@
+use super::*;
+use crate::tui::tests::UI_TEST_LOCK;
+
+#[test]
+fn newest_task_is_visible_and_drop_restores_previous_task() {
+    let _guard = UI_TEST_LOCK.lock().unwrap();
+    clear();
+    let first = ProgressTask::start("first");
+    first.set_progress(1, 2);
+    {
+        let second = ProgressTask::start("second");
+        second.set_sub_action("working");
+        let state = PROGRESS.lock().unwrap();
+        assert_eq!(state.current_action.as_deref(), Some("second"));
+        assert_eq!(state.sub_action.as_deref(), Some("working"));
+    }
+    let state = PROGRESS.lock().unwrap();
+    assert_eq!(state.current_action.as_deref(), Some("first"));
+    assert_eq!(state.progress, Some((1, 2)));
+    drop(state);
+    first.finish();
+    clear();
+}
+
+#[test]
+fn changing_phase_keeps_the_existing_progress_visible() {
+    let _guard = UI_TEST_LOCK.lock().unwrap();
+    clear();
+    let task = ProgressTask::start("inventory");
+    task.set_progress(4, 10);
+    task.set_action("provider matching");
+
+    let state = PROGRESS.lock().unwrap();
+    assert_eq!(state.current_action.as_deref(), Some("provider matching"));
+    assert_eq!(state.progress, Some((4, 10)));
+    drop(state);
+
+    task.finish();
+    assert!(!is_active());
+    clear();
+}
+
+#[test]
+fn clearing_legacy_progress_keeps_owned_tasks() {
+    let _guard = UI_TEST_LOCK.lock().unwrap();
+    clear();
+    let task = ProgressTask::start("indexing");
+    set_action("legacy download");
+    clear();
+
+    let state = PROGRESS.lock().unwrap();
+    assert_eq!(state.current_action.as_deref(), Some("indexing"));
+    drop(state);
+
+    task.finish();
+    clear();
+}

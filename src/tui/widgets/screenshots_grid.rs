@@ -449,3 +449,6 @@ pub fn render(frame: &mut Frame, area: Rect, state: &mut ScreenshotsState, is_fo
         &mut state.scrollbar_state,
     );
 }
+
+#[cfg(test)]
+mod tests;

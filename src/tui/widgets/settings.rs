@@ -565,21 +565,4 @@ pub fn handle_key(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn removing_selected_last_profile_clamps_selection() {
-        let tmp = tempfile::tempdir().unwrap();
-        let mut state = SettingsState::new(tmp.path().to_path_buf());
-        state.profiles = vec!["first".to_string(), "second".to_string()];
-        state.active_profile = Some("second".to_string());
-        state.list_state.selected = Some(2);
-
-        state.remove_profile("second");
-
-        assert_eq!(state.profiles, vec!["first"]);
-        assert_eq!(state.active_profile, None);
-        assert_eq!(state.list_state.selected, Some(1));
-    }
-}
+mod tests;

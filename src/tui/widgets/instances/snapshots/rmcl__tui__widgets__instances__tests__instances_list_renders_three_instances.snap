@@ -1,0 +1,16 @@
+---
+source: src/tui/widgets/instances/tests.rs
+expression: terminal.backend()
+---
+"╭Instances─────────────────────────────╮"
+"│▌ Vanilla 1.20.1                      ▲"
+"│▌ Never played                        ║"
+"│  Forge Pack                          ║"
+"│  Never played                        ║"
+"│  Fabric Test                         ║"
+"│  Never played                        ║"
+"│                                      ║"
+"│                                      ║"
+"│                                      │"
+"│                                      ▼"
+"╰──────────────────────────────────────╯"

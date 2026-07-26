@@ -1,0 +1,16 @@
+---
+source: src/tui/widgets/popups/new_instance/render/tests.rs
+expression: terminal.backend()
+---
+"╭New Instance──────────────────────────────────────────────╮"
+"│Name: MyPack                                              │"
+"│MC: 1.20.1                                                │"
+"│Loader: Fabric                                            │"
+"│Loader version: 0.15.0                                    │"
+"│                                                          │"
+"│                                                          │"
+"│                                                          │"
+"│                                                          │"
+"│                                                          │"
+"│                                                          │"
+"╰──────────────────────────────────[h] back  [Enter] create╯"

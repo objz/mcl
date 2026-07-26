@@ -465,3 +465,6 @@ fn clamp_version_index(state: &mut ImportWizardState) {
         state.version_idx = count.saturating_sub(1);
     }
 }
+
+#[cfg(test)]
+mod tests;

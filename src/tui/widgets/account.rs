@@ -529,3 +529,6 @@ fn render_device_code_popup(frame: &mut Frame, info: &DeviceCodeInfo) {
     }
     .render(area, frame.buffer_mut());
 }
+
+#[cfg(test)]
+mod tests;

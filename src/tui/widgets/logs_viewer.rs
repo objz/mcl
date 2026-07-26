@@ -687,3 +687,6 @@ fn line_level_style(line: &str) -> Style {
         Style::default().fg(theme.text())
     }
 }
+
+#[cfg(test)]
+mod tests;

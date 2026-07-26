@@ -1,0 +1,12 @@
+---
+source: src/tui/widgets/instances/tests.rs
+expression: terminal.backend()
+---
+"╭Instances─────────────────────────────╮"
+"│                                      │"
+"│                                      │"
+"│                                      │"
+"│                                      │"
+"│                                      │"
+"│                                      │"
+"╰──────────────────────────────────────╯"
