@@ -4,7 +4,7 @@
 // fixture layout in a tempdir, call the seam, and assert on the rendered
 // LaunchInvocation. nothing here actually spawns a process.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use chrono::Utc;
 use serde_json::json;
@@ -214,12 +214,16 @@ async fn vanilla_modern_builds_complete_invocation() {
         .join("cache/minecraft/versions")
         .join("1.20.1")
         .join("natives");
-    assert!(
-        inv.jvm_args
-            .iter()
-            .any(|a| a == &format!("-Djava.library.path={}", expected_natives.display())),
+    let actual_natives = inv
+        .jvm_args
+        .iter()
+        .find_map(|arg| arg.strip_prefix("-Djava.library.path="))
+        .map(Path::new);
+    assert_eq!(
+        actual_natives,
+        Some(expected_natives.as_path()),
         "jvm_args missing natives substitution: {:?}",
-        inv.jvm_args
+        inv.jvm_args,
     );
     assert!(
         inv.jvm_args
