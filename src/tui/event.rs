@@ -35,7 +35,7 @@ impl App {
             self.drain_pending_instances();
             self.drain_pending_last_played();
             let local_streamed = self.mods_state.drain_pending();
-            let content_changed = self.mods_state.drain_watcher();
+            let mods_update = self.mods_state.drain_watcher();
             self.mods_state.drain_provider_icons();
             self.mods_state.request_image_loads(&self.picker);
             self.mods_state.drain_image_loads(&self.picker);
@@ -48,7 +48,7 @@ impl App {
                 .list
                 .drain_image_loads(&self.picker);
             let local_streamed = self.resource_packs_state.drain_pending() || local_streamed;
-            let content_changed = self.resource_packs_state.drain_watcher() || content_changed;
+            let resource_packs_update = self.resource_packs_state.drain_watcher();
             self.resource_packs_state.drain_provider_icons();
             self.resource_packs_state.request_image_loads(&self.picker);
             self.resource_packs_state.drain_image_loads(&self.picker);
@@ -61,7 +61,7 @@ impl App {
                 .list
                 .drain_image_loads(&self.picker);
             let local_streamed = self.shaders_state.drain_pending() || local_streamed;
-            let content_changed = self.shaders_state.drain_watcher() || content_changed;
+            let shaders_update = self.shaders_state.drain_watcher();
             self.shaders_state.drain_provider_icons();
             self.shaders_state.request_image_loads(&self.picker);
             self.shaders_state.drain_image_loads(&self.picker);
@@ -84,6 +84,18 @@ impl App {
             self.screenshots_state.drain_pending_entries();
             self.screenshots_state.request_visible_loads();
             self.create_screenshot_protocols();
+            let mut content_changed = mods_update.requires_reconcile
+                || resource_packs_update.requires_reconcile
+                || shaders_update.requires_reconcile;
+            let toggles = mods_update
+                .toggles
+                .into_iter()
+                .chain(resource_packs_update.toggles)
+                .chain(shaders_update.toggles)
+                .collect::<Vec<_>>();
+            if !toggles.is_empty() {
+                content_changed |= self.persist_content_toggles(&toggles);
+            }
             if content_changed
                 && let Some(instance) = self.instances_state.selected_instance()
                 && let Ok(mut results) =
@@ -123,6 +135,52 @@ impl App {
             }
         }
         Ok(())
+    }
+
+    fn persist_content_toggles(
+        &mut self,
+        toggles: &[widgets::content::list::ContentToggle],
+    ) -> bool {
+        let Some(instance) = self.instances_state.selected_instance() else {
+            return true;
+        };
+        let instance_name = instance.name.clone();
+        let paths = crate::storage::InstancePaths::new(
+            self.instance_manager.instances_dir.join(&instance_name),
+        );
+        let minecraft_dir = paths.minecraft();
+        let updated =
+            crate::instance::ContentManifest::update(&paths.content_manifest(), |manifest| {
+                let mut complete = true;
+                for toggle in toggles {
+                    let Ok(old_path) = toggle.old_path.strip_prefix(&minecraft_dir) else {
+                        complete = false;
+                        continue;
+                    };
+                    let Ok(new_path) = toggle.new_path.strip_prefix(&minecraft_dir) else {
+                        complete = false;
+                        continue;
+                    };
+                    complete &= manifest.rename_record(old_path, new_path, toggle.enabled);
+                }
+                Ok((manifest.clone(), complete))
+            });
+        let (manifest, complete) = match updated {
+            Ok(updated) => updated,
+            Err(error) => {
+                tracing::warn!("Failed to update toggled content metadata: {error}");
+                return true;
+            }
+        };
+
+        self.mods_discovery_state
+            .refresh_installed_manifest(&manifest, &minecraft_dir);
+        self.resource_packs_discovery_state
+            .refresh_installed_manifest(&manifest, &minecraft_dir);
+        self.shaders_discovery_state
+            .refresh_installed_manifest(&manifest, &minecraft_dir);
+        self.content_manifest = Some((instance_name, manifest));
+        !complete
     }
 
     fn ensure_content_reconciliation(&mut self, changed: bool) {

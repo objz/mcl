@@ -146,6 +146,18 @@ struct WatcherDiff {
     added: Vec<ContentEntry>,
 }
 
+pub(crate) struct ContentToggle {
+    pub old_path: std::path::PathBuf,
+    pub new_path: std::path::PathBuf,
+    pub enabled: bool,
+}
+
+#[derive(Default)]
+pub(crate) struct ContentWatcherUpdate {
+    pub toggles: Vec<ContentToggle>,
+    pub requires_reconcile: bool,
+}
+
 pub struct ContentListState {
     pub entries: Vec<ContentEntry>,
     pub list_state: TuiListState,
@@ -702,9 +714,9 @@ impl ContentListState {
 
     // pick up the precomputed diff from the notify watcher callback.
     // skip while streaming is in progress to avoid duplicate entries.
-    pub fn drain_watcher(&mut self) -> bool {
+    pub(crate) fn drain_watcher(&mut self) -> ContentWatcherUpdate {
         if self.stream_rx.is_some() {
-            return false;
+            return ContentWatcherUpdate::default();
         }
 
         let diff = match self.watcher_diff.lock() {
@@ -713,9 +725,13 @@ impl ContentListState {
         };
 
         let Some(diff) = diff else {
-            return false;
+            return ContentWatcherUpdate::default();
         };
-        self.images_dirty = true;
+        let mut update = ContentWatcherUpdate {
+            requires_reconcile: !diff.removed.is_empty() || !diff.added.is_empty(),
+            ..ContentWatcherUpdate::default()
+        };
+        self.images_dirty |= update.requires_reconcile;
 
         // apply toggles (enabled/path changes)
         tracing::debug!(
@@ -727,8 +743,20 @@ impl ContentListState {
         );
         for (stem, enabled, path) in &diff.toggled {
             if let Some(entry) = self.entries.iter_mut().find(|e| &e.file_stem == stem) {
+                let old_path = if entry.path == *path {
+                    opposite_toggle_path(path, *enabled)
+                } else {
+                    entry.path.clone()
+                };
+                update.toggles.push(ContentToggle {
+                    old_path,
+                    new_path: path.clone(),
+                    enabled: *enabled,
+                });
                 entry.enabled = *enabled;
                 entry.path = path.clone();
+            } else {
+                update.requires_reconcile = true;
             }
         }
 
@@ -765,7 +793,7 @@ impl ContentListState {
         }
 
         self.update_scrollbar();
-        true
+        update
     }
 
     // starts a notify file watcher on the given directory. changes trigger
@@ -2095,6 +2123,19 @@ fn watched_stem(path: &std::path::Path, ext: &str) -> Option<(String, bool)> {
     }
 }
 
+fn opposite_toggle_path(path: &std::path::Path, enabled: bool) -> std::path::PathBuf {
+    let mut opposite = path.to_owned();
+    let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+        return opposite;
+    };
+    if enabled {
+        opposite.set_file_name(format!("{name}.disabled"));
+    } else if let Some(name) = name.strip_suffix(".disabled") {
+        opposite.set_file_name(name);
+    }
+    opposite
+}
+
 fn read_dir_stems(dir: &std::path::Path, ext: &str) -> HashMap<String, (std::path::PathBuf, bool)> {
     let mut map = HashMap::new();
     let Ok(read_dir) = std::fs::read_dir(dir) else {
@@ -2211,6 +2252,33 @@ mod tests {
         assert_eq!(diff.toggled, vec![("example".to_owned(), false, disabled)]);
         assert!(diff.removed.is_empty());
         assert!(diff.added.is_empty());
+    }
+
+    #[test]
+    fn pure_toggle_does_not_request_reconciliation() {
+        let mut state = ContentListState::default();
+        let mut content = entry("Example");
+        content.path = PathBuf::from("mods/example.jar.disabled");
+        content.enabled = false;
+        state.entries.push(content);
+        *state.watcher_diff.lock().unwrap() = Some(super::WatcherDiff {
+            toggled: vec![(
+                "example".to_owned(),
+                false,
+                PathBuf::from("mods/example.jar.disabled"),
+            )],
+            removed: Vec::new(),
+            added: Vec::new(),
+        });
+
+        let update = state.drain_watcher();
+
+        assert!(!update.requires_reconcile);
+        assert_eq!(update.toggles.len(), 1);
+        assert_eq!(
+            update.toggles[0].old_path,
+            PathBuf::from("mods/example.jar")
+        );
     }
 
     #[test]

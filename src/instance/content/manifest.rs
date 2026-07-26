@@ -160,6 +160,21 @@ impl ContentManifest {
             .retain(|record| record.relative_path != relative_path);
     }
 
+    pub fn rename_record(&mut self, from: &Path, to: &Path, enabled: bool) -> bool {
+        let Some(index) = self
+            .files
+            .iter()
+            .position(|record| record.relative_path == from || record.relative_path == to)
+        else {
+            return false;
+        };
+        let mut record = self.files.remove(index);
+        record.relative_path = to.to_owned();
+        record.enabled = enabled;
+        self.upsert(record);
+        true
+    }
+
     pub fn resolved_project_path(
         &self,
         provider: &str,
@@ -288,5 +303,38 @@ mod tests {
             Some("a9993e364706816aba3e25717850c26c9cd0d89d")
         );
         assert_eq!(fingerprint.hash("sha512").unwrap().len(), 128);
+    }
+
+    #[test]
+    fn renaming_a_record_preserves_its_resolution() {
+        let mut manifest = ContentManifest::default();
+        manifest.upsert(ContentFileRecord {
+            relative_path: PathBuf::from("mods/example.jar"),
+            kind: ContentKind::Mod,
+            enabled: true,
+            fingerprint: FileFingerprint {
+                size: 3,
+                modified_ns: 4,
+                hashes: BTreeMap::new(),
+            },
+            resolution: Resolution::Resolved {
+                project: ProviderProject {
+                    provider: "modrinth".to_owned(),
+                    project_id: "project".to_owned(),
+                    version_id: "version".to_owned(),
+                },
+            },
+        });
+
+        assert!(manifest.rename_record(
+            Path::new("mods/example.jar"),
+            Path::new("mods/example.jar.disabled"),
+            false,
+        ));
+        let record = manifest
+            .record(Path::new("mods/example.jar.disabled"))
+            .unwrap();
+        assert!(!record.enabled);
+        assert!(matches!(record.resolution, Resolution::Resolved { .. }));
     }
 }
