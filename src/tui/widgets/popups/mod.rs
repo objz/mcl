@@ -7,7 +7,12 @@ pub mod error;
 pub mod import_modpack;
 pub mod new_instance;
 
-use ratatui::layout::Rect;
+use ratatui::{
+    Frame,
+    layout::{Alignment, Constraint, Layout, Rect},
+    text::Line,
+    widgets::Paragraph,
+};
 
 // figures out the (width, height) a text block will need after word wrapping.
 // used to size popups before rendering so they fit their content snugly.
@@ -77,7 +82,7 @@ pub fn keybind_line(binds: &[(&str, &str)]) -> ratatui::text::Line<'static> {
     Line::from(spans)
 }
 
-// same as keybind_line but wraps to multiple rows when the popup is too narrow
+// same as keybind_line but wraps to multiple rows when the panel is too narrow
 // to fit everything on one line
 pub fn keybind_lines_wrapped(
     binds: &[(&str, &str)],
@@ -104,7 +109,7 @@ pub fn keybind_lines_wrapped(
         } else {
             0
         };
-        let item_w = key.len() + 2 + label.len();
+        let item_w = Span::raw(format!("[{key}]{label}")).width();
         let needed = sep_w + item_w;
 
         if !current_spans.is_empty() && current_width + needed > max_width as usize {
@@ -131,3 +136,21 @@ pub fn keybind_lines_wrapped(
 
     rows
 }
+
+pub fn render_keybind_overflow(frame: &mut Frame, area: Rect, lines: &[Line<'static>]) -> Rect {
+    let overflow = lines.len().saturating_sub(1);
+    if overflow == 0 {
+        return area;
+    }
+
+    let [content, footer] =
+        Layout::vertical([Constraint::Min(0), Constraint::Length(overflow as u16)]).areas(area);
+    frame.render_widget(
+        Paragraph::new(lines[..overflow].to_vec()).alignment(Alignment::Right),
+        footer,
+    );
+    content
+}
+
+#[cfg(test)]
+mod tests;

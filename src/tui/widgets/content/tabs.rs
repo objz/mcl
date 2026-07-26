@@ -328,16 +328,17 @@ pub fn render(
         None
     };
 
-    if let Some(kb) = kb {
-        let lines =
-            crate::tui::widgets::popups::keybind_lines_wrapped(kb, area.width.saturating_sub(2));
-        for line in lines {
-            block = block.title_bottom(line);
-        }
+    let keybind_lines = kb.map_or_else(Vec::new, |keybinds| {
+        crate::tui::widgets::popups::keybind_lines_wrapped(keybinds, area.width.saturating_sub(2))
+    });
+    if let Some(line) = keybind_lines.last() {
+        block = block.title_bottom(line.clone());
     }
 
-    let content_area = block.inner(area);
+    let mut content_area = block.inner(area);
     frame.render_widget(block, area);
+    content_area =
+        crate::tui::widgets::popups::render_keybind_overflow(frame, content_area, &keybind_lines);
 
     // lazy-load: only scan when switching to an instance that hasn't been loaded yet
     match tab {

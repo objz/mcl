@@ -220,18 +220,21 @@ pub fn render(frame: &mut Frame, area: Rect, focused: FocusedArea, state: &mut A
         .border_type(BORDER_STYLE.to_border_type())
         .border_style(Style::default().fg(color));
 
-    if focused == FocusedArea::Account {
-        let lines = super::popups::keybind_lines_wrapped(
+    let keybind_lines = if focused == FocusedArea::Account {
+        super::popups::keybind_lines_wrapped(
             &[("⏎", " select"), ("a", " add"), ("d", " del")],
             area.width.saturating_sub(2),
-        );
-        for line in lines {
-            block = block.title_bottom(line);
-        }
+        )
+    } else {
+        Vec::new()
+    };
+    if let Some(line) = keybind_lines.last() {
+        block = block.title_bottom(line.clone());
     }
 
-    let inner = block.inner(area);
+    let mut inner = block.inner(area);
     frame.render_widget(block, area);
+    inner = super::popups::render_keybind_overflow(frame, inner, &keybind_lines);
 
     if state.store.accounts.is_empty() {
         frame.render_widget(
