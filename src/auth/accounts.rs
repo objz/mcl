@@ -36,6 +36,14 @@ pub struct AccountStore {
 }
 
 impl AccountStore {
+    #[cfg(test)]
+    pub(crate) fn empty_for_test(path: PathBuf) -> Self {
+        Self {
+            accounts: Vec::new(),
+            path,
+        }
+    }
+
     pub fn load() -> Self {
         let path = account_store_path();
         let accounts = match std::fs::read_to_string(&path) {

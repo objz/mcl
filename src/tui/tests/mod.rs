@@ -1,5 +1,5 @@
 mod flows;
-mod harness;
+pub(super) mod harness;
 mod snapshots;
 
 use std::sync::Mutex;

@@ -10,7 +10,7 @@ mod render;
 pub mod widgets;
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 

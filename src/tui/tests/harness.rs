@@ -4,15 +4,17 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{Terminal, backend::TestBackend};
 
 use super::UI_TEST_LOCK;
+use crate::auth::{Account, AccountStore, AccountType};
 use crate::instance::{InstanceConfig, InstanceManager, ModLoader};
 use crate::tui::{
     app::{App, FocusedArea},
     widgets,
 };
 
-pub(super) struct UiHarness {
+pub(in crate::tui) struct UiHarness {
     pub app: App,
     terminal: Terminal<TestBackend>,
+    runtime: tokio::runtime::Runtime,
     _temp: tempfile::TempDir,
     _guard: std::sync::MutexGuard<'static, ()>,
 }
@@ -38,9 +40,11 @@ impl UiHarness {
         let picker = ratatui_image::picker::Picker::halfblocks();
         let font_size = picker.font_size();
         let instance_manager = InstanceManager::new(instances_dir, meta_dir.clone());
-        let mut account_state = widgets::account::AccountState::default();
-        account_state.store.accounts.clear();
-        account_state.list_state.selected = None;
+        let account_state = widgets::account::AccountState {
+            store: AccountStore::empty_for_test(temp.path().join("accounts.json")),
+            list_state: Default::default(),
+            add_mode: widgets::account::AddMode::None,
+        };
 
         let app = App {
             exit: false,
@@ -89,13 +93,17 @@ impl UiHarness {
         Self {
             app,
             terminal: Terminal::new(TestBackend::new(100, 30)).expect("test terminal"),
+            runtime: tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("test runtime"),
             _temp: temp,
             _guard: guard,
         }
     }
 
     pub fn add_instance(&mut self, name: &str) {
-        self.app.instances_state.add_instance(InstanceConfig {
+        let config = InstanceConfig {
             name: name.to_owned(),
             game_version: "1.21.1".to_owned(),
             loader: ModLoader::Fabric,
@@ -108,7 +116,30 @@ impl UiHarness {
             jvm_args: Vec::new(),
             resolution: None,
             config_sync_profile: None,
+        };
+        std::fs::create_dir_all(self.instance_path(name)).expect("instance directory");
+        self.app
+            .instance_manager
+            .save(&config)
+            .expect("instance config");
+        self.app.instances_state.add_instance(config);
+    }
+
+    pub fn add_account(&mut self, username: &str) {
+        self.app.account_state.store.accounts.push(Account {
+            uuid: username.to_owned(),
+            username: username.to_owned(),
+            account_type: AccountType::Microsoft,
+            active: true,
+            refresh_token: Some("refresh".to_owned()),
+            cached_mc_token: None,
+            cached_mc_token_expires_at: None,
         });
+        self.app.account_state.list_state.selected = Some(0);
+    }
+
+    pub fn instance_path(&self, name: &str) -> std::path::PathBuf {
+        self.app.instance_manager.instances_dir.join(name)
     }
 
     pub fn key(&mut self, code: KeyCode) {
@@ -116,12 +147,14 @@ impl UiHarness {
     }
 
     pub fn key_with(&mut self, code: KeyCode, modifiers: KeyModifiers) {
+        let _runtime = self.runtime.enter();
         self.app
             .handle_key_event(KeyEvent::new(code, modifiers))
             .expect("handle key");
     }
 
     pub fn draw(&mut self) {
+        let _runtime = self.runtime.enter();
         let app = &mut self.app;
         self.terminal
             .draw(|frame| app.render_frame(frame))

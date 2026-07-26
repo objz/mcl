@@ -452,24 +452,7 @@ impl App {
             .or_else(|_| std::env::var("VISUAL"))
             .unwrap_or_else(|_| default_editor.to_owned());
 
-        let editor_name = std::path::Path::new(&editor)
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or(&editor);
-        let is_tui_editor = matches!(
-            editor_name,
-            "vi" | "vim"
-                | "nvim"
-                | "neovim"
-                | "nano"
-                | "micro"
-                | "helix"
-                | "hx"
-                | "emacs"
-                | "ne"
-                | "joe"
-                | "mcedit"
-        );
+        let is_tui_editor = editor_runs_in_terminal(&editor);
 
         if is_tui_editor {
             let _ = stdout().execute(DisableMouseCapture);
@@ -610,3 +593,27 @@ impl App {
         }
     }
 }
+
+fn editor_runs_in_terminal(editor: &str) -> bool {
+    let editor_name = std::path::Path::new(editor)
+        .file_stem()
+        .and_then(|name| name.to_str())
+        .unwrap_or(editor);
+    matches!(
+        editor_name,
+        "vi" | "vim"
+            | "nvim"
+            | "neovim"
+            | "nano"
+            | "micro"
+            | "helix"
+            | "hx"
+            | "emacs"
+            | "ne"
+            | "joe"
+            | "mcedit"
+    )
+}
+
+#[cfg(test)]
+mod tests;
