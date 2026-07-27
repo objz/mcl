@@ -20,7 +20,8 @@ use ratatui_image::{CropOptions, Resize, StatefulImage, protocol::StatefulProtoc
 use tui_widget_list::{ListBuilder, ListState as TuiListState, ListView};
 
 use crate::config::theme::THEME;
-use crate::instance::content::{ContentEntry, IconCell};
+use crate::instance::content::entry::ContentEntry;
+use crate::instance::content::icons::IconCell;
 
 type ScanOneFn = fn(&Path, &str, bool) -> ContentEntry;
 static PROVIDER_ICON_SLOTS: LazyLock<Arc<tokio::sync::Semaphore>> =
@@ -1161,7 +1162,7 @@ impl ContentListState {
         let Some(entry) = self.entries.get(index) else {
             return;
         };
-        match crate::instance::content::toggle_entry_path(entry) {
+        match crate::instance::content::entry::toggle_entry_path(entry) {
             Ok(Some(new_path)) => {
                 let entry = &mut self.entries[index];
                 entry.enabled = !entry.enabled;
@@ -1954,10 +1955,7 @@ fn ellipsize(text: &str, max_width: usize) -> String {
     visible
 }
 
-fn protocol_icon_columns(
-    entry: &crate::instance::ContentEntry,
-    picker: &ratatui_image::picker::Picker,
-) -> u16 {
+fn protocol_icon_columns(entry: &ContentEntry, picker: &ratatui_image::picker::Picker) -> u16 {
     let rows = entry.icon_lines.as_ref().map_or(3, Vec::len) as u16;
     let font_size = picker.font_size();
     square_icon_columns(rows, (font_size.width, font_size.height))
@@ -2081,7 +2079,7 @@ fn diff_event_paths(
 fn watcher_diff(
     toggled: Vec<(String, bool, std::path::PathBuf)>,
     removed: Vec<String>,
-    added: Vec<crate::instance::ContentEntry>,
+    added: Vec<ContentEntry>,
 ) -> Option<WatcherDiff> {
     if toggled.is_empty() && removed.is_empty() && added.is_empty() {
         None

@@ -20,7 +20,4 @@ pub mod tui;
 pub(crate) mod tests;
 
 pub use cli::init as cli_init;
-pub use instance::content::provider as content_provider;
-pub use instance::logs::live as instance_logs;
-pub use instance::runtime as running;
 pub use migrate::run_legacy_rename as migrate_legacy_rename;

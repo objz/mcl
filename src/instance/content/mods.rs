@@ -9,8 +9,7 @@ use std::path::Path;
 
 use serde::Deserialize;
 
-pub use super::entry::{ContentEntry, toggle_entry};
-pub use super::icons::IconCell;
+use super::entry::ContentEntry;
 use super::icons::{fallback_icon, make_icon_pixels};
 
 #[derive(Deserialize, Default)]

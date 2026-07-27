@@ -8,9 +8,6 @@ pub mod mojang;
 pub mod neoforge;
 pub mod quilt;
 
-pub use crate::instance::java::detect_java_path;
-pub use crate::instance::loader::maven::maven_coord_to_path;
-
 use reqwest::Client;
 use serde::Serialize;
 use serde::de::DeserializeOwned;

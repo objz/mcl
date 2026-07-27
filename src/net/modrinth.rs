@@ -3,10 +3,6 @@
 use serde::Deserialize;
 use std::collections::HashMap;
 
-pub use crate::instance::import::mrpack::{
-    MrpackFile, MrpackIndex, game_version_from_dependencies, loader_from_dependencies, parse_mrpack,
-};
-
 #[derive(Debug, Clone, Deserialize, serde::Serialize)]
 pub struct ProjectInfo {
     pub id: String,

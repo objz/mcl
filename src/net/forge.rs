@@ -11,8 +11,6 @@ use crate::feedback::progress::set_action;
 use crate::instance::loader::GameVersion;
 use crate::net::{HttpClient, NetError, download_file};
 
-pub use crate::instance::loader::forge::run_forge_installer;
-
 const FORGE_PROMOTIONS_URL: &str =
     "https://files.minecraftforge.net/net/minecraftforge/forge/promotions_slim.json";
 const FORGE_MAVEN_BASE: &str = "https://maven.minecraftforge.net/net/minecraftforge/forge";

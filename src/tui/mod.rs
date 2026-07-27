@@ -7,9 +7,7 @@ pub mod logging;
 mod render;
 pub mod widgets;
 
-pub use crate::feedback::errors as error_buffer;
-pub use crate::feedback::progress;
-pub use crate::feedback::request_redraw;
+use crate::feedback::request_redraw;
 
 #[cfg(test)]
 pub(crate) mod tests;

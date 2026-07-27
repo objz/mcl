@@ -4,7 +4,8 @@ use std::path::Path;
 
 use serde::Deserialize;
 
-use super::{ContentEntry, fallback_icon, make_icon_pixels};
+use super::entry::ContentEntry;
+use super::{fallback_icon, make_icon_pixels};
 
 #[derive(Deserialize, Default)]
 struct PackMcMeta {

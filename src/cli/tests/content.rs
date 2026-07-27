@@ -1,5 +1,5 @@
 use super::find_entry_by_stem;
-use crate::instance::ContentEntry;
+use crate::instance::content::entry::ContentEntry;
 use std::path::PathBuf;
 
 fn entry(file_stem: &str) -> ContentEntry {

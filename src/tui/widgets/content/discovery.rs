@@ -3,7 +3,8 @@ use std::sync::{Arc, Mutex};
 
 use crossterm::event::{KeyCode, KeyEvent};
 
-use crate::instance::{ContentEntry, ContentKind, InstanceConfig, ModLoader};
+use crate::instance::content::entry::ContentEntry;
+use crate::instance::{ContentKind, InstanceConfig, ModLoader};
 use crate::net::modrinth::{DiscoveryProject, VersionInfo};
 
 use super::list::{ContentListState, ContentStream};

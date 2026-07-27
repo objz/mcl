@@ -1,4 +1,5 @@
 use super::*;
+use crate::instance::content::entry::{ContentEntry, toggle_entry};
 use std::path::PathBuf;
 
 fn setup_mods_dir(tmp: &Path, instance: &str) -> PathBuf {

@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-use super::ContentEntry;
+use super::entry::ContentEntry;
 
 pub fn scan_one_shader(path: &Path, file_stem: &str, enabled: bool) -> ContentEntry {
     super::packs::scan_one_pack(path, file_stem, enabled)

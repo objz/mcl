@@ -4,7 +4,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use crate::instance::ContentEntry;
+use crate::instance::content::entry::ContentEntry;
 use ratatui::{
     buffer::Buffer,
     layout::Rect,

@@ -4,7 +4,8 @@
 
 use std::path::Path;
 
-use super::{ContentEntry, fallback_icon_large, make_icon_pixels};
+use super::entry::ContentEntry;
+use super::{fallback_icon_large, make_icon_pixels};
 
 pub fn scan_one_world(path: &Path, file_stem: &str, enabled: bool) -> ContentEntry {
     let icon_bytes = std::fs::read(path.join("icon.png")).ok();

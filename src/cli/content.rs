@@ -8,7 +8,7 @@ use clap::ArgMatches;
 
 use super::utils::{require_instance, required_arg};
 use crate::cli::output::print_table;
-use crate::instance::ContentEntry;
+use crate::instance::content::entry::ContentEntry;
 
 type CliResult = Result<(), Box<dyn std::error::Error>>;
 type Scanner = fn(&Path, &str) -> Vec<ContentEntry>;
@@ -106,7 +106,7 @@ fn toggle_entry(
         return Ok(());
     }
 
-    crate::instance::toggle_entry(entry)?;
+    crate::instance::content::entry::toggle_entry(entry)?;
     println!(
         "{}d '{}'.",
         if should_enable { "Enable" } else { "Disable" },

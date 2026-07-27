@@ -17,7 +17,8 @@ use crate::tui::widgets::content::{ContentMode, DiscoveryState};
 
 use crate::tui::widgets::styled_title;
 
-type ContentScanner = fn(&std::path::Path, &str, bool) -> crate::instance::ContentEntry;
+type ContentScanner =
+    fn(&std::path::Path, &str, bool) -> crate::instance::content::entry::ContentEntry;
 
 #[derive(Clone, Copy)]
 struct DownloadableTab {

@@ -11,8 +11,6 @@ use crate::feedback::progress::set_action;
 use crate::instance::loader::GameVersion;
 use crate::net::{HttpClient, NetError, download_file};
 
-pub use crate::instance::loader::neoforge::run_neoforge_installer;
-
 const NEOFORGE_MAVEN_BASE: &str = "https://maven.neoforged.net/releases/net/neoforged/neoforge";
 const NEOFORGE_API_BASE: &str =
     "https://maven.neoforged.net/api/maven/versions/releases/net/neoforged/neoforge";

@@ -1,10 +1,10 @@
-// integration tests for the public log_files API.
+// integration tests for the public log files API.
 // these tests touch the filesystem and exercise the module as an external
 // consumer would.
 
 use std::path::{Path, PathBuf};
 
-use rmcl::instance::log_files::{create_log_file, log_dir, read_log_file, scan_log_files};
+use rmcl::instance::logs::files::{create_log_file, log_dir, read_log_file, scan_log_files};
 
 fn setup_log_dir(tmp: &Path, instance: &str) -> PathBuf {
     let dir = log_dir(tmp, instance);
