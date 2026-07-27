@@ -7,7 +7,7 @@ use html_to_markdown_rs::{
     visitor::{HtmlVisitor, NodeContext, VisitResult, VisitorHandle},
 };
 use image::DynamicImage;
-use pulldown_cmark::{Event, Options as MarkdownOptions, Parser, Tag, TagEnd};
+use pulldown_cmark::{CodeBlockKind, Event, Options as MarkdownOptions, Parser, Tag, TagEnd};
 use ratatui::{
     Frame,
     layout::{Alignment, Rect, Size},
@@ -20,7 +20,7 @@ use ratatui_image::{
     picker::ProtocolType,
     sliced::{SignedPosition, SlicedImage, SlicedProtocol},
 };
-use the_other_tui_markdown::{RendererBuilder, Theme as MarkdownTheme, into_text_with_renderer};
+use tui_markdown::{Options as TuiMarkdownOptions, StyleSheet, from_str_with_options};
 use unicode_segmentation::UnicodeSegmentation;
 
 use crate::config::settings::ImageProtocol;
@@ -570,23 +570,28 @@ fn push_text_block(blocks: &mut Vec<DocumentBlock>, source: &str) {
 }
 
 fn external_markdown_text(source: &str, width: u16) -> (Text<'static>, Vec<LinkTarget>) {
-    let theme = markdown_theme();
-    let rule_style = theme.rule;
-    let list_marker_style = theme.list_marker;
-    let table_separator_style = theme.table_separator;
-    let code_style = theme.code_block;
-    let code_language_style = theme.code_block_lang;
+    let styles = MarkdownStyleSheet;
+    let rule_style = styles.table_border();
+    let list_marker_style = Style::default().fg(THEME.as_ref().text_dim());
+    let table_separator_style = styles.table_border();
+    let code_style = styles.code();
+    let code_language_style = Style::default()
+        .fg(THEME.as_ref().text_dim())
+        .bg(THEME.as_ref().surface());
     let links = markdown_links(source);
-    let renderer = RendererBuilder::new()
-        .with_theme(theme)
-        .with_heading(|_, spans| vec![Line::from(spans)])
-        .with_rule(move || vec![Line::styled("─".repeat(usize::from(width)), rule_style)])
-        .with_code_block(move |language, content| {
-            code_block_lines(language, content, width, code_style, code_language_style)
-        })
-        .build();
-    let mut text = into_text_with_renderer(source, &renderer);
+    let options = TuiMarkdownOptions::new(styles);
+    let mut text = own_text(from_str_with_options(source, &options));
+    text.lines = render_code_blocks(
+        text.lines,
+        markdown_code_languages(source),
+        width,
+        code_style,
+        code_language_style,
+    );
+    text.lines = unbox_tables(text.lines);
     for line in &mut text.lines {
+        let line_style = Style::default().fg(THEME.as_ref().text()).patch(line.style);
+        line.style = line_style;
         line.spans.retain(|span| {
             let content = span.content.as_ref();
             content != "*"
@@ -594,7 +599,9 @@ fn external_markdown_text(source: &str, width: u16) -> (Text<'static>, Vec<LinkT
                     && content.starts_with("(http")
                     && content.ends_with(')'))
         });
+        remove_link_destination(line);
         for span in &mut line.spans {
+            span.style = line_style.patch(span.style);
             if span.content.contains("**") {
                 span.content = span.content.replace("**", "").into();
             }
@@ -602,10 +609,156 @@ fn external_markdown_text(source: &str, width: u16) -> (Text<'static>, Vec<LinkT
     }
     text.lines = wrap_tables(text.lines, width, table_separator_style)
         .into_iter()
+        .map(|line| {
+            if line.to_string() == "---" {
+                Line::styled("─".repeat(usize::from(width)), rule_style)
+            } else {
+                line
+            }
+        })
         .flat_map(|line| wrap_list_line(line, width, list_marker_style))
         .flat_map(|line| wrap_line(line, width))
         .collect();
     (text, links)
+}
+
+fn markdown_code_languages(source: &str) -> Vec<String> {
+    Parser::new_ext(source, markdown_options())
+        .filter_map(|event| match event {
+            Event::Start(Tag::CodeBlock(CodeBlockKind::Fenced(language))) => {
+                Some(language.into_string())
+            }
+            Event::Start(Tag::CodeBlock(CodeBlockKind::Indented)) => Some(String::new()),
+            _ => None,
+        })
+        .collect()
+}
+
+fn render_code_blocks(
+    lines: Vec<Line<'static>>,
+    languages: Vec<String>,
+    width: u16,
+    code_style: Style,
+    language_style: Style,
+) -> Vec<Line<'static>> {
+    let mut output = Vec::new();
+    let mut lines = lines.into_iter().peekable();
+    let mut languages = languages.into_iter();
+    while let Some(line) = lines.next() {
+        if line.style != code_style {
+            output.push(line);
+            continue;
+        }
+        let mut content = vec![line.to_string()];
+        while lines.peek().is_some_and(|line| line.style == code_style) {
+            content.push(lines.next().expect("peeked code line").to_string());
+        }
+        output.extend(code_block_lines(
+            &languages.next().unwrap_or_default(),
+            &content.join("\n"),
+            width,
+            code_style,
+            language_style,
+        ));
+    }
+    output
+}
+
+fn unbox_tables(lines: Vec<Line<'static>>) -> Vec<Line<'static>> {
+    lines
+        .into_iter()
+        .filter_map(|mut line| {
+            let text = line.to_string();
+            if is_table_border(&text, '┌', '┬', '┐') || is_table_border(&text, '└', '┴', '┘')
+            {
+                return None;
+            }
+            if is_table_border(&text, '├', '┼', '┤') {
+                strip_outer_chars(&mut line, '├', '┤');
+            } else if text.starts_with('│') && text.ends_with('│') {
+                strip_outer_chars(&mut line, '│', '│');
+            }
+            Some(line)
+        })
+        .collect()
+}
+
+fn is_table_border(text: &str, left: char, middle: char, right: char) -> bool {
+    text.starts_with(left)
+        && text.ends_with(right)
+        && text.chars().all(|character| {
+            matches!(character, '─')
+                || character == left
+                || character == middle
+                || character == right
+        })
+}
+
+fn strip_outer_chars(line: &mut Line<'static>, left: char, right: char) {
+    if let Some(span) = line.spans.iter_mut().find(|span| !span.content.is_empty()) {
+        span.content = span.content.trim_start_matches(left).to_owned().into();
+    }
+    if let Some(span) = line
+        .spans
+        .iter_mut()
+        .rev()
+        .find(|span| !span.content.is_empty())
+    {
+        span.content = span.content.trim_end_matches(right).to_owned().into();
+    }
+    line.spans.retain(|span| !span.content.is_empty());
+}
+
+fn remove_link_destination(line: &mut Line<'static>) {
+    let spans = std::mem::take(&mut line.spans);
+    let mut output = Vec::with_capacity(spans.len());
+    let mut index = 0;
+    while index < spans.len() {
+        if index + 2 < spans.len()
+            && spans[index].content.ends_with(" (")
+            && spans[index + 1]
+                .style
+                .add_modifier
+                .contains(Modifier::UNDERLINED)
+            && spans[index + 2].content.starts_with(')')
+        {
+            let mut before = spans[index].clone();
+            before.content = before.content.trim_end_matches(" (").to_owned().into();
+            if !before.content.is_empty() {
+                output.push(before);
+            }
+            let mut after = spans[index + 2].clone();
+            after.content = after.content.trim_start_matches(')').to_owned().into();
+            if !after.content.is_empty() {
+                output.push(after);
+            }
+            index += 3;
+        } else {
+            output.push(spans[index].clone());
+            index += 1;
+        }
+    }
+    line.spans = output;
+}
+
+fn own_text(text: Text<'_>) -> Text<'static> {
+    Text {
+        lines: text
+            .lines
+            .into_iter()
+            .map(|line| Line {
+                spans: line
+                    .spans
+                    .into_iter()
+                    .map(|span| Span::styled(span.content.into_owned(), span.style))
+                    .collect(),
+                style: line.style,
+                alignment: line.alignment,
+            })
+            .collect(),
+        style: text.style,
+        alignment: text.alignment,
+    }
 }
 
 fn markdown_links(source: &str) -> Vec<LinkTarget> {
@@ -702,9 +855,22 @@ fn table_cells(
         return None;
     }
     for cell in &mut cells {
+        trim_span_start(cell);
         trim_span_end(cell);
     }
     Some(cells)
+}
+
+fn trim_span_start(spans: &mut Vec<Span<'static>>) {
+    while let Some(first) = spans.first_mut() {
+        let trimmed = first.content.trim_start_matches(char::is_whitespace);
+        if trimmed.is_empty() {
+            spans.remove(0);
+        } else {
+            first.content = trimmed.to_owned().into();
+            break;
+        }
+    }
 }
 
 fn trim_span_end(spans: &mut Vec<Span<'static>>) {
@@ -909,11 +1075,29 @@ fn wrap_list_line(line: Line<'static>, width: u16, marker_style: Style) -> Vec<L
     let Some(marker) = line
         .spans
         .first()
-        .filter(|span| span.style == marker_style && is_list_marker(&span.content))
+        .filter(|span| is_list_marker(&span.content))
     else {
         return vec![line];
     };
-    let marker = format!("  {}", marker.content);
+    let leading_spaces = marker
+        .content
+        .chars()
+        .take_while(|character| character.is_whitespace())
+        .count();
+    let indent = if leading_spaces == 0 {
+        2
+    } else {
+        leading_spaces
+    };
+    let marker = format!(
+        "{}{} ",
+        " ".repeat(indent),
+        if marker.content.trim() == "-" {
+            "•"
+        } else {
+            marker.content.trim()
+        }
+    );
     let marker_width = Span::raw(&marker).width();
     let content_width = usize::from(width).saturating_sub(marker_width).max(1);
     let wrapped = wrap_styled_spans(&line.spans[1..], content_width);
@@ -944,7 +1128,8 @@ fn wrap_list_line(line: Line<'static>, width: u16, marker_style: Style) -> Vec<L
 
 fn is_list_marker(marker: &str) -> bool {
     let marker = marker.trim();
-    marker == "•"
+    marker == "-"
+        || marker == "•"
         || marker
             .strip_suffix('.')
             .is_some_and(|number| !number.is_empty() && number.chars().all(|c| c.is_ascii_digit()))
@@ -1015,36 +1200,55 @@ fn push_styled(spans: &mut Vec<Span<'static>>, content: &str, style: Style) {
     }
 }
 
-fn markdown_theme() -> MarkdownTheme {
-    let mut theme = MarkdownTheme::default();
-    let heading = Style::default()
-        .fg(THEME.as_ref().accent())
-        .add_modifier(Modifier::BOLD);
-    theme.base = Style::default().fg(THEME.as_ref().text());
-    theme.h1 = heading;
-    theme.h2 = heading;
-    theme.h3 = heading;
-    theme.h4 = heading;
-    theme.h5 = heading;
-    theme.h6 = heading;
-    theme.inline_code = Style::default()
-        .fg(THEME.as_ref().text())
-        .bg(THEME.as_ref().surface());
-    theme.code_block = theme.inline_code;
-    theme.code_block_lang = Style::default()
-        .fg(THEME.as_ref().text_dim())
-        .bg(THEME.as_ref().surface());
-    theme.link = Style::default()
-        .fg(THEME.as_ref().info())
-        .add_modifier(Modifier::UNDERLINED);
-    theme.block_quote = Style::default().fg(THEME.as_ref().text_dim());
-    theme.list_marker = Style::default().fg(THEME.as_ref().text_dim());
-    theme.table_header = heading;
-    theme.table_cell = Style::default().fg(THEME.as_ref().text());
-    theme.table_separator = Style::default().fg(THEME.as_ref().border());
-    theme.rule = theme.table_separator;
-    theme.html = Style::default().fg(THEME.as_ref().text_dim());
-    theme
+#[derive(Clone, Copy)]
+struct MarkdownStyleSheet;
+
+impl StyleSheet for MarkdownStyleSheet {
+    fn heading(&self, _level: u8) -> Style {
+        Style::default()
+            .fg(THEME.as_ref().accent())
+            .add_modifier(Modifier::BOLD)
+    }
+
+    fn code(&self) -> Style {
+        Style::default()
+            .fg(THEME.as_ref().text())
+            .bg(THEME.as_ref().surface())
+    }
+
+    fn link(&self) -> Style {
+        Style::default()
+            .fg(THEME.as_ref().info())
+            .add_modifier(Modifier::UNDERLINED)
+    }
+
+    fn blockquote(&self) -> Style {
+        Style::default().fg(THEME.as_ref().text_dim())
+    }
+
+    fn heading_marker(&self, _level: u8) -> &str {
+        ""
+    }
+
+    fn code_block_fence(&self) -> &str {
+        ""
+    }
+
+    fn html(&self) -> Style {
+        Style::default().fg(THEME.as_ref().text_dim())
+    }
+
+    fn table_header(&self) -> Style {
+        self.heading(1)
+    }
+
+    fn table_cell(&self) -> Style {
+        Style::default().fg(THEME.as_ref().text())
+    }
+
+    fn table_border(&self) -> Style {
+        Style::default().fg(THEME.as_ref().border())
+    }
 }
 
 impl TextBlock {
