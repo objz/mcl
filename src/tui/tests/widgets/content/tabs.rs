@@ -54,6 +54,41 @@ fn discovery_version_popup_uses_compact_heights() {
 }
 
 #[test]
+fn discovery_version_popup_renders_over_a_project_page() {
+    use crate::instance::ContentKind;
+    use crate::net::modrinth::DiscoveryProject;
+    use ratatui::{Terminal, backend::TestBackend};
+
+    let project = DiscoveryProject {
+        id: "project".to_owned(),
+        slug: "project".to_owned(),
+        title: "Project".to_owned(),
+        description: String::new(),
+        downloads: 0,
+        icon_url: None,
+        icon_bytes: None,
+    };
+    let mut state = DiscoveryState::new(ContentKind::Mod);
+    state
+        .list
+        .entries
+        .push(crate::tui::widgets::content::discovery::project_entry(
+            project, None,
+        ));
+    state.list.list_state.selected = Some(0);
+    state.begin_project_page();
+    state.begin_versions();
+
+    let mut terminal = Terminal::new(TestBackend::new(80, 20)).unwrap();
+    let picker = ratatui_image::picker::Picker::halfblocks();
+    terminal
+        .draw(|frame| render_discovery_popup(frame, frame.area(), &mut state, &picker))
+        .unwrap();
+
+    assert!(format!("{}", terminal.backend()).contains("Install Project"));
+}
+
+#[test]
 fn confirmation_metadata_is_human_readable() {
     assert_eq!(
         confirmation_loaders(&["fabric".to_owned(), "neoforge".to_owned()]),

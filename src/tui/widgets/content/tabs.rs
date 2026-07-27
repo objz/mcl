@@ -593,18 +593,18 @@ fn render_discovery_body(
                 area,
             );
         }
-        return;
+    } else {
+        let empty_text = state.empty_text().to_string();
+        super::list::render(
+            frame,
+            area,
+            &mut state.list,
+            is_focused,
+            loading_text,
+            &empty_text,
+            picker,
+        );
     }
-    let empty_text = state.empty_text().to_string();
-    super::list::render(
-        frame,
-        area,
-        &mut state.list,
-        is_focused,
-        loading_text,
-        &empty_text,
-        picker,
-    );
     if state.version_popup.is_some() {
         render_version_popup(frame, area, state);
     }
