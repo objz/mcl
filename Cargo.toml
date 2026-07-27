@@ -14,6 +14,7 @@ categories = ["command-line-utilities", "games"]
 [package.metadata.wix]
 upgrade-guid = "BEC08BE4-6A8F-4C1D-A1B4-B1AC963000AE"
 path-guid = "E5863AC2-13FC-45C8-B79D-55338F371A8A"
+include = ["pkg/wix/main.wxs"]
 license = false
 eula = false
 

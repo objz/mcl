@@ -170,7 +170,7 @@
           The product icon is the graphic that appears in the Add/Remove
           Programs control panel for the application.
         -->
-        <!--<Icon Id='ProductICO' SourceFile='wix\Product.ico'/>-->
+        <!--<Icon Id='ProductICO' SourceFile='pkg\wix\Product.ico'/>-->
         <!--<Property Id='ARPPRODUCTICON' Value='ProductICO' />-->
 
         <Property Id='ARPHELPLINK' Value='https://github.com/objz/rmcl'/>
@@ -210,7 +210,7 @@
 
           The banner BMP dimensions are 493 x 58 pixels.
         -->
-        <!--<WixVariable Id='WixUIBannerBmp' Value='wix\Banner.bmp'/>-->
+        <!--<WixVariable Id='WixUIBannerBmp' Value='pkg\wix\Banner.bmp'/>-->
 
         
         <!--
@@ -221,7 +221,7 @@
 
           The dialog BMP dimensions are 493 x 312 pixels.
         -->
-        <!--<WixVariable Id='WixUIDialogBmp' Value='wix\Dialog.bmp'/>-->
+        <!--<WixVariable Id='WixUIDialogBmp' Value='pkg\wix\Dialog.bmp'/>-->
 
     </Product>
 

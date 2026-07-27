@@ -26,4 +26,4 @@ hosting = "github"
 # Whether to install an updater program
 install-updater = false
 # Allow custom edits to the generated CI file
-allow-dirty = ["ci"]
+allow-dirty = ["ci", "msi"]
