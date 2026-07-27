@@ -1,6 +1,21 @@
 use super::*;
 
 #[test]
+fn curseforge_fingerprint_ignores_whitespace() {
+    let temp = tempfile::tempdir().unwrap();
+    let compact = temp.path().join("compact.jar");
+    let spaced = temp.path().join("spaced.jar");
+    std::fs::write(&compact, b"abc").unwrap();
+    std::fs::write(&spaced, b"a b\nc\r\t").unwrap();
+    let compact = fingerprint(&compact).unwrap();
+    assert_eq!(compact.hash("curseforge"), Some("1621425345"));
+    assert_eq!(
+        compact.hash("curseforge"),
+        fingerprint(&spaced).unwrap().hash("curseforge")
+    );
+}
+
+#[test]
 fn manifest_round_trip_and_lookup_are_exact() {
     let temp = tempfile::tempdir().unwrap();
     let path = temp.path().join("rmcl/content/manifest.json");

@@ -1,0 +1,66 @@
+use super::*;
+
+#[test]
+fn curseforge_file_maps_to_shared_version() {
+    let file: File = serde_json::from_str(
+        r#"{
+            "id": 9,
+            "modId": 7,
+            "displayName": "Example 1.0",
+            "fileName": "example.jar",
+            "fileLength": 12,
+            "downloadUrl": "https://example.invalid/example.jar",
+            "gameVersions": ["1.21.1", "Fabric"],
+            "hashes": [{"value": "abc", "algo": 1}]
+        }"#,
+    )
+    .unwrap();
+    let version = version_info(file);
+    assert_eq!(version.project_id, "7");
+    assert_eq!(version.loaders, ["fabric"]);
+    assert_eq!(version.files[0].hashes["sha1"], "abc");
+}
+
+#[tokio::test]
+async fn curseforge_versions_follow_pagination() {
+    use wiremock::matchers::{method, path, query_param};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    let server = MockServer::start().await;
+    let files = |range: std::ops::Range<u64>| {
+        range
+            .map(|id| {
+                serde_json::json!({
+                    "id": id,
+                    "modId": 7,
+                    "displayName": format!("Version {id}"),
+                    "fileName": format!("{id}.jar")
+                })
+            })
+            .collect::<Vec<_>>()
+    };
+    Mock::given(method("GET"))
+        .and(path("/mods/7/files"))
+        .and(query_param("index", "0"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": files(0..50),
+            "pagination": {"totalCount": 51}
+        })))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/mods/7/files"))
+        .and(query_param("index", "50"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "data": files(50..51),
+            "pagination": {"totalCount": 51}
+        })))
+        .mount(&server)
+        .await;
+
+    let versions =
+        fetch_versions_from(&HttpClient::new(), "test-key", &server.uri(), "7", "", None)
+            .await
+            .unwrap();
+    assert_eq!(versions.len(), 51);
+}

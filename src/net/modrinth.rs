@@ -139,6 +139,35 @@ pub async fn search_discovery(
     })
 }
 
+pub async fn search_modpacks(
+    client: &crate::net::HttpClient,
+    query: &str,
+    offset: usize,
+    limit: usize,
+) -> Result<DiscoveryResults, crate::net::NetError> {
+    let query = query.trim();
+    let index = if query.is_empty() {
+        "downloads"
+    } else {
+        "relevance"
+    };
+    let facets = r#"[["project_type:modpack"]]"#;
+    let url = format!(
+        "{API_BASE}/search?query={}&facets={}&index={index}&offset={offset}&limit={limit}",
+        url_encode(query),
+        url_encode(facets),
+    );
+    let results: DiscoverySearchResponse = client.get_json(&url).await?;
+    Ok(DiscoveryResults {
+        total_hits: results.total_hits.max(0) as usize,
+        projects: results
+            .hits
+            .into_iter()
+            .map(DiscoveryProject::from)
+            .collect(),
+    })
+}
+
 fn discovery_facets(kind: ContentKind, game_version: &str, loader: ModLoader) -> String {
     let mut facets = vec![vec![format!("project_type:{}", project_type(kind))]];
     if !game_version.is_empty() {
@@ -174,7 +203,7 @@ const API_BASE: &str = "https://api.modrinth.com/v2";
 
 // hand-rolled percent encoding because pulling in a crate for RFC 3986
 // unreserved chars felt like overkill
-fn url_encode(s: &str) -> String {
+pub(crate) fn url_encode(s: &str) -> String {
     use std::fmt::Write;
     let mut encoded = String::with_capacity(s.len());
     for byte in s.bytes() {
@@ -308,7 +337,7 @@ pub async fn download_version_file(
             return Ok(DownloadOutcome::SkippedExisting(path));
         }
         return Err(crate::net::NetError::Parse(format!(
-            "Existing file '{}' does not match the selected Modrinth version",
+            "Existing file '{}' does not match the selected provider version",
             path.display()
         )));
     }
@@ -408,7 +437,7 @@ async fn replace_installed_file(
         return Err(error.into());
     }
     if let Err(error) = tokio::fs::remove_file(&backup).await {
-        tracing::warn!("Failed to remove Modrinth update backup: {error}");
+        tracing::warn!("Failed to remove provider update backup: {error}");
     }
     Ok(())
 }

@@ -5,7 +5,7 @@ use crossterm::event::{KeyCode, KeyEvent};
 
 use crate::instance::content::entry::ContentEntry;
 use crate::instance::{ContentKind, InstanceConfig, ModLoader};
-use crate::net::modrinth::{DiscoveryProject, VersionInfo};
+use crate::net::modrinth::{DiscoveryProject, DiscoveryResults, VersionInfo};
 
 use super::list::{ContentListState, ContentStream};
 
@@ -43,6 +43,7 @@ pub struct PendingDiscoveryResult {
     generation: u64,
     offset: usize,
     result: Result<DiscoveryPageResult, DiscoveryPageError>,
+    sources: Vec<(String, crate::instance::ProviderProject)>,
 }
 
 pub struct DiscoveryPageError {
@@ -51,6 +52,19 @@ pub struct DiscoveryPageError {
 }
 
 pub struct DiscoveryPageResult {
+    pub received: usize,
+    pub total_hits: usize,
+}
+
+pub(crate) struct MergedDiscoveryProject {
+    pub stem: String,
+    pub provider: String,
+    pub project: DiscoveryProject,
+}
+
+pub(crate) struct MergedDiscoveryResults {
+    pub projects: Vec<MergedDiscoveryProject>,
+    pub sources: Vec<(String, crate::instance::ProviderProject)>,
     pub received: usize,
     pub total_hits: usize,
 }
@@ -69,7 +83,10 @@ pub(crate) type PendingDiscovery = Arc<Mutex<Vec<PendingDiscoveryResult>>>;
 pub struct VersionPopupState {
     request_id: u64,
     pub project_id: String,
+    pub provider: String,
     pub project_title: String,
+    pub sources: Vec<crate::instance::ProviderProject>,
+    pub source_index: usize,
     pub installed_path: Option<PathBuf>,
     pub versions: Vec<VersionInfo>,
     pub selected: usize,
@@ -87,11 +104,19 @@ impl VersionPopupState {
             format!("Install {}", self.project_title)
         }
     }
+
+    pub fn provider_label(&self) -> &str {
+        match self.provider.as_str() {
+            "curseforge" => "CurseForge",
+            _ => "Modrinth",
+        }
+    }
 }
 
 pub struct VersionsRequest {
     pub request_id: u64,
     pub project_id: String,
+    pub provider: String,
     pub pending: PendingActions,
 }
 
@@ -99,6 +124,7 @@ pub struct ProjectPageRequest {
     pub request_id: u64,
     pub project_id: String,
     pub project_title: String,
+    pub provider: String,
     pub cached_project: Option<crate::net::modrinth::ProjectInfo>,
     pub image_urls: Vec<String>,
     pub pending: PendingActions,
@@ -119,6 +145,7 @@ pub struct InstallRequest {
     pub generation: u64,
     pub project_id: String,
     pub project_title: String,
+    pub provider: String,
     pub version: VersionInfo,
     pub installed_path: Option<PathBuf>,
     pub pending: PendingActions,
@@ -160,6 +187,7 @@ pub(crate) type PendingActions = Arc<Mutex<Vec<DiscoveryActionResult>>>;
 
 pub struct DiscoveryState {
     pub kind: ContentKind,
+    pub modpacks: bool,
     pub list: ContentListState,
     pub search: crate::tui::widgets::search::SearchState,
     pub total_hits: usize,
@@ -170,6 +198,7 @@ pub struct DiscoveryState {
     pending_actions: PendingActions,
     project_pages: std::collections::HashMap<String, crate::net::modrinth::ProjectInfo>,
     project_images: std::collections::HashMap<(String, String), image::DynamicImage>,
+    sources: std::collections::HashMap<String, Vec<crate::instance::ProviderProject>>,
     pub project_page: Option<ProjectPageState>,
     pub version_popup: Option<VersionPopupState>,
     next_action_request_id: u64,
@@ -187,6 +216,7 @@ impl DiscoveryState {
     pub fn new(kind: ContentKind) -> Self {
         Self {
             kind,
+            modpacks: false,
             list: ContentListState::default(),
             search: crate::tui::widgets::search::SearchState::default(),
             total_hits: 0,
@@ -197,6 +227,7 @@ impl DiscoveryState {
             pending_actions: Arc::new(Mutex::new(Vec::new())),
             project_pages: std::collections::HashMap::new(),
             project_images: std::collections::HashMap::new(),
+            sources: std::collections::HashMap::new(),
             project_page: None,
             version_popup: None,
             next_action_request_id: 0,
@@ -209,6 +240,12 @@ impl DiscoveryState {
             retry_page_at: None,
             page_retry_attempt: 0,
         }
+    }
+
+    pub fn new_modpacks() -> Self {
+        let mut state = Self::new(ContentKind::ResourcePack);
+        state.modpacks = true;
+        state
     }
 
     pub fn needs_search(&self, instance: &InstanceConfig) -> bool {
@@ -232,10 +269,18 @@ impl DiscoveryState {
     }
 
     pub fn begin_search(&mut self, instance: &InstanceConfig) -> DiscoveryRequest {
+        self.begin_search_context(discovery_context(instance))
+    }
+
+    pub fn begin_modpack_search(&mut self) -> DiscoveryRequest {
+        self.begin_search_context("modpacks".to_owned())
+    }
+
+    fn begin_search_context(&mut self, context: String) -> DiscoveryRequest {
         self.generation = self.generation.wrapping_add(1);
         self.project_page = None;
         self.version_popup = None;
-        let context = discovery_context(instance);
+        self.sources.clear();
         let reconcile =
             self.context.as_deref() == Some(context.as_str()) && !self.list.entries.is_empty();
         self.context = Some(context.clone());
@@ -311,13 +356,24 @@ impl DiscoveryState {
             .and_then(|selected| filtered.get(selected))?;
         let entry = self.list.entries.get(*index)?;
         let installed_path = entry.installed_path.clone();
-        let project_id = entry.file_stem.clone();
+        let mut sources = self
+            .sources
+            .get(&entry.file_stem)
+            .cloned()
+            .unwrap_or_else(|| entry.provider_project.clone().into_iter().collect());
+        let preferred = crate::config::SETTINGS.content.preferred_provider();
+        sources.sort_by_key(|source| source.provider != preferred);
+        let source = sources.first()?.clone();
+        let project_id = source.project_id.clone();
         self.next_action_request_id = self.next_action_request_id.wrapping_add(1);
         let request_id = self.next_action_request_id;
         self.version_popup = Some(VersionPopupState {
             request_id,
             project_id: project_id.clone(),
+            provider: source.provider.clone(),
             project_title: entry.name.clone(),
+            sources,
+            source_index: 0,
             installed_path,
             versions: Vec::new(),
             selected: 0,
@@ -329,6 +385,31 @@ impl DiscoveryState {
         Some(VersionsRequest {
             request_id,
             project_id,
+            provider: source.provider,
+            pending: self.pending_actions.clone(),
+        })
+    }
+
+    pub fn switch_version_source(&mut self) -> Option<VersionsRequest> {
+        let popup = self.version_popup.as_mut()?;
+        if popup.loading || popup.installing || popup.sources.len() < 2 {
+            return None;
+        }
+        popup.source_index = (popup.source_index + 1) % popup.sources.len();
+        let source = popup.sources.get(popup.source_index)?.clone();
+        self.next_action_request_id = self.next_action_request_id.wrapping_add(1);
+        popup.request_id = self.next_action_request_id;
+        popup.project_id.clone_from(&source.project_id);
+        popup.provider.clone_from(&source.provider);
+        popup.versions.clear();
+        popup.selected = 0;
+        popup.loading = true;
+        popup.confirming = false;
+        popup.error = None;
+        Some(VersionsRequest {
+            request_id: popup.request_id,
+            project_id: source.project_id,
+            provider: source.provider,
             pending: self.pending_actions.clone(),
         })
     }
@@ -341,7 +422,8 @@ impl DiscoveryState {
             .selected
             .and_then(|selected| filtered.get(selected))?;
         let entry = self.list.entries.get(*index)?;
-        let project_id = entry.file_stem.clone();
+        let source = entry.provider_project.as_ref()?;
+        let project_id = source.project_id.clone();
         let project_title = entry.name.clone();
         self.next_action_request_id = self.next_action_request_id.wrapping_add(1);
         let request_id = self.next_action_request_id;
@@ -385,6 +467,7 @@ impl DiscoveryState {
             request_id,
             project_id,
             project_title,
+            provider: source.provider.clone(),
             cached_project: cached.cloned(),
             image_urls,
             pending: self.pending_actions.clone(),
@@ -406,14 +489,19 @@ impl DiscoveryState {
     ) {
         let mut changed = false;
         for entry in &mut self.list.entries {
-            let Some(project) = entry.provider_project.as_ref() else {
-                continue;
-            };
-            let installed_path = manifest.resolved_project_path(
-                &project.provider,
-                &project.project_id,
-                minecraft_dir,
-            );
+            let installed_path = self
+                .sources
+                .get(&entry.file_stem)
+                .into_iter()
+                .flatten()
+                .chain(entry.provider_project.iter())
+                .find_map(|project| {
+                    manifest.resolved_project_path(
+                        &project.provider,
+                        &project.project_id,
+                        minecraft_dir,
+                    )
+                });
             if entry.installed_path != installed_path {
                 entry.title_suffix = installed_path.is_some().then(|| "Installed".to_owned());
                 entry.installed_path = installed_path;
@@ -478,6 +566,7 @@ impl DiscoveryState {
             generation: self.generation,
             project_id: popup.project_id.clone(),
             project_title: popup.project_title.clone(),
+            provider: popup.provider.clone(),
             version,
             installed_path: popup.installed_path.clone(),
             pending: self.pending_actions.clone(),
@@ -520,6 +609,25 @@ impl DiscoveryState {
                 generation,
                 offset,
                 result,
+                sources: Vec::new(),
+            });
+            crate::feedback::request_redraw();
+        }
+    }
+
+    pub fn push_provider_result(
+        pending: &PendingDiscovery,
+        generation: u64,
+        offset: usize,
+        result: Result<DiscoveryPageResult, DiscoveryPageError>,
+        sources: Vec<(String, crate::instance::ProviderProject)>,
+    ) {
+        if let Ok(mut pending) = pending.lock() {
+            pending.push(PendingDiscoveryResult {
+                generation,
+                offset,
+                result,
+                sources,
             });
             crate::feedback::request_redraw();
         }
@@ -551,6 +659,15 @@ impl DiscoveryState {
                     self.error = None;
                     self.retry_page_at = None;
                     self.page_retry_attempt = 0;
+                    for (stem, source) in pending.sources {
+                        let sources = self.sources.entry(stem).or_default();
+                        if !sources.iter().any(|candidate| {
+                            candidate.provider == source.provider
+                                && candidate.project_id == source.project_id
+                        }) {
+                            sources.push(source);
+                        }
+                    }
                 }
                 Err(error) => {
                     if error.retryable {
@@ -561,7 +678,7 @@ impl DiscoveryState {
                         self.page_retry_attempt = self.page_retry_attempt.saturating_add(1);
                         self.retry_page_at = Some(std::time::Instant::now() + delay);
                         tracing::debug!(
-                            "Modrinth discovery page at offset {} failed; retrying in {:?}: {}",
+                            "Discovery page at offset {} failed; retrying in {:?}: {}",
                             pending.offset,
                             delay,
                             error.message
@@ -572,7 +689,7 @@ impl DiscoveryState {
                         self.exhausted = true;
                     } else {
                         tracing::warn!(
-                            "Modrinth discovery page at offset {} failed: {}",
+                            "Discovery page at offset {} failed: {}",
                             pending.offset,
                             error.message
                         );
@@ -673,15 +790,26 @@ impl DiscoveryState {
                     result,
                 } => match result {
                     Ok(completion) => {
-                        if generation == self.generation
-                            && let Some(entry) = self
+                        if generation == self.generation {
+                            let stem = self
+                                .sources
+                                .iter()
+                                .find_map(|(stem, sources)| {
+                                    sources
+                                        .iter()
+                                        .any(|source| source.project_id == project_id)
+                                        .then(|| stem.clone())
+                                })
+                                .unwrap_or_else(|| project_id.clone());
+                            if let Some(entry) = self
                                 .list
                                 .entries
                                 .iter_mut()
-                                .find(|entry| entry.file_stem == project_id)
-                        {
-                            entry.title_suffix = Some("Installed".to_owned());
-                            entry.installed_path = Some(completion.path.clone());
+                                .find(|entry| entry.file_stem == stem)
+                            {
+                                entry.title_suffix = Some("Installed".to_owned());
+                                entry.installed_path = Some(completion.path.clone());
+                            }
                         }
                         let action = if completion.skipped {
                             "already installed"
@@ -711,9 +839,11 @@ impl DiscoveryState {
     }
 
     pub fn empty_text(&self) -> &str {
-        self.error
-            .as_deref()
-            .unwrap_or("No Modrinth projects found.")
+        self.error.as_deref().unwrap_or(if self.modpacks {
+            "No modpacks found."
+        } else {
+            "No projects found."
+        })
     }
 
     fn should_load_more(&self) -> bool {
@@ -828,8 +958,10 @@ fn loader_slug(loader: ModLoader) -> Option<&'static str> {
     }
 }
 
-pub(crate) fn project_entry(
+pub(crate) fn provider_project_entry(
     project: DiscoveryProject,
+    provider: &str,
+    stem: String,
     installed_path: Option<PathBuf>,
 ) -> ContentEntry {
     let provider_icon = project.icon_bytes.is_some()
@@ -838,12 +970,12 @@ pub(crate) fn project_entry(
             .as_deref()
             .is_some_and(|url| !url.trim().is_empty());
     ContentEntry {
-        file_stem: project.id.clone(),
+        file_stem: stem.clone(),
         name: project.title,
         source_slug: Some(project.slug),
         installed_path: installed_path.clone(),
         provider_project: Some(crate::instance::ProviderProject {
-            provider: "modrinth".to_owned(),
+            provider: provider.to_owned(),
             project_id: project.id.clone(),
             version_id: String::new(),
         }),
@@ -854,8 +986,92 @@ pub(crate) fn project_entry(
         icon_bytes: project.icon_bytes,
         provider_icon,
         provider_description: false,
-        path: PathBuf::from(project.id),
+        path: PathBuf::from(stem),
         icon_lines: Some(crate::instance::content::fallback_icon()),
+    }
+}
+
+#[cfg(test)]
+pub(crate) fn project_entry(
+    project: DiscoveryProject,
+    installed_path: Option<PathBuf>,
+) -> ContentEntry {
+    let stem = project.id.clone();
+    provider_project_entry(project, "modrinth", stem, installed_path)
+}
+
+pub(crate) fn project_identity(project: &DiscoveryProject) -> String {
+    // ponytail: provider APIs expose no shared project id; replace this exact
+    // title match if either service adds an official cross-provider mapping.
+    let title = project
+        .title
+        .chars()
+        .filter(|character| character.is_alphanumeric())
+        .flat_map(char::to_lowercase)
+        .collect::<String>();
+    if title.is_empty() {
+        project.slug.to_ascii_lowercase()
+    } else {
+        title
+    }
+}
+
+pub(crate) fn merge_provider_results(
+    mut pages: Vec<(&str, DiscoveryResults)>,
+    preferred: &str,
+) -> MergedDiscoveryResults {
+    pages.sort_by_key(|(provider, _)| *provider != preferred);
+    let received = pages
+        .iter()
+        .map(|(_, page)| page.projects.len())
+        .max()
+        .unwrap_or(0);
+    let total_hits = pages.iter().map(|(_, page)| page.total_hits).sum();
+    let mut projects = Vec::new();
+    let mut sources = Vec::new();
+    let mut primary_stems = std::collections::HashMap::<String, (String, String)>::new();
+    let mut used_stems = std::collections::HashSet::new();
+
+    for (provider, page) in pages {
+        for project in page.projects {
+            let identity = project_identity(&project);
+            let project_id = project.id.clone();
+            let duplicate_stem = primary_stems
+                .get(&identity)
+                .filter(|(existing_provider, _)| existing_provider != provider)
+                .map(|(_, stem)| stem.clone());
+            let stem = duplicate_stem.unwrap_or_else(|| {
+                let mut stem = identity.clone();
+                if !used_stems.insert(stem.clone()) {
+                    stem = format!("{identity}:{provider}:{}", project.id);
+                    used_stems.insert(stem.clone());
+                }
+                primary_stems
+                    .entry(identity)
+                    .or_insert_with(|| (provider.to_owned(), stem.clone()));
+                projects.push(MergedDiscoveryProject {
+                    stem: stem.clone(),
+                    provider: provider.to_owned(),
+                    project,
+                });
+                stem
+            });
+            sources.push((
+                stem,
+                crate::instance::ProviderProject {
+                    provider: provider.to_owned(),
+                    project_id,
+                    version_id: String::new(),
+                },
+            ));
+        }
+    }
+
+    MergedDiscoveryResults {
+        projects,
+        sources,
+        received,
+        total_hits,
     }
 }
 

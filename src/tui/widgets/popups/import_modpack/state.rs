@@ -1,7 +1,6 @@
 // state machine for the modpack import wizard.
-// accepts modrinth URLs, project slugs, version IDs, or local pack archives
-// (.mrpack, mmc/prism zips). remote packs go through version selection,
-// local files skip straight to the confirm step.
+// browses modpacks from configured providers and keeps the direct import flow
+// for modrinth URLs, project slugs, version IDs, and local pack archives.
 
 use super::super::LoadState;
 use crate::instance::import::{ImportInput, ImportSummary, parse_import_input};
@@ -18,6 +17,8 @@ pub(super) static IMPORT_STATE: LazyLock<Arc<Mutex<ImportWizardState>>> =
     LazyLock::new(|| Arc::new(Mutex::new(ImportWizardState::default())));
 pub(super) static IMPORT_RESULT: LazyLock<Arc<Mutex<Option<ImportResult>>>> =
     LazyLock::new(|| Arc::new(Mutex::new(None)));
+pub(super) static DISCOVERY_STATE: LazyLock<Mutex<crate::tui::widgets::content::DiscoveryState>> =
+    LazyLock::new(|| Mutex::new(crate::tui::widgets::content::DiscoveryState::new_modpacks()));
 
 #[derive(Debug, Clone)]
 pub struct ImportResult {
@@ -27,6 +28,7 @@ pub struct ImportResult {
 #[derive(Debug, Default, Clone, PartialEq)]
 pub enum ImportStep {
     #[default]
+    Discover,
     Input,
     Fetching,
     Version,
@@ -42,18 +44,20 @@ pub struct ImportWizardState {
     pub version_idx: usize,
     pub version_search: SearchState,
     pub summary: Option<ImportSummary>,
+    pub from_discovery: bool,
 }
 
 impl Default for ImportWizardState {
     fn default() -> Self {
         Self {
-            step: ImportStep::Input,
+            step: ImportStep::Discover,
             input: String::new(),
             project_title: None,
             versions: LoadState::Idle,
             version_idx: 0,
             version_search: SearchState::default(),
             summary: None,
+            from_discovery: false,
         }
     }
 }
@@ -73,12 +77,111 @@ pub fn handle_key(key_event: &KeyEvent, instances_state: &mut instances::State) 
             return;
         }
     };
+    if state.step == ImportStep::Discover {
+        drop(state);
+        handle_discovery_key(key_event, instances_state);
+        return;
+    }
 
     match state.step {
+        ImportStep::Discover => unreachable!(),
         ImportStep::Input => handle_input_key(&mut state, key_event, instances_state),
         ImportStep::Fetching => handle_fetching_key(&mut state, key_event, instances_state),
         ImportStep::Version => handle_version_key(&mut state, key_event, instances_state),
         ImportStep::Confirm => handle_confirm_key(&mut state, key_event, instances_state),
+    }
+}
+
+pub fn open() {
+    if let Ok(mut wizard) = IMPORT_STATE.lock() {
+        wizard.reset();
+    }
+    #[cfg(not(test))]
+    start_discovery_search();
+}
+
+pub fn drain(picker: &ratatui_image::picker::Picker) {
+    if let Ok(mut state) = DISCOVERY_STATE.lock() {
+        state.drain_pending();
+        state.list.drain_pending();
+        state.list.request_image_loads(picker);
+        state.list.drain_image_loads(picker);
+        if state.search_due() {
+            drop(state);
+            start_discovery_search();
+        }
+    }
+}
+
+fn handle_discovery_key(key_event: &KeyEvent, instances_state: &mut instances::State) {
+    let mut discovery = match DISCOVERY_STATE.lock() {
+        Ok(state) => state,
+        Err(_) => return,
+    };
+    let search_active = discovery.search.active;
+    let popup_open = discovery.version_popup.is_some();
+    let project_page_open = discovery.project_page_open();
+    match key_event.code {
+        KeyCode::Esc if !search_active && !popup_open && !project_page_open => {
+            drop(discovery);
+            if let Ok(mut state) = IMPORT_STATE.lock() {
+                close_popup(&mut state, instances_state);
+            }
+        }
+        KeyCode::Char('d') if !search_active && !popup_open && !project_page_open => {
+            drop(discovery);
+            if let Ok(mut state) = IMPORT_STATE.lock() {
+                state.step = ImportStep::Input;
+            }
+        }
+        KeyCode::Enter if !search_active && !popup_open && !project_page_open => {
+            let request = discovery.begin_project_page();
+            drop(discovery);
+            if let Some(request) = request {
+                spawn_project_page(request);
+            }
+        }
+        KeyCode::Char('i') if !search_active && !popup_open && !project_page_open => {
+            let request = discovery.begin_versions();
+            drop(discovery);
+            if let Some(request) = request {
+                spawn_versions(request);
+            }
+        }
+        KeyCode::Tab if popup_open => {
+            let request = discovery.switch_version_source();
+            drop(discovery);
+            if let Some(request) = request {
+                spawn_versions(request);
+            }
+        }
+        KeyCode::Enter if popup_open => {
+            let confirming = discovery
+                .version_popup
+                .as_ref()
+                .is_some_and(|popup| popup.confirming);
+            if confirming {
+                let request = discovery.begin_install();
+                drop(discovery);
+                if let Some(request) = request {
+                    start_discovered_download(request);
+                }
+            } else {
+                discovery.begin_confirmation();
+            }
+        }
+        _ => {
+            let navigate = matches!(
+                key_event.code,
+                KeyCode::Char('j') | KeyCode::Char('k') | KeyCode::Down | KeyCode::Up
+            );
+            crate::tui::widgets::content::discovery::handle_key(key_event, &mut discovery);
+            let request = navigate.then(|| discovery.begin_next_page()).flatten();
+            drop(discovery);
+            if let Some(request) = request {
+                spawn_discovery_request(request);
+            }
+        }
     }
 }
 
@@ -92,10 +195,10 @@ pub fn take_result() -> Option<ImportResult> {
 fn handle_input_key(
     state: &mut ImportWizardState,
     key_event: &KeyEvent,
-    instances_state: &mut instances::State,
+    _instances_state: &mut instances::State,
 ) {
     match key_event.code {
-        KeyCode::Esc => close_popup(state, instances_state),
+        KeyCode::Esc => state.step = ImportStep::Discover,
         KeyCode::Backspace => {
             state.input.pop();
         }
@@ -196,6 +299,8 @@ fn handle_confirm_key(
         KeyCode::Left | KeyCode::Char('h') => {
             if matches!(state.versions, LoadState::Loaded(_)) {
                 state.step = ImportStep::Version;
+            } else if state.from_discovery {
+                state.step = ImportStep::Discover;
             } else {
                 state.step = ImportStep::Input;
             }
@@ -234,6 +339,12 @@ fn set_error_and_back(state_arc: &Arc<Mutex<ImportWizardState>>, msg: String, st
 fn start_resolve(state: &mut ImportWizardState) {
     let input_text = state.input.clone();
     state.step = ImportStep::Fetching;
+    state.from_discovery = false;
+    state.project_title = None;
+    state.versions = LoadState::Idle;
+    state.version_idx = 0;
+    state.version_search.deactivate();
+    state.summary = None;
 
     let state_arc = IMPORT_STATE.clone();
 
@@ -398,6 +509,324 @@ fn start_version_download(state: &mut ImportWizardState) {
                 ImportStep::Version,
             ),
         }
+    });
+}
+
+fn start_discovery_search() {
+    let (query, request) = match DISCOVERY_STATE.lock() {
+        Ok(mut state) => (state.search.query.clone(), state.begin_modpack_search()),
+        Err(_) => return,
+    };
+    spawn_discovery_request_with_query(query, request);
+}
+
+fn spawn_discovery_request(request: crate::tui::widgets::content::discovery::DiscoveryRequest) {
+    let query = DISCOVERY_STATE
+        .lock()
+        .map(|state| state.search.query.clone())
+        .unwrap_or_default();
+    spawn_discovery_request_with_query(query, request);
+}
+
+fn spawn_discovery_request_with_query(
+    query: String,
+    request: crate::tui::widgets::content::discovery::DiscoveryRequest,
+) {
+    let crate::tui::widgets::content::discovery::DiscoveryRequest {
+        generation,
+        offset,
+        pending,
+        stream,
+        reconcile,
+        loaded_icon_stems,
+    } = request;
+    tokio::spawn(async move {
+        let client = crate::net::HttpClient::new();
+        let modrinth = crate::net::modrinth::search_modpacks(
+            &client,
+            &query,
+            offset,
+            crate::tui::widgets::content::discovery::PAGE_SIZE,
+        );
+        let curseforge_key = crate::config::SETTINGS
+            .content
+            .curseforge_api_key()
+            .map(str::to_owned);
+        let (modrinth_result, curseforge_result) = if let Some(api_key) = curseforge_key {
+            let curseforge = crate::net::curseforge::search_modpacks(
+                &client,
+                &api_key,
+                &query,
+                offset,
+                crate::tui::widgets::content::discovery::PAGE_SIZE,
+            );
+            let (modrinth, curseforge) = tokio::join!(modrinth, curseforge);
+            (modrinth, Some(curseforge))
+        } else {
+            (modrinth.await, None)
+        };
+        let failed = match (&modrinth_result, &curseforge_result) {
+            (Err(error), Some(Err(_))) | (Err(error), None) => {
+                Some((error.to_string(), error.is_retryable()))
+            }
+            _ => None,
+        };
+        let mut merged_sources = Vec::new();
+        let result = if let Some((message, retryable)) = failed {
+            Err(crate::tui::widgets::content::discovery::DiscoveryPageError { message, retryable })
+        } else {
+            let mut pages = Vec::new();
+            if let Ok(results) = modrinth_result {
+                pages.push(("modrinth", results));
+            }
+            if let Some(Ok(results)) = curseforge_result {
+                pages.push(("curseforge", results));
+            }
+            let preferred = crate::config::SETTINGS.content.preferred_provider();
+            let merged =
+                crate::tui::widgets::content::discovery::merge_provider_results(pages, preferred);
+            let mut returned = std::collections::HashSet::new();
+            let icon_slots = Arc::new(tokio::sync::Semaphore::new(8));
+            for merged_project in merged.projects {
+                let stem = merged_project.stem;
+                let provider = merged_project.provider;
+                let mut project = merged_project.project;
+                returned.insert(stem.clone());
+                let icon_cache = crate::storage::MetadataPaths::new(
+                    crate::config::SETTINGS.paths.resolve_meta_dir(),
+                )
+                .provider_icons(&provider)
+                .join(format!("{}.img", project.id));
+                if !loaded_icon_stems.contains(&stem)
+                    && let Ok(bytes) = tokio::fs::read(&icon_cache).await
+                    && !bytes.is_empty()
+                {
+                    project.icon_bytes = Some(bytes);
+                }
+                let icon_url = (!loaded_icon_stems.contains(&stem) && project.icon_bytes.is_none())
+                    .then(|| project.icon_url.clone())
+                    .flatten();
+                let entry = crate::tui::widgets::content::discovery::provider_project_entry(
+                    project, &provider, stem, None,
+                );
+                let icon = icon_url.map(|url| (url, entry.file_stem.clone(), entry.path.clone()));
+                if !stream.upsert(entry) {
+                    break;
+                }
+                if let Some((url, file_stem, path)) = icon {
+                    let client = client.clone();
+                    let stream = stream.clone();
+                    let icon_slots = icon_slots.clone();
+                    tokio::spawn(async move {
+                        let Ok(_permit) = icon_slots.acquire_owned().await else {
+                            return;
+                        };
+                        match client.get_bytes(&url).await {
+                            Ok(bytes) if !bytes.is_empty() => {
+                                if let Some(parent) = icon_cache.parent() {
+                                    let _ = tokio::fs::create_dir_all(parent).await;
+                                }
+                                let _ = tokio::fs::write(icon_cache, &bytes).await;
+                                stream.send_icon(file_stem, path, bytes);
+                            }
+                            _ => {
+                                stream.send_icon_unavailable(file_stem, path);
+                            }
+                        }
+                    });
+                }
+            }
+            if reconcile {
+                stream.retain(returned);
+            }
+            let received = merged.received;
+            let total_hits = merged.total_hits;
+            merged_sources = merged.sources;
+            Ok(
+                crate::tui::widgets::content::discovery::DiscoveryPageResult {
+                    received,
+                    total_hits,
+                },
+            )
+        };
+        crate::tui::widgets::content::DiscoveryState::push_provider_result(
+            &pending,
+            generation,
+            offset,
+            result,
+            merged_sources,
+        );
+    });
+}
+
+fn spawn_versions(request: crate::tui::widgets::content::discovery::VersionsRequest) {
+    tokio::spawn(async move {
+        let client = crate::net::HttpClient::new();
+        let result = match request.provider.as_str() {
+            "curseforge" => match crate::config::SETTINGS.content.curseforge_api_key() {
+                Some(api_key) => {
+                    crate::net::curseforge::fetch_versions(
+                        &client,
+                        api_key,
+                        &request.project_id,
+                        "",
+                        None,
+                    )
+                    .await
+                }
+                None => Err(crate::net::NetError::Parse(
+                    "CurseForge API key is not configured".to_owned(),
+                )),
+            },
+            _ => crate::net::modrinth::fetch_versions(&client, &request.project_id).await,
+        }
+        .map_err(|error| error.to_string());
+        crate::tui::widgets::content::DiscoveryState::push_action_result(
+            &request.pending,
+            crate::tui::widgets::content::discovery::DiscoveryActionResult::Versions {
+                request_id: request.request_id,
+                project_id: request.project_id,
+                result,
+            },
+        );
+    });
+}
+
+fn spawn_project_page(request: crate::tui::widgets::content::discovery::ProjectPageRequest) {
+    tokio::spawn(async move {
+        let client = crate::net::HttpClient::new();
+        let mut image_urls = request.image_urls;
+        let project = if let Some(project) = request.cached_project {
+            project
+        } else {
+            let registry =
+                crate::instance::content::provider::ProviderRegistry::configured(client.clone());
+            let result = match registry.get(&request.provider) {
+                Some(provider) => provider.project(&request.project_id).await,
+                None => Err(crate::net::NetError::Parse(format!(
+                    "{} content provider is unavailable",
+                    request.provider
+                ))),
+            };
+            match result {
+                Ok(project) => {
+                    image_urls =
+                        crate::tui::widgets::markdown::image_urls(&project.title, &project.body);
+                    crate::tui::widgets::content::DiscoveryState::push_action_result(
+                        &request.pending,
+                        crate::tui::widgets::content::discovery::DiscoveryActionResult::ProjectPage {
+                            request_id: request.request_id,
+                            project_id: request.project_id.clone(),
+                            result: Ok(project.clone()),
+                        },
+                    );
+                    project
+                }
+                Err(error) => {
+                    crate::tui::widgets::content::DiscoveryState::push_action_result(
+                        &request.pending,
+                        crate::tui::widgets::content::discovery::DiscoveryActionResult::ProjectPage {
+                            request_id: request.request_id,
+                            project_id: request.project_id,
+                            result: Err(error.to_string()),
+                        },
+                    );
+                    return;
+                }
+            }
+        };
+        image_urls.sort();
+        image_urls.dedup();
+        let semaphore = Arc::new(tokio::sync::Semaphore::new(4));
+        let mut tasks = tokio::task::JoinSet::new();
+        for url in image_urls {
+            let client = client.clone();
+            let semaphore = semaphore.clone();
+            tasks.spawn(async move {
+                let result = async {
+                    let _permit = semaphore
+                        .acquire_owned()
+                        .await
+                        .map_err(|error| error.to_string())?;
+                    let bytes = client
+                        .get_bytes(&url)
+                        .await
+                        .map_err(|error| error.to_string())?;
+                    tokio::task::spawn_blocking(move || {
+                        crate::tui::widgets::markdown::decode_image(&bytes)
+                    })
+                    .await
+                    .map_err(|error| error.to_string())?
+                }
+                .await;
+                (url, result)
+            });
+        }
+        while let Some(task) = tasks.join_next().await {
+            let (url, result) = match task {
+                Ok(result) => result,
+                Err(error) => {
+                    tracing::debug!("Modpack project image task failed: {error}");
+                    continue;
+                }
+            };
+            crate::tui::widgets::content::DiscoveryState::push_action_result(
+                &request.pending,
+                crate::tui::widgets::content::discovery::DiscoveryActionResult::ProjectImage {
+                    request_id: request.request_id,
+                    project_id: project.id.clone(),
+                    url,
+                    result,
+                },
+            );
+        }
+    });
+}
+
+fn start_discovered_download(request: crate::tui::widgets::content::discovery::InstallRequest) {
+    if let Ok(mut state) = IMPORT_STATE.lock() {
+        state.step = ImportStep::Fetching;
+        state.from_discovery = true;
+    }
+    tokio::spawn(async move {
+        let client = crate::net::HttpClient::new();
+        let registry = crate::instance::content::provider::ProviderRegistry::configured(client);
+        let tmp_dir =
+            crate::storage::MetadataPaths::new(crate::config::SETTINGS.paths.resolve_meta_dir())
+                .temporary();
+        let result = async {
+            tokio::fs::create_dir_all(&tmp_dir).await?;
+            let provider = registry.get(&request.provider).ok_or_else(|| {
+                crate::net::NetError::Parse(format!(
+                    "{} content provider is unavailable",
+                    request.provider
+                ))
+            })?;
+            let outcome = provider
+                .download_version(&request.version, &tmp_dir, None)
+                .await?;
+            let path = match outcome {
+                crate::net::modrinth::DownloadOutcome::Downloaded(path)
+                | crate::net::modrinth::DownloadOutcome::SkippedExisting(path) => path,
+            };
+            crate::instance::import::build_summary(&path).map_err(crate::net::NetError::Parse)
+        }
+        .await;
+        match result {
+            Ok(summary) => {
+                if let Ok(mut state) = IMPORT_STATE.lock() {
+                    state.summary = Some(summary);
+                    state.step = ImportStep::Confirm;
+                }
+            }
+            Err(error) => {
+                push_import_error(format!("Failed to prepare modpack: {error}"));
+                if let Ok(mut state) = IMPORT_STATE.lock() {
+                    state.step = ImportStep::Discover;
+                }
+            }
+        }
+        crate::feedback::request_redraw();
     });
 }
 

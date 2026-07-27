@@ -1,6 +1,7 @@
 // networking layer: http client, file downloads, and shared utilities
 // for fetching game assets from mojang, mod loaders, and modrinth.
 
+pub mod curseforge;
 pub mod fabric;
 pub mod forge;
 pub mod modrinth;

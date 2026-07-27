@@ -1,8 +1,12 @@
 mod render;
 mod state;
 
-pub use render::{popup_rect, render};
-pub use state::{ImportResult, ImportStep, ImportWizardState, handle_key, take_result};
+#[cfg(test)]
+pub use render::render;
+pub use render::{popup_rect, render_with_picker};
+pub use state::{
+    ImportResult, ImportStep, ImportWizardState, drain, handle_key, open, take_result,
+};
 
 #[cfg(test)]
 #[path = "../../../tests/widgets/popups/import_modpack/support.rs"]

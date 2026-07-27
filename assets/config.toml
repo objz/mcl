@@ -27,8 +27,11 @@ max_error_events = 50
 [content]
 # ask before choosing when the same file exists on multiple providers
 ask_on_provider_conflict = true
-# used automatically when conflict prompts are disabled
+# preferred for duplicate discovery results and automatic conflict resolution
+# accepts "modrinth" or "curseforge"; curseforge also requires its API key
 preferred_provider = "modrinth"
+# optional; enables CurseForge discovery and matching
+curseforge_api_key = ""
 # retry unchanged files that were not found after this many hours
 unmatched_retry_hours = 24
 # avoid hashing enormous external packs during automatic provider matching;

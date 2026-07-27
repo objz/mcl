@@ -2,7 +2,7 @@
 source: src/tui/tests/widgets/popups/import_modpack/render.rs
 expression: terminal.backend()
 ---
-"╭Import Modpack────────────────────────────────────────────╮"
+"╭Direct Modpack Import─────────────────────────────────────╮"
 "│Name: Synthetic Pack                                      │"
 "│Pack Version: 1.0.0                                       │"
 "│MC Version: 1.20.1                                        │"

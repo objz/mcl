@@ -90,6 +90,17 @@ fn unchanged_saved_index_reuses_fingerprint_and_skips_provider_query() {
 }
 
 #[test]
+fn newly_configured_provider_retries_an_unmatched_record() {
+    let resolution = Resolution::Unmatched {
+        checked_at: chrono::Utc::now().timestamp(),
+        providers: vec!["modrinth".to_owned()],
+    };
+
+    assert!(provider_was_not_checked(&resolution, "curseforge"));
+    assert!(!provider_was_not_checked(&resolution, "modrinth"));
+}
+
+#[test]
 fn directory_packs_are_indexed_without_provider_queries() {
     let temp = tempfile::tempdir().unwrap();
     let minecraft = temp.path().join("minecraft");

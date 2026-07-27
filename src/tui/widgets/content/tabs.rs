@@ -358,7 +358,7 @@ pub fn render(
             ("Shift+⏎", " open dir"),
             ("Esc", " kill"),
             ("a", " add"),
-            ("i", " import"),
+            ("m", " modpacks"),
             ("d", " delete"),
             ("r", " rename"),
             ("/", " search"),
@@ -546,6 +546,27 @@ fn render_discovery(
         );
         return;
     }
+    render_discovery_body(frame, area, state, is_focused, loading_text, picker);
+}
+
+pub(crate) fn render_discovery_popup(
+    frame: &mut Frame,
+    area: Rect,
+    state: &mut DiscoveryState,
+    picker: &ratatui_image::picker::Picker,
+) {
+    state.set_viewport_rows(area.height);
+    render_discovery_body(frame, area, state, true, "Searching modpacks...", picker);
+}
+
+fn render_discovery_body(
+    frame: &mut Frame,
+    area: Rect,
+    state: &mut DiscoveryState,
+    is_focused: bool,
+    loading_text: &str,
+    picker: &ratatui_image::picker::Picker,
+) {
     if let Some(page) = state.project_page.as_mut() {
         if let Some(error) = page.error.as_deref() {
             frame.render_widget(
@@ -628,6 +649,8 @@ fn render_version_popup(frame: &mut Frame, area: Rect, state: &DiscoveryState) {
         .map(|version| confirmation_release_date(&version.date_published))
         .unwrap_or_else(|| "Unknown".to_owned());
     let replacing = popup.installed_path.is_some();
+    let provider_label = popup.provider_label().to_owned();
+    let can_switch_provider = popup.sources.len() > 1;
     let items = popup
         .versions
         .iter()
@@ -641,11 +664,12 @@ fn render_version_popup(frame: &mut Frame, area: Rect, state: &DiscoveryState) {
             ("Enter", if replacing { " change" } else { " install" }),
         ])
     } else {
-        crate::tui::widgets::popups::keybind_line(&[
-            ("j/k", " navigate"),
-            ("Enter", " continue"),
-            ("Esc", " close"),
-        ])
+        let mut keybinds = vec![("j/k", " navigate")];
+        if can_switch_provider {
+            keybinds.push(("Tab", " source"));
+        }
+        keybinds.extend([("Enter", " continue"), ("Esc", " close")]);
+        crate::tui::widgets::popups::keybind_line(&keybinds)
     };
 
     let popup = crate::tui::widgets::popups::base::PopupFrame {
@@ -653,7 +677,15 @@ fn render_version_popup(frame: &mut Frame, area: Rect, state: &DiscoveryState) {
         border_color: theme.accent(),
         bg: Some(theme.surface()),
         keybinds: Some(keybinds),
-        search_line: None,
+        search_line: Some(
+            Line::from(Span::styled(
+                format!(" {provider_label} "),
+                Style::default()
+                    .fg(theme.accent())
+                    .add_modifier(Modifier::BOLD),
+            ))
+            .alignment(Alignment::Right),
+        ),
         content: Box::new(move |area, buffer| {
             if installing {
                 Paragraph::new("Installing...")

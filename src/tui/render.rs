@@ -143,7 +143,7 @@ impl App {
 
         if self.instances_state.show_import_popup {
             let area = import_modpack::popup_rect(frame.area());
-            import_modpack::render(frame, area, self.focused);
+            import_modpack::render_with_picker(frame, area, self.focused, &self.picker);
         }
 
         if self.focused == FocusedArea::ConfirmDelete

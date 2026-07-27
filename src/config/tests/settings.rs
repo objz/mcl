@@ -28,6 +28,24 @@ fn effective_java_path_some_when_set() {
 }
 
 #[test]
+fn blank_curseforge_key_keeps_provider_disabled() {
+    let content: Content = toml::from_str("curseforge_api_key = \"  \"").unwrap();
+    assert_eq!(content.curseforge_api_key(), None);
+    assert_eq!(content.preferred_provider(), "modrinth");
+}
+
+#[test]
+fn curseforge_preference_requires_its_api_key() {
+    let without_key: Content = toml::from_str("preferred_provider = \"curseforge\"").unwrap();
+    assert_eq!(without_key.preferred_provider(), "modrinth");
+
+    let configured: Content =
+        toml::from_str("preferred_provider = \"curseforge\"\ncurseforge_api_key = \"secret\"")
+            .unwrap();
+    assert_eq!(configured.preferred_provider(), "curseforge");
+}
+
+#[test]
 fn resolve_path_absolute() {
     assert_eq!(resolve_path("/opt/rmcl"), PathBuf::from("/opt/rmcl"));
 }

@@ -1,6 +1,7 @@
 // modpack importing: parses user input, detects pack format from zip contents,
 // builds a summary, and delegates the actual import to format-specific modules.
 
+pub mod curseforge;
 pub mod mmc;
 pub mod mrpack;
 
@@ -11,6 +12,7 @@ use crate::instance::models::ModLoader;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PackFormat {
+    CurseForge,
     Mrpack,
     Mmc,
 }
@@ -72,7 +74,7 @@ pub struct ImportSummary {
 }
 
 // peeks inside a zip to figure out what format it is.
-// checks for modrinth.index.json first, then mmc-pack.json.
+// checks provider manifests first, then mmc-pack.json.
 pub fn detect_format(path: &Path) -> Result<PackFormat, String> {
     tracing::debug!("Detecting modpack format for {}", path.display());
     let file =
@@ -85,6 +87,11 @@ pub fn detect_format(path: &Path) -> Result<PackFormat, String> {
         return Ok(PackFormat::Mrpack);
     }
 
+    if archive.file_names().any(|name| name == "manifest.json") {
+        tracing::debug!("Detected CurseForge archive: {}", path.display());
+        return Ok(PackFormat::CurseForge);
+    }
+
     // mmc-pack.json can be at root or one directory deep
     if archive
         .file_names()
@@ -95,7 +102,10 @@ pub fn detect_format(path: &Path) -> Result<PackFormat, String> {
     }
 
     tracing::warn!("Unknown modpack archive format: {}", path.display());
-    Err("Unknown pack format: no modrinth.index.json or mmc-pack.json found".to_string())
+    Err(
+        "Unknown pack format: no modrinth.index.json, manifest.json, or mmc-pack.json found"
+            .to_string(),
+    )
 }
 
 pub fn build_summary(path: &Path) -> Result<ImportSummary, String> {
@@ -105,6 +115,7 @@ pub fn build_summary(path: &Path) -> Result<ImportSummary, String> {
     }
     let format = detect_format(path)?;
     let summary = match format {
+        PackFormat::CurseForge => curseforge::build_summary(path),
         PackFormat::Mrpack => mrpack::build_summary(path),
         PackFormat::Mmc => mmc::build_summary(path),
     }?;
@@ -165,6 +176,7 @@ pub async fn execute_import(
         summary.archive_path.display()
     );
     match summary.format {
+        PackFormat::CurseForge => curseforge::execute_import(summary, manager).await,
         PackFormat::Mrpack => mrpack::execute_import(summary, manager).await,
         PackFormat::Mmc => mmc::execute_import(summary, manager).await,
     }

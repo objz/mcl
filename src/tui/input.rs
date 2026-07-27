@@ -275,6 +275,10 @@ impl App {
                 }
                 return Ok(());
             }
+            if popup_open && key_event.code == KeyCode::Tab {
+                self.spawn_active_discovery_version_source();
+                return Ok(());
+            }
             let handled = self
                 .active_discovery_state_mut()
                 .is_some_and(|state| widgets::content::discovery::handle_key(&key_event, state));
@@ -625,6 +629,9 @@ impl App {
         }
 
         if self.instances_state.wants_import_popup() {
+            if self.focused != FocusedArea::ImportPopup {
+                import_modpack::open();
+            }
             self.focused = FocusedArea::ImportPopup;
         } else if self.focused == FocusedArea::ImportPopup {
             self.focused = FocusedArea::Instances;
@@ -680,8 +687,31 @@ impl App {
         let Some(request) = state.begin_versions() else {
             return;
         };
+        self.spawn_discovery_versions_request(instance, kind, request);
+    }
+
+    fn spawn_active_discovery_version_source(&mut self) {
+        let Some(instance) = self.instances_state.selected_instance().cloned() else {
+            return;
+        };
+        let Some(state) = self.active_discovery_state_mut() else {
+            return;
+        };
+        let kind = state.kind;
+        let Some(request) = state.switch_version_source() else {
+            return;
+        };
+        self.spawn_discovery_versions_request(instance, kind, request);
+    }
+
+    fn spawn_discovery_versions_request(
+        &self,
+        instance: crate::instance::InstanceConfig,
+        kind: crate::instance::ContentKind,
+        request: widgets::content::discovery::VersionsRequest,
+    ) {
         let version_cache = crate::storage::MetadataPaths::new(&self.instance_manager.meta_dir)
-            .provider_versions("modrinth")
+            .provider_versions(&request.provider)
             .join(&request.project_id)
             .join(format!(
                 "{}-{}.json",
@@ -689,10 +719,10 @@ impl App {
                 instance.loader.to_string().to_lowercase()
             ));
         tokio::spawn(async move {
-            let registry = crate::instance::content::provider::ProviderRegistry::modrinth(
+            let registry = crate::instance::content::provider::ProviderRegistry::configured(
                 crate::net::HttpClient::new(),
             );
-            let result = match registry.preferred("modrinth") {
+            let result = match registry.get(&request.provider) {
                 Some(provider) => match provider
                     .compatible_versions(
                         &request.project_id,
@@ -716,7 +746,10 @@ impl App {
                         None => Err(error.to_string()),
                     },
                 },
-                None => Err("Modrinth content provider is unavailable".to_owned()),
+                None => Err(format!(
+                    "{} content provider is unavailable",
+                    request.provider
+                )),
             };
             widgets::content::DiscoveryState::push_action_result(
                 &request.pending,
@@ -743,10 +776,20 @@ impl App {
                 Some(project) => project,
                 None => {
                     let progress = crate::feedback::progress::ProgressTask::start(format!(
-                        "Loading {} from Modrinth",
-                        request.project_title
+                        "Loading {} from {}",
+                        request.project_title, request.provider
                     ));
-                    match crate::net::modrinth::fetch_project(&client, &request.project_id).await {
+                    let registry = crate::instance::content::provider::ProviderRegistry::configured(
+                        client.clone(),
+                    );
+                    let project = match registry.get(&request.provider) {
+                        Some(provider) => provider.project(&request.project_id).await,
+                        None => Err(crate::net::NetError::Parse(format!(
+                            "{} content provider is unavailable",
+                            request.provider
+                        ))),
+                    };
+                    match project {
                         Ok(project) => {
                             image_urls = crate::tui::widgets::markdown::image_urls(
                                 &project.title,
@@ -877,11 +920,12 @@ impl App {
                     .await
                     .map_err(crate::net::NetError::from)?;
                 let registry =
-                    crate::instance::content::provider::ProviderRegistry::modrinth(client);
-                let provider = registry.preferred("modrinth").ok_or_else(|| {
-                    crate::net::NetError::Parse(
-                        "Modrinth content provider is unavailable".to_owned(),
-                    )
+                    crate::instance::content::provider::ProviderRegistry::configured(client);
+                let provider = registry.get(&request.provider).ok_or_else(|| {
+                    crate::net::NetError::Parse(format!(
+                        "{} content provider is unavailable",
+                        request.provider
+                    ))
                 })?;
                 let outcome = provider
                     .download_version(
@@ -910,7 +954,7 @@ impl App {
                     fingerprint,
                     resolution: crate::instance::Resolution::Resolved {
                         project: crate::instance::ProviderProject {
-                            provider: "modrinth".to_owned(),
+                            provider: request.provider.clone(),
                             project_id: request.project_id.clone(),
                             version_id: request.version.id.clone(),
                         },
@@ -974,8 +1018,7 @@ impl App {
             self.instance_manager.instances_dir.join(&instance.name),
         )
         .minecraft();
-        let icon_cache = crate::storage::MetadataPaths::new(&self.instance_manager.meta_dir)
-            .provider_icons("modrinth");
+        let meta_dir = self.instance_manager.meta_dir.clone();
         let Some(state) = self.active_discovery_state_mut() else {
             return;
         };
@@ -992,7 +1035,7 @@ impl App {
             query,
             manifest,
             minecraft_dir,
-            icon_cache,
+            meta_dir,
             request,
         );
     }
@@ -1010,8 +1053,7 @@ impl App {
             self.instance_manager.instances_dir.join(&instance.name),
         )
         .minecraft();
-        let icon_cache = crate::storage::MetadataPaths::new(&self.instance_manager.meta_dir)
-            .provider_icons("modrinth");
+        let meta_dir = self.instance_manager.meta_dir.clone();
         let Some(state) = self.active_discovery_state_mut() else {
             return;
         };
@@ -1030,7 +1072,7 @@ impl App {
             query,
             manifest,
             minecraft_dir,
-            icon_cache,
+            meta_dir,
             request,
         );
     }
@@ -1041,7 +1083,7 @@ impl App {
         query: String,
         manifest: Option<crate::instance::ContentManifest>,
         minecraft_dir: std::path::PathBuf,
-        icon_cache: std::path::PathBuf,
+        meta_dir: std::path::PathBuf,
         request: widgets::content::discovery::DiscoveryRequest,
     ) {
         let widgets::content::discovery::DiscoveryRequest {
@@ -1056,48 +1098,89 @@ impl App {
         tokio::spawn(async move {
             let client = crate::net::HttpClient::new();
             let registry =
-                crate::instance::content::provider::ProviderRegistry::modrinth(client.clone());
-            let result = match registry.preferred("modrinth") {
-                Some(provider) => {
-                    provider
-                        .search(
-                            kind,
-                            &query,
-                            &instance,
-                            offset,
-                            widgets::content::discovery::PAGE_SIZE,
-                        )
-                        .await
+                crate::instance::content::provider::ProviderRegistry::configured(client.clone());
+            let modrinth = registry.get("modrinth").expect("Modrinth provider");
+            let modrinth_search = modrinth.search(
+                kind,
+                &query,
+                &instance,
+                offset,
+                widgets::content::discovery::PAGE_SIZE,
+            );
+            let (modrinth_result, curseforge_result) =
+                if let Some(curseforge) = registry.get("curseforge") {
+                    let curseforge_search = curseforge.search(
+                        kind,
+                        &query,
+                        &instance,
+                        offset,
+                        widgets::content::discovery::PAGE_SIZE,
+                    );
+                    let (modrinth, curseforge) = tokio::join!(modrinth_search, curseforge_search);
+                    (modrinth, Some(curseforge))
+                } else {
+                    (modrinth_search.await, None)
+                };
+            let result = match (&modrinth_result, &curseforge_result) {
+                (Err(error), Some(Err(_))) | (Err(error), None) => {
+                    Err((error.to_string(), error.is_retryable()))
                 }
-                None => Err(crate::net::NetError::Parse(
-                    "Modrinth content provider is unavailable".to_owned(),
-                )),
+                _ => Ok(()),
             };
+            let mut merged_sources = Vec::new();
             let result = match result {
-                Ok(results) => {
-                    let total_hits = results.total_hits;
-                    let received = results.projects.len();
-                    let mut returned_stems = std::collections::HashSet::with_capacity(received);
+                Ok(()) => {
+                    let mut pages = Vec::new();
+                    if let Ok(results) = modrinth_result {
+                        pages.push(("modrinth", results));
+                    }
+                    if let Some(Ok(results)) = curseforge_result {
+                        pages.push(("curseforge", results));
+                    }
+                    let preferred = crate::config::SETTINGS.content.preferred_provider();
+                    let merged =
+                        widgets::content::discovery::merge_provider_results(pages, preferred);
+                    let mut returned_stems =
+                        std::collections::HashSet::with_capacity(merged.projects.len());
                     let icon_slots = std::sync::Arc::new(tokio::sync::Semaphore::new(8));
-                    for mut project in results.projects {
-                        returned_stems.insert(project.id.clone());
+                    for merged_project in merged.projects {
+                        let stem = merged_project.stem;
+                        let provider = merged_project.provider;
+                        let mut project = merged_project.project;
+                        returned_stems.insert(stem.clone());
                         let project_id = project.id.clone();
-                        let installed_path = manifest.as_ref().and_then(|manifest| {
-                            manifest.resolved_project_path("modrinth", &project.id, &minecraft_dir)
-                        });
+                        let installed_path = merged
+                            .sources
+                            .iter()
+                            .filter(|(source_stem, _)| source_stem == &stem)
+                            .find_map(|(_, source)| {
+                                manifest.as_ref().and_then(|manifest| {
+                                    manifest.resolved_project_path(
+                                        &source.provider,
+                                        &source.project_id,
+                                        &minecraft_dir,
+                                    )
+                                })
+                            });
+                        let icon_cache =
+                            crate::storage::MetadataPaths::new(&meta_dir).provider_icons(&provider);
                         let cached_icon = icon_cache.join(format!("{project_id}.img"));
-                        if !loaded_icon_stems.contains(&project.id)
+                        if !loaded_icon_stems.contains(&stem)
                             && let Ok(bytes) = tokio::fs::read(&cached_icon).await
                             && !bytes.is_empty()
                         {
                             project.icon_bytes = Some(bytes);
                         }
-                        let icon_url = (!loaded_icon_stems.contains(&project.id)
+                        let icon_url = (!loaded_icon_stems.contains(&stem)
                             && project.icon_bytes.is_none())
                         .then(|| project.icon_url.clone())
                         .flatten();
-                        let entry =
-                            widgets::content::discovery::project_entry(project, installed_path);
+                        let entry = widgets::content::discovery::provider_project_entry(
+                            project,
+                            &provider,
+                            stem,
+                            installed_path,
+                        );
                         let icon =
                             icon_url.map(|url| (url, entry.file_stem.clone(), entry.path.clone()));
                         if !stream.upsert(entry) {
@@ -1126,14 +1209,14 @@ impl App {
                                     }
                                     Ok(_) => {
                                         tracing::debug!(
-                                            "Modrinth icon for '{}' was empty; using fallback",
+                                            "Provider icon for '{}' was empty; using fallback",
                                             file_stem
                                         );
                                         stream.send_icon_unavailable(file_stem, path);
                                     }
                                     Err(error) => {
                                         tracing::debug!(
-                                            "Failed to fetch Modrinth icon for '{}'; using fallback: {}",
+                                            "Failed to fetch provider icon for '{}'; using fallback: {}",
                                             file_stem,
                                             error
                                         );
@@ -1146,17 +1229,25 @@ impl App {
                     if reconcile {
                         stream.retain(returned_stems);
                     }
+                    let received = merged.received;
+                    let total_hits = merged.total_hits;
+                    merged_sources = merged.sources;
                     Ok(widgets::content::discovery::DiscoveryPageResult {
                         received,
                         total_hits,
                     })
                 }
-                Err(error) => Err(widgets::content::discovery::DiscoveryPageError {
-                    retryable: error.is_retryable(),
-                    message: error.to_string(),
-                }),
+                Err((message, retryable)) => {
+                    Err(widgets::content::discovery::DiscoveryPageError { retryable, message })
+                }
             };
-            widgets::content::DiscoveryState::push_result(&pending, generation, offset, result);
+            widgets::content::DiscoveryState::push_provider_result(
+                &pending,
+                generation,
+                offset,
+                result,
+                merged_sources,
+            );
         });
     }
 

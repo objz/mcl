@@ -203,7 +203,7 @@ impl WidgetKey for State {
                 self.show_popup = true;
                 self.update_scrollbar();
             }
-            KeyCode::Char('i') => {
+            KeyCode::Char('m') => {
                 self.show_import_popup = true;
             }
             KeyCode::Char('d') => {}

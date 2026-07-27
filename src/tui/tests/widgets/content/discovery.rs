@@ -33,10 +33,144 @@ fn version(id: &str) -> VersionInfo {
     }
 }
 
+fn project(id: &str) -> DiscoveryProject {
+    DiscoveryProject {
+        id: id.to_owned(),
+        slug: id.to_owned(),
+        title: id.to_owned(),
+        description: String::new(),
+        downloads: 0,
+        icon_url: None,
+        icon_bytes: None,
+    }
+}
+
 #[test]
 fn content_mode_toggles_both_ways() {
     assert_eq!(ContentMode::Installed.toggle(), ContentMode::Discover);
     assert_eq!(ContentMode::Discover.toggle(), ContentMode::Installed);
+}
+
+#[test]
+fn duplicate_provider_titles_share_one_identity() {
+    let mut modrinth = project("sodium");
+    modrinth.title = "Sodium".to_owned();
+    let mut curseforge = project("sodium-reforged");
+    curseforge.title = "SODIUM!".to_owned();
+    assert_eq!(project_identity(&modrinth), project_identity(&curseforge));
+}
+
+#[test]
+fn provider_merge_preserves_ranking_and_appends_fallbacks() {
+    let mut modrinth_first = project("mr-first");
+    modrinth_first.title = "Shared".to_owned();
+    let modrinth_second = project("mr-second");
+    let mut curseforge_duplicate = project("cf-duplicate");
+    curseforge_duplicate.title = "Shared".to_owned();
+    let curseforge_fallback = project("cf-fallback");
+
+    let merged = merge_provider_results(
+        vec![
+            (
+                "modrinth",
+                DiscoveryResults {
+                    projects: vec![modrinth_first, modrinth_second],
+                    total_hits: 2,
+                },
+            ),
+            (
+                "curseforge",
+                DiscoveryResults {
+                    projects: vec![curseforge_duplicate, curseforge_fallback],
+                    total_hits: 2,
+                },
+            ),
+        ],
+        "modrinth",
+    );
+
+    assert_eq!(
+        merged
+            .projects
+            .iter()
+            .map(|project| project.project.id.as_str())
+            .collect::<Vec<_>>(),
+        ["mr-first", "mr-second", "cf-fallback"]
+    );
+    assert_eq!(merged.sources.len(), 4);
+    assert_eq!(merged.sources[0].0, merged.sources[2].0);
+}
+
+#[test]
+fn provider_merge_keeps_same_provider_title_collisions() {
+    let mut first = project("first");
+    first.title = "Same".to_owned();
+    let mut second = project("second");
+    second.title = "Same".to_owned();
+
+    let merged = merge_provider_results(
+        vec![(
+            "modrinth",
+            DiscoveryResults {
+                projects: vec![first, second],
+                total_hits: 2,
+            },
+        )],
+        "modrinth",
+    );
+
+    assert_eq!(merged.projects.len(), 2);
+    assert_ne!(merged.projects[0].stem, merged.projects[1].stem);
+}
+
+#[test]
+fn version_popup_switches_to_the_other_provider() {
+    let mut state = DiscoveryState::new(ContentKind::Mod);
+    state
+        .list
+        .entries
+        .push(project_entry(project("sodium"), None));
+    state.list.list_state.selected = Some(0);
+    let request = state.begin_search(&instance("test", "1.21.1"));
+    DiscoveryState::push_provider_result(
+        &request.pending,
+        request.generation,
+        request.offset,
+        Ok(DiscoveryPageResult {
+            received: 1,
+            total_hits: 1,
+        }),
+        vec![
+            (
+                "sodium".to_owned(),
+                crate::instance::ProviderProject {
+                    provider: "modrinth".to_owned(),
+                    project_id: "mr".to_owned(),
+                    version_id: String::new(),
+                },
+            ),
+            (
+                "sodium".to_owned(),
+                crate::instance::ProviderProject {
+                    provider: "curseforge".to_owned(),
+                    project_id: "cf".to_owned(),
+                    version_id: String::new(),
+                },
+            ),
+        ],
+    );
+    state.drain_pending();
+    state
+        .list
+        .entries
+        .push(project_entry(project("sodium"), None));
+    state.list.list_state.selected = Some(0);
+    let first = state.begin_versions().unwrap();
+    assert_eq!(first.provider, "modrinth");
+    state.version_popup.as_mut().unwrap().loading = false;
+    let second = state.switch_version_source().unwrap();
+    assert_eq!(second.provider, "curseforge");
+    assert_eq!(state.version_popup.as_ref().unwrap().provider, "curseforge");
 }
 
 #[test]

@@ -24,6 +24,29 @@ fn import_modpack_renders_input_step() {
 }
 
 #[test]
+fn modpack_discovery_renders_active_search() {
+    let _serial = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    reset_import_state(ImportStep::Discover);
+    {
+        let mut state = DISCOVERY_STATE.lock().expect("DISCOVERY_STATE lock");
+        *state = crate::tui::widgets::content::DiscoveryState::new_modpacks();
+        state.search.activate();
+        for character in "fabric".chars() {
+            state.search.push(character);
+        }
+    }
+
+    let backend = TestBackend::new(80, 20);
+    let mut terminal = Terminal::new(backend).unwrap();
+    let picker = ratatui_image::picker::Picker::halfblocks();
+    terminal
+        .draw(|frame| render_with_picker(frame, frame.area(), FocusedArea::ImportPopup, &picker))
+        .unwrap();
+
+    assert!(format!("{}", terminal.backend()).contains("/ fabric\u{2588}"));
+}
+
+#[test]
 fn import_modpack_renders_fetching_step() {
     let _serial = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     reset_import_state(ImportStep::Fetching);

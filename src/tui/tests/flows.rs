@@ -167,10 +167,15 @@ fn instance_wizards_open_render_and_cancel_through_app_input() {
     ui.key(KeyCode::Esc);
     assert_eq!(ui.app.focused, FocusedArea::Instances);
 
-    ui.key(KeyCode::Char('i'));
+    ui.key(KeyCode::Char('m'));
     assert_eq!(ui.app.focused, FocusedArea::ImportPopup);
     ui.draw();
-    assert!(ui.screen().contains("Import Modpack"));
+    assert!(ui.screen().contains("Browse Modpacks"));
+    ui.key(KeyCode::Char('d'));
+    ui.draw();
+    assert!(ui.screen().contains("Direct Modpack Import"));
+    ui.key(KeyCode::Esc);
+    assert_eq!(ui.app.focused, FocusedArea::ImportPopup);
     ui.key(KeyCode::Esc);
     assert_eq!(ui.app.focused, FocusedArea::Instances);
 }

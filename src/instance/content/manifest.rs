@@ -1,5 +1,5 @@
 use std::collections::{BTreeMap, HashMap};
-use std::io::Read;
+use std::io::{Read, Seek};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -227,6 +227,7 @@ pub fn fingerprint(path: &Path) -> Result<FileFingerprint, std::io::Error> {
     let mut file = std::fs::File::open(path)?;
     let mut sha1 = sha1::Sha1::new();
     let mut sha512 = sha2::Sha512::new();
+    let mut curseforge_len = 0u32;
     let mut buffer = [0u8; 64 * 1024];
     loop {
         let read = file.read(&mut buffer)?;
@@ -235,16 +236,78 @@ pub fn fingerprint(path: &Path) -> Result<FileFingerprint, std::io::Error> {
         }
         sha1.update(&buffer[..read]);
         sha512.update(&buffer[..read]);
+        curseforge_len = curseforge_len.saturating_add(
+            buffer[..read]
+                .iter()
+                .filter(|byte| !matches!(byte, b'\t' | b'\n' | b'\r' | b' '))
+                .count() as u32,
+        );
     }
+    file.rewind()?;
     let hashes = BTreeMap::from([
         ("sha1".to_owned(), format!("{:x}", sha1.finalize())),
         ("sha512".to_owned(), format!("{:x}", sha512.finalize())),
+        (
+            "curseforge".to_owned(),
+            curseforge_fingerprint(&mut file, curseforge_len)?.to_string(),
+        ),
     ]);
     Ok(FileFingerprint {
         size: metadata.len(),
         modified_ns,
         hashes,
     })
+}
+
+fn curseforge_fingerprint(reader: &mut impl Read, length: u32) -> std::io::Result<u32> {
+    const M: u32 = 0x5bd1e995;
+    let mut hash = 1 ^ length;
+    let mut block = [0u8; 4];
+    let mut block_len = 0;
+    let mut buffer = [0u8; 64 * 1024];
+    loop {
+        let read = reader.read(&mut buffer)?;
+        if read == 0 {
+            break;
+        }
+        for &byte in &buffer[..read] {
+            if matches!(byte, b'\t' | b'\n' | b'\r' | b' ') {
+                continue;
+            }
+            block[block_len] = byte;
+            block_len += 1;
+            if block_len == 4 {
+                let mut value = u32::from_le_bytes(block);
+                value = value.wrapping_mul(M);
+                value ^= value >> 24;
+                value = value.wrapping_mul(M);
+                hash = hash.wrapping_mul(M) ^ value;
+                block_len = 0;
+            }
+        }
+    }
+    match block_len {
+        3 => {
+            hash ^= u32::from(block[2]) << 16;
+            hash ^= u32::from(block[1]) << 8;
+            hash ^= u32::from(block[0]);
+            hash = hash.wrapping_mul(M);
+        }
+        2 => {
+            hash ^= u32::from(block[1]) << 8;
+            hash ^= u32::from(block[0]);
+            hash = hash.wrapping_mul(M);
+        }
+        1 => {
+            hash ^= u32::from(block[0]);
+            hash = hash.wrapping_mul(M);
+        }
+        _ => {}
+    }
+    hash ^= hash >> 13;
+    hash = hash.wrapping_mul(M);
+    hash ^= hash >> 15;
+    Ok(hash)
 }
 
 pub fn fingerprint_metadata(path: &Path) -> Result<FileFingerprint, std::io::Error> {

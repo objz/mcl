@@ -26,6 +26,7 @@ impl App {
             if let Some(result) = import_modpack::take_result() {
                 self.spawn_import(result);
             }
+            import_modpack::drain(&self.picker);
 
             self.dismiss_expired_errors();
 

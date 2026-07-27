@@ -1247,11 +1247,6 @@ async fn load_provider_metadata(
     provider_id: &str,
     project_id: &str,
 ) -> Result<(Vec<u8>, String), crate::net::NetError> {
-    if provider_id != "modrinth" {
-        return Err(crate::net::NetError::Parse(format!(
-            "Content provider '{provider_id}' does not support lazy metadata"
-        )));
-    }
     let metadata = crate::storage::MetadataPaths::new(meta_dir);
     let icon_path = metadata
         .provider_icons(provider_id)
@@ -1261,8 +1256,8 @@ async fn load_provider_metadata(
         .ok()
         .filter(|bytes| !bytes.is_empty() && image::load_from_memory(bytes).is_ok());
 
-    let registry = crate::instance::content::provider::ProviderRegistry::modrinth(client.clone());
-    let provider = registry.preferred(provider_id).ok_or_else(|| {
+    let registry = crate::instance::content::provider::ProviderRegistry::configured(client.clone());
+    let provider = registry.get(provider_id).ok_or_else(|| {
         crate::net::NetError::Parse(format!("Content provider '{provider_id}' is unavailable"))
     })?;
     let project_path = metadata

@@ -161,7 +161,7 @@ async fn reconcile(job: ReconcileJob, task: &ProgressTask) -> ReconcileResult {
 
     match inventory {
         Ok(Ok((mut inventory, manifest_path))) => {
-            let registry = ProviderRegistry::modrinth(client);
+            let registry = ProviderRegistry::configured(client);
             task.set_action(format!("Identifying content for {instance_name}"));
             task.set_sub_action(format!("{} file(s) need matching", inventory.queries.len()));
             if !inventory.queries.is_empty() {
@@ -365,6 +365,17 @@ fn reconcile_inventory(
                 providers: Vec::new(),
             };
         }
+        let curseforge_unchecked = crate::config::SETTINGS
+            .content
+            .curseforge_api_key()
+            .is_some()
+            && provider_was_not_checked(&record.resolution, "curseforge");
+        if !is_directory && !oversized && curseforge_unchecked {
+            if record.fingerprint.hash("curseforge").is_none() {
+                record.fingerprint = fingerprint(&path)?;
+            }
+            record.resolution = Resolution::Pending;
+        }
         let should_query = !is_directory
             && !oversized
             && match &record.resolution {
@@ -386,6 +397,14 @@ fn reconcile_inventory(
         task.set_progress(index as u64 + 1, file_count);
     }
     Ok(Inventory { manifest, queries })
+}
+
+fn provider_was_not_checked(resolution: &Resolution, provider: &str) -> bool {
+    matches!(
+        resolution,
+        Resolution::Unmatched { providers, .. }
+            if !providers.iter().any(|checked| checked == provider)
+    )
 }
 
 async fn resolve_queries(
@@ -455,10 +474,10 @@ async fn resolve_queries(
                 project: project.clone(),
             },
             _ if !crate::config::SETTINGS.content.ask_on_provider_conflict => {
-                let preferred = &crate::config::SETTINGS.content.preferred_provider;
+                let preferred = crate::config::SETTINGS.content.preferred_provider();
                 if let Some(project) = candidates
                     .iter()
-                    .find(|project| &project.provider == preferred)
+                    .find(|project| project.provider == preferred)
                 {
                     Resolution::Resolved {
                         project: project.clone(),
