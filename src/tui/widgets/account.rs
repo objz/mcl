@@ -353,7 +353,7 @@ fn render_choose_popup(frame: &mut Frame) {
     PopupFrame {
         title: Line::from(" Add Account ").centered(),
         border_color,
-        bg: None,
+        bg: Some(theme.surface()),
         keybinds: Some(Line::from(Span::styled(
             " Esc: cancel ",
             Style::default().fg(dim_color),

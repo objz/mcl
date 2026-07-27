@@ -130,7 +130,8 @@ fn render_discovery(frame: &mut Frame, area: Rect, picker: &ratatui_image::picke
         )
         .borders(Borders::ALL)
         .border_type(BORDER_STYLE.to_border_type())
-        .border_style(Style::default().fg(theme.accent()));
+        .border_style(Style::default().fg(theme.accent()))
+        .style(Style::default().bg(theme.surface()));
     if let Some(search_line) = state.search.title_line() {
         block = block.title_top(search_line);
     }

@@ -47,6 +47,10 @@ fn modpack_discovery_renders_active_search() {
     assert!(rendered.contains("/ fabric\u{2588}"));
     assert!(rendered.contains("[v] versions"));
     assert!(rendered.contains("[i] import"));
+    assert_eq!(
+        terminal.backend().buffer().cell((1, 1)).unwrap().bg,
+        crate::config::theme::THEME.as_ref().surface()
+    );
 }
 
 #[test]

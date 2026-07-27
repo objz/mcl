@@ -206,7 +206,8 @@ impl App {
                     .alignment(Alignment::Right),
             )
             .border_type(BORDER_STYLE.to_border_type())
-            .border_style(Style::default().fg(theme.accent()));
+            .border_style(Style::default().fg(theme.accent()))
+            .style(Style::default().bg(theme.background()));
 
         if let Some(sl) = self.log_overlay_search.title_line() {
             block = block.title_top(sl);
@@ -394,7 +395,7 @@ fn render_provider_conflict(frame: &mut Frame, conflict: &super::app::ProviderCo
                 .border_type(BORDER_STYLE.to_border_type())
                 .border_style(Style::default().fg(theme.accent())),
         )
-        .style(Style::default().fg(theme.text()).bg(theme.background()))
+        .style(Style::default().fg(theme.text()).bg(theme.surface()))
         .highlight_style(
             Style::default()
                 .fg(theme.accent())
