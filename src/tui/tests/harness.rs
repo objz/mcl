@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
 use ratatui::{Terminal, backend::TestBackend};
 
 use super::UI_TEST_LOCK;
@@ -153,6 +153,16 @@ impl UiHarness {
         self.app
             .handle_key_event(KeyEvent::new(code, modifiers))
             .expect("handle key");
+    }
+
+    pub fn mouse(&mut self, kind: MouseEventKind) {
+        let _runtime = self.runtime.enter();
+        self.app.handle_mouse_event(MouseEvent {
+            kind,
+            column: 0,
+            row: 0,
+            modifiers: KeyModifiers::NONE,
+        });
     }
 
     pub fn draw(&mut self) {

@@ -1,4 +1,4 @@
-use crossterm::event::KeyCode;
+use crossterm::event::{KeyCode, MouseEventKind};
 
 use super::harness::UiHarness;
 use crate::instance::ProviderProject;
@@ -25,6 +25,20 @@ fn global_navigation_returns_from_log_overlay() {
 
     ui.key(KeyCode::Char('q'));
     assert!(ui.app.exit);
+}
+
+#[test]
+fn mouse_wheel_uses_the_focused_views_scroll_navigation() {
+    let mut ui = UiHarness::new();
+    ui.app.focused = FocusedArea::OverviewExpanded;
+    ui.app.log_overlay_max_scroll = 1;
+
+    ui.mouse(MouseEventKind::ScrollDown);
+    ui.mouse(MouseEventKind::ScrollDown);
+    assert_eq!(ui.app.log_overlay_scroll, 1);
+
+    ui.mouse(MouseEventKind::ScrollUp);
+    assert_eq!(ui.app.log_overlay_scroll, 0);
 }
 
 #[test]

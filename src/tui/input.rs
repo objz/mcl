@@ -15,6 +15,17 @@ use crate::tui::error_buffer;
 
 impl App {
     pub(super) fn handle_mouse_event(&mut self, event: MouseEvent) {
+        let scroll_key = match event.kind {
+            MouseEventKind::ScrollUp => Some(KeyCode::Up),
+            MouseEventKind::ScrollDown => Some(KeyCode::Down),
+            _ => None,
+        };
+        if let Some(code) = scroll_key {
+            if let Err(error) = self.handle_key_event(KeyEvent::new(code, event.modifiers)) {
+                tracing::error!("Mouse scroll handling failed: {error}");
+            }
+            return;
+        }
         if event.kind != MouseEventKind::Down(MouseButton::Left)
             || self.focused != FocusedArea::Content
             || self.content_mode != widgets::content::ContentMode::Discover
