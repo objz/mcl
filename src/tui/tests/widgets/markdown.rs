@@ -1,5 +1,9 @@
 use ratatui::{Terminal, backend::TestBackend};
 
+fn formatted_text(source: &str, width: u16) -> ratatui::text::Text<'static> {
+    super::external_markdown_text(source, width).0
+}
+
 #[test]
 fn html_images_are_extracted_and_raw_html_is_removed() {
     let document = super::Document::new(
@@ -89,7 +93,7 @@ fn inserted_html_keeps_its_content_and_hides_tag_shells() {
             _ => None,
         })
         .unwrap();
-    let text = super::formatted_text(source, 80);
+    let text = formatted_text(source, 80);
     let rendered = text
         .lines
         .iter()
@@ -123,7 +127,7 @@ fn nested_inline_html_uses_dom_conversion_for_links_and_emphasis() {
     assert!(source.contains("[**Supported**](https://example.com)"));
     assert!(!source.contains('<'));
 
-    let text = super::formatted_text(source, 80);
+    let text = formatted_text(source, 80);
     let supported = text
         .lines
         .iter()
@@ -162,7 +166,7 @@ fn markdown_images_inside_links_do_not_leave_the_link_destination() {
 
 #[test]
 fn visible_link_text_does_not_include_the_destination() {
-    let text = super::formatted_text("[buying me a coffee](https://example.com/donate)", 80);
+    let text = formatted_text("[buying me a coffee](https://example.com/donate)", 80);
     let rendered = text
         .lines
         .iter()
@@ -227,7 +231,7 @@ fn only_explicitly_centered_project_images_are_centered() {
 
 #[test]
 fn headings_hide_markers_and_rules_use_terminal_lines() {
-    let text = super::formatted_text("## Known Issues\n\n---", 12);
+    let text = formatted_text("## Known Issues\n\n---", 12);
     let rendered = text
         .lines
         .iter()
@@ -246,7 +250,7 @@ fn headings_hide_markers_and_rules_use_terminal_lines() {
 
 #[test]
 fn all_heading_levels_are_bold() {
-    let text = super::formatted_text("### Performance", 20);
+    let text = formatted_text("### Performance", 20);
     let heading = text
         .lines
         .iter()
@@ -301,7 +305,7 @@ fn unrelated_and_later_headings_are_kept() {
 
 #[test]
 fn lists_use_terminal_bullets() {
-    let text = super::formatted_text("- first\n  - nested\n- second", 20);
+    let text = formatted_text("- first\n  - nested\n- second", 20);
     let rendered = text
         .lines
         .iter()
@@ -317,7 +321,7 @@ fn lists_use_terminal_bullets() {
 
 #[test]
 fn wrapped_list_items_keep_a_hanging_indent() {
-    let text = super::formatted_text("- one two three four", 16);
+    let text = formatted_text("- one two three four", 16);
     let rendered = text
         .lines
         .iter()
@@ -347,7 +351,7 @@ fn markdown_headings_with_inline_html_are_converted_as_one_block() {
         })
         .unwrap();
     assert!(!source.contains('<'), "{source}");
-    let rendered = super::formatted_text(source, 80)
+    let rendered = formatted_text(source, 80)
         .lines
         .iter()
         .flat_map(|line| &line.spans)
@@ -388,7 +392,7 @@ fn emphasis_survives_html_list_conversion_without_literal_markers() {
             _ => None,
         })
         .unwrap();
-    let text = super::formatted_text(source, 80);
+    let text = formatted_text(source, 80);
     let rendered = text
         .lines
         .iter()
@@ -419,7 +423,7 @@ fn emphasis_next_to_html_tag_boundaries_does_not_leak_markers() {
             _ => None,
         })
         .unwrap();
-    let rendered = super::formatted_text(source, 100)
+    let rendered = formatted_text(source, 100)
         .lines
         .iter()
         .flat_map(|line| &line.spans)
@@ -430,7 +434,7 @@ fn emphasis_next_to_html_tag_boundaries_does_not_leak_markers() {
 
 #[test]
 fn fenced_code_blocks_are_rendered_without_fences() {
-    let text = super::formatted_text("```json5\n{\n  \"enabled\": true\n}\n```", 24);
+    let text = formatted_text("```json5\n{\n  \"enabled\": true\n}\n```", 24);
     let rendered = text
         .lines
         .iter()
@@ -462,7 +466,7 @@ fn fenced_code_blocks_are_rendered_without_fences() {
 
 #[test]
 fn tables_wrap_cells_without_breaking_the_columns() {
-    let text = super::formatted_text(
+    let text = formatted_text(
         "| Mod | Status | Note |\n| --- | --- | --- |\n| Player Animator | Supported | This means mods that use it like Better Combat and Emotecraft |",
         48,
     );

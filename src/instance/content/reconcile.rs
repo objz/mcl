@@ -3,14 +3,14 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::content_provider::{FingerprintQuery, ProviderRegistry};
+use crate::feedback::progress::{ProgressTask, ProgressTaskHandle};
 use crate::instance::InstanceConfig;
 use crate::instance::content::manifest::{
     ContentFileRecord, ContentKind, ContentManifest, FileFingerprint, ProviderProject, Resolution,
     fingerprint, fingerprint_metadata,
 };
+use crate::instance::content::provider::{FingerprintQuery, ProviderRegistry};
 use crate::storage::InstancePaths;
-use crate::tui::progress::{ProgressTask, ProgressTaskHandle};
 
 #[derive(Debug)]
 pub struct ReconcileResult {
@@ -126,7 +126,7 @@ async fn reconcile_worker() {
                 coordinator.scheduled.remove(&instance_name);
             }
         }
-        crate::tui::request_redraw();
+        crate::feedback::request_redraw();
     }
 }
 
@@ -545,121 +545,5 @@ fn directory_fingerprint_metadata(path: &Path) -> Result<FileFingerprint, std::i
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    struct NoopProgress;
-
-    impl InventoryProgress for NoopProgress {
-        fn set_sub_action(&self, _text: &str) {}
-
-        fn set_progress(&self, _current: u64, _total: u64) {}
-    }
-
-    fn job(name: &str) -> ReconcileJob {
-        ReconcileJob {
-            instance: InstanceConfig {
-                name: name.to_owned(),
-                game_version: "1.21.1".to_owned(),
-                loader: crate::instance::ModLoader::Fabric,
-                loader_version: None,
-                created: chrono::Utc::now(),
-                last_played: None,
-                java_path: None,
-                memory_max: None,
-                memory_min: None,
-                jvm_args: Vec::new(),
-                resolution: None,
-                config_sync_profile: None,
-            },
-            instances_dir: PathBuf::new(),
-            client: crate::net::HttpClient::new(),
-        }
-    }
-
-    #[test]
-    fn coordinator_queues_instances_once_and_preserves_order() {
-        let mut coordinator = ReconcileCoordinator::default();
-        assert!(coordinator.enqueue(job("one"), false));
-        assert!(!coordinator.enqueue(job("two"), false));
-        assert!(!coordinator.enqueue(job("one"), false));
-        assert!(!coordinator.rerun.contains("one"));
-        assert!(!coordinator.enqueue(job("one"), true));
-        assert_eq!(coordinator.queue.len(), 2);
-        assert!(coordinator.rerun.contains("one"));
-        assert_eq!(coordinator.queue.pop_front().unwrap().instance.name, "one");
-        assert_eq!(coordinator.queue.pop_front().unwrap().instance.name, "two");
-    }
-
-    #[test]
-    fn oversized_content_is_kept_without_hashing_or_provider_query() {
-        let temp = tempfile::tempdir().unwrap();
-        let minecraft = temp.path().join("minecraft");
-        let resource_packs = minecraft.join("resourcepacks");
-        std::fs::create_dir_all(&resource_packs).unwrap();
-        let pack = resource_packs.join("large.zip");
-        let file = std::fs::File::create(&pack).unwrap();
-        file.set_len(2 * 1024 * 1024).unwrap();
-        let manifest_path = temp.path().join("manifest.json");
-
-        let inventory =
-            reconcile_inventory(&manifest_path, &minecraft, 24, 1, &NoopProgress).unwrap();
-
-        assert!(inventory.queries.is_empty());
-        assert_eq!(inventory.manifest.files.len(), 1);
-        assert!(inventory.manifest.files[0].fingerprint.hashes.is_empty());
-        assert!(matches!(
-            inventory.manifest.files[0].resolution,
-            Resolution::Unmatched { .. }
-        ));
-    }
-
-    #[test]
-    fn unchanged_saved_index_reuses_fingerprint_and_skips_provider_query() {
-        let temp = tempfile::tempdir().unwrap();
-        let minecraft = temp.path().join("minecraft");
-        let mods = minecraft.join("mods");
-        std::fs::create_dir_all(&mods).unwrap();
-        std::fs::write(mods.join("example.jar"), b"example").unwrap();
-        let manifest_path = temp.path().join("manifest.json");
-
-        let mut first =
-            reconcile_inventory(&manifest_path, &minecraft, 24, 512, &NoopProgress).unwrap();
-        assert_eq!(first.queries.len(), 1);
-        let fingerprint = first.manifest.files[0].fingerprint.clone();
-        first.manifest.files[0].resolution = Resolution::Unmatched {
-            checked_at: chrono::Utc::now().timestamp(),
-            providers: vec!["modrinth".to_owned()],
-        };
-        first.manifest.save(&manifest_path).unwrap();
-
-        let second =
-            reconcile_inventory(&manifest_path, &minecraft, 24, 512, &NoopProgress).unwrap();
-        assert!(second.queries.is_empty());
-        assert_eq!(second.manifest.files[0].fingerprint, fingerprint);
-    }
-
-    #[test]
-    fn directory_packs_are_indexed_without_provider_queries() {
-        let temp = tempfile::tempdir().unwrap();
-        let minecraft = temp.path().join("minecraft");
-        let pack = minecraft.join("resourcepacks/example");
-        std::fs::create_dir_all(&pack).unwrap();
-        std::fs::write(pack.join("pack.mcmeta"), b"{}").unwrap();
-
-        let inventory = reconcile_inventory(
-            &temp.path().join("manifest.json"),
-            &minecraft,
-            24,
-            512,
-            &NoopProgress,
-        )
-        .unwrap();
-
-        assert!(inventory.queries.is_empty());
-        assert_eq!(
-            inventory.manifest.files[0].relative_path,
-            PathBuf::from("resourcepacks/example")
-        );
-    }
-}
+#[path = "../tests/content/reconcile.rs"]
+mod tests;

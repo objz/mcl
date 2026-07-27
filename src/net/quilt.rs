@@ -5,9 +5,9 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
+use crate::feedback::progress::set_sub_action;
 use crate::instance::loader::GameVersion;
 use crate::net::{HttpClient, NetError, download_file};
-use crate::tui::progress::set_sub_action;
 
 const QUILT_META_BASE: &str = "https://meta.quiltmc.org/v3";
 
@@ -157,7 +157,7 @@ pub async fn download_quilt_libraries(
     );
 
     for lib in &profile.libraries {
-        let maven_path = match crate::net::maven_coord_to_path(&lib.name) {
+        let maven_path = match crate::instance::loader::maven::maven_coord_to_path(&lib.name) {
             Some(p) => p,
             None => {
                 return Err(NetError::Parse(format!(

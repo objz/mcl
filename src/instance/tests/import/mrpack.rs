@@ -128,7 +128,7 @@ fn extraction_rejects_path_traversal() {
 
 #[test]
 fn mod_files_download_to_their_manifest_paths() {
-    let _guard = crate::tui::tests::UI_TEST_LOCK
+    let _guard = crate::tests::TEST_LOCK
         .lock()
         .unwrap_or_else(|error| error.into_inner());
     let runtime = tokio::runtime::Builder::new_current_thread()
@@ -180,13 +180,13 @@ fn mod_files_download_to_their_manifest_paths() {
             std::fs::read(tmp.path().join("resourcepacks/second.jar")).unwrap(),
             b"second"
         );
-        crate::tui::progress::clear();
+        crate::feedback::progress::clear();
     });
 }
 
 #[test]
 fn mod_file_without_a_download_url_fails_without_creating_a_file() {
-    let _guard = crate::tui::tests::UI_TEST_LOCK
+    let _guard = crate::tests::TEST_LOCK
         .lock()
         .unwrap_or_else(|error| error.into_inner());
     let runtime = tokio::runtime::Builder::new_current_thread()
@@ -210,6 +210,6 @@ fn mod_file_without_a_download_url_fails_without_creating_a_file() {
 
         assert!(download_mod_files(&index, tmp.path()).await.is_err());
         assert!(!tmp.path().join("mods/missing.jar").exists());
-        crate::tui::progress::clear();
+        crate::feedback::progress::clear();
     });
 }

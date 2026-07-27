@@ -1,28 +1,18 @@
 // tui entrypoint: sets up the terminal, runs the app, cleans up on exit.
 
 pub mod app;
-pub mod error_buffer;
 mod event;
 mod input;
 pub mod logging;
-pub mod progress;
 mod render;
 pub mod widgets;
 
+pub use crate::feedback::errors as error_buffer;
+pub use crate::feedback::progress;
+pub use crate::feedback::request_redraw;
+
 #[cfg(test)]
 pub(crate) mod tests;
-
-use std::sync::atomic::{AtomicBool, Ordering};
-
-static REDRAW_REQUESTED: AtomicBool = AtomicBool::new(true);
-
-pub fn request_redraw() {
-    REDRAW_REQUESTED.store(true, Ordering::Release);
-}
-
-pub(super) fn take_redraw_request() -> bool {
-    REDRAW_REQUESTED.swap(false, Ordering::AcqRel)
-}
 
 pub type Tui = ratatui::DefaultTerminal;
 
@@ -234,7 +224,7 @@ async fn rebuild_runtime_cache_screen(
     });
 
     while !task.is_finished() {
-        let progress = crate::tui::progress::PROGRESS
+        let progress = crate::feedback::progress::PROGRESS
             .lock()
             .ok()
             .map(|progress| progress.clone())

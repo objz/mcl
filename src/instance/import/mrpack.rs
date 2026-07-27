@@ -6,9 +6,9 @@ use std::path::Path;
 
 use serde::Deserialize;
 
+use crate::feedback::progress;
 use crate::instance::manager::InstanceManager;
 use crate::instance::models::ModLoader;
-use crate::tui::progress;
 
 use super::{ImportSummary, PackFormat};
 
@@ -364,4 +364,5 @@ fn extract_overrides(
 }
 
 #[cfg(test)]
+#[path = "../tests/import/mrpack.rs"]
 mod tests;

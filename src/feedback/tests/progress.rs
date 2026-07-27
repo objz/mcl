@@ -1,9 +1,9 @@
 use super::*;
-use crate::tui::tests::UI_TEST_LOCK;
+use crate::tests::TEST_LOCK;
 
 #[test]
 fn newest_task_is_visible_and_drop_restores_previous_task() {
-    let _guard = UI_TEST_LOCK.lock().unwrap();
+    let _guard = TEST_LOCK.lock().unwrap();
     clear();
     let first = ProgressTask::start("first");
     first.set_progress(1, 2);
@@ -24,7 +24,7 @@ fn newest_task_is_visible_and_drop_restores_previous_task() {
 
 #[test]
 fn changing_phase_keeps_the_existing_progress_visible() {
-    let _guard = UI_TEST_LOCK.lock().unwrap();
+    let _guard = TEST_LOCK.lock().unwrap();
     clear();
     let task = ProgressTask::start("inventory");
     task.set_progress(4, 10);
@@ -42,7 +42,7 @@ fn changing_phase_keeps_the_existing_progress_visible() {
 
 #[test]
 fn clearing_legacy_progress_keeps_owned_tasks() {
-    let _guard = UI_TEST_LOCK.lock().unwrap();
+    let _guard = TEST_LOCK.lock().unwrap();
     clear();
     let task = ProgressTask::start("indexing");
     set_action("legacy download");

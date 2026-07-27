@@ -5,7 +5,8 @@ use std::path::Path;
 
 use async_trait::async_trait;
 
-use super::{GameVersion, InstallError, ModLoaderInstaller};
+use super::{GameVersion, InstallError, InstallerError, ModLoaderInstaller};
+use crate::feedback::progress::set_action;
 use crate::instance::models::ModLoader;
 use crate::net::{HttpClient, NetError, neoforge as neoforge_api};
 
@@ -56,11 +57,9 @@ impl ModLoaderInstaller for NeoForgeInstaller {
             .paths
             .effective_java_path()
             .map(str::to_owned)
-            .unwrap_or_else(crate::net::detect_java_path);
+            .unwrap_or_else(crate::instance::java::detect_java_path);
         tracing::debug!("Running NeoForge installer with Java {}", java_path);
-        if let Err(e) =
-            neoforge_api::run_neoforge_installer(&installer_jar, instance_dir, &java_path).await
-        {
+        if let Err(e) = run_neoforge_installer(&installer_jar, instance_dir, &java_path).await {
             let _ = tokio::fs::remove_file(&installer_jar).await;
             return Err(InstallError::Installer(e));
         }
@@ -75,6 +74,55 @@ impl ModLoaderInstaller for NeoForgeInstaller {
         tracing::debug!("Installed NeoForge {}", loader_version);
         Ok(())
     }
+}
+
+pub async fn run_neoforge_installer(
+    installer_path: &Path,
+    instance_dir: &Path,
+    java_path: &str,
+) -> Result<(), InstallerError> {
+    use tokio::process::Command;
+
+    set_action("Running NeoForge installer...");
+
+    let output = match Command::new(java_path)
+        .arg(format!("-Duser.home={}", instance_dir.display()))
+        .arg("-jar")
+        .arg(installer_path)
+        .arg("--installClient")
+        .current_dir(instance_dir.join(crate::storage::MINECRAFT_DIR_NAME))
+        .output()
+        .await
+    {
+        Ok(o) => o,
+        Err(e) => {
+            tracing::debug!(
+                "Failed to spawn NeoForge installer {} with Java {}: {}",
+                installer_path.display(),
+                java_path,
+                e
+            );
+            return Err(InstallerError::Io(e));
+        }
+    };
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let detail = stderr.lines().last().unwrap_or("").trim();
+        tracing::debug!(
+            "NeoForge installer {} failed with status {:?}: {}",
+            installer_path.display(),
+            output.status.code(),
+            detail
+        );
+        return Err(InstallerError::ProcessFailed(format!(
+            "NeoForge installer exited with {:?}",
+            output.status.code()
+        )));
+    }
+
+    tracing::debug!("NeoForge installer completed successfully");
+    Ok(())
 }
 
 fn save_neoforge_profile(

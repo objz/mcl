@@ -11,7 +11,7 @@ use super::app::{App, FocusedArea};
 use super::widgets::{
     self, WidgetKey, popups::confirm as confirm_popup, popups::import_modpack, popups::new_instance,
 };
-use crate::tui::error_buffer;
+use crate::feedback::errors as error_buffer;
 
 impl App {
     pub(super) fn handle_mouse_event(&mut self, event: MouseEvent) {
@@ -582,12 +582,12 @@ impl App {
                     {
                         if let Some(instance) = self.instances_state.selected_instance().cloned() {
                             let can_launch = matches!(
-                                crate::running::get(&instance.name),
-                                None | Some(crate::running::RunState::Crashed(_))
+                                crate::instance::runtime::get(&instance.name),
+                                None | Some(crate::instance::runtime::RunState::Crashed(_))
                             );
                             if can_launch {
-                                crate::running::remove(&instance.name);
-                                crate::instance_logs::clear(&instance.name);
+                                crate::instance::runtime::remove(&instance.name);
+                                crate::instance::logs::live::clear(&instance.name);
                                 self.spawn_launch(instance);
                             }
                         }
@@ -606,7 +606,7 @@ impl App {
                             && !self.instances_state.search.active =>
                     {
                         if let Some(instance) = self.instances_state.selected_instance() {
-                            crate::running::send_kill(&instance.name);
+                            crate::instance::runtime::send_kill(&instance.name);
                         }
                     }
                     _ => {}
@@ -689,8 +689,9 @@ impl App {
                 instance.loader.to_string().to_lowercase()
             ));
         tokio::spawn(async move {
-            let registry =
-                crate::content_provider::ProviderRegistry::modrinth(crate::net::HttpClient::new());
+            let registry = crate::instance::content::provider::ProviderRegistry::modrinth(
+                crate::net::HttpClient::new(),
+            );
             let result = match registry.preferred("modrinth") {
                 Some(provider) => match provider
                     .compatible_versions(
@@ -741,7 +742,7 @@ impl App {
             let project = match request.cached_project {
                 Some(project) => project,
                 None => {
-                    let progress = crate::tui::progress::ProgressTask::start(format!(
+                    let progress = crate::feedback::progress::ProgressTask::start(format!(
                         "Loading {} from Modrinth",
                         request.project_title
                     ));
@@ -783,7 +784,7 @@ impl App {
             }
             image_urls.sort();
             image_urls.dedup();
-            let progress = crate::tui::progress::ProgressTask::start(format!(
+            let progress = crate::feedback::progress::ProgressTask::start(format!(
                 "Loading images for {}",
                 project.title
             ));
@@ -868,14 +869,15 @@ impl App {
             } else {
                 format!("Installing {}", request.project_title)
             };
-            let progress = crate::tui::progress::ProgressTask::start(action);
+            let progress = crate::feedback::progress::ProgressTask::start(action);
             progress.set_sub_action(&request.version.version_number);
             let client = crate::net::HttpClient::new();
             let result = async {
                 tokio::fs::create_dir_all(&destination)
                     .await
                     .map_err(crate::net::NetError::from)?;
-                let registry = crate::content_provider::ProviderRegistry::modrinth(client);
+                let registry =
+                    crate::instance::content::provider::ProviderRegistry::modrinth(client);
                 let provider = registry.preferred("modrinth").ok_or_else(|| {
                     crate::net::NetError::Parse(
                         "Modrinth content provider is unavailable".to_owned(),
@@ -1053,7 +1055,8 @@ impl App {
 
         tokio::spawn(async move {
             let client = crate::net::HttpClient::new();
-            let registry = crate::content_provider::ProviderRegistry::modrinth(client.clone());
+            let registry =
+                crate::instance::content::provider::ProviderRegistry::modrinth(client.clone());
             let result = match registry.preferred("modrinth") {
                 Some(provider) => {
                     provider
@@ -1109,9 +1112,9 @@ impl App {
                                 let Ok(_permit) = icon_slots.acquire_owned().await else {
                                     return;
                                 };
-                                let progress = crate::tui::progress::ProgressTask::start(format!(
-                                    "Downloading icon for {file_stem}"
-                                ));
+                                let progress = crate::feedback::progress::ProgressTask::start(
+                                    format!("Downloading icon for {file_stem}"),
+                                );
                                 match client.get_bytes(&url).await {
                                     Ok(bytes) if !bytes.is_empty() => {
                                         if let Some(parent) = cached_icon.parent() {

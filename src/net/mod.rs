@@ -8,6 +8,9 @@ pub mod mojang;
 pub mod neoforge;
 pub mod quilt;
 
+pub use crate::instance::java::detect_java_path;
+pub use crate::instance::loader::maven::maven_coord_to_path;
+
 use reqwest::Client;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -275,97 +278,5 @@ fn is_retryable(err: &NetError) -> bool {
         NetError::Http(e) => e.is_timeout() || e.is_body() || e.is_connect(),
         NetError::StatusError { status, .. } => *status >= 500,
         _ => false,
-    }
-}
-
-// tries JAVA_HOME first, then PATH, then just yolos "java" and hopes for the best
-#[must_use]
-pub fn detect_java_path() -> String {
-    if let Ok(java_home) = std::env::var("JAVA_HOME") {
-        let java_name = if cfg!(windows) { "java.exe" } else { "java" };
-        let bin = std::path::Path::new(&java_home).join("bin").join(java_name);
-        if bin.exists() {
-            tracing::trace!("Detected Java from JAVA_HOME: {}", bin.display());
-            return bin.to_string_lossy().to_string();
-        }
-        tracing::warn!(
-            "JAVA_HOME is set to {}, but {} does not exist",
-            java_home,
-            bin.display()
-        );
-    }
-    match which::which("java") {
-        Ok(path) => {
-            tracing::trace!("Detected Java from PATH: {}", path.display());
-            path.to_string_lossy().to_string()
-        }
-        Err(e) => {
-            tracing::warn!(
-                "Could not find java on PATH, falling back to literal 'java': {}",
-                e
-            );
-            "java".to_string()
-        }
-    }
-}
-
-// converts maven coordinates like "org.example:artifact:1.0" into a
-// filesystem path like "org/example/artifact/1.0/artifact-1.0.jar".
-// supports optional classifier as a 4th component.
-#[must_use]
-pub fn maven_coord_to_path(coord: &str) -> Option<String> {
-    let parts: Vec<&str> = coord.split(':').collect();
-    match parts.as_slice() {
-        [group, artifact, version] => {
-            let group_path = group.replace('.', "/");
-            Some(format!(
-                "{}/{}/{}/{}-{}.jar",
-                group_path, artifact, version, artifact, version
-            ))
-        }
-        [group, artifact, version, classifier] => {
-            let group_path = group.replace('.', "/");
-            Some(format!(
-                "{}/{}/{}/{}-{}-{}.jar",
-                group_path, artifact, version, artifact, version, classifier
-            ))
-        }
-        _ => None,
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn maven_3_part_coord() {
-        assert_eq!(
-            maven_coord_to_path("org.example:artifact:1.0"),
-            Some("org/example/artifact/1.0/artifact-1.0.jar".to_string())
-        );
-    }
-
-    #[test]
-    fn maven_4_part_coord_with_classifier() {
-        assert_eq!(
-            maven_coord_to_path("org.example:artifact:1.0:sources"),
-            Some("org/example/artifact/1.0/artifact-1.0-sources.jar".to_string())
-        );
-    }
-
-    #[test]
-    fn maven_nested_group() {
-        assert_eq!(
-            maven_coord_to_path("com.google.code.gson:gson:2.10"),
-            Some("com/google/code/gson/gson/2.10/gson-2.10.jar".to_string())
-        );
-    }
-
-    #[test]
-    fn maven_invalid_coordinates() {
-        for coordinate in ["org.example:artifact", "a:b:c:d:e", "just-a-string", ""] {
-            assert_eq!(maven_coord_to_path(coordinate), None);
-        }
     }
 }

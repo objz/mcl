@@ -407,7 +407,7 @@ fn close_popup(state: &mut ImportWizardState, instances_state: &mut instances::S
 }
 
 fn push_import_error(msg: String) {
-    crate::tui::error_buffer::push_error(crate::tui::error_buffer::ErrorEvent {
+    crate::feedback::errors::push_error(crate::feedback::errors::ErrorEvent {
         id: 0,
         level: Level::ERROR,
         message: msg,

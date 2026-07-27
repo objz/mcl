@@ -41,7 +41,7 @@ pub struct ContentStream {
 impl ContentStream {
     pub fn send(&self, entry: ContentEntry) -> bool {
         if self.sender.send(ContentStreamUpdate::Entry(entry)).is_ok() {
-            crate::tui::request_redraw();
+            crate::feedback::request_redraw();
             true
         } else {
             false
@@ -58,7 +58,7 @@ impl ContentStream {
             })
             .is_ok()
         {
-            crate::tui::request_redraw();
+            crate::feedback::request_redraw();
             true
         } else {
             false
@@ -71,7 +71,7 @@ impl ContentStream {
             .send(ContentStreamUpdate::IconUnavailable { file_stem, path })
             .is_ok()
         {
-            crate::tui::request_redraw();
+            crate::feedback::request_redraw();
             true
         } else {
             false
@@ -80,7 +80,7 @@ impl ContentStream {
 
     pub fn upsert(&self, entry: ContentEntry) -> bool {
         if self.sender.send(ContentStreamUpdate::Upsert(entry)).is_ok() {
-            crate::tui::request_redraw();
+            crate::feedback::request_redraw();
             true
         } else {
             false
@@ -93,7 +93,7 @@ impl ContentStream {
             .send(ContentStreamUpdate::Retain(file_stems))
             .is_ok()
         {
-            crate::tui::request_redraw();
+            crate::feedback::request_redraw();
             true
         } else {
             false
@@ -287,7 +287,7 @@ impl ContentListState {
                 self.pending_entry_images.remove(&stem);
             }
             self.rebuild_display_metadata();
-            crate::tui::request_redraw();
+            crate::feedback::request_redraw();
         }
     }
 
@@ -331,7 +331,7 @@ impl ContentListState {
         }
         if changed {
             self.images_dirty = true;
-            crate::tui::request_redraw();
+            crate::feedback::request_redraw();
         }
         changed
     }
@@ -375,7 +375,7 @@ impl ContentListState {
                                 bytes,
                                 description,
                             });
-                            crate::tui::request_redraw();
+                            crate::feedback::request_redraw();
                         }
                     }
                     Ok(_) => {}
@@ -559,7 +559,7 @@ impl ContentListState {
                     && let Ok(mut pending) = pending.lock()
                 {
                     pending.push(result);
-                    crate::tui::request_redraw();
+                    crate::feedback::request_redraw();
                 }
             });
         }
@@ -924,7 +924,7 @@ impl ContentListState {
                         } else {
                             *slot = Some(diff);
                         }
-                        crate::tui::request_redraw();
+                        crate::feedback::request_redraw();
                     }
 
                     let no_pending = pending_paths.lock().is_ok_and(|pending| pending.is_empty());
@@ -1260,7 +1260,7 @@ async fn load_provider_metadata(
         .ok()
         .filter(|bytes| !bytes.is_empty() && image::load_from_memory(bytes).is_ok());
 
-    let registry = crate::content_provider::ProviderRegistry::modrinth(client.clone());
+    let registry = crate::instance::content::provider::ProviderRegistry::modrinth(client.clone());
     let provider = registry.preferred(provider_id).ok_or_else(|| {
         crate::net::NetError::Parse(format!("Content provider '{provider_id}' is unavailable"))
     })?;

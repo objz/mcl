@@ -6,9 +6,9 @@ use std::time::Duration;
 use super::Tui;
 use super::app::{App, PENDING_INSTANCES};
 use super::widgets::{self, popups::import_modpack, popups::new_instance};
+use crate::feedback::errors as error_buffer;
+use crate::feedback::progress;
 use crate::instance::InstanceManager;
-use crate::tui::error_buffer;
-use crate::tui::progress;
 
 impl App {
     /// main loop: poll async results and input at ~60Hz, drawing only when state changes
@@ -17,7 +17,7 @@ impl App {
             .checked_sub(Duration::from_secs(1))
             .unwrap_or_else(std::time::Instant::now);
         while !self.exit {
-            let redraw_requested = super::take_redraw_request();
+            let redraw_requested = crate::feedback::take_redraw_request();
             // check if any popup wizard finished and wants to create/import
             if let Some(params) = new_instance::take_result() {
                 self.spawn_create(params);
@@ -86,7 +86,7 @@ impl App {
             self.ensure_provider_conflict_popup();
             self.ensure_active_discovery_loaded();
             let progress_active = progress::is_active();
-            let spinner_active = progress_active || crate::running::has_active();
+            let spinner_active = progress_active || crate::instance::runtime::has_active();
             if spinner_active {
                 // only advance the spinner every 8 ticks to keep it readable
                 self.throbber_tick = self.throbber_tick.wrapping_add(1);
@@ -366,7 +366,7 @@ impl App {
                 Ok(config) => {
                     if let Ok(mut pending) = pending_instances.lock() {
                         pending.push(config);
-                        crate::tui::request_redraw();
+                        crate::feedback::request_redraw();
                     }
                 }
                 Err(e) => {
@@ -393,11 +393,11 @@ impl App {
                 Ok(config) => {
                     if let Ok(mut pending) = pending_instances.lock() {
                         pending.push(config);
-                        crate::tui::request_redraw();
+                        crate::feedback::request_redraw();
                     }
                 }
                 Err(e) => {
-                    crate::tui::progress::clear();
+                    crate::feedback::progress::clear();
                     error_buffer::push_error(error_buffer::ErrorEvent {
                         id: 0,
                         level: tracing::Level::ERROR,
@@ -496,7 +496,7 @@ impl App {
 
     pub(super) fn spawn_launch(&self, instance: crate::instance::InstanceConfig) {
         use crate::instance::launch;
-        use crate::running;
+        use crate::instance::runtime;
 
         let instance = match self.instance_manager.load_one(&instance.name) {
             Ok(config) => config,
@@ -511,7 +511,7 @@ impl App {
             }
         };
 
-        running::set_state(&instance.name, running::RunState::Authenticating);
+        runtime::set_state(&instance.name, runtime::RunState::Authenticating);
 
         let instances_dir = self.instance_manager.instances_dir.clone();
         let meta_dir = self.instance_manager.meta_dir.clone();
@@ -519,7 +519,7 @@ impl App {
         tokio::spawn(async move {
             if let Err(e) = launch::launch(&instance, &instances_dir, &meta_dir).await {
                 tracing::error!("Failed to launch '{}': {}", instance.name, e);
-                running::remove(&instance.name);
+                runtime::remove(&instance.name);
             }
         });
     }
@@ -550,7 +550,7 @@ impl App {
     }
 
     fn drain_pending_last_played(&mut self) {
-        for (name, time) in crate::running::drain_last_played() {
+        for (name, time) in crate::instance::runtime::drain_last_played() {
             for inst in &mut self.instances_state.instances {
                 if inst.name == name {
                     inst.last_played = Some(time);

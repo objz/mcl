@@ -5,12 +5,16 @@ pub mod config_sync;
 pub mod content;
 pub mod desktop;
 pub mod import;
+pub mod java;
 pub mod launch;
 pub mod loader;
-pub mod log_files;
+pub mod logs;
 pub mod manager;
 pub mod models;
+pub mod runtime;
 pub mod screenshots;
+
+pub use logs::files as log_files;
 
 pub use content::manifest::{
     ContentFileRecord, ContentKind, ContentManifest, FileFingerprint, ProviderProject, Resolution,

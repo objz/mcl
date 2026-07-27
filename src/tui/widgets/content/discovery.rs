@@ -420,7 +420,7 @@ impl DiscoveryState {
             }
         }
         if changed {
-            crate::tui::request_redraw();
+            crate::feedback::request_redraw();
         }
     }
 
@@ -449,7 +449,7 @@ impl DiscoveryState {
         };
         entry.installed_path = None;
         entry.title_suffix = None;
-        crate::tui::request_redraw();
+        crate::feedback::request_redraw();
         true
     }
 
@@ -520,14 +520,14 @@ impl DiscoveryState {
                 offset,
                 result,
             });
-            crate::tui::request_redraw();
+            crate::feedback::request_redraw();
         }
     }
 
     pub fn push_action_result(pending: &PendingActions, result: DiscoveryActionResult) {
         if let Ok(mut pending) = pending.lock() {
             pending.push(result);
-            crate::tui::request_redraw();
+            crate::feedback::request_redraw();
         }
     }
 
@@ -689,24 +689,20 @@ impl DiscoveryState {
                         } else {
                             "installed"
                         };
-                        crate::tui::error_buffer::push_error(
-                            crate::tui::error_buffer::ErrorEvent {
-                                id: request_id,
-                                level: tracing::Level::INFO,
-                                message: format!("{project_title}: {action}"),
-                                pushed_at: std::time::Instant::now(),
-                            },
-                        );
+                        crate::feedback::errors::push_error(crate::feedback::errors::ErrorEvent {
+                            id: request_id,
+                            level: tracing::Level::INFO,
+                            message: format!("{project_title}: {action}"),
+                            pushed_at: std::time::Instant::now(),
+                        });
                     }
                     Err(error) => {
-                        crate::tui::error_buffer::push_error(
-                            crate::tui::error_buffer::ErrorEvent {
-                                id: request_id,
-                                level: tracing::Level::ERROR,
-                                message: format!("{project_title}: {error}"),
-                                pushed_at: std::time::Instant::now(),
-                            },
-                        );
+                        crate::feedback::errors::push_error(crate::feedback::errors::ErrorEvent {
+                            id: request_id,
+                            level: tracing::Level::ERROR,
+                            message: format!("{project_title}: {error}"),
+                            pushed_at: std::time::Instant::now(),
+                        });
                     }
                 },
             }

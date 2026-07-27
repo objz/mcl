@@ -1,5 +1,5 @@
 use super::*;
-use crate::tui::tests::UI_TEST_LOCK;
+use crate::tests::TEST_LOCK;
 use ratatui::Terminal;
 use ratatui::backend::TestBackend;
 
@@ -15,7 +15,7 @@ fn reset_wizard_state(step: WizardStep) {
 
 #[test]
 fn new_instance_renders_name_step() {
-    let _serial = UI_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let _serial = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     // Name is the default step; render touches no network helpers.
     reset_wizard_state(WizardStep::Name);
 
@@ -29,7 +29,7 @@ fn new_instance_renders_name_step() {
 
 #[test]
 fn new_instance_renders_loader_step() {
-    let _serial = UI_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let _serial = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     // Loader step is reached after Name; render just paints the hardcoded
     // loader list, no network.
     reset_wizard_state(WizardStep::Loader);
@@ -50,7 +50,7 @@ fn new_instance_renders_loader_step() {
 fn new_instance_renders_version_step() {
     use crate::instance::loader::GameVersion;
 
-    let _serial = UI_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let _serial = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     {
         let mut guard = WIZARD_STATE.lock().expect("WIZARD_STATE lock");
         *guard = WizardState::default();
@@ -86,7 +86,7 @@ fn new_instance_renders_version_step() {
 fn new_instance_renders_loader_version_step() {
     use crate::instance::loader::GameVersion;
 
-    let _serial = UI_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let _serial = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     {
         let mut guard = WIZARD_STATE.lock().expect("WIZARD_STATE lock");
         *guard = WizardState::default();
@@ -115,7 +115,7 @@ fn new_instance_renders_confirm_step() {
     use crate::instance::loader::GameVersion;
     use tui_prompts::TextState;
 
-    let _serial = UI_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let _serial = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     {
         let mut guard = WIZARD_STATE.lock().expect("WIZARD_STATE lock");
         *guard = WizardState::default();

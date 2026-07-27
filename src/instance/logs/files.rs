@@ -58,15 +58,5 @@ pub fn read_log_file(path: &Path) -> Vec<String> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn log_dir_builds_correct_path() {
-        let p = log_dir(Path::new("/instances"), "my-world");
-        assert_eq!(
-            p,
-            PathBuf::from("/instances/my-world/minecraft/logs/launches")
-        );
-    }
-}
+#[path = "../tests/logs/files.rs"]
+mod tests;

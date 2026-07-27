@@ -120,4 +120,5 @@ fn select_version<'a>(
 }
 
 #[cfg(test)]
+#[path = "tests/import.rs"]
 mod tests;

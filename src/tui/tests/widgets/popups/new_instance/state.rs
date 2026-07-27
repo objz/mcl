@@ -2,7 +2,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use tui_prompts::TextState;
 
 use super::*;
-use crate::tui::tests::UI_TEST_LOCK;
+use crate::tests::TEST_LOCK;
 
 fn key(code: KeyCode) -> KeyEvent {
     KeyEvent::new(code, KeyModifiers::NONE)
@@ -10,9 +10,7 @@ fn key(code: KeyCode) -> KeyEvent {
 
 #[test]
 fn vanilla_wizard_reaches_confirm_and_returns_parameters() {
-    let _guard = UI_TEST_LOCK
-        .lock()
-        .unwrap_or_else(|error| error.into_inner());
+    let _guard = TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
     let mut instances = instances::State {
         show_popup: true,
         ..instances::State::default()

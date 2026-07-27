@@ -1,5 +1,5 @@
 use super::*;
-use crate::tui::tests::UI_TEST_LOCK;
+use crate::tests::TEST_LOCK;
 
 fn clear_errors_for_test() {
     ERROR_EVENTS.lock().unwrap().clear();
@@ -16,7 +16,7 @@ fn make_event(msg: &str) -> ErrorEvent {
 
 #[test]
 fn peek_does_not_remove() {
-    let _guard = UI_TEST_LOCK.lock().unwrap();
+    let _guard = TEST_LOCK.lock().unwrap();
     clear_errors_for_test();
 
     push_error(make_event("peek-test"));
@@ -36,7 +36,7 @@ fn peek_does_not_remove() {
 
 #[test]
 fn peek_all_returns_newest_first() {
-    let _guard = UI_TEST_LOCK.lock().unwrap();
+    let _guard = TEST_LOCK.lock().unwrap();
     clear_errors_for_test();
 
     push_error(make_event("newest_a"));
@@ -52,7 +52,7 @@ fn peek_all_returns_newest_first() {
 
 #[test]
 fn auto_assigned_ids_are_unique() {
-    let _guard = UI_TEST_LOCK.lock().unwrap();
+    let _guard = TEST_LOCK.lock().unwrap();
     clear_errors_for_test();
 
     push_error(make_event("unique_1"));
@@ -66,7 +66,7 @@ fn auto_assigned_ids_are_unique() {
 
 #[test]
 fn overflow_drops_oldest() {
-    let _guard = UI_TEST_LOCK.lock().unwrap();
+    let _guard = TEST_LOCK.lock().unwrap();
     clear_errors_for_test();
 
     for i in 0..(MAX_ERROR_EVENTS + 10) {

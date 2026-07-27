@@ -569,11 +569,6 @@ fn push_text_block(blocks: &mut Vec<DocumentBlock>, source: &str) {
     }
 }
 
-#[cfg(test)]
-fn formatted_text(source: &str, width: u16) -> Text<'static> {
-    external_markdown_text(source, width).0
-}
-
 fn external_markdown_text(source: &str, width: u16) -> (Text<'static>, Vec<LinkTarget>) {
     let theme = markdown_theme();
     let rule_style = theme.rule;
@@ -1479,7 +1474,7 @@ fn prepare_image(
         if let Ok(mut pending) = pending.lock() {
             pending.push(PreparedImageResult { url, key, result });
         }
-        crate::tui::request_redraw();
+        crate::feedback::request_redraw();
     });
 }
 

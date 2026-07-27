@@ -14,7 +14,7 @@ use ratatui::{
 use tui_widget_list::{ListBuilder, ListState as TuiListState, ListView};
 
 use crate::instance::models::InstanceConfig;
-use crate::running::{RunState, get as get_run_state};
+use crate::instance::runtime::{RunState, get as get_run_state};
 use crate::tui::app::FocusedArea;
 
 use super::{WidgetKey, search::SearchState, styled_title};

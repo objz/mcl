@@ -158,7 +158,7 @@ fn effective_java_path(instance: &InstanceConfig) -> String {
         .java_path
         .clone()
         .or_else(|| SETTINGS.paths.effective_java_path().map(str::to_string))
-        .unwrap_or_else(crate::net::detect_java_path)
+        .unwrap_or_else(crate::instance::java::detect_java_path)
 }
 
 fn java_version_label(java_path: &str) -> String {

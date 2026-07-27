@@ -778,8 +778,8 @@ pub fn title(
             let [left_area, right_area] =
                 Layout::horizontal([Constraint::Min(0), Constraint::Length(32)]).areas(inner);
 
-            use crate::running::RunState;
-            let run_state = crate::running::get(&inst.name);
+            use crate::instance::runtime::RunState;
+            let run_state = crate::instance::runtime::get(&inst.name);
 
             match run_state {
                 Some(RunState::Authenticating)

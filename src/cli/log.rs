@@ -20,7 +20,7 @@ pub async fn handle_log(matches: &ArgMatches) -> CliResult {
 fn list_logs(instance: &str) -> CliResult {
     let instances_dir = crate::config::SETTINGS.paths.resolve_instances_dir();
     require_instance(&instances_dir, instance)?;
-    let rows = crate::instance::log_files::scan_log_files(&instances_dir, instance)
+    let rows = crate::instance::logs::files::scan_log_files(&instances_dir, instance)
         .into_iter()
         .map(|entry| {
             let size = std::fs::metadata(&entry.path)
@@ -42,7 +42,7 @@ async fn show_log(matches: &ArgMatches) -> CliResult {
     require_instance(&instances_dir, instance)?;
     let path = resolve_log_path(&instances_dir, instance, file)?;
 
-    let lines = crate::instance::log_files::read_log_file(&path);
+    let lines = crate::instance::logs::files::read_log_file(&path);
     for line in &lines {
         println!("{}", line);
     }
@@ -53,7 +53,7 @@ async fn show_log(matches: &ArgMatches) -> CliResult {
         let mut last_len = lines.len();
         loop {
             tokio::time::sleep(Duration::from_millis(500)).await;
-            let new_lines = crate::instance::log_files::read_log_file(&path);
+            let new_lines = crate::instance::logs::files::read_log_file(&path);
             for line in new_lines.iter().skip(last_len) {
                 println!("{}", line);
             }
@@ -71,14 +71,14 @@ pub(crate) fn resolve_log_path(
     file: Option<&str>,
 ) -> Result<PathBuf, io::Error> {
     if let Some(name) = file {
-        let path = crate::instance::log_files::log_dir(instances_dir, instance).join(name);
+        let path = crate::instance::logs::files::log_dir(instances_dir, instance).join(name);
         if !path.exists() {
             return Err(io::Error::other(format!("log '{}' not found", name)));
         }
         return Ok(path);
     }
 
-    crate::instance::log_files::scan_log_files(instances_dir, instance)
+    crate::instance::logs::files::scan_log_files(instances_dir, instance)
         .into_iter()
         .next()
         .map(|entry| entry.path)
@@ -88,36 +88,5 @@ pub(crate) fn resolve_log_path(
 use super::utils::{require_instance, required_arg};
 
 #[cfg(test)]
-mod tests {
-    use super::resolve_log_path;
-
-    #[test]
-    fn resolves_latest_log_when_no_file_is_given() {
-        let tmp = tempfile::tempdir().unwrap();
-        let dir = tmp.path().join("demo/minecraft/logs/launches");
-        std::fs::create_dir_all(&dir).expect("log directory should exist");
-        std::fs::write(dir.join("2024-01-02_03-04-05.log"), "newer").expect("write newer log");
-        std::fs::write(dir.join("2024-01-01_03-04-05.log"), "older").expect("write older log");
-
-        let path = resolve_log_path(tmp.path(), "demo", None).expect("latest log should resolve");
-        assert_eq!(
-            path.file_name().and_then(|name| name.to_str()),
-            Some("2024-01-02_03-04-05.log")
-        );
-    }
-
-    #[test]
-    fn resolves_named_log_file() {
-        let tmp = tempfile::tempdir().unwrap();
-        let dir = tmp.path().join("demo/minecraft/logs/launches");
-        std::fs::create_dir_all(&dir).expect("log directory should exist");
-        std::fs::write(dir.join("latest.log"), "hello").expect("write named log");
-
-        let path = resolve_log_path(tmp.path(), "demo", Some("latest.log"))
-            .expect("named log should resolve");
-        assert_eq!(
-            path.file_name().and_then(|name| name.to_str()),
-            Some("latest.log")
-        );
-    }
-}
+#[path = "tests/log.rs"]
+mod tests;

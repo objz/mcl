@@ -13,7 +13,7 @@ use tracing::Level;
 use super::base::PopupFrame;
 use crate::config::SETTINGS;
 use crate::config::theme::THEME;
-use crate::tui::error_buffer::ErrorEvent;
+use crate::feedback::errors::ErrorEvent;
 
 pub struct ErrorPopup {
     pub event: ErrorEvent,

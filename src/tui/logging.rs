@@ -16,7 +16,7 @@ use tracing_subscriber::{EnvFilter, Layer};
 
 use std::sync::LazyLock;
 
-use crate::tui::error_buffer::{self, ErrorEvent};
+use crate::feedback::errors::{self as error_buffer, ErrorEvent};
 
 const MINECRAFT_LOG_TARGET: &str = "mc_instance";
 const DEFAULT_FILE_FILTER: &str = "warn,rmcl=trace";

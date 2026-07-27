@@ -7,10 +7,11 @@ use std::path::Path;
 
 use serde::Deserialize;
 
+use crate::feedback::progress::set_action;
 use crate::instance::loader::GameVersion;
-use crate::instance::loader::InstallerError;
 use crate::net::{HttpClient, NetError, download_file};
-use crate::tui::progress::set_action;
+
+pub use crate::instance::loader::neoforge::run_neoforge_installer;
 
 const NEOFORGE_MAVEN_BASE: &str = "https://maven.neoforged.net/releases/net/neoforged/neoforge";
 const NEOFORGE_API_BASE: &str =
@@ -163,82 +164,11 @@ pub async fn download_neoforge_installer(
     );
 
     download_file(client, &url, dest, |downloaded, total| {
-        crate::tui::progress::set_progress(downloaded, total);
+        crate::feedback::progress::set_progress(downloaded, total);
     })
     .await
 }
 
-pub async fn run_neoforge_installer(
-    installer_path: &Path,
-    instance_dir: &Path,
-    java_path: &str,
-) -> Result<(), InstallerError> {
-    use tokio::process::Command;
-
-    set_action("Running NeoForge installer...");
-
-    let output = match Command::new(java_path)
-        .arg(format!("-Duser.home={}", instance_dir.display()))
-        .arg("-jar")
-        .arg(installer_path)
-        .arg("--installClient")
-        .current_dir(instance_dir.join(crate::storage::MINECRAFT_DIR_NAME))
-        .output()
-        .await
-    {
-        Ok(o) => o,
-        Err(e) => {
-            tracing::debug!(
-                "Failed to spawn NeoForge installer {} with Java {}: {}",
-                installer_path.display(),
-                java_path,
-                e
-            );
-            return Err(InstallerError::Io(e));
-        }
-    };
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let detail = stderr.lines().last().unwrap_or("").trim();
-        tracing::debug!(
-            "NeoForge installer {} failed with status {:?}: {}",
-            installer_path.display(),
-            output.status.code(),
-            detail
-        );
-        return Err(InstallerError::ProcessFailed(format!(
-            "NeoForge installer exited with {:?}",
-            output.status.code()
-        )));
-    }
-
-    tracing::debug!("NeoForge installer completed successfully");
-    Ok(())
-}
-
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_game_version_to_neoforge_prefix() {
-        assert_eq!(
-            game_version_to_neoforge_prefix("1.21"),
-            Some("21.0.".to_string())
-        );
-        assert_eq!(
-            game_version_to_neoforge_prefix("1.20.4"),
-            Some("20.4.".to_string())
-        );
-        assert_eq!(
-            game_version_to_neoforge_prefix("1.21.1"),
-            Some("21.1.".to_string())
-        );
-        assert_eq!(
-            game_version_to_neoforge_prefix("26.1.2"),
-            Some("26.1.2.".to_string())
-        );
-        assert_eq!(game_version_to_neoforge_prefix("invalid"), None);
-    }
-}
+#[path = "tests/neoforge.rs"]
+mod tests;

@@ -7,7 +7,7 @@ use crate::instance::{
     ModLoader,
     import::{ImportSummary, PackFormat},
 };
-use crate::tui::tests::UI_TEST_LOCK;
+use crate::tests::TEST_LOCK;
 
 fn key(code: KeyCode) -> KeyEvent {
     KeyEvent::new(code, KeyModifiers::NONE)
@@ -29,9 +29,7 @@ fn summary() -> ImportSummary {
 
 #[test]
 fn empty_input_is_ignored_and_escape_closes_the_popup() {
-    let _guard = UI_TEST_LOCK
-        .lock()
-        .unwrap_or_else(|error| error.into_inner());
+    let _guard = TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
     let mut instances = instances::State {
         show_import_popup: true,
         ..instances::State::default()
@@ -47,9 +45,7 @@ fn empty_input_is_ignored_and_escape_closes_the_popup() {
 
 #[test]
 fn confirm_returns_the_import_summary() {
-    let _guard = UI_TEST_LOCK
-        .lock()
-        .unwrap_or_else(|error| error.into_inner());
+    let _guard = TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
     let mut instances = instances::State {
         show_import_popup: true,
         ..instances::State::default()

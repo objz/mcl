@@ -4,7 +4,7 @@ use ratatui::backend::TestBackend;
 use std::time::Instant;
 use tracing::Level;
 
-use crate::tui::error_buffer::ErrorEvent;
+use crate::feedback::errors::ErrorEvent;
 
 fn render(event: ErrorEvent, width: u16, height: u16) -> Terminal<TestBackend> {
     let backend = TestBackend::new(width, height);

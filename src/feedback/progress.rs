@@ -52,7 +52,7 @@ impl ProgressTask {
             refresh_visible(&mut state);
         }
         tracing::info!("{}", action);
-        crate::tui::request_redraw();
+        super::request_redraw();
         Self {
             id,
             finished: false,
@@ -91,7 +91,7 @@ impl ProgressTask {
             state.tasks.remove(&self.id);
             refresh_visible(&mut state);
         }
-        crate::tui::request_redraw();
+        super::request_redraw();
     }
 }
 
@@ -112,7 +112,7 @@ fn update_task_action(id: u64, text: String) {
         }
         refresh_visible(&mut state);
     }
-    crate::tui::request_redraw();
+    super::request_redraw();
 }
 
 fn update_task_sub_action(id: u64, text: String) {
@@ -122,7 +122,7 @@ fn update_task_sub_action(id: u64, text: String) {
         }
         refresh_visible(&mut state);
     }
-    crate::tui::request_redraw();
+    super::request_redraw();
 }
 
 fn update_task_progress(id: u64, current: u64, total: u64) {
@@ -132,7 +132,7 @@ fn update_task_progress(id: u64, current: u64, total: u64) {
         }
         refresh_visible(&mut state);
     }
-    crate::tui::request_redraw();
+    super::request_redraw();
 }
 
 impl Drop for ProgressTask {
@@ -161,7 +161,7 @@ pub fn set_action(text: impl Into<String>) {
         Ok(mut state) => {
             state.legacy_active = true;
             state.current_action = Some(text.clone());
-            crate::tui::request_redraw();
+            super::request_redraw();
         }
         Err(e) => {
             tracing::error!("Progress lock poisoned: {}", e);
@@ -174,7 +174,7 @@ pub fn set_progress(current: u64, total: u64) {
     match PROGRESS.lock() {
         Ok(mut state) => {
             state.progress = Some((current, total));
-            crate::tui::request_redraw();
+            super::request_redraw();
         }
         Err(e) => {
             tracing::error!("Progress lock poisoned: {}", e);
@@ -187,7 +187,7 @@ pub fn set_sub_action(text: impl Into<String>) {
     match PROGRESS.lock() {
         Ok(mut state) => {
             state.sub_action = Some(text.clone());
-            crate::tui::request_redraw();
+            super::request_redraw();
         }
         Err(e) => {
             tracing::error!("Progress lock poisoned: {}", e);
@@ -201,7 +201,7 @@ pub fn clear() {
         Ok(mut state) => {
             state.legacy_active = false;
             refresh_visible(&mut state);
-            crate::tui::request_redraw();
+            super::request_redraw();
         }
         Err(e) => {
             tracing::error!("Progress lock poisoned: {}", e);

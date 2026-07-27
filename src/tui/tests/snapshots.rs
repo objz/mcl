@@ -13,16 +13,16 @@ fn empty_app_renders_the_complete_frame() {
 #[test]
 fn active_progress_is_visible_in_the_complete_frame() {
     let mut ui = UiHarness::new();
-    crate::tui::progress::set_action("Downloading test data");
-    crate::tui::progress::set_sub_action("one.jar");
-    crate::tui::progress::set_progress(1, 2);
+    crate::feedback::progress::set_action("Downloading test data");
+    crate::feedback::progress::set_sub_action("one.jar");
+    crate::feedback::progress::set_progress(1, 2);
 
     ui.draw();
 
     let screen = ui.screen();
     assert!(screen.contains("Downloading test data"));
     assert!(screen.contains("one.jar"));
-    crate::tui::progress::clear();
+    crate::feedback::progress::clear();
 }
 
 #[test]

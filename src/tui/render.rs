@@ -13,7 +13,7 @@ use super::app::{App, ErrorEffectState, FocusedArea};
 use super::widgets::{
     self, popups::confirm as confirm_popup, popups::import_modpack, popups::new_instance,
 };
-use crate::tui::error_buffer;
+use crate::feedback::errors as error_buffer;
 use crate::tui::widgets::popups::confirm::{ConfirmPopup, confirm_popup_area};
 use crate::tui::widgets::popups::error::{ErrorPopup, popup_area};
 

@@ -3,9 +3,9 @@ use std::collections::{HashMap, HashSet};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
 use ratatui::{Terminal, backend::TestBackend};
 
-use super::UI_TEST_LOCK;
 use crate::auth::{Account, AccountStore, AccountType};
 use crate::instance::{InstanceConfig, InstanceManager, ModLoader};
+use crate::tests::TEST_LOCK;
 use crate::tui::{
     app::{App, FocusedArea},
     widgets,
@@ -21,17 +21,15 @@ pub(in crate::tui) struct UiHarness {
 
 impl UiHarness {
     pub fn new() -> Self {
-        let guard = UI_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|error| error.into_inner());
+        let guard = TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
         widgets::popups::confirm::clear_pending();
         widgets::popups::new_instance::reset_for_test();
         widgets::popups::import_modpack::reset_for_test();
-        crate::tui::error_buffer::ERROR_EVENTS
+        crate::feedback::errors::ERROR_EVENTS
             .lock()
             .expect("error buffer")
             .clear();
-        crate::tui::progress::clear();
+        crate::feedback::progress::clear();
 
         let temp = tempfile::tempdir().expect("temporary UI data");
         let instances_dir = temp.path().join("instances");

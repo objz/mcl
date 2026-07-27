@@ -18,7 +18,7 @@ use tui_widget_list::{ListBuilder, ListState as TuiListState, ListView};
 
 use crate::config::theme::{BORDER_STYLE, THEME};
 use crate::instance::launch::parser::LogLevel;
-use crate::instance::log_files::{LogFileEntry, read_log_file, scan_log_files};
+use crate::instance::logs::files::{LogFileEntry, read_log_file, scan_log_files};
 
 type PendingLogs = Arc<Mutex<Option<(String, Vec<LogFileEntry>)>>>;
 
@@ -93,7 +93,7 @@ impl LogsState {
 
             if let Ok(mut slot) = pending.lock() {
                 *slot = Some((tag, entries));
-                crate::tui::request_redraw();
+                crate::feedback::request_redraw();
             }
         });
     }
@@ -140,11 +140,11 @@ impl LogsState {
             return;
         };
         if !matches!(
-            crate::running::get(name),
+            crate::instance::runtime::get(name),
             Some(
-                crate::running::RunState::Authenticating
-                    | crate::running::RunState::Starting
-                    | crate::running::RunState::Running
+                crate::instance::runtime::RunState::Authenticating
+                    | crate::instance::runtime::RunState::Starting
+                    | crate::instance::runtime::RunState::Running
             )
         ) {
             return;
@@ -164,7 +164,7 @@ impl LogsState {
 
             if let Ok(mut slot) = pending.lock() {
                 *slot = Some((tag, entries));
-                crate::tui::request_redraw();
+                crate::feedback::request_redraw();
             }
         });
     }
@@ -174,10 +174,10 @@ impl LogsState {
     fn has_live(&self) -> bool {
         let name = self.loaded_for.as_deref().unwrap_or("");
         matches!(
-            crate::running::get(name),
-            Some(crate::running::RunState::Running)
-                | Some(crate::running::RunState::Starting)
-                | Some(crate::running::RunState::Crashed(_))
+            crate::instance::runtime::get(name),
+            Some(crate::instance::runtime::RunState::Running)
+                | Some(crate::instance::runtime::RunState::Starting)
+                | Some(crate::instance::runtime::RunState::Crashed(_))
         )
     }
 
@@ -580,7 +580,7 @@ fn render_viewer(
 
     let all_lines: Vec<ViewerLine> = if is_live {
         let name = state.loaded_for.as_deref().unwrap_or("");
-        crate::instance_logs::get_entries(name)
+        crate::instance::logs::live::get_entries(name)
             .into_iter()
             .map(|line| ViewerLine {
                 text: line.text,

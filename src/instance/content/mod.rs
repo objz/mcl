@@ -6,6 +6,7 @@ mod icons;
 pub mod manifest;
 pub mod mods;
 mod packs;
+pub mod provider;
 pub mod reconcile;
 pub mod resource_packs;
 pub mod shaders;

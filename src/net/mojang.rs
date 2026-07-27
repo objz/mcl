@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use tokio::task::JoinSet;
 
 use super::{HttpClient, NetError, download_file};
-use crate::tui::progress::{clear, set_action, set_progress, set_sub_action};
+use crate::feedback::progress::{clear, set_action, set_progress, set_sub_action};
 
 const MANIFEST_URL: &str = "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json";
 const ASSETS_BASE_URL: &str = "https://resources.download.minecraft.net";

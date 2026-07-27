@@ -1,5 +1,5 @@
 use super::*;
-use crate::tui::tests::UI_TEST_LOCK;
+use crate::tests::TEST_LOCK;
 use ratatui::Terminal;
 use ratatui::backend::TestBackend;
 
@@ -12,7 +12,7 @@ fn reset_import_state(step: ImportStep) {
 
 #[test]
 fn import_modpack_renders_input_step() {
-    let _serial = UI_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let _serial = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     reset_import_state(ImportStep::Input);
 
     let backend = TestBackend::new(60, 12);
@@ -25,7 +25,7 @@ fn import_modpack_renders_input_step() {
 
 #[test]
 fn import_modpack_renders_fetching_step() {
-    let _serial = UI_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let _serial = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     reset_import_state(ImportStep::Fetching);
 
     let backend = TestBackend::new(60, 12);
@@ -43,7 +43,7 @@ fn import_modpack_renders_fetching_step() {
 fn import_modpack_renders_version_step() {
     use crate::net::modrinth::VersionInfo;
 
-    let _serial = UI_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let _serial = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     {
         let mut guard = IMPORT_STATE.lock().expect("IMPORT_STATE lock");
         *guard = ImportWizardState::default();
@@ -90,7 +90,7 @@ fn import_modpack_renders_confirm_step() {
     use crate::instance::models::ModLoader;
     use std::path::PathBuf;
 
-    let _serial = UI_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let _serial = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     {
         let mut guard = IMPORT_STATE.lock().expect("IMPORT_STATE lock");
         *guard = ImportWizardState::default();
@@ -125,7 +125,7 @@ fn import_modpack_renders_confirm_step_without_loader_version() {
     use crate::instance::models::ModLoader;
     use std::path::PathBuf;
 
-    let _serial = UI_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let _serial = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     {
         let mut guard = IMPORT_STATE.lock().expect("IMPORT_STATE lock");
         *guard = ImportWizardState::default();
