@@ -3,9 +3,8 @@ use std::sync::{Arc, Mutex};
 
 use crossterm::event::{KeyCode, KeyEvent};
 
-use crate::instance::content::mods::ContentEntry;
-use crate::instance::{InstanceConfig, ModLoader};
-use crate::net::modrinth::{DiscoveryKind, DiscoveryProject, VersionInfo};
+use crate::instance::{ContentEntry, ContentKind, InstanceConfig, ModLoader};
+use crate::net::modrinth::{DiscoveryProject, VersionInfo};
 
 use super::list::{ContentListState, ContentStream};
 
@@ -159,7 +158,7 @@ pub enum DiscoveryActionResult {
 pub(crate) type PendingActions = Arc<Mutex<Vec<DiscoveryActionResult>>>;
 
 pub struct DiscoveryState {
-    pub kind: DiscoveryKind,
+    pub kind: ContentKind,
     pub list: ContentListState,
     pub search: crate::tui::widgets::search::SearchState,
     pub total_hits: usize,
@@ -184,7 +183,7 @@ pub struct DiscoveryState {
 }
 
 impl DiscoveryState {
-    pub fn new(kind: DiscoveryKind) -> Self {
+    pub fn new(kind: ContentKind) -> Self {
         Self {
             kind,
             list: ContentListState::default(),
@@ -859,7 +858,7 @@ pub(crate) fn project_entry(
         provider_icon,
         provider_description: false,
         path: PathBuf::from(project.id),
-        icon_lines: Some(crate::instance::content::mods::fallback_icon()),
+        icon_lines: Some(crate::instance::content::fallback_icon()),
     }
 }
 

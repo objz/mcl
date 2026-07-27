@@ -57,15 +57,15 @@ impl UiHarness {
             instances_state: widgets::instances::State::default(),
             mods_state: widgets::content::ContentListState::default(),
             mods_discovery_state: widgets::content::DiscoveryState::new(
-                crate::net::modrinth::DiscoveryKind::Mod,
+                crate::instance::ContentKind::Mod,
             ),
             resource_packs_state: widgets::content::ContentListState::default(),
             resource_packs_discovery_state: widgets::content::DiscoveryState::new(
-                crate::net::modrinth::DiscoveryKind::ResourcePack,
+                crate::instance::ContentKind::ResourcePack,
             ),
             shaders_state: widgets::content::ContentListState::default(),
             shaders_discovery_state: widgets::content::DiscoveryState::new(
-                crate::net::modrinth::DiscoveryKind::Shader,
+                crate::instance::ContentKind::Shader,
             ),
             worlds_state: widgets::content::ContentListState::default(),
             screenshots_state: {

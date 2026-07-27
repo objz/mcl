@@ -25,7 +25,7 @@ use unicode_segmentation::UnicodeSegmentation;
 
 use crate::config::settings::ImageProtocol;
 use crate::config::theme::THEME;
-use crate::instance::content::mods::{
+use crate::instance::content::{
     IconCell, fallback_icon, make_icon_pixels_from_image, make_icon_quadrants_from_image,
 };
 

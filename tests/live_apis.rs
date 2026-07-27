@@ -3,7 +3,7 @@
 //! These are intentionally ignored during normal test runs. The release
 //! workflow runs them with `cargo test --all-targets -- --ignored`.
 
-use rmcl::instance::{ModLoader, VanillaInstaller};
+use rmcl::instance::{ContentKind, ModLoader, VanillaInstaller};
 use rmcl::net::{self, HttpClient};
 
 #[tokio::test]
@@ -132,12 +132,12 @@ async fn modrinth_versions_are_available() {
 async fn modrinth_discovery_returns_unique_compatible_mods() {
     use std::collections::HashSet;
 
-    use rmcl::net::modrinth::{DiscoveryKind, search_discovery};
+    use rmcl::net::modrinth::search_discovery;
 
     let client = HttpClient::new();
     let result = search_discovery(
         &client,
-        DiscoveryKind::Mod,
+        ContentKind::Mod,
         "sodium",
         "1.21.1",
         ModLoader::Fabric,
@@ -165,7 +165,7 @@ async fn modrinth_discovery_returns_unique_compatible_mods() {
     for offset in (100..result.total_hits.min(300)).step_by(100) {
         let next = search_discovery(
             &client,
-            DiscoveryKind::Mod,
+            ContentKind::Mod,
             "sodium",
             "1.21.1",
             ModLoader::Fabric,

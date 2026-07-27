@@ -1,8 +1,11 @@
-// modrinth modpack support: fetches project metadata, downloads .mrpack files,
-// and extracts loader info from pack manifests.
+// modrinth api client and provider file downloads.
 
 use serde::Deserialize;
 use std::collections::HashMap;
+
+pub use crate::instance::import::mrpack::{
+    MrpackFile, MrpackIndex, game_version_from_dependencies, loader_from_dependencies, parse_mrpack,
+};
 
 #[derive(Debug, Clone, Deserialize, serde::Serialize)]
 pub struct ProjectInfo {
@@ -41,57 +44,9 @@ pub struct VersionFile {
     pub hashes: HashMap<String, String>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
-pub struct MrpackIndex {
-    #[serde(rename = "formatVersion")]
-    pub format_version: u32,
-    pub game: String,
-    #[serde(rename = "versionId")]
-    pub version_id: String,
-    pub name: String,
-    #[serde(default)]
-    pub dependencies: HashMap<String, String>,
-    #[serde(default)]
-    pub files: Vec<MrpackFile>,
-}
+use crate::instance::{ContentKind, ModLoader};
 
-#[derive(Debug, Clone, Deserialize)]
-pub struct MrpackFile {
-    pub path: String,
-    pub downloads: Vec<String>,
-    #[serde(rename = "fileSize")]
-    pub file_size: u64,
-}
-
-use crate::instance::models::ModLoader;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DiscoveryKind {
-    Mod,
-    ResourcePack,
-    Shader,
-}
-
-impl DiscoveryKind {
-    fn project_type(self) -> &'static str {
-        match self {
-            Self::Mod => "mod",
-            Self::ResourcePack => "resourcepack",
-            Self::Shader => "shader",
-        }
-    }
-
-    pub fn unavailable_message(self, loader: ModLoader) -> Option<&'static str> {
-        if loader != ModLoader::Vanilla {
-            return None;
-        }
-        match self {
-            Self::Mod => Some("Vanilla does not support mods."),
-            Self::Shader => Some("Vanilla does not support shaders."),
-            Self::ResourcePack => None,
-        }
-    }
-}
+pub type DiscoveryKind = ContentKind;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DiscoveryProject {
@@ -145,7 +100,7 @@ impl From<DiscoverySearchHit> for DiscoveryProject {
 
 pub async fn search_discovery(
     client: &crate::net::HttpClient,
-    kind: DiscoveryKind,
+    kind: ContentKind,
     query: &str,
     game_version: &str,
     loader: ModLoader,
@@ -188,17 +143,25 @@ pub async fn search_discovery(
     })
 }
 
-fn discovery_facets(kind: DiscoveryKind, game_version: &str, loader: ModLoader) -> String {
-    let mut facets = vec![vec![format!("project_type:{}", kind.project_type())]];
+fn discovery_facets(kind: ContentKind, game_version: &str, loader: ModLoader) -> String {
+    let mut facets = vec![vec![format!("project_type:{}", project_type(kind))]];
     if !game_version.is_empty() {
         facets.push(vec![format!("versions:{game_version}")]);
     }
-    if kind == DiscoveryKind::Mod
+    if kind == ContentKind::Mod
         && let Some(loader) = loader_facet(loader)
     {
         facets.push(vec![format!("categories:{loader}")]);
     }
     serde_json::to_string(&facets).unwrap_or_else(|_| "[]".to_string())
+}
+
+fn project_type(kind: ContentKind) -> &'static str {
+    match kind {
+        ContentKind::Mod => "mod",
+        ContentKind::ResourcePack => "resourcepack",
+        ContentKind::Shader => "shader",
+    }
 }
 
 fn loader_facet(loader: ModLoader) -> Option<&'static str> {
@@ -209,36 +172,6 @@ fn loader_facet(loader: ModLoader) -> Option<&'static str> {
         ModLoader::NeoForge => Some("neoforge"),
         ModLoader::Quilt => Some("quilt"),
     }
-}
-
-// mrpack dependencies use keys like "fabric-loader", "forge", etc.
-// checks in priority order and returns the first match.
-pub fn loader_from_dependencies(
-    deps: &HashMap<String, String>,
-) -> (Option<ModLoader>, Option<String>) {
-    let loaders = [
-        ("fabric-loader", ModLoader::Fabric),
-        ("forge", ModLoader::Forge),
-        ("neoforge", ModLoader::NeoForge),
-        ("quilt-loader", ModLoader::Quilt),
-    ];
-    for (key, loader) in &loaders {
-        if let Some(version) = deps.get(*key) {
-            tracing::trace!(
-                "Resolved Modrinth loader dependency {}={} as {}",
-                key,
-                version,
-                loader
-            );
-            return (Some(*loader), Some(version.clone()));
-        }
-    }
-    tracing::trace!("No Modrinth loader dependency found; treating pack as vanilla");
-    (None, None)
-}
-
-pub fn game_version_from_dependencies(deps: &HashMap<String, String>) -> Option<String> {
-    deps.get("minecraft").cloned()
 }
 
 const API_BASE: &str = "https://api.modrinth.com/v2";
@@ -298,7 +231,7 @@ pub async fn fetch_versions(
 pub async fn fetch_content_versions(
     client: &crate::net::HttpClient,
     project_id: &str,
-    kind: DiscoveryKind,
+    kind: ContentKind,
     game_version: &str,
     loader: ModLoader,
 ) -> Result<Vec<VersionInfo>, crate::net::NetError> {
@@ -325,7 +258,7 @@ pub async fn fetch_content_versions(
 fn content_versions_url(
     api_base: &str,
     project_id: &str,
-    kind: DiscoveryKind,
+    kind: ContentKind,
     game_version: &str,
     loader: ModLoader,
 ) -> String {
@@ -336,7 +269,7 @@ fn content_versions_url(
             url_encode(&serde_json::to_string(&[game_version]).unwrap_or_default())
         ),
     ];
-    if kind == DiscoveryKind::Mod
+    if kind == ContentKind::Mod
         && let Some(loader) = loader_facet(loader)
     {
         params.push(format!(
@@ -541,26 +474,6 @@ pub async fn download_mrpack(
     Ok(mrpack_path)
 }
 
-// .mrpack is just a zip with modrinth.index.json at the root
-pub fn parse_mrpack(path: &std::path::Path) -> Result<MrpackIndex, String> {
-    tracing::debug!("Parsing .mrpack manifest from {}", path.display());
-    let file = std::fs::File::open(path).map_err(|e| format!("Cannot open .mrpack: {e}"))?;
-    let mut archive = zip::ZipArchive::new(file).map_err(|e| format!("Invalid ZIP: {e}"))?;
-    let entry = archive
-        .by_name("modrinth.index.json")
-        .map_err(|_| "Missing modrinth.index.json in .mrpack".to_string())?;
-    let index: MrpackIndex =
-        serde_json::from_reader(entry).map_err(|e| format!("Invalid manifest JSON: {e}"))?;
-    tracing::debug!(
-        "Parsed .mrpack '{}' version_id={} files={} deps={}",
-        index.name,
-        index.version_id,
-        index.files.len(),
-        index.dependencies.len()
-    );
-    Ok(index)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -580,7 +493,7 @@ mod tests {
 
     #[test]
     fn discovery_mod_facets_include_instance_compatibility() {
-        let facets = discovery_facets(DiscoveryKind::Mod, "1.21.1", ModLoader::Fabric);
+        let facets = discovery_facets(ContentKind::Mod, "1.21.1", ModLoader::Fabric);
         assert_eq!(
             serde_json::from_str::<Vec<Vec<String>>>(&facets).unwrap(),
             vec![
@@ -593,30 +506,10 @@ mod tests {
 
     #[test]
     fn discovery_resource_pack_facets_do_not_require_loader() {
-        let facets = discovery_facets(DiscoveryKind::ResourcePack, "1.20.1", ModLoader::Forge);
+        let facets = discovery_facets(ContentKind::ResourcePack, "1.20.1", ModLoader::Forge);
         assert_eq!(
             serde_json::from_str::<Vec<Vec<String>>>(&facets).unwrap(),
             vec![vec!["project_type:resourcepack"], vec!["versions:1.20.1"]]
-        );
-    }
-
-    #[test]
-    fn vanilla_discovery_only_supports_resource_packs() {
-        assert_eq!(
-            DiscoveryKind::Mod.unavailable_message(ModLoader::Vanilla),
-            Some("Vanilla does not support mods.")
-        );
-        assert_eq!(
-            DiscoveryKind::Shader.unavailable_message(ModLoader::Vanilla),
-            Some("Vanilla does not support shaders.")
-        );
-        assert_eq!(
-            DiscoveryKind::ResourcePack.unavailable_message(ModLoader::Vanilla),
-            None
-        );
-        assert_eq!(
-            DiscoveryKind::Mod.unavailable_message(ModLoader::Fabric),
-            None
         );
     }
 
@@ -625,7 +518,7 @@ mod tests {
         let url = content_versions_url(
             "https://example.test/v2",
             "fabric-api",
-            DiscoveryKind::Mod,
+            ContentKind::Mod,
             "1.21.1",
             ModLoader::Fabric,
         );
@@ -640,7 +533,7 @@ mod tests {
         let url = content_versions_url(
             "https://example.test/v2",
             "stay-true",
-            DiscoveryKind::ResourcePack,
+            ContentKind::ResourcePack,
             "1.21.1",
             ModLoader::Fabric,
         );
@@ -780,74 +673,5 @@ mod tests {
     #[case::empty("", "")]
     fn url_encode_handles(#[case] input: &str, #[case] expected: &str) {
         assert_eq!(url_encode(input), expected);
-    }
-
-    #[test]
-    fn loader_from_fabric_deps() {
-        let mut deps = HashMap::new();
-        deps.insert("minecraft".to_string(), "1.21.4".to_string());
-        deps.insert("fabric-loader".to_string(), "0.16.10".to_string());
-        let (loader, version) = loader_from_dependencies(&deps);
-        assert_eq!(loader, Some(ModLoader::Fabric));
-        assert_eq!(version, Some("0.16.10".to_string()));
-    }
-
-    #[test]
-    fn loader_from_forge_deps() {
-        let mut deps = HashMap::new();
-        deps.insert("minecraft".to_string(), "1.20.1".to_string());
-        deps.insert("forge".to_string(), "47.2.0".to_string());
-        let (loader, version) = loader_from_dependencies(&deps);
-        assert_eq!(loader, Some(ModLoader::Forge));
-        assert_eq!(version, Some("47.2.0".to_string()));
-    }
-
-    #[test]
-    fn loader_from_vanilla_deps() {
-        let mut deps = HashMap::new();
-        deps.insert("minecraft".to_string(), "1.21.4".to_string());
-        let (loader, version) = loader_from_dependencies(&deps);
-        assert!(loader.is_none());
-        assert!(version.is_none());
-    }
-
-    #[test]
-    fn game_version_from_deps() {
-        let mut deps = HashMap::new();
-        deps.insert("minecraft".to_string(), "1.21.4".to_string());
-        assert_eq!(
-            game_version_from_dependencies(&deps),
-            Some("1.21.4".to_string())
-        );
-    }
-
-    #[test]
-    fn parse_mrpack_index_json() {
-        let json = r#"{
-            "formatVersion": 1,
-            "game": "minecraft",
-            "versionId": "6.5.0",
-            "name": "Fabulously Optimized",
-            "dependencies": {
-                "minecraft": "1.21.4",
-                "fabric-loader": "0.16.10"
-            },
-            "files": [
-                {
-                    "path": "mods/fabric-api.jar",
-                    "downloads": ["https://cdn.modrinth.com/data/abc/fabric-api.jar"],
-                    "fileSize": 12345
-                }
-            ]
-        }"#;
-        let index: MrpackIndex = serde_json::from_str(json).unwrap();
-        assert_eq!(index.name, "Fabulously Optimized");
-        assert_eq!(index.version_id, "6.5.0");
-        assert_eq!(index.files.len(), 1);
-        assert_eq!(index.files[0].path, "mods/fabric-api.jar");
-        assert_eq!(
-            game_version_from_dependencies(&index.dependencies),
-            Some("1.21.4".to_string())
-        );
     }
 }

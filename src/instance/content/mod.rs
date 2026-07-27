@@ -1,15 +1,23 @@
 // scanning and toggling instance content (mods, resource packs, shaders, worlds).
 // minecraft uses a ".disabled" suffix convention for disabled content, so this leans on that heavily.
 
+mod entry;
+mod icons;
 pub mod manifest;
 pub mod mods;
+mod packs;
 pub mod reconcile;
 pub mod resource_packs;
 pub mod shaders;
 pub mod worlds;
 
-pub use mods::scan_one_mod;
-pub use mods::{ContentEntry, scan_mods, toggle_entry};
+pub(crate) use entry::toggle_entry_path;
+pub use entry::{ContentEntry, toggle_entry};
+pub(crate) use icons::{
+    IconCell, fallback_icon, fallback_icon_large, make_icon_pixels, make_icon_pixels_from_image,
+    make_icon_quadrants_from_image,
+};
+pub use mods::{scan_mods, scan_one_mod};
 pub use resource_packs::{scan_one_resource_pack, scan_resource_packs};
 pub use shaders::{scan_one_shader, scan_shaders};
 pub use worlds::{scan_one_world, scan_worlds};

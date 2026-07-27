@@ -17,6 +17,17 @@ use crate::tui::widgets::content::{ContentMode, DiscoveryState};
 
 use crate::tui::widgets::styled_title;
 
+type ContentScanner = fn(&std::path::Path, &str, bool) -> crate::instance::ContentEntry;
+
+#[derive(Clone, Copy)]
+struct DownloadableTab {
+    directory: &'static str,
+    extension: &'static str,
+    scanner: ContentScanner,
+    loading_text: &'static str,
+    empty_text: &'static str,
+}
+
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub enum ContentTab {
     #[default]
@@ -78,6 +89,33 @@ impl ContentTab {
 
     pub fn previous_for_mode(self, mode: ContentMode) -> Self {
         cycle_tab(self, visible_tabs(mode), false)
+    }
+
+    fn downloadable(self) -> Option<DownloadableTab> {
+        match self {
+            Self::Mods => Some(DownloadableTab {
+                directory: "mods",
+                extension: ".jar",
+                scanner: crate::instance::scan_one_mod,
+                loading_text: "Loading mods...",
+                empty_text: "No mods installed.",
+            }),
+            Self::ResourcePacks => Some(DownloadableTab {
+                directory: "resourcepacks",
+                extension: ".zip",
+                scanner: crate::instance::scan_one_resource_pack,
+                loading_text: "Loading resource packs...",
+                empty_text: "No resource packs installed.",
+            }),
+            Self::Shaders => Some(DownloadableTab {
+                directory: "shaderpacks",
+                extension: ".zip",
+                scanner: crate::instance::scan_one_shader,
+                loading_text: "Loading shaders...",
+                empty_text: "No shaders installed.",
+            }),
+            _ => None,
+        }
     }
 }
 
@@ -340,140 +378,31 @@ pub fn render(
     content_area =
         crate::tui::widgets::popups::render_keybind_overflow(frame, content_area, &keybind_lines);
 
+    let downloadable_state = match tab {
+        ContentTab::Mods => Some((mods_state, mods_discovery_state)),
+        ContentTab::ResourcePacks => Some((resource_packs_state, resource_packs_discovery_state)),
+        ContentTab::Shaders => Some((shaders_state, shaders_discovery_state)),
+        _ => None,
+    };
+    if let Some((state, discovery_state)) = downloadable_state {
+        render_downloadable(
+            frame,
+            content_area,
+            instance,
+            state,
+            discovery_state,
+            tab.downloadable().expect("downloadable tab config"),
+            mode,
+            is_focused,
+            instances_dir,
+            picker,
+        );
+        return;
+    }
+
     // lazy-load: only scan when switching to an instance that hasn't been loaded yet
     match tab {
-        ContentTab::Mods => {
-            if let Some(instance) = instance {
-                if mods_state.loaded_for.as_deref() != Some(instance.name.as_str()) {
-                    let content_dir = instances_dir
-                        .join(&instance.name)
-                        .join(crate::storage::MINECRAFT_DIR_NAME)
-                        .join("mods");
-                    mods_state.start_load(
-                        &content_dir,
-                        &instance.name,
-                        crate::instance::scan_one_mod,
-                        ".jar",
-                    );
-                    mods_state.watch_dir(content_dir);
-                }
-                if mode == ContentMode::Discover {
-                    render_discovery(
-                        frame,
-                        content_area,
-                        mods_discovery_state,
-                        instance,
-                        is_focused,
-                        "Searching Modrinth...",
-                        picker,
-                    );
-                } else {
-                    super::list::render(
-                        frame,
-                        content_area,
-                        mods_state,
-                        is_focused,
-                        "Loading mods...",
-                        "No mods installed.",
-                        picker,
-                    );
-                }
-            } else {
-                frame.render_widget(
-                    Paragraph::new("No instance selected.")
-                        .style(Style::default().fg(theme.text_dim())),
-                    content_area,
-                );
-            }
-        }
-        ContentTab::ResourcePacks => {
-            if let Some(instance) = instance {
-                if resource_packs_state.loaded_for.as_deref() != Some(instance.name.as_str()) {
-                    let content_dir = instances_dir
-                        .join(&instance.name)
-                        .join(crate::storage::MINECRAFT_DIR_NAME)
-                        .join("resourcepacks");
-                    resource_packs_state.start_load(
-                        &content_dir,
-                        &instance.name,
-                        crate::instance::scan_one_resource_pack,
-                        ".zip",
-                    );
-                    resource_packs_state.watch_dir(content_dir);
-                }
-                if mode == ContentMode::Discover {
-                    render_discovery(
-                        frame,
-                        content_area,
-                        resource_packs_discovery_state,
-                        instance,
-                        is_focused,
-                        "Searching Modrinth...",
-                        picker,
-                    );
-                } else {
-                    super::list::render(
-                        frame,
-                        content_area,
-                        resource_packs_state,
-                        is_focused,
-                        "Loading resource packs...",
-                        "No resource packs installed.",
-                        picker,
-                    );
-                }
-            } else {
-                frame.render_widget(
-                    Paragraph::new("No instance selected.")
-                        .style(Style::default().fg(theme.text_dim())),
-                    content_area,
-                );
-            }
-        }
-        ContentTab::Shaders => {
-            if let Some(instance) = instance {
-                if shaders_state.loaded_for.as_deref() != Some(instance.name.as_str()) {
-                    let content_dir = instances_dir
-                        .join(&instance.name)
-                        .join(crate::storage::MINECRAFT_DIR_NAME)
-                        .join("shaderpacks");
-                    shaders_state.start_load(
-                        &content_dir,
-                        &instance.name,
-                        crate::instance::scan_one_shader,
-                        ".zip",
-                    );
-                    shaders_state.watch_dir(content_dir);
-                }
-                if mode == ContentMode::Discover {
-                    render_discovery(
-                        frame,
-                        content_area,
-                        shaders_discovery_state,
-                        instance,
-                        is_focused,
-                        "Searching Modrinth...",
-                        picker,
-                    );
-                } else {
-                    super::list::render(
-                        frame,
-                        content_area,
-                        shaders_state,
-                        is_focused,
-                        "Loading shaders...",
-                        "No shaders installed.",
-                        picker,
-                    );
-                }
-            } else {
-                frame.render_widget(
-                    Paragraph::new("No instance selected.")
-                        .style(Style::default().fg(theme.text_dim())),
-                    content_area,
-                );
-            }
-        }
+        ContentTab::Mods | ContentTab::ResourcePacks | ContentTab::Shaders => unreachable!(),
         ContentTab::Logs => {
             if let Some(instance) = instance {
                 if logs_state.loaded_for.as_deref() != Some(instance.name.as_str()) {
@@ -544,6 +473,58 @@ pub fn render(
                 );
             }
         }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn render_downloadable(
+    frame: &mut Frame,
+    area: Rect,
+    instance: Option<&crate::instance::InstanceConfig>,
+    state: &mut super::list::ContentListState,
+    discovery_state: &mut DiscoveryState,
+    tab: DownloadableTab,
+    mode: ContentMode,
+    is_focused: bool,
+    instances_dir: &std::path::Path,
+    picker: &ratatui_image::picker::Picker,
+) {
+    let Some(instance) = instance else {
+        frame.render_widget(
+            Paragraph::new("No instance selected.")
+                .style(Style::default().fg(THEME.as_ref().text_dim())),
+            area,
+        );
+        return;
+    };
+    if state.loaded_for.as_deref() != Some(instance.name.as_str()) {
+        let content_dir = instances_dir
+            .join(&instance.name)
+            .join(crate::storage::MINECRAFT_DIR_NAME)
+            .join(tab.directory);
+        state.start_load(&content_dir, &instance.name, tab.scanner, tab.extension);
+        state.watch_dir(content_dir);
+    }
+    if mode == ContentMode::Discover {
+        render_discovery(
+            frame,
+            area,
+            discovery_state,
+            instance,
+            is_focused,
+            "Searching Modrinth...",
+            picker,
+        );
+    } else {
+        super::list::render(
+            frame,
+            area,
+            state,
+            is_focused,
+            tab.loading_text,
+            tab.empty_text,
+            picker,
+        );
     }
 }
 

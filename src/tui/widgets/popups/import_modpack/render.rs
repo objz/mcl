@@ -1,8 +1,8 @@
 // rendering for the modpack import wizard. same pattern as new_instance:
 // snapshot the state, pick the right step renderer, done.
 
+use super::super::LoadState;
 use super::super::base::PopupFrame;
-use super::super::new_instance::LoadState;
 use super::state::{IMPORT_STATE, ImportStep, ImportWizardState};
 use crate::config::theme::THEME;
 use crate::tui::app::FocusedArea;

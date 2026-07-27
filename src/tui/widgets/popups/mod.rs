@@ -5,7 +5,10 @@ pub mod base;
 pub mod confirm;
 pub mod error;
 pub mod import_modpack;
+mod load_state;
 pub mod new_instance;
+
+pub use load_state::LoadState;
 
 use ratatui::{
     Frame,

@@ -32,18 +32,9 @@ impl App {
         {
             return;
         }
-        let link = match self.content_tab {
-            widgets::content::ContentTab::Mods => self
-                .mods_discovery_state
-                .project_link_at(event.column, event.row),
-            widgets::content::ContentTab::ResourcePacks => self
-                .resource_packs_discovery_state
-                .project_link_at(event.column, event.row),
-            widgets::content::ContentTab::Shaders => self
-                .shaders_discovery_state
-                .project_link_at(event.column, event.row),
-            _ => None,
-        };
+        let link = self
+            .active_discovery_state_mut()
+            .and_then(|state| state.project_link_at(event.column, event.row));
         if let Some(link) = link
             && let Err(error) = open::that_detached(link)
         {
@@ -232,24 +223,16 @@ impl App {
         if self.focused == FocusedArea::Content
             && self.content_mode == widgets::content::ContentMode::Discover
         {
-            let (search_active, popup_open, project_page_open) = match self.content_tab {
-                widgets::content::ContentTab::Mods => (
-                    self.mods_discovery_state.search.active,
-                    self.mods_discovery_state.version_popup.is_some(),
-                    self.mods_discovery_state.project_page_open(),
-                ),
-                widgets::content::ContentTab::ResourcePacks => (
-                    self.resource_packs_discovery_state.search.active,
-                    self.resource_packs_discovery_state.version_popup.is_some(),
-                    self.resource_packs_discovery_state.project_page_open(),
-                ),
-                widgets::content::ContentTab::Shaders => (
-                    self.shaders_discovery_state.search.active,
-                    self.shaders_discovery_state.version_popup.is_some(),
-                    self.shaders_discovery_state.project_page_open(),
-                ),
-                _ => (false, false, false),
-            };
+            let (search_active, popup_open, project_page_open) = self
+                .active_discovery_state_mut()
+                .map(|state| {
+                    (
+                        state.search.active,
+                        state.version_popup.is_some(),
+                        state.project_page_open(),
+                    )
+                })
+                .unwrap_or_default();
             if !search_active
                 && !popup_open
                 && !project_page_open
@@ -292,23 +275,9 @@ impl App {
                 }
                 return Ok(());
             }
-            let handled = {
-                let state = match self.content_tab {
-                    widgets::content::ContentTab::Mods => Some(&mut self.mods_discovery_state),
-                    widgets::content::ContentTab::ResourcePacks => {
-                        Some(&mut self.resource_packs_discovery_state)
-                    }
-                    widgets::content::ContentTab::Shaders => {
-                        Some(&mut self.shaders_discovery_state)
-                    }
-                    _ => None,
-                };
-                if let Some(state) = state {
-                    widgets::content::discovery::handle_key(&key_event, state)
-                } else {
-                    false
-                }
-            };
+            let handled = self
+                .active_discovery_state_mut()
+                .is_some_and(|state| widgets::content::discovery::handle_key(&key_event, state));
             if handled {
                 if matches!(
                     key_event.code,
@@ -726,7 +695,7 @@ impl App {
                 Some(provider) => match provider
                     .compatible_versions(
                         &request.project_id,
-                        discovery_content_kind(kind),
+                        kind,
                         &instance.game_version,
                         instance.loader,
                     )
@@ -875,18 +844,11 @@ impl App {
         let Some(instance) = self.instances_state.selected_instance().cloned() else {
             return;
         };
-        let kind = match self.content_tab {
-            widgets::content::ContentTab::Mods => crate::net::modrinth::DiscoveryKind::Mod,
-            widgets::content::ContentTab::ResourcePacks => {
-                crate::net::modrinth::DiscoveryKind::ResourcePack
-            }
-            widgets::content::ContentTab::Shaders => crate::net::modrinth::DiscoveryKind::Shader,
-            _ => return,
+        let Some(state) = self.active_discovery_state_mut() else {
+            return;
         };
-        let Some(request) = self
-            .active_discovery_state_mut()
-            .and_then(widgets::content::DiscoveryState::begin_install)
-        else {
+        let kind = state.kind;
+        let Some(request) = state.begin_install() else {
             return;
         };
         let destination = self
@@ -894,23 +856,12 @@ impl App {
             .instances_dir
             .join(&instance.name)
             .join(crate::storage::MINECRAFT_DIR_NAME)
-            .join(match kind {
-                crate::net::modrinth::DiscoveryKind::Mod => "mods",
-                crate::net::modrinth::DiscoveryKind::ResourcePack => "resourcepacks",
-                crate::net::modrinth::DiscoveryKind::Shader => "shaderpacks",
-            });
+            .join(kind.directory());
         let instance_paths = crate::storage::InstancePaths::new(
             self.instance_manager.instances_dir.join(&instance.name),
         );
         let manifest_path = instance_paths.content_manifest();
         let minecraft_dir = instance_paths.minecraft();
-        let content_kind = match kind {
-            crate::net::modrinth::DiscoveryKind::Mod => crate::instance::ContentKind::Mod,
-            crate::net::modrinth::DiscoveryKind::ResourcePack => {
-                crate::instance::ContentKind::ResourcePack
-            }
-            crate::net::modrinth::DiscoveryKind::Shader => crate::instance::ContentKind::Shader,
-        };
         tokio::spawn(async move {
             let action = if request.installed_path.is_some() {
                 format!("Changing {} version", request.project_title)
@@ -949,7 +900,7 @@ impl App {
                 let fingerprint = crate::instance::content::manifest::fingerprint(&path)?;
                 let record = crate::instance::ContentFileRecord {
                     relative_path,
-                    kind: content_kind,
+                    kind,
                     enabled: !path
                         .file_name()
                         .and_then(|name| name.to_str())
@@ -1023,11 +974,8 @@ impl App {
         .minecraft();
         let icon_cache = crate::storage::MetadataPaths::new(&self.instance_manager.meta_dir)
             .provider_icons("modrinth");
-        let state = match self.content_tab {
-            widgets::content::ContentTab::Mods => &mut self.mods_discovery_state,
-            widgets::content::ContentTab::ResourcePacks => &mut self.resource_packs_discovery_state,
-            widgets::content::ContentTab::Shaders => &mut self.shaders_discovery_state,
-            _ => return,
+        let Some(state) = self.active_discovery_state_mut() else {
+            return;
         };
         if state.unavailable_message(&instance).is_some() {
             state.set_unavailable(&instance);
@@ -1062,11 +1010,8 @@ impl App {
         .minecraft();
         let icon_cache = crate::storage::MetadataPaths::new(&self.instance_manager.meta_dir)
             .provider_icons("modrinth");
-        let state = match self.content_tab {
-            widgets::content::ContentTab::Mods => &mut self.mods_discovery_state,
-            widgets::content::ContentTab::ResourcePacks => &mut self.resource_packs_discovery_state,
-            widgets::content::ContentTab::Shaders => &mut self.shaders_discovery_state,
-            _ => return,
+        let Some(state) = self.active_discovery_state_mut() else {
+            return;
         };
         if state.unavailable_message(&instance).is_some() {
             state.set_unavailable(&instance);
@@ -1090,7 +1035,7 @@ impl App {
 
     fn spawn_discovery_request(
         instance: crate::instance::InstanceConfig,
-        kind: crate::net::modrinth::DiscoveryKind,
+        kind: crate::instance::ContentKind,
         query: String,
         manifest: Option<crate::instance::ContentManifest>,
         minecraft_dir: std::path::PathBuf,
@@ -1113,7 +1058,7 @@ impl App {
                 Some(provider) => {
                     provider
                         .search(
-                            discovery_content_kind(kind),
+                            kind,
                             &query,
                             &instance,
                             offset,
@@ -1279,18 +1224,6 @@ impl App {
                 error
             );
         }
-    }
-}
-
-fn discovery_content_kind(
-    kind: crate::net::modrinth::DiscoveryKind,
-) -> crate::instance::ContentKind {
-    match kind {
-        crate::net::modrinth::DiscoveryKind::Mod => crate::instance::ContentKind::Mod,
-        crate::net::modrinth::DiscoveryKind::ResourcePack => {
-            crate::instance::ContentKind::ResourcePack
-        }
-        crate::net::modrinth::DiscoveryKind::Shader => crate::instance::ContentKind::Shader,
     }
 }
 

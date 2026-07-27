@@ -87,7 +87,7 @@ impl ContentProvider for ModrinthProvider {
     ) -> Result<DiscoveryResults, crate::net::NetError> {
         crate::net::modrinth::search_discovery(
             &self.client,
-            discovery_kind(kind),
+            kind,
             query,
             &instance.game_version,
             instance.loader,
@@ -151,7 +151,7 @@ impl ContentProvider for ModrinthProvider {
         crate::net::modrinth::fetch_content_versions(
             &self.client,
             project_id,
-            discovery_kind(kind),
+            kind,
             game_version,
             loader,
         )
@@ -179,14 +179,6 @@ impl ContentProvider for ModrinthProvider {
         } else {
             crate::net::modrinth::download_version_file(&self.client, version, destination).await
         }
-    }
-}
-
-fn discovery_kind(kind: ContentKind) -> crate::net::modrinth::DiscoveryKind {
-    match kind {
-        ContentKind::Mod => crate::net::modrinth::DiscoveryKind::Mod,
-        ContentKind::ResourcePack => crate::net::modrinth::DiscoveryKind::ResourcePack,
-        ContentKind::Shader => crate::net::modrinth::DiscoveryKind::Shader,
     }
 }
 

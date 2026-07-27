@@ -106,7 +106,7 @@ fn toggle_entry(
         return Ok(());
     }
 
-    crate::instance::content::mods::toggle_entry(entry)?;
+    crate::instance::toggle_entry(entry)?;
     println!(
         "{}d '{}'.",
         if should_enable { "Enable" } else { "Disable" },

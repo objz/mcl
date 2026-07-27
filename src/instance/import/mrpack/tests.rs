@@ -1,8 +1,8 @@
+use std::collections::HashMap;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use super::*;
-use crate::net::modrinth::MrpackFile;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -51,6 +51,43 @@ fn summary_counts_both_override_roots() {
     assert_eq!(summary.loader, ModLoader::Fabric);
     assert_eq!(summary.loader_version.as_deref(), Some("0.16.14"));
     assert_eq!(summary.override_count, 2);
+}
+
+#[test]
+fn dependencies_resolve_fabric_loader() {
+    let dependencies = HashMap::from([
+        ("minecraft".to_owned(), "1.21.4".to_owned()),
+        ("fabric-loader".to_owned(), "0.16.10".to_owned()),
+    ]);
+
+    assert_eq!(
+        loader_from_dependencies(&dependencies),
+        (Some(ModLoader::Fabric), Some("0.16.10".to_owned()))
+    );
+    assert_eq!(
+        game_version_from_dependencies(&dependencies),
+        Some("1.21.4".to_owned())
+    );
+}
+
+#[test]
+fn dependencies_resolve_forge_loader() {
+    let dependencies = HashMap::from([
+        ("minecraft".to_owned(), "1.20.1".to_owned()),
+        ("forge".to_owned(), "47.2.0".to_owned()),
+    ]);
+
+    assert_eq!(
+        loader_from_dependencies(&dependencies),
+        (Some(ModLoader::Forge), Some("47.2.0".to_owned()))
+    );
+}
+
+#[test]
+fn dependencies_without_a_loader_are_vanilla() {
+    let dependencies = HashMap::from([("minecraft".to_owned(), "1.21.4".to_owned())]);
+
+    assert_eq!(loader_from_dependencies(&dependencies), (None, None));
 }
 
 #[test]

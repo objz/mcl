@@ -1,17 +1,91 @@
 // modrinth .mrpack import: parse the manifest, download all the mods,
 // and extract config/resource overrides from the zip
 
+use std::collections::HashMap;
 use std::path::Path;
+
+use serde::Deserialize;
 
 use crate::instance::manager::InstanceManager;
 use crate::instance::models::ModLoader;
-use crate::net::modrinth::MrpackIndex;
 use crate::tui::progress;
 
 use super::{ImportSummary, PackFormat};
 
+#[derive(Debug, Clone, Deserialize)]
+pub struct MrpackIndex {
+    #[serde(rename = "formatVersion")]
+    pub format_version: u32,
+    pub game: String,
+    #[serde(rename = "versionId")]
+    pub version_id: String,
+    pub name: String,
+    #[serde(default)]
+    pub dependencies: HashMap<String, String>,
+    #[serde(default)]
+    pub files: Vec<MrpackFile>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct MrpackFile {
+    pub path: String,
+    pub downloads: Vec<String>,
+    #[serde(rename = "fileSize")]
+    pub file_size: u64,
+}
+
+// .mrpack is just a zip with modrinth.index.json at the root
+pub fn parse_mrpack(path: &Path) -> Result<MrpackIndex, String> {
+    tracing::debug!("Parsing .mrpack manifest from {}", path.display());
+    let file = std::fs::File::open(path).map_err(|e| format!("Cannot open .mrpack: {e}"))?;
+    let mut archive = zip::ZipArchive::new(file).map_err(|e| format!("Invalid ZIP: {e}"))?;
+    let entry = archive
+        .by_name("modrinth.index.json")
+        .map_err(|_| "Missing modrinth.index.json in .mrpack".to_string())?;
+    let index: MrpackIndex =
+        serde_json::from_reader(entry).map_err(|e| format!("Invalid manifest JSON: {e}"))?;
+    tracing::debug!(
+        "Parsed .mrpack '{}' version_id={} files={} deps={}",
+        index.name,
+        index.version_id,
+        index.files.len(),
+        index.dependencies.len()
+    );
+    Ok(index)
+}
+
+// mrpack dependencies use keys like "fabric-loader", "forge", etc.
+// checks in priority order and returns the first match.
+pub fn loader_from_dependencies(
+    deps: &HashMap<String, String>,
+) -> (Option<ModLoader>, Option<String>) {
+    let loaders = [
+        ("fabric-loader", ModLoader::Fabric),
+        ("forge", ModLoader::Forge),
+        ("neoforge", ModLoader::NeoForge),
+        ("quilt-loader", ModLoader::Quilt),
+    ];
+    for (key, loader) in &loaders {
+        if let Some(version) = deps.get(*key) {
+            tracing::trace!(
+                "Resolved Modrinth loader dependency {}={} as {}",
+                key,
+                version,
+                loader
+            );
+            return (Some(*loader), Some(version.clone()));
+        }
+    }
+    tracing::trace!("No Modrinth loader dependency found; treating pack as vanilla");
+    (None, None)
+}
+
+pub fn game_version_from_dependencies(deps: &HashMap<String, String>) -> Option<String> {
+    deps.get("minecraft").cloned()
+}
+
 pub fn build_summary(path: &Path) -> Result<ImportSummary, String> {
-    let index = crate::net::modrinth::parse_mrpack(path)?;
+    let index = parse_mrpack(path)?;
     tracing::debug!(
         "Parsed .mrpack '{}' version_id={} files={} deps={}",
         index.name,
@@ -20,11 +94,10 @@ pub fn build_summary(path: &Path) -> Result<ImportSummary, String> {
         index.dependencies.len()
     );
 
-    let game_version = crate::net::modrinth::game_version_from_dependencies(&index.dependencies)
+    let game_version = game_version_from_dependencies(&index.dependencies)
         .ok_or_else(|| "Manifest missing minecraft dependency".to_string())?;
 
-    let (loader_opt, loader_version) =
-        crate::net::modrinth::loader_from_dependencies(&index.dependencies);
+    let (loader_opt, loader_version) = loader_from_dependencies(&index.dependencies);
     let loader = loader_opt.unwrap_or(ModLoader::Vanilla);
 
     let override_count = count_overrides(path).unwrap_or(0);
@@ -93,7 +166,7 @@ pub async fn execute_import(
         .join(crate::storage::MINECRAFT_DIR_NAME);
 
     let result: Result<(), Box<dyn std::error::Error + Send + Sync>> = async {
-        let index = crate::net::modrinth::parse_mrpack(&summary.archive_path)
+        let index = parse_mrpack(&summary.archive_path)
             .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> { e.into() })?;
         download_mod_files(&index, &minecraft_dir).await?;
         extract_overrides(&summary.archive_path, &minecraft_dir)?;

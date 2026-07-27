@@ -34,45 +34,29 @@ impl App {
             // get scanned/loaded on separate tokio tasks
             self.drain_pending_instances();
             self.drain_pending_last_played();
-            let local_streamed = self.mods_state.drain_pending();
-            let mods_update = self.mods_state.drain_watcher();
-            self.mods_state.drain_provider_icons();
-            self.mods_state.request_image_loads(&self.picker);
-            self.mods_state.drain_image_loads(&self.picker);
-            self.mods_discovery_state.drain_pending();
-            self.mods_discovery_state.list.drain_pending();
-            self.mods_discovery_state
-                .list
-                .request_image_loads(&self.picker);
-            self.mods_discovery_state
-                .list
-                .drain_image_loads(&self.picker);
-            let local_streamed = self.resource_packs_state.drain_pending() || local_streamed;
-            let resource_packs_update = self.resource_packs_state.drain_watcher();
-            self.resource_packs_state.drain_provider_icons();
-            self.resource_packs_state.request_image_loads(&self.picker);
-            self.resource_packs_state.drain_image_loads(&self.picker);
-            self.resource_packs_discovery_state.drain_pending();
-            self.resource_packs_discovery_state.list.drain_pending();
-            self.resource_packs_discovery_state
-                .list
-                .request_image_loads(&self.picker);
-            self.resource_packs_discovery_state
-                .list
-                .drain_image_loads(&self.picker);
-            let local_streamed = self.shaders_state.drain_pending() || local_streamed;
-            let shaders_update = self.shaders_state.drain_watcher();
-            self.shaders_state.drain_provider_icons();
-            self.shaders_state.request_image_loads(&self.picker);
-            self.shaders_state.drain_image_loads(&self.picker);
-            self.shaders_discovery_state.drain_pending();
-            self.shaders_discovery_state.list.drain_pending();
-            self.shaders_discovery_state
-                .list
-                .request_image_loads(&self.picker);
-            self.shaders_discovery_state
-                .list
-                .drain_image_loads(&self.picker);
+            let mut local_streamed = false;
+            let mut content_changed = false;
+            let mut toggles = Vec::new();
+            for (local, discovery) in [
+                (&mut self.mods_state, &mut self.mods_discovery_state),
+                (
+                    &mut self.resource_packs_state,
+                    &mut self.resource_packs_discovery_state,
+                ),
+                (&mut self.shaders_state, &mut self.shaders_discovery_state),
+            ] {
+                local_streamed |= local.drain_pending();
+                let update = local.drain_watcher();
+                content_changed |= update.requires_reconcile;
+                toggles.extend(update.toggles);
+                local.drain_provider_icons();
+                local.request_image_loads(&self.picker);
+                local.drain_image_loads(&self.picker);
+                discovery.drain_pending();
+                discovery.list.drain_pending();
+                discovery.list.request_image_loads(&self.picker);
+                discovery.list.drain_image_loads(&self.picker);
+            }
             self.worlds_state.drain_pending();
             self.worlds_state.drain_watcher();
             self.worlds_state.request_image_loads(&self.picker);
@@ -84,15 +68,6 @@ impl App {
             self.screenshots_state.drain_pending_entries();
             self.screenshots_state.request_visible_loads();
             self.create_screenshot_protocols();
-            let mut content_changed = mods_update.requires_reconcile
-                || resource_packs_update.requires_reconcile
-                || shaders_update.requires_reconcile;
-            let toggles = mods_update
-                .toggles
-                .into_iter()
-                .chain(resource_packs_update.toggles)
-                .chain(shaders_update.toggles)
-                .collect::<Vec<_>>();
             if !toggles.is_empty() {
                 content_changed |= self.persist_content_toggles(&toggles);
             }

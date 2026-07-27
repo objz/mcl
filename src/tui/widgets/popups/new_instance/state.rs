@@ -12,6 +12,8 @@ use std::sync::LazyLock;
 use std::sync::{Arc, Mutex};
 use tui_prompts::{FocusState, State as PromptState, TextState};
 
+use super::super::LoadState;
+
 pub(crate) static WIZARD_STATE: LazyLock<Arc<Mutex<WizardState>>> =
     LazyLock::new(|| Arc::new(Mutex::new(WizardState::default())));
 // populated on confirm, consumed by the main event loop to actually create the instance
@@ -34,15 +36,6 @@ pub enum WizardStep {
     Loader,
     LoaderVersion,
     Confirm,
-}
-
-#[derive(Debug, Clone, Default)]
-pub enum LoadState<T> {
-    #[default]
-    Idle,
-    Loading,
-    Loaded(T),
-    Error(String),
 }
 
 #[derive(Debug, Clone)]

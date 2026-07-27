@@ -4,7 +4,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use crate::instance::content::mods::ContentEntry;
+use crate::instance::ContentEntry;
 use ratatui::{
     buffer::Buffer,
     layout::Rect,
@@ -36,6 +36,27 @@ fn entry(name: &str) -> ContentEntry {
         path: PathBuf::from(name.to_lowercase()),
         icon_lines: None,
     }
+}
+
+#[test]
+fn toggling_a_selected_entry_renames_and_updates_it() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("example.jar");
+    std::fs::write(&path, b"mod").unwrap();
+    let mut content = entry("Example");
+    content.path = path.clone();
+    let mut state = ContentListState::default();
+    state.entries.push(content);
+    state.list_state.selected = Some(0);
+
+    state.toggle_selected();
+
+    assert!(!path.exists());
+    assert_eq!(
+        state.entries[0].path,
+        temp.path().join("example.jar.disabled")
+    );
+    assert!(!state.entries[0].enabled);
 }
 
 #[test]
@@ -295,14 +316,14 @@ fn source_refresh_reconciles_without_rebuilding_unchanged_entries() {
 fn provider_icons_are_requested_only_for_visible_missing_icons() {
     let mut state = ContentListState::default();
     let mut visible = entry("Visible");
-    visible.icon_lines = Some(crate::instance::content::mods::fallback_icon());
+    visible.icon_lines = Some(crate::instance::content::fallback_icon());
     visible.provider_project = Some(crate::instance::ProviderProject {
         provider: "modrinth".to_owned(),
         project_id: "visible-project".to_owned(),
         version_id: "version".to_owned(),
     });
     let mut offscreen = entry("Offscreen");
-    offscreen.icon_lines = Some(crate::instance::content::mods::fallback_icon());
+    offscreen.icon_lines = Some(crate::instance::content::fallback_icon());
     offscreen.provider_project = Some(crate::instance::ProviderProject {
         provider: "modrinth".to_owned(),
         project_id: "offscreen-project".to_owned(),
@@ -322,7 +343,7 @@ fn embedded_icons_do_not_request_provider_fallbacks() {
     let mut state = ContentListState::default();
     let mut visible = entry("Visible");
     visible.icon_bytes = Some(vec![1, 2, 3]);
-    visible.icon_lines = Some(crate::instance::content::mods::fallback_icon());
+    visible.icon_lines = Some(crate::instance::content::fallback_icon());
     visible.provider_project = Some(crate::instance::ProviderProject {
         provider: "modrinth".to_owned(),
         project_id: "visible-project".to_owned(),

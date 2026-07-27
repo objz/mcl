@@ -72,7 +72,7 @@ fn install_and_change_version_popups_only_differ_in_title() {
         icon_url: None,
         icon_bytes: None,
     };
-    let mut state = DiscoveryState::new(DiscoveryKind::Mod);
+    let mut state = DiscoveryState::new(ContentKind::Mod);
     state
         .list
         .entries
@@ -104,7 +104,7 @@ fn compatible_versions_populate_the_open_popup() {
         icon_url: None,
         icon_bytes: None,
     };
-    let mut state = DiscoveryState::new(DiscoveryKind::Mod);
+    let mut state = DiscoveryState::new(ContentKind::Mod);
     state.list.entries.push(project_entry(project, None));
     state.list.list_state.selected = Some(0);
     let request = state.begin_versions().unwrap();
@@ -136,7 +136,7 @@ fn project_page_loads_for_the_selected_discovery_entry() {
         icon_url: None,
         icon_bytes: None,
     };
-    let mut state = DiscoveryState::new(DiscoveryKind::Mod);
+    let mut state = DiscoveryState::new(ContentKind::Mod);
     state.list.entries.push(project_entry(project, None));
     state.list.list_state.selected = Some(0);
 
@@ -174,7 +174,7 @@ fn project_page_loads_for_the_selected_discovery_entry() {
 
 #[test]
 fn project_page_navigation_is_bounded_and_can_go_back() {
-    let mut state = DiscoveryState::new(DiscoveryKind::Mod);
+    let mut state = DiscoveryState::new(ContentKind::Mod);
     state.project_page = Some(ProjectPageState {
         request_id: 1,
         project_id: "project".to_owned(),
@@ -215,7 +215,7 @@ fn confirmation_can_return_to_version_selection() {
         icon_url: None,
         icon_bytes: None,
     };
-    let mut state = DiscoveryState::new(DiscoveryKind::Mod);
+    let mut state = DiscoveryState::new(ContentKind::Mod);
     state.list.entries.push(project_entry(project, None));
     state.list.list_state.selected = Some(0);
     let request = state.begin_versions().unwrap();
@@ -252,7 +252,7 @@ fn discovery_delete_only_clears_the_matching_installed_badge() {
         icon_url: None,
         icon_bytes: None,
     };
-    let mut state = DiscoveryState::new(DiscoveryKind::Mod);
+    let mut state = DiscoveryState::new(ContentKind::Mod);
     state
         .list
         .entries
@@ -295,7 +295,7 @@ fn successful_install_marks_the_project_and_closes_the_popup() {
         icon_url: None,
         icon_bytes: None,
     };
-    let mut state = DiscoveryState::new(DiscoveryKind::Mod);
+    let mut state = DiscoveryState::new(ContentKind::Mod);
     state.list.entries.push(project_entry(project, None));
     state.list.list_state.selected = Some(0);
     let versions_request = state.begin_versions().unwrap();
@@ -350,7 +350,7 @@ fn installed_labels_follow_exact_manifest_projects() {
         icon_url: None,
         icon_bytes: None,
     };
-    let mut state = DiscoveryState::new(DiscoveryKind::Mod);
+    let mut state = DiscoveryState::new(ContentKind::Mod);
     state.list.entries.push(project_entry(project, None));
 
     let mut manifest = crate::instance::ContentManifest::default();
@@ -392,7 +392,7 @@ fn installed_labels_follow_exact_manifest_projects() {
 
 #[test]
 fn changing_instance_invalidates_results() {
-    let mut state = DiscoveryState::new(DiscoveryKind::Mod);
+    let mut state = DiscoveryState::new(ContentKind::Mod);
     let first = instance("one", "1.21.1");
     let second = instance("two", "1.21.1");
     let _request = state.begin_search(&first);
@@ -403,7 +403,7 @@ fn changing_instance_invalidates_results() {
 
 #[test]
 fn unavailable_vanilla_discovery_clears_cached_results() {
-    let mut state = DiscoveryState::new(DiscoveryKind::Mod);
+    let mut state = DiscoveryState::new(ContentKind::Mod);
     state.list.entries.push(project_entry(
         DiscoveryProject {
             id: "cached".to_owned(),
@@ -418,6 +418,10 @@ fn unavailable_vanilla_discovery_clears_cached_results() {
     ));
     let mut vanilla = instance("vanilla", "1.21.1");
     vanilla.loader = ModLoader::Vanilla;
+    assert_eq!(
+        state.unavailable_message(&vanilla),
+        Some("Vanilla does not support mods.")
+    );
 
     state.set_unavailable(&vanilla);
 
@@ -428,7 +432,7 @@ fn unavailable_vanilla_discovery_clears_cached_results() {
 
 #[test]
 fn changing_instance_compatibility_invalidates_results() {
-    let mut state = DiscoveryState::new(DiscoveryKind::Mod);
+    let mut state = DiscoveryState::new(ContentKind::Mod);
     let original = instance("one", "1.21.1");
     let mut other_version = original.clone();
     other_version.game_version = "1.20.1".to_owned();
@@ -442,7 +446,7 @@ fn changing_instance_compatibility_invalidates_results() {
 
 #[test]
 fn stale_search_result_is_ignored() {
-    let mut state = DiscoveryState::new(DiscoveryKind::Mod);
+    let mut state = DiscoveryState::new(ContentKind::Mod);
     let instance = instance("one", "1.21.1");
     let old = state.begin_search(&instance);
     let _new = state.begin_search(&instance);
@@ -464,7 +468,7 @@ fn stale_search_result_is_ignored() {
 
 #[test]
 fn next_page_prefetches_before_selection_reaches_the_end() {
-    let mut state = DiscoveryState::new(DiscoveryKind::Mod);
+    let mut state = DiscoveryState::new(ContentKind::Mod);
     state.set_viewport_rows(30);
     let instance = instance("one", "1.21.1");
     let first = state.begin_search(&instance);
@@ -502,7 +506,7 @@ fn next_page_prefetches_before_selection_reaches_the_end() {
 
 #[test]
 fn large_page_fills_a_tall_viewport_without_another_request() {
-    let mut state = DiscoveryState::new(DiscoveryKind::Mod);
+    let mut state = DiscoveryState::new(ContentKind::Mod);
     state.set_viewport_rows(90);
     let first = state.begin_search(&instance("one", "1.21.1"));
     for index in 0..PAGE_SIZE {
@@ -536,7 +540,7 @@ fn large_page_fills_a_tall_viewport_without_another_request() {
 
 #[test]
 fn typing_keeps_loaded_results_until_remote_search_is_due() {
-    let mut state = DiscoveryState::new(DiscoveryKind::Mod);
+    let mut state = DiscoveryState::new(ContentKind::Mod);
     let request = state.begin_search(&instance("one", "1.21.1"));
     for title in ["Sodium", "Lithium"] {
         assert!(request.stream.send(project_entry(
@@ -574,7 +578,7 @@ fn typing_keeps_loaded_results_until_remote_search_is_due() {
 
 #[test]
 fn search_refresh_keeps_rows_until_the_diff_arrives() {
-    let mut state = DiscoveryState::new(DiscoveryKind::Mod);
+    let mut state = DiscoveryState::new(ContentKind::Mod);
     let instance = instance("one", "1.21.1");
     let initial = state.begin_search(&instance);
     for title in ["Sodium", "Lithium"] {
@@ -606,7 +610,7 @@ fn search_refresh_keeps_rows_until_the_diff_arrives() {
 
 #[test]
 fn pagination_continues_across_multiple_pages() {
-    let mut state = DiscoveryState::new(DiscoveryKind::Mod);
+    let mut state = DiscoveryState::new(ContentKind::Mod);
     let instance = instance("one", "1.21.1");
     let first = state.begin_search(&instance);
     for index in 0..PAGE_SIZE {
@@ -670,7 +674,7 @@ fn pagination_continues_across_multiple_pages() {
 
 #[test]
 fn permanent_pagination_failure_stops_without_discarding_loaded_entries() {
-    let mut state = DiscoveryState::new(DiscoveryKind::Mod);
+    let mut state = DiscoveryState::new(ContentKind::Mod);
     let first = state.begin_search(&instance("one", "1.21.1"));
     for index in 0..PAGE_SIZE {
         assert!(first.stream.upsert(project_entry(
@@ -717,7 +721,7 @@ fn permanent_pagination_failure_stops_without_discarding_loaded_entries() {
 
 #[test]
 fn transient_pagination_failure_retries_the_same_offset_after_a_delay() {
-    let mut state = DiscoveryState::new(DiscoveryKind::Mod);
+    let mut state = DiscoveryState::new(ContentKind::Mod);
     let first = state.begin_search(&instance("one", "1.21.1"));
     DiscoveryState::push_result(
         &first.pending,

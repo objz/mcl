@@ -20,7 +20,7 @@ use ratatui_image::{CropOptions, Resize, StatefulImage, protocol::StatefulProtoc
 use tui_widget_list::{ListBuilder, ListState as TuiListState, ListView};
 
 use crate::config::theme::THEME;
-use crate::instance::content::mods::{ContentEntry, IconCell};
+use crate::instance::content::{ContentEntry, IconCell};
 
 type ScanOneFn = fn(&Path, &str, bool) -> ContentEntry;
 static PROVIDER_ICON_SLOTS: LazyLock<Arc<tokio::sync::Semaphore>> =
@@ -249,7 +249,7 @@ impl ContentListState {
                 if entry.provider_project.take().is_some() {
                     if entry.provider_icon {
                         entry.icon_bytes = None;
-                        entry.icon_lines = Some(crate::instance::content::mods::fallback_icon());
+                        entry.icon_lines = Some(crate::instance::content::fallback_icon());
                         entry.provider_icon = false;
                         invalidated_icons.push(entry.file_stem.clone());
                     }
@@ -268,7 +268,7 @@ impl ContentListState {
             if entry.provider_project != project {
                 if entry.provider_icon {
                     entry.icon_bytes = None;
-                    entry.icon_lines = Some(crate::instance::content::mods::fallback_icon());
+                    entry.icon_lines = Some(crate::instance::content::fallback_icon());
                     entry.provider_icon = false;
                     invalidated_icons.push(entry.file_stem.clone());
                 }
@@ -524,18 +524,18 @@ impl ContentListState {
                         return PendingContentImage {
                             file_stem,
                             path,
-                            icon_lines: crate::instance::content::mods::fallback_icon(),
+                            icon_lines: crate::instance::content::fallback_icon(),
                             image: None,
                         };
                     };
                     let icon_lines = if use_quadrants {
-                        crate::instance::content::mods::make_icon_quadrants_from_image(
+                        crate::instance::content::make_icon_quadrants_from_image(
                             &image,
                             columns,
                             rows as u16,
                         )
                     } else {
-                        crate::instance::content::mods::make_icon_pixels_from_image(
+                        crate::instance::content::make_icon_pixels_from_image(
                             &image,
                             columns,
                             rows as u16,
@@ -1161,37 +1161,18 @@ impl ContentListState {
         let Some(entry) = self.entries.get(index) else {
             return;
         };
-
-        let new_path = if entry.enabled {
-            let fname = match entry.path.file_name().and_then(|n| n.to_str()) {
-                Some(n) => n,
-                None => return,
-            };
-            let mut p = entry.path.clone();
-            p.set_file_name(format!("{fname}.disabled"));
-            p
-        } else {
-            let fname = match entry.path.file_name().and_then(|n| n.to_str()) {
-                Some(n) => n,
-                None => return,
-            };
-            let mut p = entry.path.clone();
-            p.set_file_name(fname.trim_end_matches(".disabled"));
-            p
-        };
-
-        match std::fs::rename(&entry.path, &new_path) {
-            Ok(()) => {
+        match crate::instance::content::toggle_entry_path(entry) {
+            Ok(Some(new_path)) => {
                 let entry = &mut self.entries[index];
                 entry.enabled = !entry.enabled;
                 entry.path = new_path;
             }
+            Ok(None) => {}
             Err(e) => {
                 tracing::error!(
-                    "Failed to toggle '{}' from {} to {}: {}",
+                    "Failed to toggle '{}' at {}: {}",
                     entry.file_stem,
                     entry.path.display(),
-                    new_path.display(),
                     e
                 );
             }
@@ -1329,42 +1310,18 @@ async fn load_provider_metadata(
 }
 
 pub fn handle_key_no_toggle(key_event: &KeyEvent, state: &mut ContentListState) -> bool {
-    if handle_search_keys(key_event, state) {
-        return true;
-    }
-    let filtered = state.filtered_indices();
-    let count = filtered.len();
-
-    match key_event.code {
-        KeyCode::Char('j') | KeyCode::Down => {
-            if count == 0 {
-                return true;
-            }
-            let current = state.list_state.selected.unwrap_or(0);
-            state.list_state.selected = Some((current + 1).min(count - 1));
-            state.update_scrollbar();
-            true
-        }
-        KeyCode::Char('k') | KeyCode::Up => {
-            let current = state.list_state.selected.unwrap_or(0);
-            state.list_state.selected = Some(current.saturating_sub(1));
-            state.update_scrollbar();
-            true
-        }
-        KeyCode::Enter if key_event.modifiers.contains(KeyModifiers::SHIFT) => {
-            if let Some(&real_idx) = state.list_state.selected.and_then(|i| filtered.get(i))
-                && let Some(dir) = state.entries[real_idx].path.parent()
-                && let Err(e) = open::that_detached(dir)
-            {
-                tracing::error!("Failed to open directory: {}", e);
-            }
-            true
-        }
-        _ => false,
-    }
+    handle_key_inner(key_event, state, false)
 }
 
 pub fn handle_key(key_event: &KeyEvent, state: &mut ContentListState) -> bool {
+    handle_key_inner(key_event, state, true)
+}
+
+fn handle_key_inner(
+    key_event: &KeyEvent,
+    state: &mut ContentListState,
+    toggle_on_enter: bool,
+) -> bool {
     if handle_search_keys(key_event, state) {
         return true;
     }
@@ -1396,7 +1353,7 @@ pub fn handle_key(key_event: &KeyEvent, state: &mut ContentListState) -> bool {
             }
             true
         }
-        KeyCode::Enter => {
+        KeyCode::Enter if toggle_on_enter => {
             if let Some(&real_idx) = state.list_state.selected.and_then(|i| filtered.get(i)) {
                 state.list_state.selected = Some(real_idx);
                 state.toggle_selected();
@@ -1998,7 +1955,7 @@ fn ellipsize(text: &str, max_width: usize) -> String {
 }
 
 fn protocol_icon_columns(
-    entry: &crate::instance::content::mods::ContentEntry,
+    entry: &crate::instance::ContentEntry,
     picker: &ratatui_image::picker::Picker,
 ) -> u16 {
     let rows = entry.icon_lines.as_ref().map_or(3, Vec::len) as u16;
@@ -2124,7 +2081,7 @@ fn diff_event_paths(
 fn watcher_diff(
     toggled: Vec<(String, bool, std::path::PathBuf)>,
     removed: Vec<String>,
-    added: Vec<crate::instance::content::mods::ContentEntry>,
+    added: Vec<crate::instance::ContentEntry>,
 ) -> Option<WatcherDiff> {
     if toggled.is_empty() && removed.is_empty() && added.is_empty() {
         None

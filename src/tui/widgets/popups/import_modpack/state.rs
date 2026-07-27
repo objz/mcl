@@ -3,7 +3,7 @@
 // (.mrpack, mmc/prism zips). remote packs go through version selection,
 // local files skip straight to the confirm step.
 
-use super::super::new_instance::LoadState;
+use super::super::LoadState;
 use crate::instance::import::{ImportInput, ImportSummary, parse_import_input};
 use crate::net::modrinth::{self, VersionInfo};
 use crate::tui::widgets::instances;

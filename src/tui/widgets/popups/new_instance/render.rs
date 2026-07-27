@@ -1,9 +1,10 @@
 // rendering for the new instance wizard. each step gets its own render fn
 // and the popup resizes itself based on which step is active.
 
+use super::super::LoadState;
 use super::state::{
-    LoadState, WIZARD_STATE, WizardState, WizardStep, clamp_loader_version_index,
-    clamp_version_index, ensure_loader_versions_loaded, ensure_versions_loaded, visible_versions,
+    WIZARD_STATE, WizardState, WizardStep, clamp_loader_version_index, clamp_version_index,
+    ensure_loader_versions_loaded, ensure_versions_loaded, visible_versions,
 };
 use crate::config::theme::THEME;
 use crate::instance::models::ModLoader;

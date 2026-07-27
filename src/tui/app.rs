@@ -112,15 +112,15 @@ impl App {
             instances_state,
             mods_state,
             mods_discovery_state: widgets::content::DiscoveryState::new(
-                crate::net::modrinth::DiscoveryKind::Mod,
+                crate::instance::ContentKind::Mod,
             ),
             resource_packs_state,
             resource_packs_discovery_state: widgets::content::DiscoveryState::new(
-                crate::net::modrinth::DiscoveryKind::ResourcePack,
+                crate::instance::ContentKind::ResourcePack,
             ),
             shaders_state,
             shaders_discovery_state: widgets::content::DiscoveryState::new(
-                crate::net::modrinth::DiscoveryKind::Shader,
+                crate::instance::ContentKind::Shader,
             ),
             worlds_state: widgets::content::list::ContentListState::default(),
             logs_state: widgets::logs_viewer::LogsState::default(),

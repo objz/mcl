@@ -27,6 +27,17 @@ impl ContentKind {
             Self::Shader => "shaderpacks",
         }
     }
+
+    pub fn unavailable_message(self, loader: crate::instance::ModLoader) -> Option<&'static str> {
+        if loader != crate::instance::ModLoader::Vanilla {
+            return None;
+        }
+        match self {
+            Self::Mod => Some("Vanilla does not support mods."),
+            Self::Shader => Some("Vanilla does not support shaders."),
+            Self::ResourcePack => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

@@ -4,14 +4,14 @@
 
 use std::path::Path;
 
-use super::mods::{ContentEntry, make_icon_pixels};
+use super::{ContentEntry, fallback_icon_large, make_icon_pixels};
 
 pub fn scan_one_world(path: &Path, file_stem: &str, enabled: bool) -> ContentEntry {
     let icon_bytes = std::fs::read(path.join("icon.png")).ok();
     let icon_lines = icon_bytes
         .as_ref()
         .and_then(|bytes| make_icon_pixels(bytes, 12, 6))
-        .or_else(|| Some(super::mods::fallback_icon_large()));
+        .or_else(|| Some(fallback_icon_large()));
 
     let description = world_description(path);
 
