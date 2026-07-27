@@ -122,18 +122,11 @@ fn render_discovery(frame: &mut Frame, area: Rect, picker: &ratatui_image::picke
     let Ok(mut state) = DISCOVERY_STATE.lock() else {
         return;
     };
+    let keybinds = discovery_keybinds(state.project_page_open());
     let mut block = Block::default()
         .title(crate::tui::widgets::styled_title("Browse Modpacks", false))
         .title_bottom(
-            super::super::keybind_line(&[
-                ("j/k", " navigate"),
-                ("Enter", " view"),
-                ("i", " versions"),
-                ("/", " search"),
-                ("d", " direct import"),
-                ("Esc", " close"),
-            ])
-            .alignment(ratatui::layout::Alignment::Right),
+            super::super::keybind_line(keybinds).alignment(ratatui::layout::Alignment::Right),
         )
         .borders(Borders::ALL)
         .border_type(BORDER_STYLE.to_border_type())
@@ -144,6 +137,26 @@ fn render_discovery(frame: &mut Frame, area: Rect, picker: &ratatui_image::picke
     let inner = block.inner(area);
     frame.render_widget(block, area);
     crate::tui::widgets::content::tabs::render_discovery_popup(frame, inner, &mut state, picker);
+}
+
+fn discovery_keybinds(project_page_open: bool) -> &'static [(&'static str, &'static str)] {
+    if project_page_open {
+        &[
+            ("j/k", " scroll"),
+            ("g/G", " top/bottom"),
+            ("v", " versions"),
+            ("h", " back"),
+        ]
+    } else {
+        &[
+            ("j/k", " navigate"),
+            ("Enter", " view"),
+            ("v", " versions"),
+            ("/", " search"),
+            ("i", " import"),
+            ("Esc", " close"),
+        ]
+    }
 }
 
 fn render_input_step(state: &ImportWizardState, area: Rect, buf: &mut ratatui::buffer::Buffer) {
@@ -285,7 +298,7 @@ fn render_confirm_step(state: &ImportWizardState, area: Rect, buf: &mut ratatui:
 
 fn wizard_title(_state: &ImportWizardState) -> Line<'static> {
     use crate::tui::widgets::styled_title;
-    styled_title("Direct Modpack Import", false)
+    styled_title("Import Modpack", false)
 }
 
 fn step_keybinds(state: &ImportWizardState) -> Line<'static> {

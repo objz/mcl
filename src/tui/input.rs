@@ -241,11 +241,7 @@ impl App {
                 self.spawn_active_discovery_project_page();
                 return Ok(());
             }
-            if !search_active
-                && !popup_open
-                && !project_page_open
-                && key_event.code == KeyCode::Char('i')
-            {
+            if !search_active && !popup_open && key_event.code == KeyCode::Char('v') {
                 self.spawn_active_discovery_versions();
                 return Ok(());
             }

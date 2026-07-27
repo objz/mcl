@@ -281,13 +281,16 @@ pub fn render(
             (ContentMode::Discover, _) if discovery_unavailable => {
                 &[("h/l", " tabs"), ("Tab", " installed")]
             }
-            (ContentMode::Discover, _) if discovery_page_open => {
-                &[("j/k", " scroll"), ("g/G", " top/bottom"), ("h", " back")]
-            }
+            (ContentMode::Discover, _) if discovery_page_open => &[
+                ("j/k", " scroll"),
+                ("g/G", " top/bottom"),
+                ("v", " versions"),
+                ("h", " back"),
+            ],
             (ContentMode::Discover, _) if discovery_can_delete => &[
                 ("j/k", " navigate"),
                 ("Enter", " view"),
-                ("i", " versions"),
+                ("v", " versions"),
                 ("d", " delete"),
                 ("h/l", " tabs"),
                 ("/", " search"),
@@ -296,7 +299,7 @@ pub fn render(
             (ContentMode::Discover, _) => &[
                 ("j/k", " navigate"),
                 ("Enter", " view"),
-                ("i", " versions"),
+                ("v", " versions"),
                 ("h/l", " tabs"),
                 ("/", " search"),
                 ("Tab", " installed"),

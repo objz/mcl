@@ -43,7 +43,19 @@ fn modpack_discovery_renders_active_search() {
         .draw(|frame| render_with_picker(frame, frame.area(), FocusedArea::ImportPopup, &picker))
         .unwrap();
 
-    assert!(format!("{}", terminal.backend()).contains("/ fabric\u{2588}"));
+    let rendered = format!("{}", terminal.backend());
+    assert!(rendered.contains("/ fabric\u{2588}"));
+    assert!(rendered.contains("[v] versions"));
+    assert!(rendered.contains("[i] import"));
+}
+
+#[test]
+fn modpack_project_page_only_shows_page_actions() {
+    let hints = discovery_keybinds(true);
+
+    assert!(hints.contains(&("v", " versions")));
+    assert!(!hints.iter().any(|(_, action)| *action == " search"));
+    assert!(!hints.iter().any(|(_, action)| *action == " import"));
 }
 
 #[test]

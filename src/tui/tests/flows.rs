@@ -2,6 +2,7 @@ use crossterm::event::{KeyCode, MouseEventKind};
 
 use super::harness::UiHarness;
 use crate::instance::ProviderProject;
+use crate::net::modrinth::DiscoveryProject;
 use crate::tui::{
     app::{FocusedArea, ProviderConflictState},
     widgets::{
@@ -56,6 +57,37 @@ fn discovery_mode_recovers_from_a_hidden_tab_and_cycles_visible_tabs() {
 
     ui.key(KeyCode::Left);
     assert_eq!(ui.app.content_tab, ContentTab::Mods);
+}
+
+#[test]
+fn versions_open_from_a_discovery_project_page() {
+    let mut ui = UiHarness::new();
+    ui.add_instance("Test Instance");
+    ui.app.focused = FocusedArea::Content;
+    ui.app.content_mode = ContentMode::Discover;
+    ui.app.content_tab = ContentTab::Mods;
+    ui.app.mods_discovery_state.list.entries.push(
+        crate::tui::widgets::content::discovery::provider_project_entry(
+            DiscoveryProject {
+                id: "project".to_owned(),
+                slug: "project".to_owned(),
+                title: "Project".to_owned(),
+                description: String::new(),
+                downloads: 0,
+                icon_url: None,
+                icon_bytes: None,
+            },
+            "modrinth",
+            "project".to_owned(),
+            None,
+        ),
+    );
+    ui.app.mods_discovery_state.list.list_state.selected = Some(0);
+    ui.app.mods_discovery_state.begin_project_page();
+
+    ui.key(KeyCode::Char('v'));
+
+    assert!(ui.app.mods_discovery_state.version_popup.is_some());
 }
 
 #[test]
@@ -171,9 +203,9 @@ fn instance_wizards_open_render_and_cancel_through_app_input() {
     assert_eq!(ui.app.focused, FocusedArea::ImportPopup);
     ui.draw();
     assert!(ui.screen().contains("Browse Modpacks"));
-    ui.key(KeyCode::Char('d'));
+    ui.key(KeyCode::Char('i'));
     ui.draw();
-    assert!(ui.screen().contains("Direct Modpack Import"));
+    assert!(ui.screen().contains("Import Modpack"));
     ui.key(KeyCode::Esc);
     assert_eq!(ui.app.focused, FocusedArea::ImportPopup);
     ui.key(KeyCode::Esc);

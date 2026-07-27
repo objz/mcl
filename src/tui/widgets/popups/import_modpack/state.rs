@@ -1,5 +1,5 @@
 // state machine for the modpack import wizard.
-// browses modpacks from configured providers and keeps the direct import flow
+// browses modpacks from configured providers and keeps the archive import flow
 // for modrinth URLs, project slugs, version IDs, and local pack archives.
 
 use super::super::LoadState;
@@ -128,7 +128,7 @@ fn handle_discovery_key(key_event: &KeyEvent, instances_state: &mut instances::S
                 close_popup(&mut state, instances_state);
             }
         }
-        KeyCode::Char('d') if !search_active && !popup_open && !project_page_open => {
+        KeyCode::Char('i') if !search_active && !popup_open && !project_page_open => {
             drop(discovery);
             if let Ok(mut state) = IMPORT_STATE.lock() {
                 state.step = ImportStep::Input;
@@ -141,7 +141,7 @@ fn handle_discovery_key(key_event: &KeyEvent, instances_state: &mut instances::S
                 spawn_project_page(request);
             }
         }
-        KeyCode::Char('i') if !search_active && !popup_open && !project_page_open => {
+        KeyCode::Char('v') if !search_active && !popup_open => {
             let request = discovery.begin_versions();
             drop(discovery);
             if let Some(request) = request {
