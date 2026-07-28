@@ -18,7 +18,7 @@ expression: ui.screen()
 "│                  ││                                                                              │"
 "│                  ││        ╭ Delete 'Snapshot Instance' ─────────────╮                           │"
 "│                  ││        │This will permanently remove the instance│                           │"
-"│                  ││        ╰──────────────────────────[Enter] confirm╯                           │"
+"│                  ││        ╰────────────[Esc] cancel  [Enter] confirm╯                           │"
 "│                  ││                                                                              │"
 "│                  ││                                                                              │"
 "│                  ││                                                                              │"

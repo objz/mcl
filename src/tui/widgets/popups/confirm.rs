@@ -47,7 +47,7 @@ pub enum ConfirmTarget {
 impl ConfirmTarget {
     fn title(&self) -> String {
         match self {
-            Self::OrphanDependencies { .. } => " Remove unused libraries ".to_owned(),
+            Self::OrphanDependencies { .. } => " Remove unused dependencies ".to_owned(),
             _ => format!(" Delete '{}' ", self.name()),
         }
     }
@@ -63,7 +63,7 @@ impl ConfirmTarget {
             }
             ConfirmTarget::Content { dependents, .. } if !dependents.is_empty() => {
                 format!(
-                    "Still required by installed mods:\n{}\n! Deleting this library may break those mods.",
+                    "Still required by installed mods:\n{}\n! Deleting this dependency may break those mods.",
                     dependents
                         .iter()
                         .map(|name| format!("• {name}"))
@@ -81,7 +81,7 @@ impl ConfirmTarget {
                         "• {}",
                         path.file_name()
                             .and_then(|name| name.to_str())
-                            .unwrap_or("library")
+                            .unwrap_or("dependency")
                     )
                 })
                 .collect::<Vec<_>>()
@@ -95,7 +95,7 @@ impl ConfirmTarget {
             ConfirmTarget::Account { username, .. } => username,
             ConfirmTarget::ConfigProfile { profile } => profile,
             ConfirmTarget::Content { name, .. } => name,
-            ConfirmTarget::OrphanDependencies { .. } => "unused libraries",
+            ConfirmTarget::OrphanDependencies { .. } => "unused dependencies",
         }
     }
 
@@ -192,7 +192,7 @@ impl Widget for ConfirmPopup {
                 .fg(theme.accent())
                 .add_modifier(Modifier::BOLD),
         )]);
-        let kb = keybind_line(&[("Enter", self.confirm_label)]);
+        let kb = keybind_line(&[("Esc", " cancel"), ("Enter", self.confirm_label)]);
 
         let border_color = theme.text_dim();
         let bg_color = theme.surface();
@@ -243,8 +243,9 @@ pub fn confirm_popup_area(frame_area: Rect, target: &ConfirmTarget) -> Rect {
     const MAX_W: usize = 48;
     let body = target.body();
     let title_w = Span::raw(target.name()).width() + 12;
+    let footer_w = Span::raw(format!("[Esc] cancel  [Enter]{}", target.confirm_label())).width();
     let (body_w, _) = word_wrap_size(&body, MAX_W);
-    let inner_w = title_w.max(body_w).min(MAX_W);
+    let inner_w = title_w.max(body_w).max(footer_w).min(MAX_W);
     let (_, lines) = word_wrap_size(&body, inner_w);
     let popup_w = ((inner_w + 2) as u16).min(frame_area.width.saturating_sub(4));
     let popup_h = ((lines + 2) as u16).min(frame_area.height.saturating_sub(4));
