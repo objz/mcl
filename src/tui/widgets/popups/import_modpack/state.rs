@@ -113,6 +113,12 @@ pub fn drain(picker: &ratatui_image::picker::Picker) {
     }
 }
 
+pub fn has_version_popup() -> bool {
+    DISCOVERY_STATE
+        .lock()
+        .is_ok_and(|state| state.version_popup.is_some())
+}
+
 fn handle_discovery_key(key_event: &KeyEvent, instances_state: &mut instances::State) {
     let mut discovery = match DISCOVERY_STATE.lock() {
         Ok(state) => state,

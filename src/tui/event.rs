@@ -1,6 +1,10 @@
 use color_eyre::eyre::Context;
 use crossterm::event::{self, Event};
-use ratatui::crossterm::event::KeyEventKind;
+use ratatui::{
+    backend::Backend,
+    buffer::{Buffer, Cell, CellDiffOption},
+    crossterm::event::KeyEventKind,
+};
 use std::time::Duration;
 
 use super::Tui;
@@ -16,6 +20,8 @@ impl App {
         let mut last_draw = std::time::Instant::now()
             .checked_sub(Duration::from_secs(1))
             .unwrap_or_else(std::time::Instant::now);
+        let mut drawn_overlay_count = self.overlay_count();
+        let mut drawn_image_skips = Vec::new();
         while !self.exit {
             let redraw_requested = crate::feedback::take_redraw_request();
             // check if any popup wizard finished and wants to create/import
@@ -97,11 +103,30 @@ impl App {
             }
 
             let input_changed = self.handle_events().wrap_err("handle events failed")?;
+            let overlay_count = self.overlay_count();
+            let overlay_closed = overlay_count < drawn_overlay_count;
             let continuously_animated = spinner_active || error_buffer::has_errors();
             let safety_refresh = last_draw.elapsed() >= Duration::from_secs(1);
-            if input_changed || continuously_animated || safety_refresh || redraw_requested {
-                terminal.draw(|frame| self.render_frame(frame))?;
+            if input_changed
+                || continuously_animated
+                || safety_refresh
+                || redraw_requested
+                || overlay_closed
+            {
+                let completed = terminal.draw(|frame| self.render_frame(frame))?;
+                let image_skips = terminal_image_skips(completed.buffer);
+                let image_cells = image_cells_reexposed(&drawn_image_skips, &image_skips)
+                    .then(|| terminal_image_cells(completed.buffer))
+                    .unwrap_or_default();
+                if !image_cells.is_empty() {
+                    terminal
+                        .backend_mut()
+                        .draw(image_cells.iter().map(|(x, y, cell)| (*x, *y, cell)))?;
+                    terminal.backend_mut().flush()?;
+                }
                 last_draw = std::time::Instant::now();
+                drawn_overlay_count = overlay_count;
+                drawn_image_skips = image_skips;
             }
 
             if let Some(path) = self.pending_editor.take()
@@ -111,6 +136,32 @@ impl App {
             }
         }
         Ok(())
+    }
+
+    fn overlay_count(&self) -> usize {
+        error_buffer::peek_all_errors().len()
+            + usize::from(self.instances_state.show_popup)
+            + usize::from(self.instances_state.show_import_popup)
+            + usize::from(self.focused == super::app::FocusedArea::OverviewExpanded)
+            + usize::from(self.focused == super::app::FocusedArea::ConfirmDelete)
+            + usize::from(self.provider_conflict.is_some())
+            + usize::from(!matches!(
+                &self.account_state.add_mode,
+                widgets::account::AddMode::None
+            ))
+            + usize::from(!matches!(
+                &self.settings_state.add_mode,
+                widgets::settings::AddMode::None
+            ))
+            + [
+                &self.mods_discovery_state,
+                &self.resource_packs_discovery_state,
+                &self.shaders_discovery_state,
+            ]
+            .iter()
+            .filter(|state| state.version_popup.is_some())
+            .count()
+            + usize::from(import_modpack::has_version_popup())
     }
 
     fn persist_content_toggles(
@@ -568,6 +619,38 @@ impl App {
             self.screenshots_state.set_protocol(idx, proto);
         }
     }
+}
+
+fn terminal_image_cells(buffer: &Buffer) -> Vec<(u16, u16, Cell)> {
+    buffer
+        .content
+        .iter()
+        .enumerate()
+        .filter(|(_, cell)| {
+            matches!(cell.diff_option, CellDiffOption::ForcedWidth(_))
+                && cell.symbol().contains('\x1b')
+        })
+        .map(|(index, cell)| {
+            let (x, y) = buffer.pos_of(index);
+            (x, y, cell.clone())
+        })
+        .collect()
+}
+
+fn terminal_image_skips(buffer: &Buffer) -> Vec<bool> {
+    buffer
+        .content
+        .iter()
+        .map(|cell| matches!(cell.diff_option, CellDiffOption::Skip))
+        .collect()
+}
+
+fn image_cells_reexposed(previous: &[bool], current: &[bool]) -> bool {
+    previous.len() == current.len()
+        && previous
+            .iter()
+            .zip(current)
+            .any(|(previous, current)| !*previous && *current)
 }
 
 fn editor_runs_in_terminal(editor: &str) -> bool {

@@ -5,7 +5,8 @@ mod state;
 pub use render::render;
 pub use render::{popup_rect, render_with_picker};
 pub use state::{
-    ImportResult, ImportStep, ImportWizardState, drain, handle_key, open, take_result,
+    ImportResult, ImportStep, ImportWizardState, drain, handle_key, has_version_popup, open,
+    take_result,
 };
 
 #[cfg(test)]
