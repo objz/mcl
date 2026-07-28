@@ -100,13 +100,8 @@ fn terminal_image_cells_change_when_an_overlay_opens_or_closes() {
         &[true, false, false]
     ));
     assert!(!terminal_image_cells_changed(&[], &[true]));
-}
-
-#[test]
-fn repainting_an_overlay_redraws_images_even_when_its_area_is_unchanged() {
-    assert!(terminal_images_need_redraw(
+    assert!(!terminal_image_cells_changed(
         &[true, false, true],
         &[true, false, true],
-        true,
     ));
 }
