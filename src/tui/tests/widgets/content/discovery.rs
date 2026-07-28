@@ -3,6 +3,30 @@ use crate::tests::TEST_LOCK;
 use chrono::Utc;
 use crossterm::event::KeyModifiers;
 
+#[test]
+fn bracket_keys_change_pages() {
+    assert_eq!(
+        page_key_direction(&KeyEvent::new(KeyCode::Char('['), KeyModifiers::NONE)),
+        Some(false)
+    );
+    assert_eq!(
+        page_key_direction(&KeyEvent::new(KeyCode::Char(']'), KeyModifiers::NONE)),
+        Some(true)
+    );
+}
+
+#[test]
+fn discovery_requests_four_viewport_pages() {
+    let mut state = DiscoveryState::new_modpacks();
+    assert_eq!(state.begin_modpack_search().limit, PAGE_SIZE);
+
+    state.set_viewport_rows(30);
+    assert_eq!(state.begin_modpack_search().limit, 40);
+
+    state.set_viewport_rows(300);
+    assert_eq!(state.begin_modpack_search().limit, PAGE_SIZE);
+}
+
 fn instance(name: &str, version: &str) -> InstanceConfig {
     InstanceConfig {
         name: name.to_string(),

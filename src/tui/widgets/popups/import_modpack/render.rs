@@ -151,6 +151,7 @@ fn discovery_keybinds(project_page_open: bool) -> &'static [(&'static str, &'sta
     } else {
         &[
             ("j/k", " navigate"),
+            (" [/] ", " pages"),
             ("Enter", " view"),
             ("v", " versions"),
             ("/", " search"),

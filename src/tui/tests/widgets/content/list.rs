@@ -416,11 +416,79 @@ fn rendering_visible_entries_restores_the_first_selection() {
                 "Loading...",
                 "Empty",
                 &picker,
+                false,
             );
         })
         .unwrap();
 
     assert_eq!(state.list_state.selected, Some(0));
+}
+
+#[test]
+fn pager_tracks_viewport_pages_and_jumps_to_their_first_item() {
+    assert_eq!(
+        super::pager_pages(0, 12),
+        vec![Some(0), Some(1), Some(2), Some(3)]
+    );
+    assert_eq!(
+        super::pager_pages(4, 12),
+        vec![Some(0), None, Some(3), Some(4), Some(5)]
+    );
+    assert_eq!(
+        super::pager_pages(11, 12),
+        vec![Some(0), None, Some(9), Some(10), Some(11)]
+    );
+
+    let area = Rect::new(0, 0, 40, 13);
+    let (list_area, pager) = super::pagination_layout(area, 5);
+    assert_eq!(list_area, area);
+    assert_eq!(pager.map(|(_, page_size)| page_size), Some(4));
+    assert!(super::pagination_layout(area, 4).1.is_none());
+
+    let mut state = ContentListState {
+        entries: (1..=10)
+            .map(|number| {
+                let mut item = entry(&format!("Project {number}"));
+                item.icon_lines = Some(crate::instance::content::fallback_icon());
+                item
+            })
+            .collect(),
+        ..ContentListState::default()
+    };
+    state.rebuild_display_metadata();
+    let picker = ratatui_image::picker::Picker::halfblocks();
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(40, 13)).unwrap();
+
+    terminal
+        .draw(|frame| {
+            super::render(
+                frame,
+                frame.area(),
+                &mut state,
+                true,
+                "Loading...",
+                "Empty",
+                &picker,
+                true,
+            );
+        })
+        .unwrap();
+
+    let pagination = state.pagination.as_ref().expect("pager");
+    assert_eq!(pagination.page_size, 4);
+    assert_eq!(pagination.page_count, 3);
+    let page_two = pagination
+        .hits
+        .iter()
+        .find(|(_, page)| *page == 1)
+        .map(|(area, _)| (area.x, area.y))
+        .expect("page two hit target");
+    assert!(state.click_page(page_two.0, page_two.1));
+    assert_eq!(state.list_state.selected, Some(4));
+    assert!(state.next_page());
+    assert_eq!(state.list_state.selected, Some(8));
+    assert!(state.previous_page());
+    assert_eq!(state.list_state.selected, Some(4));
 }
 
 #[test]

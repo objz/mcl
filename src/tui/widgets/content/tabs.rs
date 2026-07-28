@@ -291,6 +291,7 @@ pub fn render(
             ],
             (ContentMode::Discover, _) if discovery_can_delete => &[
                 ("j/k", " navigate"),
+                (" [/] ", " pages"),
                 ("Enter", " view"),
                 ("v", " versions"),
                 ("d", " delete"),
@@ -300,6 +301,7 @@ pub fn render(
             ],
             (ContentMode::Discover, _) => &[
                 ("j/k", " navigate"),
+                (" [/] ", " pages"),
                 ("Enter", " view"),
                 ("v", " versions"),
                 ("h/l", " tabs"),
@@ -470,6 +472,7 @@ pub fn render(
                     "Loading worlds...",
                     "No worlds saved.",
                     picker,
+                    false,
                 );
             } else {
                 frame.render_widget(
@@ -530,6 +533,7 @@ fn render_downloadable(
             tab.loading_text,
             tab.empty_text,
             picker,
+            false,
         );
     }
 }
@@ -597,6 +601,7 @@ fn render_discovery_body(
         }
     } else {
         let empty_text = state.empty_text().to_string();
+        let paginate = !state.search.active && state.version_popup.is_none();
         super::list::render(
             frame,
             area,
@@ -605,6 +610,7 @@ fn render_discovery_body(
             loading_text,
             &empty_text,
             picker,
+            paginate,
         );
     }
     if state.version_popup.is_some() {

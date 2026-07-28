@@ -72,6 +72,7 @@ pub(crate) struct MergedDiscoveryResults {
 pub struct DiscoveryRequest {
     pub generation: u64,
     pub offset: usize,
+    pub limit: usize,
     pub pending: PendingDiscovery,
     pub stream: ContentStream,
     pub reconcile: bool,
@@ -313,6 +314,7 @@ impl DiscoveryState {
         DiscoveryRequest {
             generation: self.generation,
             offset: 0,
+            limit: self.request_limit(),
             pending: self.pending.clone(),
             stream,
             reconcile,
@@ -336,6 +338,7 @@ impl DiscoveryState {
         Some(DiscoveryRequest {
             generation: self.generation,
             offset: self.next_offset,
+            limit: self.request_limit(),
             pending: self.pending.clone(),
             stream: self.stream.clone()?,
             reconcile: false,
@@ -345,6 +348,15 @@ impl DiscoveryState {
 
     pub fn set_viewport_rows(&mut self, rows: u16) {
         self.viewport_rows = rows;
+    }
+
+    fn request_limit(&self) -> usize {
+        let viewport_items = usize::from(self.viewport_rows / 3);
+        if viewport_items == 0 {
+            PAGE_SIZE
+        } else {
+            viewport_items.saturating_mul(4).min(PAGE_SIZE)
+        }
     }
 
     pub fn begin_versions(&mut self) -> Option<VersionsRequest> {
@@ -936,7 +948,23 @@ pub fn handle_key(key_event: &KeyEvent, state: &mut DiscoveryState) -> bool {
         state.search.activate();
         return true;
     }
-    super::list::handle_key_no_toggle(key_event, &mut state.list)
+    if let Some(next) = page_key_direction(key_event) {
+        if next {
+            state.list.next_page()
+        } else {
+            state.list.previous_page()
+        }
+    } else {
+        super::list::handle_key_no_toggle(key_event, &mut state.list)
+    }
+}
+
+pub(crate) fn page_key_direction(key_event: &KeyEvent) -> Option<bool> {
+    match key_event.code {
+        KeyCode::Char('[') => Some(false),
+        KeyCode::Char(']') => Some(true),
+        _ => None,
+    }
 }
 
 fn discovery_context(instance: &InstanceConfig) -> String {

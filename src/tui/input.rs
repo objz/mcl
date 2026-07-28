@@ -26,10 +26,27 @@ impl App {
             }
             return;
         }
-        if event.kind != MouseEventKind::Down(MouseButton::Left)
-            || self.focused != FocusedArea::Content
+        if event.kind != MouseEventKind::Down(MouseButton::Left) {
+            return;
+        }
+        if self.focused == FocusedArea::ImportPopup
+            && import_modpack::handle_discovery_click(event.column, event.row)
+        {
+            return;
+        }
+        if self.focused != FocusedArea::Content
             || self.content_mode != widgets::content::ContentMode::Discover
         {
+            return;
+        }
+        let page_clicked = self.active_discovery_state_mut().is_some_and(|state| {
+            !state.search.active
+                && !state.project_page_open()
+                && state.version_popup.is_none()
+                && state.list.click_page(event.column, event.row)
+        });
+        if page_clicked {
+            self.spawn_active_discovery_page();
             return;
         }
         let link = self
@@ -282,7 +299,8 @@ impl App {
                 if matches!(
                     key_event.code,
                     KeyCode::Char('j') | KeyCode::Char('k') | KeyCode::Down | KeyCode::Up
-                ) {
+                ) || widgets::content::discovery::page_key_direction(&key_event).is_some()
+                {
                     self.spawn_active_discovery_page();
                 }
                 return Ok(());
@@ -1085,6 +1103,7 @@ impl App {
         let widgets::content::discovery::DiscoveryRequest {
             generation,
             offset,
+            limit,
             pending,
             stream,
             reconcile,
@@ -1096,27 +1115,16 @@ impl App {
             let registry =
                 crate::instance::content::provider::ProviderRegistry::configured(client.clone());
             let modrinth = registry.get("modrinth").expect("Modrinth provider");
-            let modrinth_search = modrinth.search(
-                kind,
-                &query,
-                &instance,
-                offset,
-                widgets::content::discovery::PAGE_SIZE,
-            );
-            let (modrinth_result, curseforge_result) =
-                if let Some(curseforge) = registry.get("curseforge") {
-                    let curseforge_search = curseforge.search(
-                        kind,
-                        &query,
-                        &instance,
-                        offset,
-                        widgets::content::discovery::PAGE_SIZE,
-                    );
-                    let (modrinth, curseforge) = tokio::join!(modrinth_search, curseforge_search);
-                    (modrinth, Some(curseforge))
-                } else {
-                    (modrinth_search.await, None)
-                };
+            let modrinth_search = modrinth.search(kind, &query, &instance, offset, limit);
+            let (modrinth_result, curseforge_result) = if let Some(curseforge) =
+                registry.get("curseforge")
+            {
+                let curseforge_search = curseforge.search(kind, &query, &instance, offset, limit);
+                let (modrinth, curseforge) = tokio::join!(modrinth_search, curseforge_search);
+                (modrinth, Some(curseforge))
+            } else {
+                (modrinth_search.await, None)
+            };
             let result = match (&modrinth_result, &curseforge_result) {
                 (Err(error), Some(Err(_))) | (Err(error), None) => {
                     Err((error.to_string(), error.is_retryable()))

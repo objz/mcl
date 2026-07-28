@@ -141,6 +141,12 @@ struct DisplayMetadata {
     has_description: bool,
 }
 
+struct PaginationState {
+    page_size: usize,
+    page_count: usize,
+    hits: Vec<(Rect, usize)>,
+}
+
 // result from the notify-triggered background diff
 struct WatcherDiff {
     toggled: Vec<(String, bool, std::path::PathBuf)>,
@@ -190,6 +196,7 @@ pub struct ContentListState {
     // stored for the watcher to scan individual new files
     scan_one_fn: Option<ScanOneFn>,
     content_ext: Option<&'static str>,
+    pagination: Option<PaginationState>,
 }
 
 #[derive(Clone, Debug)]
@@ -226,6 +233,7 @@ impl Default for ContentListState {
             watched_dir: None,
             scan_one_fn: None,
             content_ext: None,
+            pagination: None,
         }
     }
 }
@@ -1145,6 +1153,47 @@ impl ContentListState {
         self.scrollbar_state = ScrollbarState::new(max).position(pos);
     }
 
+    pub fn previous_page(&mut self) -> bool {
+        let Some(pagination) = self.pagination.as_ref() else {
+            return false;
+        };
+        let current = self.list_state.selected.unwrap_or(0) / pagination.page_size;
+        self.jump_to_page(current.saturating_sub(1))
+    }
+
+    pub fn next_page(&mut self) -> bool {
+        let Some(pagination) = self.pagination.as_ref() else {
+            return false;
+        };
+        let current = self.list_state.selected.unwrap_or(0) / pagination.page_size;
+        self.jump_to_page((current + 1).min(pagination.page_count.saturating_sub(1)))
+    }
+
+    pub fn click_page(&mut self, x: u16, y: u16) -> bool {
+        let page = self.pagination.as_ref().and_then(|pagination| {
+            pagination
+                .hits
+                .iter()
+                .find(|(area, _)| {
+                    x >= area.x && x < area.right() && y >= area.y && y < area.bottom()
+                })
+                .map(|(_, page)| *page)
+        });
+        page.is_some_and(|page| self.jump_to_page(page))
+    }
+
+    fn jump_to_page(&mut self, page: usize) -> bool {
+        let Some(pagination) = self.pagination.as_ref() else {
+            return false;
+        };
+        let target = page
+            .min(pagination.page_count.saturating_sub(1))
+            .saturating_mul(pagination.page_size);
+        self.list_state.select(Some(target));
+        self.update_scrollbar();
+        true
+    }
+
     fn rebuild_display_metadata(&mut self) {
         self.display_metadata = self
             .entries
@@ -1362,6 +1411,7 @@ fn handle_key_inner(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn render(
     frame: &mut Frame,
     area: Rect,
@@ -1370,8 +1420,10 @@ pub fn render(
     loading_text: &str,
     empty_text: &str,
     picker: &ratatui_image::picker::Picker,
+    paginate: bool,
 ) {
     let theme = THEME.as_ref();
+    state.pagination = None;
     if state.loading {
         frame.render_widget(
             Paragraph::new(loading_text).style(Style::default().fg(theme.text_dim())),
@@ -1407,7 +1459,12 @@ pub fn render(
     {
         state.list_state.selected = Some(count.saturating_sub(1));
     }
-    state.request_visible_provider_icons(&filtered, area.height);
+    let (list_area, pagination) = if paginate {
+        pagination_layout(area, count)
+    } else {
+        (area, None)
+    };
+    state.request_visible_provider_icons(&filtered, list_area.height);
 
     let use_image_protocol =
         picker.protocol_type() != ratatui_image::picker::ProtocolType::Halfblocks;
@@ -1627,17 +1684,17 @@ pub fn render(
     });
 
     let list = ListView::new(builder, count);
-    frame.render_stateful_widget(list, area, &mut state.list_state);
+    frame.render_stateful_widget(list, list_area, &mut state.list_state);
 
     if picker.protocol_type() != ratatui_image::picker::ProtocolType::Halfblocks {
-        render_image_icons(frame, area, state, &filtered, picker);
+        render_image_icons(frame, list_area, state, &filtered, picker);
     }
 
     let scrollbar_area = Rect {
-        x: area.x + area.width.saturating_sub(0),
-        y: area.y + 1,
+        x: list_area.x + list_area.width.saturating_sub(0),
+        y: list_area.y + 1,
         width: 1,
-        height: area.height.saturating_sub(2),
+        height: list_area.height.saturating_sub(2),
     };
     frame.render_stateful_widget(
         Scrollbar::default()
@@ -1654,6 +1711,111 @@ pub fn render(
         scrollbar_area,
         &mut state.scrollbar_state,
     );
+
+    if let Some((pager_area, page_size)) = pagination {
+        render_pager(frame, pager_area, state, count, page_size);
+    }
+}
+
+fn pagination_layout(area: Rect, item_count: usize) -> (Rect, Option<(Rect, usize)>) {
+    const ITEM_HEIGHT: u16 = 3;
+    if area.height < ITEM_HEIGHT + 1 || item_count <= usize::from(area.height / ITEM_HEIGHT).max(1)
+    {
+        return (area, None);
+    }
+    let pager_area = Rect::new(area.x, area.bottom().saturating_sub(1), area.width, 1);
+    let page_size = usize::from(area.height / ITEM_HEIGHT).max(1);
+    (area, Some((pager_area, page_size)))
+}
+
+fn pager_pages(current: usize, page_count: usize) -> Vec<Option<usize>> {
+    if page_count == 0 {
+        return Vec::new();
+    }
+    let core_len = page_count.min(3);
+    let current = current.min(page_count - 1);
+    if current < 3 {
+        return (0..page_count.min(4)).map(Some).collect();
+    }
+    let core_start = current.saturating_sub(1).min(page_count - core_len);
+    let mut pages = Vec::with_capacity(5);
+    if core_start > 0 {
+        pages.push(Some(0));
+        if core_start > 1 {
+            pages.push(None);
+        }
+    }
+    pages.extend((core_start..core_start + core_len).map(Some));
+    pages
+}
+
+fn render_pager(
+    frame: &mut Frame,
+    area: Rect,
+    state: &mut ContentListState,
+    item_count: usize,
+    page_size: usize,
+) {
+    let theme = THEME.as_ref();
+    let page_count = item_count.div_ceil(page_size);
+    let current = (state.list_state.selected.unwrap_or(0) / page_size).min(page_count - 1);
+    let mut tokens = Vec::new();
+    for page in pager_pages(current, page_count) {
+        match page {
+            Some(page) if page == current => tokens.push((
+                format!("[{}]", page + 1),
+                Some(page),
+                Style::default()
+                    .fg(theme.accent())
+                    .add_modifier(Modifier::BOLD),
+            )),
+            Some(page) => tokens.push((
+                format!(" {} ", page + 1),
+                Some(page),
+                Style::default().fg(theme.text()),
+            )),
+            None => tokens.push((
+                " \u{2026} ".to_owned(),
+                None,
+                Style::default().fg(theme.text_dim()),
+            )),
+        }
+    }
+
+    let total_width = tokens
+        .iter()
+        .map(|(label, _, _)| Span::raw(label).width())
+        .sum::<usize>();
+    let pager_width = total_width.min(usize::from(area.width)) as u16;
+    let start_x = area.x + area.width.saturating_sub(pager_width) / 2;
+    let pager_area = Rect::new(start_x, area.y, pager_width, area.height);
+    let mut x = start_x;
+    let mut hits = Vec::new();
+    let spans = tokens
+        .into_iter()
+        .map(|(label, page, style)| {
+            let width = Span::raw(&label).width().min(usize::from(u16::MAX)) as u16;
+            if let Some(page) = page
+                && x < area.right()
+            {
+                hits.push((
+                    Rect::new(x, area.y, width.min(area.right() - x), area.height),
+                    page,
+                ));
+            }
+            x = x.saturating_add(width);
+            Span::styled(label, style)
+        })
+        .collect::<Vec<_>>();
+    frame.render_widget(
+        Paragraph::new(Line::from(spans)).style(Style::default().bg(theme.border())),
+        pager_area,
+    );
+    state.pagination = Some(PaginationState {
+        page_size,
+        page_count,
+        hits,
+    });
 }
 
 fn render_image_icons(

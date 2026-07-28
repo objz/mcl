@@ -119,6 +119,33 @@ pub fn has_version_popup() -> bool {
         .is_ok_and(|state| state.version_popup.is_some())
 }
 
+pub fn handle_discovery_click(x: u16, y: u16) -> bool {
+    if !IMPORT_STATE
+        .lock()
+        .is_ok_and(|state| state.step == ImportStep::Discover)
+    {
+        return false;
+    }
+    let (handled, request) = match DISCOVERY_STATE.lock() {
+        Ok(mut discovery) => {
+            if discovery.search.active
+                || discovery.project_page_open()
+                || discovery.version_popup.is_some()
+            {
+                return false;
+            }
+            let handled = discovery.list.click_page(x, y);
+            let request = handled.then(|| discovery.begin_next_page()).flatten();
+            (handled, request)
+        }
+        Err(_) => return false,
+    };
+    if let Some(request) = request {
+        spawn_discovery_request(request);
+    }
+    handled
+}
+
 fn handle_discovery_key(key_event: &KeyEvent, instances_state: &mut instances::State) {
     let mut discovery = match DISCOVERY_STATE.lock() {
         Ok(state) => state,
@@ -169,10 +196,12 @@ fn handle_discovery_key(key_event: &KeyEvent, instances_state: &mut instances::S
             }
         }
         _ => {
-            let navigate = matches!(
-                key_event.code,
-                KeyCode::Char('j') | KeyCode::Char('k') | KeyCode::Down | KeyCode::Up
-            );
+            let navigate =
+                matches!(
+                    key_event.code,
+                    KeyCode::Char('j') | KeyCode::Char('k') | KeyCode::Down | KeyCode::Up
+                ) || crate::tui::widgets::content::discovery::page_key_direction(key_event)
+                    .is_some();
             crate::tui::widgets::content::discovery::handle_key(key_event, &mut discovery);
             let request = navigate.then(|| discovery.begin_next_page()).flatten();
             drop(discovery);
@@ -541,6 +570,7 @@ fn spawn_discovery_request_with_query(
     let crate::tui::widgets::content::discovery::DiscoveryRequest {
         generation,
         offset,
+        limit,
         pending,
         stream,
         reconcile,
@@ -548,24 +578,14 @@ fn spawn_discovery_request_with_query(
     } = request;
     tokio::spawn(async move {
         let client = crate::net::HttpClient::new();
-        let modrinth = crate::net::modrinth::search_modpacks(
-            &client,
-            &query,
-            offset,
-            crate::tui::widgets::content::discovery::PAGE_SIZE,
-        );
+        let modrinth = crate::net::modrinth::search_modpacks(&client, &query, offset, limit);
         let curseforge_key = crate::config::SETTINGS
             .content
             .curseforge_api_key()
             .map(str::to_owned);
         let (modrinth_result, curseforge_result) = if let Some(api_key) = curseforge_key {
-            let curseforge = crate::net::curseforge::search_modpacks(
-                &client,
-                &api_key,
-                &query,
-                offset,
-                crate::tui::widgets::content::discovery::PAGE_SIZE,
-            );
+            let curseforge =
+                crate::net::curseforge::search_modpacks(&client, &api_key, &query, offset, limit);
             let (modrinth, curseforge) = tokio::join!(modrinth, curseforge);
             (modrinth, Some(curseforge))
         } else {
