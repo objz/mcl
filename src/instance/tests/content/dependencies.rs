@@ -15,6 +15,7 @@ struct FakeProvider {
     versions: HashMap<String, VersionInfo>,
     compatible: HashMap<String, Vec<String>>,
     projects: HashMap<String, String>,
+    categories: HashMap<String, Vec<String>>,
     resolved: HashMap<String, ProviderProject>,
     fail_download: Option<String>,
 }
@@ -72,6 +73,8 @@ impl ContentProvider for FakeProvider {
             description: String::new(),
             body: String::new(),
             icon_url: None,
+            categories: self.categories.get(project_id).cloned().unwrap_or_default(),
+            additional_categories: Vec::new(),
         })
     }
 
@@ -192,6 +195,10 @@ fn provider(versions: Vec<VersionInfo>) -> FakeProvider {
         .iter()
         .map(|version| (version.project_id.clone(), version.project_id.clone()))
         .collect();
+    let categories = versions
+        .iter()
+        .map(|version| (version.project_id.clone(), vec!["library".to_owned()]))
+        .collect();
     FakeProvider {
         versions: versions
             .into_iter()
@@ -199,6 +206,7 @@ fn provider(versions: Vec<VersionInfo>) -> FakeProvider {
             .collect(),
         compatible,
         projects,
+        categories,
         resolved: HashMap::new(),
         fail_download: None,
     }
@@ -256,6 +264,43 @@ async fn required_dependencies_prefer_the_newest_stable_release() {
 }
 
 #[tokio::test]
+async fn functional_mod_dependencies_are_not_cleanup_eligible() {
+    let root_version = version(
+        "root",
+        "root",
+        VersionType::Release,
+        "2026-01-01",
+        vec![dependency("sodium", DependencyType::Required)],
+    );
+    let sodium = version(
+        "sodium",
+        "sodium",
+        VersionType::Release,
+        "2026-01-01",
+        Vec::new(),
+    );
+    let mut fake = provider(vec![root_version.clone(), sodium]);
+    fake.categories.insert(
+        "sodium".to_owned(),
+        vec!["library".to_owned(), "optimization".to_owned()],
+    );
+    let registry = fake.registry();
+
+    let plan = resolve(
+        &registry,
+        &ContentManifest::default(),
+        Path::new("/minecraft"),
+        &instance(),
+        root(root_version),
+    )
+    .await
+    .unwrap();
+
+    assert!(plan.items[1].automatic_dependency);
+    assert!(!plan.items[1].cleanup_eligible);
+}
+
+#[tokio::test]
 async fn exact_cross_provider_match_replaces_only_the_wrong_version() {
     let root_version = version(
         "root",
@@ -307,6 +352,7 @@ async fn exact_cross_provider_match_replaces_only_the_wrong_version() {
             provider_aliases: Vec::new(),
             required_dependencies: Vec::new(),
             automatic_dependency: false,
+            cleanup_eligible: false,
         }],
     };
 
@@ -429,6 +475,7 @@ async fn installed_incompatible_projects_block_the_plan() {
             provider_aliases: Vec::new(),
             required_dependencies: Vec::new(),
             automatic_dependency: false,
+            cleanup_eligible: false,
         }],
     };
 
@@ -489,6 +536,12 @@ async fn dependency_install_commits_files_and_manifest_together() {
             .record(Path::new("mods/library.jar"))
             .unwrap()
             .automatic_dependency
+    );
+    assert!(
+        manifest
+            .record(Path::new("mods/library.jar"))
+            .unwrap()
+            .cleanup_eligible
     );
     assert_eq!(
         manifest

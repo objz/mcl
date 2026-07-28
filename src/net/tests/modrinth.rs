@@ -48,6 +48,28 @@ fn version_dependencies_and_release_type_are_deserialized() {
 }
 
 #[test]
+fn only_exclusively_library_categorized_projects_are_cleanup_eligible() {
+    let project = |categories: &[&str]| ProjectInfo {
+        id: "project".to_owned(),
+        slug: "project".to_owned(),
+        title: "Project".to_owned(),
+        description: String::new(),
+        body: String::new(),
+        icon_url: None,
+        categories: categories
+            .iter()
+            .map(|category| (*category).to_owned())
+            .collect(),
+        additional_categories: Vec::new(),
+    };
+
+    assert!(project(&["library"]).is_library_only());
+    assert!(project(&["api-and-library"]).is_library_only());
+    assert!(!project(&[]).is_library_only());
+    assert!(!project(&["library", "utility"]).is_library_only());
+}
+
+#[test]
 fn discovery_mod_facets_include_instance_compatibility() {
     let facets = discovery_facets(ContentKind::Mod, "1.21.1", ModLoader::Fabric);
     assert_eq!(

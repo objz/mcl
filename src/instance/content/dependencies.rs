@@ -27,6 +27,7 @@ pub struct PlannedInstall {
     pub provider_aliases: Vec<ProviderProject>,
     pub required_dependencies: Vec<ProviderProject>,
     pub automatic_dependency: bool,
+    pub cleanup_eligible: bool,
     pub replacement: bool,
 }
 
@@ -300,6 +301,7 @@ fn build_records(
                 }
                 record.required_dependencies = item.required_dependencies.clone();
                 record.automatic_dependency = item.automatic_dependency;
+                record.cleanup_eligible = item.cleanup_eligible;
                 return Ok((Some(old_relative), record));
             }
             let path = staged
@@ -326,6 +328,7 @@ fn build_records(
                     provider_aliases: item.provider_aliases.clone(),
                     required_dependencies: item.required_dependencies.clone(),
                     automatic_dependency: item.automatic_dependency,
+                    cleanup_eligible: item.cleanup_eligible,
                 },
             ))
         })
@@ -374,6 +377,7 @@ struct Node {
     version: VersionInfo,
     installed: Option<InstalledMatch>,
     automatic_dependency: bool,
+    cleanup_eligible: bool,
     exact: bool,
     dependencies: Vec<ProjectKey>,
     optional_dependencies: usize,
@@ -428,6 +432,7 @@ pub async fn resolve(
             title: root.title,
             version: root_version.clone(),
             automatic_dependency: false,
+            cleanup_eligible: false,
             exact: true,
             installed: root_installed,
             dependencies: Vec::new(),
@@ -494,6 +499,7 @@ pub async fn resolve(
                 version: choice.version.clone(),
                 installed: choice.installed,
                 automatic_dependency: choice.automatic_dependency,
+                cleanup_eligible: choice.cleanup_eligible,
                 exact,
                 dependencies: Vec::new(),
                 optional_dependencies: 0,
@@ -537,6 +543,7 @@ struct ResolvedChoice {
     version: VersionInfo,
     installed: Option<InstalledMatch>,
     automatic_dependency: bool,
+    cleanup_eligible: bool,
 }
 
 async fn resolve_requirement(
@@ -586,13 +593,16 @@ async fn resolve_requirement(
             ))
         })?
     };
-    let title = provider.project(&project_id).await?.title;
+    let project = provider.project(&project_id).await?;
+    let automatic_dependency = installed
+        .as_ref()
+        .is_none_or(|installed| installed.automatic_dependency);
+    let cleanup_eligible = automatic_dependency && project.is_library_only();
     Ok(ResolvedChoice {
-        title,
+        title: project.title,
         version,
-        automatic_dependency: installed
-            .as_ref()
-            .is_none_or(|installed| installed.automatic_dependency),
+        automatic_dependency,
+        cleanup_eligible,
         installed,
     })
 }
@@ -884,6 +894,7 @@ fn planned_install(
             })
             .collect(),
         automatic_dependency: node.automatic_dependency,
+        cleanup_eligible: node.cleanup_eligible,
         replacement,
     }
 }

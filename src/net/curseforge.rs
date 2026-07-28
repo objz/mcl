@@ -41,6 +41,14 @@ struct Mod {
     #[serde(default)]
     download_count: u64,
     logo: Option<Logo>,
+    #[serde(default)]
+    categories: Vec<Category>,
+}
+
+#[derive(Debug, Deserialize)]
+struct Category {
+    name: String,
+    slug: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -283,14 +291,30 @@ pub async fn fetch_project(
         ),
     )
     .await?;
-    Ok(ProjectInfo {
-        id: project.data.id.to_string(),
-        slug: project.data.slug,
-        title: project.data.name,
-        description: project.data.summary,
-        body: description.data,
-        icon_url: project.data.logo.map(|logo| logo.thumbnail_url),
-    })
+    Ok(project_info(project.data, description.data))
+}
+
+fn project_info(project: Mod, body: String) -> ProjectInfo {
+    ProjectInfo {
+        id: project.id.to_string(),
+        slug: project.slug,
+        title: project.name,
+        description: project.summary,
+        body,
+        icon_url: project.logo.map(|logo| logo.thumbnail_url),
+        categories: project
+            .categories
+            .into_iter()
+            .map(|category| {
+                if category.slug.is_empty() {
+                    category.name
+                } else {
+                    category.slug
+                }
+            })
+            .collect(),
+        additional_categories: Vec::new(),
+    }
 }
 
 pub async fn fetch_versions(

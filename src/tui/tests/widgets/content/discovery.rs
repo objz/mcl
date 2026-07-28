@@ -352,6 +352,8 @@ fn project_page_loads_for_the_selected_discovery_entry() {
                 description: "Short description".to_owned(),
                 body: "Long **Markdown** description.".to_owned(),
                 icon_url: None,
+                categories: Vec::new(),
+                additional_categories: Vec::new(),
             }),
         },
     );
@@ -522,6 +524,7 @@ fn dependency_resolution_opens_the_existing_confirmation() {
                     provider_aliases: Vec::new(),
                     required_dependencies: Vec::new(),
                     automatic_dependency: false,
+                    cleanup_eligible: false,
                     replacement: false,
                 }],
                 optional_dependencies: 0,
@@ -671,6 +674,7 @@ fn installed_labels_follow_exact_manifest_projects() {
         provider_aliases: Vec::new(),
         required_dependencies: Vec::new(),
         automatic_dependency: false,
+        cleanup_eligible: false,
     });
     state.refresh_installed_manifest(&manifest, std::path::Path::new("first"));
     assert_eq!(

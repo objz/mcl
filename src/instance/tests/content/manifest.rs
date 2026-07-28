@@ -38,6 +38,7 @@ fn manifest_round_trip_and_lookup_are_exact() {
         provider_aliases: Vec::new(),
         required_dependencies: Vec::new(),
         automatic_dependency: false,
+        cleanup_eligible: false,
     };
     let mut manifest = ContentManifest::default();
     manifest.upsert(record);
@@ -90,6 +91,7 @@ fn renaming_a_record_preserves_its_resolution() {
         provider_aliases: Vec::new(),
         required_dependencies: Vec::new(),
         automatic_dependency: false,
+        cleanup_eligible: false,
     });
 
     assert!(manifest.rename_record(
@@ -129,6 +131,7 @@ fn managed_record(
         provider_aliases: Vec::new(),
         required_dependencies,
         automatic_dependency,
+        cleanup_eligible: automatic_dependency,
     }
 }
 
@@ -209,5 +212,24 @@ fn orphan_cleanup_follows_automatic_dependency_chains() {
             PathBuf::from("mods/library.jar"),
             PathBuf::from("mods/nested.jar")
         ]
+    );
+}
+
+#[test]
+fn orphan_cleanup_keeps_automatic_non_library_dependencies() {
+    let mut dependency_record = managed_record("mods/sodium.jar", "sodium", true, Vec::new());
+    dependency_record.cleanup_eligible = false;
+    let manifest = ContentManifest {
+        version: 1,
+        files: vec![
+            managed_record("mods/root.jar", "root", false, vec![dependency("sodium")]),
+            dependency_record,
+        ],
+    };
+
+    assert!(
+        manifest
+            .orphaned_dependencies_after_removing(Path::new("mods/root.jar"))
+            .is_empty()
     );
 }

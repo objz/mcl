@@ -332,6 +332,7 @@ fn reconcile_inventory(
                 provider_aliases: Vec::new(),
                 required_dependencies: Vec::new(),
                 automatic_dependency: false,
+                cleanup_eligible: false,
             }
         } else if oversized {
             tracing::debug!(
@@ -352,6 +353,7 @@ fn reconcile_inventory(
                 provider_aliases: Vec::new(),
                 required_dependencies: Vec::new(),
                 automatic_dependency: false,
+                cleanup_eligible: false,
             }
         } else {
             ContentFileRecord {
@@ -363,6 +365,7 @@ fn reconcile_inventory(
                 provider_aliases: Vec::new(),
                 required_dependencies: Vec::new(),
                 automatic_dependency: false,
+                cleanup_eligible: false,
             }
         };
         record.kind = kind;

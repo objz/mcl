@@ -40,6 +40,24 @@ fn curseforge_file_maps_to_shared_version() {
     assert_eq!(version.files[0].hashes["sha1"], "abc");
 }
 
+#[test]
+fn curseforge_library_category_maps_to_cleanup_metadata() {
+    let project: Mod = serde_json::from_str(
+        r#"{
+            "id": 7,
+            "name": "Library",
+            "slug": "library",
+            "categories": [{
+                "name": "API and Library",
+                "slug": "library-api"
+            }]
+        }"#,
+    )
+    .unwrap();
+
+    assert!(project_info(project, String::new()).is_library_only());
+}
+
 #[tokio::test]
 async fn curseforge_versions_follow_pagination() {
     use wiremock::matchers::{method, path, query_param};

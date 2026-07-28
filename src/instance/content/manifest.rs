@@ -91,6 +91,8 @@ pub struct ContentFileRecord {
     pub required_dependencies: Vec<ProviderProject>,
     #[serde(default)]
     pub automatic_dependency: bool,
+    #[serde(default)]
+    pub cleanup_eligible: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -250,7 +252,10 @@ impl ContentManifest {
         loop {
             let mut found = false;
             for candidate in &self.files {
-                if !candidate.automatic_dependency || removed.contains(&candidate.relative_path) {
+                if !candidate.automatic_dependency
+                    || !candidate.cleanup_eligible
+                    || removed.contains(&candidate.relative_path)
+                {
                     continue;
                 }
                 let still_required = self
