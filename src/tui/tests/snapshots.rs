@@ -37,7 +37,7 @@ fn instance_delete_confirmation_renders_the_complete_frame() {
 }
 
 #[test]
-fn orphan_dependency_confirmation_wraps_its_complete_message() {
+fn orphan_dependency_confirmation_renders_simple_list() {
     let mut ui = UiHarness::new();
     crate::tui::widgets::popups::confirm::set_pending_orphan_dependencies(vec![
         "mods/sodium-fabric-0.9.1+mc26.2.jar".into(),
@@ -47,8 +47,11 @@ fn orphan_dependency_confirmation_wraps_its_complete_message() {
     ui.draw();
 
     let screen = ui.screen();
-    assert!(screen.contains("needs these libraries anymore"), "{screen}");
-    assert!(screen.contains('▣'), "{screen}");
+    assert!(
+        !screen.contains("needs these libraries anymore"),
+        "{screen}"
+    );
+    assert!(screen.contains('•'), "{screen}");
     assert!(
         screen.contains("sodium-fabric-0.9.1+mc26.2.jar"),
         "{screen}"
