@@ -138,3 +138,11 @@ fn new_instance_renders_confirm_step() {
         .unwrap();
     insta::assert_snapshot!(terminal.backend());
 }
+
+#[test]
+fn new_instance_confirmation_area_fits_its_summary() {
+    let _serial = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    reset_wizard_state(WizardStep::Confirm);
+
+    assert_eq!(popup_rect(Rect::new(0, 0, 100, 30)).height, 6);
+}

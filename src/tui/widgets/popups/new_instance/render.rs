@@ -108,7 +108,7 @@ pub fn popup_rect(frame_area: Rect) -> Rect {
             frame_area.centered(w, Constraint::Length(h))
         }
         WizardStep::Confirm => {
-            let h = 8u16.min(frame_area.height.saturating_sub(4));
+            let h = 6u16.min(frame_area.height.saturating_sub(4));
             frame_area.centered(w, Constraint::Length(h))
         }
     }

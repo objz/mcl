@@ -45,6 +45,12 @@ fn discovery_version_rows_only_show_the_version_number() {
 }
 
 #[test]
+fn discovery_confirmation_popup_fits_its_summary() {
+    assert_eq!(version_popup_height(false), VERSION_POPUP_HEIGHT);
+    assert_eq!(version_popup_height(true), 6);
+}
+
+#[test]
 fn discovery_version_popup_renders_over_a_project_page() {
     use crate::instance::ContentKind;
     use crate::net::modrinth::DiscoveryProject;

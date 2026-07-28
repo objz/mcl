@@ -110,7 +110,7 @@ pub fn popup_rect(frame_area: Rect) -> Rect {
             frame_area.centered(w, Constraint::Length(h))
         }
         ImportStep::Confirm => {
-            let h = 10u16.min(frame_area.height.saturating_sub(4));
+            let h = 8u16.min(frame_area.height.saturating_sub(4));
             frame_area.centered(w, Constraint::Length(h))
         }
     }

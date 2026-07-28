@@ -618,7 +618,9 @@ fn render_version_popup(frame: &mut Frame, area: Rect, state: &DiscoveryState) {
     };
     let popup_area = area.centered(
         Constraint::Percentage(50),
-        Constraint::Length(VERSION_POPUP_HEIGHT.min(area.height.saturating_sub(2))),
+        Constraint::Length(
+            version_popup_height(popup.confirming).min(area.height.saturating_sub(2)),
+        ),
     );
     let theme = THEME.as_ref();
     let title = popup.title();
@@ -725,6 +727,10 @@ fn render_version_popup(frame: &mut Frame, area: Rect, state: &DiscoveryState) {
         }),
     };
     frame.render_widget(popup, popup_area);
+}
+
+fn version_popup_height(confirming: bool) -> u16 {
+    if confirming { 6 } else { VERSION_POPUP_HEIGHT }
 }
 
 fn confirmation_values(values: &[String]) -> String {

@@ -155,6 +155,14 @@ fn import_modpack_renders_confirm_step() {
     insta::assert_snapshot!(terminal.backend());
 }
 
+#[test]
+fn modpack_confirmation_area_fits_its_summary() {
+    let _serial = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    reset_import_state(ImportStep::Confirm);
+
+    assert_eq!(popup_rect(Rect::new(0, 0, 100, 30)).height, 8);
+}
+
 // Confirm step with loader_version=None: covers the branch where the
 // pack didn't declare a loader version (rare upstream, but happens for
 // older mmc packs). render_confirm_step has to handle the Option.
