@@ -1396,6 +1396,9 @@ pub fn render(
         return;
     }
 
+    if state.list_state.selected.is_none() {
+        state.list_state.selected = Some(0);
+    }
     let count = filtered.len();
 
     // clamp selected so the ListView builder never gets an out-of-bounds index

@@ -399,6 +399,31 @@ fn streamed_entries_without_icons_are_visible_immediately() {
 }
 
 #[test]
+fn rendering_visible_entries_restores_the_first_selection() {
+    let mut state = ContentListState::default();
+    state.entries.push(entry("First"));
+    state.rebuild_display_metadata();
+    let picker = ratatui_image::picker::Picker::halfblocks();
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(40, 5)).unwrap();
+
+    terminal
+        .draw(|frame| {
+            super::render(
+                frame,
+                frame.area(),
+                &mut state,
+                true,
+                "Loading...",
+                "Empty",
+                &picker,
+            );
+        })
+        .unwrap();
+
+    assert_eq!(state.list_state.selected, Some(0));
+}
+
+#[test]
 fn manifest_metadata_keeps_an_embedded_icon_renderer() {
     let minecraft_dir = PathBuf::from("instance/minecraft");
     let mut state = ContentListState::default();
