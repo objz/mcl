@@ -313,7 +313,7 @@ pub fn handle_key(key_event: &KeyEvent, state: &mut LogsState) -> bool {
                     state.viewer_scroll = 0;
                 }
                 KeyCode::Backspace => {
-                    state.viewer_search.pop();
+                    state.viewer_search.backspace(key_event.modifiers);
                     state.viewer_scroll = 0;
                 }
                 KeyCode::Char(c) => {
@@ -384,7 +384,7 @@ pub fn handle_key(key_event: &KeyEvent, state: &mut LogsState) -> bool {
                     state.update_scrollbar();
                 }
                 KeyCode::Backspace => {
-                    state.search.pop();
+                    state.search.backspace(key_event.modifiers);
                     state.list_state.selected = Some(0);
                     state.load_selected_content();
                     state.update_scrollbar();

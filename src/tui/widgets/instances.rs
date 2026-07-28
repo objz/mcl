@@ -180,7 +180,7 @@ impl WidgetKey for State {
                     self.update_scrollbar();
                 }
                 KeyCode::Backspace => {
-                    self.search.pop();
+                    self.search.backspace(key_event.modifiers);
                     self.list_state.selected = Some(0);
                     self.update_scrollbar();
                 }

@@ -248,7 +248,7 @@ pub fn handle_key(key_event: &KeyEvent, state: &mut ScreenshotsState) -> bool {
                 state.scroll_row = 0;
             }
             KeyCode::Backspace => {
-                state.search.pop();
+                state.search.backspace(key_event.modifiers);
                 state.selected = 0;
                 state.scroll_row = 0;
             }

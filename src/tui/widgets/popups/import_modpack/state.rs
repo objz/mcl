@@ -235,7 +235,7 @@ fn handle_input_key(
     match key_event.code {
         KeyCode::Esc => state.step = ImportStep::Discover,
         KeyCode::Backspace => {
-            state.input.pop();
+            crate::tui::widgets::search::backspace(&mut state.input, key_event.modifiers);
         }
         KeyCode::Enter => {
             if state.input.trim().is_empty() {
@@ -273,7 +273,7 @@ fn handle_version_key(
                 return;
             }
             KeyCode::Backspace => {
-                state.version_search.pop();
+                state.version_search.backspace(key_event.modifiers);
                 clamp_version_index(state);
                 return;
             }

@@ -117,7 +117,7 @@ impl App {
                         self.log_overlay_search.deactivate();
                     }
                     KeyCode::Backspace => {
-                        self.log_overlay_search.pop();
+                        self.log_overlay_search.backspace(key_event.modifiers);
                     }
                     KeyCode::Char(c) => {
                         self.log_overlay_search.push(c);
@@ -507,7 +507,7 @@ impl App {
                         }
                         KeyCode::Backspace => {
                             if let Some(ref mut name) = self.instances_state.renaming {
-                                name.pop();
+                                widgets::search::backspace(name, key_event.modifiers);
                             }
                         }
                         KeyCode::Char(c) => {

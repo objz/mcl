@@ -934,7 +934,7 @@ pub fn handle_key(key_event: &KeyEvent, state: &mut DiscoveryState) -> bool {
         match key_event.code {
             KeyCode::Enter => state.search.confirm(),
             KeyCode::Esc => state.search.deactivate(),
-            KeyCode::Backspace => state.search.pop(),
+            KeyCode::Backspace => state.search.backspace(key_event.modifiers),
             KeyCode::Char(c) => state.search.push(c),
             _ => {}
         }

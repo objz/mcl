@@ -1,5 +1,5 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use tui_prompts::TextState;
+use tui_prompts::{State as PromptState, TextState};
 
 use super::*;
 use crate::tests::TEST_LOCK;
@@ -69,4 +69,26 @@ fn version_filter_clamps_a_stale_selection() {
 
     state.show_snapshots = true;
     assert_eq!(visible_versions(&state).len(), 2);
+}
+
+#[test]
+fn ctrl_backspace_deletes_the_word_before_the_name_cursor() {
+    let _guard = TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+    let mut instances = instances::State::default();
+
+    {
+        let mut state = WIZARD_STATE.lock().unwrap();
+        *state = WizardState::default();
+        state.name_state = TextState::new().with_value("hello brave world");
+        *state.name_state.position_mut() = "hello brave".chars().count();
+    }
+
+    handle_key(
+        &KeyEvent::new(KeyCode::Backspace, KeyModifiers::CONTROL),
+        &mut instances,
+    );
+
+    let state = WIZARD_STATE.lock().unwrap();
+    assert_eq!(state.name_state.value(), "hello  world");
+    assert_eq!(state.name_state.position(), "hello ".chars().count());
 }

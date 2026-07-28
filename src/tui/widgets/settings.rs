@@ -491,7 +491,7 @@ pub fn handle_key(
             }
             KeyCode::Backspace => {
                 let mut new_name = name.clone();
-                new_name.pop();
+                super::search::backspace(&mut new_name, key_event.modifiers);
                 state.add_mode = AddMode::ProfileName(new_name);
                 return SettingsAction::None;
             }

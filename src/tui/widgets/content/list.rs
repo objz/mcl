@@ -1268,7 +1268,7 @@ fn handle_search_keys(key_event: &KeyEvent, state: &mut ContentListState) -> boo
                 state.update_scrollbar();
             }
             KeyCode::Backspace => {
-                state.search.pop();
+                state.search.backspace(key_event.modifiers);
                 state.list_state.selected = Some(0);
                 state.update_scrollbar();
             }

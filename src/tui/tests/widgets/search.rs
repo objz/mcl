@@ -1,4 +1,5 @@
 use super::*;
+use crossterm::event::KeyModifiers;
 
 #[test]
 fn confirm_keeps_query_but_deactivates() {
@@ -49,4 +50,27 @@ fn highlight_spans_marks_each_case_insensitive_match() {
     assert!(spans[0].style.add_modifier.contains(Modifier::UNDERLINED));
     assert!(spans[2].style.add_modifier.contains(Modifier::BOLD));
     assert!(spans[2].style.add_modifier.contains(Modifier::UNDERLINED));
+}
+
+#[test]
+fn ctrl_backspace_deletes_the_previous_word() {
+    let mut search = SearchState {
+        query: "alpha βeta  ".to_owned(),
+        ..SearchState::default()
+    };
+
+    search.backspace(KeyModifiers::CONTROL);
+
+    assert_eq!(search.query, "alpha ");
+}
+
+#[test]
+fn deleting_a_word_before_the_cursor_preserves_the_suffix() {
+    let mut text = "hello brave world".to_owned();
+    let cursor = "hello brave".chars().count();
+
+    let cursor = delete_previous_word(&mut text, cursor);
+
+    assert_eq!(text, "hello  world");
+    assert_eq!(cursor, "hello ".chars().count());
 }

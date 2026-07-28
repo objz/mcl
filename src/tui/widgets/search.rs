@@ -1,6 +1,7 @@
 // reusable incremental search state used across multiple widgets.
 // handles case-insensitive filtering and inline match highlighting.
 
+use crossterm::event::KeyModifiers;
 use ratatui::{
     style::{Modifier, Style},
     text::{Line, Span},
@@ -34,8 +35,8 @@ impl SearchState {
         self.query.push(c);
     }
 
-    pub fn pop(&mut self) {
-        self.query.pop();
+    pub fn backspace(&mut self, modifiers: KeyModifiers) {
+        backspace(&mut self.query, modifiers);
     }
 
     pub fn is_empty(&self) -> bool {
@@ -115,6 +116,30 @@ impl SearchState {
 
         Some(Line::from(spans).right_aligned())
     }
+}
+
+pub fn backspace(text: &mut String, modifiers: KeyModifiers) {
+    if modifiers.contains(KeyModifiers::CONTROL) {
+        let cursor = text.chars().count();
+        delete_previous_word(text, cursor);
+    } else {
+        text.pop();
+    }
+}
+
+pub fn delete_previous_word(text: &mut String, cursor: usize) -> usize {
+    let mut chars = text.chars().collect::<Vec<_>>();
+    let cursor = cursor.min(chars.len());
+    let mut start = cursor;
+    while start > 0 && chars[start - 1].is_whitespace() {
+        start -= 1;
+    }
+    while start > 0 && !chars[start - 1].is_whitespace() {
+        start -= 1;
+    }
+    chars.drain(start..cursor);
+    *text = chars.into_iter().collect();
+    start
 }
 
 #[cfg(test)]

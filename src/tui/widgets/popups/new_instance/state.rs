@@ -147,6 +147,18 @@ fn handle_name_key(
             }
             state.step = WizardStep::Loader;
         }
+        KeyCode::Backspace
+            if key_event
+                .modifiers
+                .contains(crossterm::event::KeyModifiers::CONTROL) =>
+        {
+            let position = state.name_state.position();
+            let position = crate::tui::widgets::search::delete_previous_word(
+                state.name_state.value_mut(),
+                position,
+            );
+            *state.name_state.position_mut() = position;
+        }
         _ => {
             state.name_state.handle_key_event(*key_event);
         }
@@ -167,7 +179,7 @@ fn handle_version_key(
                 return;
             }
             KeyCode::Backspace => {
-                state.version_search.pop();
+                state.version_search.backspace(key_event.modifiers);
                 clamp_version_index(state);
                 return;
             }

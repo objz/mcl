@@ -138,7 +138,7 @@ pub fn handle_key(key_event: &KeyEvent, state: &mut AccountState) -> bool {
             }
             KeyCode::Backspace => {
                 let mut new_name = name.clone();
-                new_name.pop();
+                super::search::backspace(&mut new_name, key_event.modifiers);
                 state.add_mode = AddMode::OfflineNameInput(new_name);
                 true
             }
