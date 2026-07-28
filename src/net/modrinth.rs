@@ -14,6 +14,32 @@ pub struct ProjectInfo {
     pub body: String,
     #[serde(default)]
     pub icon_url: Option<String>,
+    #[serde(default)]
+    pub categories: Vec<String>,
+    #[serde(default)]
+    pub additional_categories: Vec<String>,
+}
+
+impl ProjectInfo {
+    pub fn is_library_only(&self) -> bool {
+        let mut categories = self
+            .categories
+            .iter()
+            .chain(self.additional_categories.iter())
+            .peekable();
+        categories.peek().is_some()
+            && categories.all(|category| {
+                matches!(
+                    category
+                        .chars()
+                        .filter(|character| character.is_alphanumeric())
+                        .flat_map(char::to_lowercase)
+                        .collect::<String>()
+                        .as_str(),
+                    "library" | "libraries" | "apiandlibrary" | "libraryapi"
+                )
+            })
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, serde::Serialize)]

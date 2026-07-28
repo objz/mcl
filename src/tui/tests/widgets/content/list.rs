@@ -524,6 +524,7 @@ fn manifest_metadata_keeps_an_embedded_icon_renderer() {
         provider_aliases: Vec::new(),
         required_dependencies: Vec::new(),
         automatic_dependency: false,
+        cleanup_eligible: false,
     });
 
     state.apply_manifest(&manifest, &minecraft_dir, crate::instance::ContentKind::Mod);
@@ -583,6 +584,8 @@ async fn provider_metadata_loads_from_cache_without_network() {
             description: "Cached description".to_owned(),
             body: String::new(),
             icon_url: None,
+            categories: Vec::new(),
+            additional_categories: Vec::new(),
         })
         .unwrap(),
     )

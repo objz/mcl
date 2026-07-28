@@ -1068,6 +1068,7 @@ impl App {
                     provider_aliases: Vec::new(),
                     required_dependencies: Vec::new(),
                     automatic_dependency: false,
+                    cleanup_eligible: false,
                 };
                 crate::instance::ContentManifest::update(&manifest_path, |manifest| {
                     if let Some(old_path) = request.installed_path.as_ref()

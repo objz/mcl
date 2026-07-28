@@ -38,11 +38,12 @@ shaders remain unchanged.
   automatic dependency promotes it to user-managed content.
 - Recalculate dependencies when a parent mod changes version.
 - Keep the normal content-delete confirmation. If the removal leaves
-  automatically installed libraries with no remaining dependents, show a second
-  grouped confirmation that can remove the complete orphaned chain.
-- Keep shared libraries while any installed mod requires them.
-- Warn and require a stronger confirmation when directly removing a library that
-  installed mods still require, but allow the user to continue.
+  automatically installed dependencies with no remaining dependents, only
+  include projects categorized exclusively as libraries. Missing categories or
+  any additional functional category keep the dependency installed.
+- Keep shared dependencies while any installed mod requires them.
+- Warn and require a stronger confirmation when directly removing a dependency
+  that installed mods still require, but allow the user to continue.
 
 ## Provider and UI changes
 

@@ -189,6 +189,7 @@ fn managed_mod_record(
         provider_aliases: Vec::new(),
         required_dependencies,
         automatic_dependency,
+        cleanup_eligible: automatic_dependency,
     }
 }
 
@@ -430,6 +431,7 @@ fn provider_conflict_selection_is_persisted() {
             provider_aliases: Vec::new(),
             required_dependencies: Vec::new(),
             automatic_dependency: false,
+            cleanup_eligible: false,
         }],
     };
     let manifest_path =
