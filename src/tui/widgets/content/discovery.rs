@@ -869,27 +869,6 @@ impl DiscoveryState {
 }
 
 pub fn handle_key(key_event: &KeyEvent, state: &mut DiscoveryState) -> bool {
-    if let Some(page) = state.project_page.as_mut() {
-        match key_event.code {
-            KeyCode::Esc | KeyCode::Left | KeyCode::Char('h') => state.project_page = None,
-            KeyCode::Char('j') | KeyCode::Down => {
-                page.scroll = page.scroll.saturating_add(1).min(page.max_scroll);
-            }
-            KeyCode::Char('k') | KeyCode::Up => {
-                page.scroll = page.scroll.saturating_sub(1);
-            }
-            KeyCode::PageDown | KeyCode::Char('d') => {
-                page.scroll = page.scroll.saturating_add(10).min(page.max_scroll);
-            }
-            KeyCode::PageUp | KeyCode::Char('u') => {
-                page.scroll = page.scroll.saturating_sub(10);
-            }
-            KeyCode::Char('g') | KeyCode::Home => page.scroll = 0,
-            KeyCode::Char('G') | KeyCode::End => page.scroll = page.max_scroll,
-            _ => {}
-        }
-        return true;
-    }
     if let Some(popup) = state.version_popup.as_mut() {
         if popup.confirming
             && matches!(key_event.code, KeyCode::Left | KeyCode::Char('h'))
@@ -913,6 +892,27 @@ pub fn handle_key(key_event: &KeyEvent, state: &mut DiscoveryState) -> bool {
             {
                 popup.selected = popup.selected.saturating_sub(1);
             }
+            _ => {}
+        }
+        return true;
+    }
+    if let Some(page) = state.project_page.as_mut() {
+        match key_event.code {
+            KeyCode::Esc | KeyCode::Left | KeyCode::Char('h') => state.project_page = None,
+            KeyCode::Char('j') | KeyCode::Down => {
+                page.scroll = page.scroll.saturating_add(1).min(page.max_scroll);
+            }
+            KeyCode::Char('k') | KeyCode::Up => {
+                page.scroll = page.scroll.saturating_sub(1);
+            }
+            KeyCode::PageDown | KeyCode::Char('d') => {
+                page.scroll = page.scroll.saturating_add(10).min(page.max_scroll);
+            }
+            KeyCode::PageUp | KeyCode::Char('u') => {
+                page.scroll = page.scroll.saturating_sub(10);
+            }
+            KeyCode::Char('g') | KeyCode::Home => page.scroll = 0,
+            KeyCode::Char('G') | KeyCode::End => page.scroll = page.max_scroll,
             _ => {}
         }
         return true;

@@ -339,6 +339,49 @@ fn project_page_navigation_is_bounded_and_can_go_back() {
 }
 
 #[test]
+fn version_popup_owns_navigation_over_a_project_page() {
+    let project = DiscoveryProject {
+        id: "project".to_owned(),
+        slug: "project".to_owned(),
+        title: "Project".to_owned(),
+        description: String::new(),
+        downloads: 0,
+        icon_url: None,
+        icon_bytes: None,
+    };
+    let mut state = DiscoveryState::new(ContentKind::Mod);
+    state.list.entries.push(project_entry(project, None));
+    state.list.list_state.selected = Some(0);
+    state.project_page = Some(ProjectPageState {
+        request_id: 1,
+        project_id: "project".to_owned(),
+        title: "Project".to_owned(),
+        document: None,
+        error: None,
+        scroll: 0,
+        max_scroll: 20,
+    });
+    let request = state.begin_versions().unwrap();
+    DiscoveryState::push_action_result(
+        &request.pending,
+        DiscoveryActionResult::Versions {
+            request_id: request.request_id,
+            project_id: request.project_id,
+            result: Ok(vec![version("1.0.0"), version("2.0.0")]),
+        },
+    );
+    state.drain_pending();
+
+    handle_key(
+        &KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE),
+        &mut state,
+    );
+
+    assert_eq!(state.version_popup.as_ref().unwrap().selected, 1);
+    assert_eq!(state.project_page.as_ref().unwrap().scroll, 0);
+}
+
+#[test]
 fn confirmation_can_return_to_version_selection() {
     let project = DiscoveryProject {
         id: "project".to_owned(),
