@@ -8,6 +8,8 @@ fn version(name: &str, number: &str) -> modrinth::VersionInfo {
         version_number: number.to_owned(),
         game_versions: vec!["1.21.1".to_owned()],
         loaders: vec!["fabric".to_owned()],
+        version_type: modrinth::VersionType::Release,
+        dependencies: Vec::new(),
         date_published: String::new(),
         files: Vec::new(),
     }

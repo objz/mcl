@@ -521,6 +521,9 @@ fn manifest_metadata_keeps_an_embedded_icon_renderer() {
                 version_id: "version".to_owned(),
             },
         },
+        provider_aliases: Vec::new(),
+        required_dependencies: Vec::new(),
+        automatic_dependency: false,
     });
 
     state.apply_manifest(&manifest, &minecraft_dir, crate::instance::ContentKind::Mod);

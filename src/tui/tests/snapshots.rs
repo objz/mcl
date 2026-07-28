@@ -37,6 +37,21 @@ fn instance_delete_confirmation_renders_the_complete_frame() {
 }
 
 #[test]
+fn orphan_dependency_confirmation_wraps_its_complete_message() {
+    let mut ui = UiHarness::new();
+    crate::tui::widgets::popups::confirm::set_pending_orphan_dependencies(vec![
+        "mods/sodium-fabric-0.9.1+mc26.2.jar".into(),
+    ]);
+    ui.app.focused = crate::tui::app::FocusedArea::ConfirmDelete;
+
+    ui.draw();
+
+    let screen = ui.screen();
+    assert!(screen.contains("longer required"));
+    assert!(screen.contains("sodium-fabric-0.9.1+mc26.2.jar"));
+}
+
+#[test]
 fn provider_conflict_renders_the_complete_frame() {
     let mut ui = UiHarness::new();
     ui.app.provider_conflict = Some(ProviderConflictState {

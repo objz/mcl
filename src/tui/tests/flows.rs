@@ -1,7 +1,11 @@
 use crossterm::event::{KeyCode, MouseEventKind};
+use std::path::{Path, PathBuf};
 
 use super::harness::UiHarness;
-use crate::instance::ProviderProject;
+use crate::instance::content::entry::ContentEntry;
+use crate::instance::{
+    ContentFileRecord, ContentKind, ContentManifest, FileFingerprint, ProviderProject, Resolution,
+};
 use crate::net::modrinth::DiscoveryProject;
 use crate::tui::{
     app::{FocusedArea, ProviderConflictState},
@@ -160,6 +164,151 @@ fn confirmed_screenshot_delete_removes_state_and_file() {
     assert!(!path.exists());
 }
 
+fn managed_mod_record(
+    path: &str,
+    project_id: &str,
+    automatic_dependency: bool,
+    required_dependencies: Vec<ProviderProject>,
+) -> ContentFileRecord {
+    ContentFileRecord {
+        relative_path: PathBuf::from(path),
+        kind: ContentKind::Mod,
+        enabled: true,
+        fingerprint: FileFingerprint {
+            size: 1,
+            modified_ns: 1,
+            hashes: Default::default(),
+        },
+        resolution: Resolution::Resolved {
+            project: ProviderProject {
+                provider: "modrinth".to_owned(),
+                project_id: project_id.to_owned(),
+                version_id: format!("{project_id}-version"),
+            },
+        },
+        provider_aliases: Vec::new(),
+        required_dependencies,
+        automatic_dependency,
+    }
+}
+
+fn content_entry(name: &str, path: PathBuf) -> ContentEntry {
+    ContentEntry {
+        file_stem: name.to_owned(),
+        name: name.to_owned(),
+        source_slug: None,
+        installed_path: Some(path.clone()),
+        provider_project: None,
+        title_suffix: None,
+        footer_label: None,
+        description: String::new(),
+        enabled: true,
+        icon_bytes: None,
+        provider_icon: false,
+        provider_description: false,
+        path,
+        icon_lines: None,
+    }
+}
+
+#[test]
+fn deleting_a_mod_offers_its_unused_dependency_chain() {
+    let mut ui = UiHarness::new();
+    ui.add_instance("Dependencies");
+    let minecraft = ui
+        .instance_path("Dependencies")
+        .join(crate::storage::MINECRAFT_DIR_NAME);
+    let root_path = minecraft.join("mods/root.jar");
+    let library_path = minecraft.join("mods/library.jar");
+    std::fs::create_dir_all(root_path.parent().unwrap()).unwrap();
+    std::fs::write(&root_path, b"r").unwrap();
+    std::fs::write(&library_path, b"l").unwrap();
+    let dependency = ProviderProject {
+        provider: "modrinth".to_owned(),
+        project_id: "library".to_owned(),
+        version_id: "library-version".to_owned(),
+    };
+    ContentManifest {
+        version: 1,
+        files: vec![
+            managed_mod_record("mods/root.jar", "root", false, vec![dependency]),
+            managed_mod_record("mods/library.jar", "library", true, Vec::new()),
+        ],
+    }
+    .save(&crate::storage::InstancePaths::new(ui.instance_path("Dependencies")).content_manifest())
+    .unwrap();
+    ui.app.mods_state.entries = vec![content_entry("Root", root_path.clone())];
+    ui.app.mods_state.list_state.selected = Some(0);
+    ui.app.focused = FocusedArea::Content;
+    ui.app.content_tab = ContentTab::Mods;
+
+    ui.key(KeyCode::Char('d'));
+    ui.key(KeyCode::Enter);
+
+    assert!(!root_path.exists());
+    assert!(library_path.exists());
+    assert!(matches!(
+        confirm::pending_target(),
+        Some(confirm::ConfirmTarget::OrphanDependencies { paths })
+            if paths == vec![library_path.clone()]
+    ));
+    assert_eq!(ui.app.focused, FocusedArea::ConfirmDelete);
+
+    ui.key(KeyCode::Enter);
+
+    assert!(!library_path.exists());
+    assert_eq!(ui.app.focused, FocusedArea::Content);
+    let manifest = ContentManifest::load(
+        &crate::storage::InstancePaths::new(ui.instance_path("Dependencies")).content_manifest(),
+    )
+    .unwrap();
+    assert!(manifest.files.is_empty());
+}
+
+#[test]
+fn deleting_a_required_library_warns_but_can_continue() {
+    let mut ui = UiHarness::new();
+    ui.add_instance("Required");
+    let minecraft = ui
+        .instance_path("Required")
+        .join(crate::storage::MINECRAFT_DIR_NAME);
+    let library_path = minecraft.join("mods/library.jar");
+    std::fs::create_dir_all(library_path.parent().unwrap()).unwrap();
+    std::fs::write(&library_path, b"l").unwrap();
+    ContentManifest {
+        version: 1,
+        files: vec![
+            managed_mod_record(
+                "mods/root.jar",
+                "root",
+                false,
+                vec![ProviderProject {
+                    provider: "modrinth".to_owned(),
+                    project_id: "library".to_owned(),
+                    version_id: "library-version".to_owned(),
+                }],
+            ),
+            managed_mod_record("mods/library.jar", "library", true, Vec::new()),
+        ],
+    }
+    .save(&crate::storage::InstancePaths::new(ui.instance_path("Required")).content_manifest())
+    .unwrap();
+    ui.app.mods_state.entries = vec![content_entry("Library", library_path.clone())];
+    ui.app.mods_state.list_state.selected = Some(0);
+    ui.app.focused = FocusedArea::Content;
+    ui.app.content_tab = ContentTab::Mods;
+
+    ui.key(KeyCode::Char('d'));
+
+    assert!(matches!(
+        confirm::pending_target(),
+        Some(confirm::ConfirmTarget::Content { dependents, .. })
+            if dependents == vec!["root"]
+    ));
+    ui.key(KeyCode::Enter);
+    assert!(!Path::new(&library_path).exists());
+}
+
 #[test]
 fn confirmed_account_delete_updates_the_account_panel() {
     let mut ui = UiHarness::new();
@@ -278,6 +427,9 @@ fn provider_conflict_selection_is_persisted() {
             resolution: crate::instance::Resolution::Ambiguous {
                 candidates: candidates.clone(),
             },
+            provider_aliases: Vec::new(),
+            required_dependencies: Vec::new(),
+            automatic_dependency: false,
         }],
     };
     let manifest_path =

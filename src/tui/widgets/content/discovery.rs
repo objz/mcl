@@ -95,8 +95,10 @@ pub struct VersionPopupState {
     pub versions: Vec<VersionInfo>,
     pub selected: usize,
     pub loading: bool,
+    pub resolving_dependencies: bool,
     pub confirming: bool,
     pub installing: bool,
+    pub dependency_plan: Option<crate::instance::content::dependencies::DependencyPlan>,
     pub error: Option<String>,
 }
 
@@ -177,6 +179,14 @@ pub struct InstallRequest {
     pub provider: String,
     pub version: VersionInfo,
     pub installed_path: Option<PathBuf>,
+    pub dependency_plan: Option<crate::instance::content::dependencies::DependencyPlan>,
+    pub pending: PendingActions,
+}
+
+pub struct DependencyRequest {
+    pub request_id: u64,
+    pub project_id: String,
+    pub root: crate::instance::content::dependencies::InstallRoot,
     pub pending: PendingActions,
 }
 
@@ -184,6 +194,7 @@ pub struct InstallCompletion {
     pub path: PathBuf,
     pub replaced: bool,
     pub skipped: bool,
+    pub orphaned_dependencies: Vec<PathBuf>,
 }
 
 pub enum DiscoveryActionResult {
@@ -202,6 +213,11 @@ pub enum DiscoveryActionResult {
         request_id: u64,
         project_id: String,
         result: Result<Vec<VersionInfo>, String>,
+    },
+    Dependencies {
+        request_id: u64,
+        project_id: String,
+        result: Result<crate::instance::content::dependencies::DependencyPlan, String>,
     },
     Install {
         request_id: u64,
@@ -230,6 +246,7 @@ pub struct DiscoveryState {
     sources: std::collections::HashMap<String, Vec<crate::instance::ProviderProject>>,
     pub project_page: Option<ProjectPageState>,
     pub version_popup: Option<VersionPopupState>,
+    pending_orphan_cleanup: Option<Vec<PathBuf>>,
     next_action_request_id: u64,
     stream: Option<ContentStream>,
     next_offset: usize,
@@ -259,6 +276,7 @@ impl DiscoveryState {
             sources: std::collections::HashMap::new(),
             project_page: None,
             version_popup: None,
+            pending_orphan_cleanup: None,
             next_action_request_id: 0,
             stream: None,
             next_offset: 0,
@@ -421,8 +439,10 @@ impl DiscoveryState {
             versions: Vec::new(),
             selected: 0,
             loading: true,
+            resolving_dependencies: false,
             confirming: false,
             installing: false,
+            dependency_plan: None,
             error: None,
         });
         Some(VersionsRequest {
@@ -451,7 +471,9 @@ impl DiscoveryState {
         popup.versions.clear();
         popup.selected = 0;
         popup.loading = true;
+        popup.resolving_dependencies = false;
         popup.confirming = false;
+        popup.dependency_plan = None;
         popup.error = None;
         Some(VersionsRequest {
             request_id: popup.request_id,
@@ -616,6 +638,7 @@ impl DiscoveryState {
             provider: popup.provider.clone(),
             version,
             installed_path: popup.installed_path.clone(),
+            dependency_plan: popup.dependency_plan.clone(),
             pending: self.pending_actions.clone(),
         };
         self.version_popup = None;
@@ -636,6 +659,33 @@ impl DiscoveryState {
         popup.confirming = true;
         popup.error = None;
         true
+    }
+
+    pub fn begin_dependency_resolution(&mut self) -> Option<DependencyRequest> {
+        let popup = self.version_popup.as_mut()?;
+        if popup.loading
+            || popup.installing
+            || popup.selecting_minecraft_version
+            || popup.confirming
+        {
+            return None;
+        }
+        let version = popup.selected_version()?.clone();
+        popup.loading = true;
+        popup.resolving_dependencies = true;
+        popup.error = None;
+        Some(DependencyRequest {
+            request_id: popup.request_id,
+            project_id: popup.project_id.clone(),
+            root: crate::instance::content::dependencies::InstallRoot {
+                provider: popup.provider.clone(),
+                project_id: popup.project_id.clone(),
+                title: popup.project_title.clone(),
+                version,
+                installed_path: popup.installed_path.clone(),
+            },
+            pending: self.pending_actions.clone(),
+        })
     }
 
     pub fn select_minecraft_version(&mut self) -> bool {
@@ -851,6 +901,27 @@ impl DiscoveryState {
                         Err(error) => popup.error = Some(error),
                     }
                 }
+                DiscoveryActionResult::Dependencies {
+                    request_id,
+                    project_id,
+                    result,
+                } => {
+                    let Some(popup) = self.version_popup.as_mut().filter(|popup| {
+                        popup.request_id == request_id && popup.project_id == project_id
+                    }) else {
+                        continue;
+                    };
+                    popup.loading = false;
+                    popup.resolving_dependencies = false;
+                    match result {
+                        Ok(plan) => {
+                            popup.dependency_plan = Some(plan);
+                            popup.confirming = true;
+                            popup.error = None;
+                        }
+                        Err(error) => popup.error = Some(error),
+                    }
+                }
                 DiscoveryActionResult::Install {
                     request_id,
                     generation,
@@ -893,6 +964,9 @@ impl DiscoveryState {
                             message: format!("{project_title}: {action}"),
                             pushed_at: std::time::Instant::now(),
                         });
+                        if !completion.orphaned_dependencies.is_empty() {
+                            self.pending_orphan_cleanup = Some(completion.orphaned_dependencies);
+                        }
                     }
                     Err(error) => {
                         crate::feedback::errors::push_error(crate::feedback::errors::ErrorEvent {
@@ -913,6 +987,10 @@ impl DiscoveryState {
         } else {
             "No projects found."
         })
+    }
+
+    pub fn take_orphan_cleanup(&mut self) -> Option<Vec<PathBuf>> {
+        self.pending_orphan_cleanup.take()
     }
 
     fn should_load_more(&self) -> bool {

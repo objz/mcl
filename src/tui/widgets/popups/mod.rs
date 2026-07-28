@@ -42,23 +42,25 @@ pub fn word_wrap_size(text: &str, max_inner_width: usize) -> (usize, usize) {
         return (0, 1);
     }
 
-    let mut lines: usize = 1;
-    let mut current_line_len: usize = 0;
     let mut widest_line: usize = 0;
-
-    for word in text.split_whitespace() {
-        let word_len = Span::raw(word).width().min(max_inner_width);
-        if current_line_len == 0 {
-            current_line_len = word_len;
-        } else if current_line_len + 1 + word_len <= max_inner_width {
-            current_line_len += 1 + word_len;
-        } else {
-            widest_line = widest_line.max(current_line_len);
-            lines += 1;
-            current_line_len = word_len;
+    let mut lines = 0;
+    for logical_line in text.split('\n') {
+        let mut current_line_len = 0;
+        lines += 1;
+        for word in logical_line.split_whitespace() {
+            let word_len = Span::raw(word).width().min(max_inner_width);
+            if current_line_len == 0 {
+                current_line_len = word_len;
+            } else if current_line_len + 1 + word_len <= max_inner_width {
+                current_line_len += 1 + word_len;
+            } else {
+                widest_line = widest_line.max(current_line_len);
+                lines += 1;
+                current_line_len = word_len;
+            }
         }
+        widest_line = widest_line.max(current_line_len);
     }
-    widest_line = widest_line.max(current_line_len);
 
     (widest_line, lines)
 }

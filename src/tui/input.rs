@@ -198,14 +198,35 @@ impl App {
                             }
                             FocusedArea::Settings
                         }
-                        Some(confirm_popup::ConfirmTarget::Content { name, path }) => {
+                        Some(confirm_popup::ConfirmTarget::Content { name, path, .. }) => {
+                            let orphaned = self.orphan_dependencies_after_removing(&path);
                             match delete_content_path(&path) {
                                 Ok(()) => {
                                     self.remove_content_path_from_states(&path);
                                     self.remove_content_path_from_manifest(&path);
+                                    if !orphaned.is_empty() {
+                                        confirm_popup::set_pending_orphan_dependencies(orphaned);
+                                        return Ok(());
+                                    }
                                 }
                                 Err(e) => {
                                     tracing::error!("Failed to delete content '{}': {}", name, e);
+                                }
+                            }
+                            FocusedArea::Content
+                        }
+                        Some(confirm_popup::ConfirmTarget::OrphanDependencies { paths }) => {
+                            for path in paths {
+                                match delete_content_path(&path) {
+                                    Ok(()) => {
+                                        self.remove_content_path_from_states(&path);
+                                        self.remove_content_path_from_manifest(&path);
+                                    }
+                                    Err(error) => tracing::error!(
+                                        "Failed to remove unused dependency '{}': {}",
+                                        path.display(),
+                                        error
+                                    ),
                                 }
                             }
                             FocusedArea::Content
@@ -219,6 +240,9 @@ impl App {
                 KeyCode::Esc | KeyCode::Char('n') | KeyCode::Char('N') => {
                     let focus_after = match confirm_popup::pending_target() {
                         Some(confirm_popup::ConfirmTarget::Content { .. }) => FocusedArea::Content,
+                        Some(confirm_popup::ConfirmTarget::OrphanDependencies { .. }) => {
+                            FocusedArea::Content
+                        }
                         Some(confirm_popup::ConfirmTarget::Account { .. }) => FocusedArea::Account,
                         Some(confirm_popup::ConfirmTarget::ConfigProfile { .. }) => {
                             FocusedArea::Settings
@@ -271,8 +295,7 @@ impl App {
                     .active_discovery_state_mut()
                     .and_then(|state| state.pending_installed_delete())
                 {
-                    confirm_popup::set_pending_content_delete(pending.name, pending.path);
-                    self.focused = FocusedArea::ConfirmDelete;
+                    self.confirm_content_delete(pending);
                 }
                 return Ok(());
             }
@@ -289,8 +312,15 @@ impl App {
                     .is_some_and(|popup| popup.confirming);
                 if confirming {
                     self.spawn_active_discovery_install();
-                } else if let Some(state) = self.active_discovery_state_mut() {
-                    state.begin_confirmation();
+                } else {
+                    let resolve_dependencies = self
+                        .active_discovery_state_mut()
+                        .is_some_and(|state| state.kind == crate::instance::ContentKind::Mod);
+                    if resolve_dependencies {
+                        self.spawn_active_discovery_dependencies();
+                    } else if let Some(state) = self.active_discovery_state_mut() {
+                        state.begin_confirmation();
+                    }
                 }
                 return Ok(());
             }
@@ -318,8 +348,7 @@ impl App {
                     && !self.logs_state.viewer_search.active
                 {
                     if let Some(pending) = self.logs_state.pending_delete() {
-                        confirm_popup::set_pending_content_delete(pending.name, pending.path);
-                        self.focused = FocusedArea::ConfirmDelete;
+                        self.confirm_content_delete(pending);
                     }
                     return Ok(());
                 }
@@ -329,8 +358,7 @@ impl App {
             } else if self.content_tab == widgets::content::ContentTab::Screenshots {
                 if key_event.code == KeyCode::Char('d') && !self.screenshots_state.search.active {
                     if let Some(pending) = self.screenshots_state.pending_delete() {
-                        confirm_popup::set_pending_content_delete(pending.name, pending.path);
-                        self.focused = FocusedArea::ConfirmDelete;
+                        self.confirm_content_delete(pending);
                     }
                     return Ok(());
                 }
@@ -340,8 +368,7 @@ impl App {
             } else if self.content_tab == widgets::content::ContentTab::Worlds {
                 if key_event.code == KeyCode::Char('d') && !self.worlds_state.search.active {
                     if let Some(pending) = self.worlds_state.pending_delete() {
-                        confirm_popup::set_pending_content_delete(pending.name, pending.path);
-                        self.focused = FocusedArea::ConfirmDelete;
+                        self.confirm_content_delete(pending);
                     }
                     return Ok(());
                 }
@@ -361,8 +388,7 @@ impl App {
                 if let Some(state) = state {
                     if key_event.code == KeyCode::Char('d') && !state.search.active {
                         if let Some(pending) = state.pending_delete() {
-                            confirm_popup::set_pending_content_delete(pending.name, pending.path);
-                            self.focused = FocusedArea::ConfirmDelete;
+                            self.confirm_content_delete(pending);
                         }
                         return Ok(());
                     }
@@ -724,6 +750,48 @@ impl App {
         self.spawn_discovery_versions_request(instance, kind, request);
     }
 
+    fn spawn_active_discovery_dependencies(&mut self) {
+        let Some(instance) = self.instances_state.selected_instance().cloned() else {
+            return;
+        };
+        let Some(request) = self
+            .active_discovery_state_mut()
+            .and_then(|state| state.begin_dependency_resolution())
+        else {
+            return;
+        };
+        let paths = crate::storage::InstancePaths::new(
+            self.instance_manager.instances_dir.join(&instance.name),
+        );
+        tokio::spawn(async move {
+            let result = async {
+                let manifest = crate::instance::ContentManifest::load(&paths.content_manifest())
+                    .map_err(|error| crate::net::NetError::Parse(error.to_string()))?;
+                let registry = crate::instance::content::provider::ProviderRegistry::configured(
+                    crate::net::HttpClient::new(),
+                );
+                crate::instance::content::dependencies::resolve(
+                    &registry,
+                    &manifest,
+                    &paths.minecraft(),
+                    &instance,
+                    request.root,
+                )
+                .await
+            }
+            .await
+            .map_err(|error| error.to_string());
+            widgets::content::DiscoveryState::push_action_result(
+                &request.pending,
+                widgets::content::discovery::DiscoveryActionResult::Dependencies {
+                    request_id: request.request_id,
+                    project_id: request.project_id,
+                    result,
+                },
+            );
+        });
+    }
+
     fn spawn_discovery_versions_request(
         &self,
         instance: crate::instance::InstanceConfig,
@@ -921,9 +989,8 @@ impl App {
             .join(&instance.name)
             .join(crate::storage::MINECRAFT_DIR_NAME)
             .join(kind.directory());
-        let instance_paths = crate::storage::InstancePaths::new(
-            self.instance_manager.instances_dir.join(&instance.name),
-        );
+        let instances_dir = self.instance_manager.instances_dir.clone();
+        let instance_paths = crate::storage::InstancePaths::new(instances_dir.join(&instance.name));
         let manifest_path = instance_paths.content_manifest();
         let minecraft_dir = instance_paths.minecraft();
         tokio::spawn(async move {
@@ -941,6 +1008,25 @@ impl App {
                     .map_err(crate::net::NetError::from)?;
                 let registry =
                     crate::instance::content::provider::ProviderRegistry::configured(client);
+                if let Some(plan) = &request.dependency_plan {
+                    let installed = crate::instance::content::dependencies::install(
+                        &registry,
+                        &manifest_path,
+                        &minecraft_dir,
+                        &destination,
+                        plan,
+                        request.request_id,
+                    )
+                    .await?;
+                    return Ok::<_, crate::net::NetError>(
+                        widgets::content::discovery::InstallCompletion {
+                            path: installed.root_path,
+                            replaced: installed.replaced,
+                            skipped: installed.skipped,
+                            orphaned_dependencies: installed.orphaned_dependencies,
+                        },
+                    );
+                }
                 let provider = registry.get(&request.provider).ok_or_else(|| {
                     crate::net::NetError::Parse(format!(
                         "{} content provider is unavailable",
@@ -979,6 +1065,9 @@ impl App {
                             version_id: request.version.id.clone(),
                         },
                     },
+                    provider_aliases: Vec::new(),
+                    required_dependencies: Vec::new(),
+                    automatic_dependency: false,
                 };
                 crate::instance::ContentManifest::update(&manifest_path, |manifest| {
                     if let Some(old_path) = request.installed_path.as_ref()
@@ -1003,6 +1092,7 @@ impl App {
                     path,
                     replaced,
                     skipped,
+                    orphaned_dependencies: Vec::new(),
                 })
             }
             .await
@@ -1011,6 +1101,11 @@ impl App {
                 progress.fail(error);
             } else {
                 progress.finish();
+                crate::instance::content::reconcile::spawn_after_change(
+                    instance,
+                    instances_dir,
+                    crate::net::HttpClient::new(),
+                );
             }
             widgets::content::DiscoveryState::push_action_result(
                 &request.pending,
@@ -1284,6 +1379,59 @@ impl App {
         crate::instance::config_sync::delete_profile(&self.instance_manager.meta_dir, profile)?;
         self.settings_state.remove_profile(profile);
         Ok(())
+    }
+
+    fn confirm_content_delete(&mut self, pending: widgets::content::list::PendingContentDelete) {
+        let dependents = self
+            .content_manifest_for_path(&pending.path)
+            .map(|(manifest, relative_path, _)| {
+                manifest
+                    .dependent_paths(&relative_path)
+                    .into_iter()
+                    .map(|path| {
+                        path.file_stem()
+                            .and_then(|name| name.to_str())
+                            .unwrap_or("mod")
+                            .to_owned()
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        confirm_popup::set_pending_managed_content_delete(pending.name, pending.path, dependents);
+        self.focused = FocusedArea::ConfirmDelete;
+    }
+
+    fn orphan_dependencies_after_removing(
+        &self,
+        path: &std::path::Path,
+    ) -> Vec<std::path::PathBuf> {
+        self.content_manifest_for_path(path)
+            .map(|(manifest, relative_path, minecraft_dir)| {
+                manifest
+                    .orphaned_dependencies_after_removing(&relative_path)
+                    .into_iter()
+                    .map(|relative| minecraft_dir.join(relative))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    fn content_manifest_for_path(
+        &self,
+        path: &std::path::Path,
+    ) -> Option<(
+        crate::instance::ContentManifest,
+        std::path::PathBuf,
+        std::path::PathBuf,
+    )> {
+        let instance = self.instances_state.selected_instance()?;
+        let paths = crate::storage::InstancePaths::new(
+            self.instance_manager.instances_dir.join(&instance.name),
+        );
+        let minecraft_dir = paths.minecraft();
+        let relative_path = path.strip_prefix(&minecraft_dir).ok()?.to_owned();
+        let manifest = crate::instance::ContentManifest::load(&paths.content_manifest()).ok()?;
+        Some((manifest, relative_path, minecraft_dir))
     }
 
     fn remove_content_path_from_states(&mut self, path: &std::path::Path) {

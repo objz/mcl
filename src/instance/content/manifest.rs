@@ -85,6 +85,12 @@ pub struct ContentFileRecord {
     pub fingerprint: FileFingerprint,
     #[serde(default)]
     pub resolution: Resolution,
+    #[serde(default)]
+    pub provider_aliases: Vec<ProviderProject>,
+    #[serde(default)]
+    pub required_dependencies: Vec<ProviderProject>,
+    #[serde(default)]
+    pub automatic_dependency: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -193,12 +199,107 @@ impl ContentManifest {
         minecraft_dir: &Path,
     ) -> Option<PathBuf> {
         self.files.iter().find_map(|record| {
-            let Resolution::Resolved { project } = &record.resolution else {
-                return None;
-            };
-            (project.provider == provider && project.project_id == project_id)
+            record
+                .matches_project(provider, project_id)
                 .then(|| minecraft_dir.join(&record.relative_path))
         })
+    }
+
+    pub fn resolved_project_record(
+        &self,
+        provider: &str,
+        project_id: &str,
+    ) -> Option<&ContentFileRecord> {
+        self.files
+            .iter()
+            .find(|record| record.matches_project(provider, project_id))
+    }
+
+    pub fn dependent_paths(&self, relative_path: &Path) -> Vec<PathBuf> {
+        let Some(target) = self.record(relative_path) else {
+            return Vec::new();
+        };
+        self.files
+            .iter()
+            .filter(|record| record.relative_path != relative_path)
+            .filter(|record| {
+                record.required_dependencies.iter().any(|dependency| {
+                    target.matches_project(&dependency.provider, &dependency.project_id)
+                })
+            })
+            .map(|record| record.relative_path.clone())
+            .collect()
+    }
+
+    pub fn orphaned_dependencies_after_removing(&self, relative_path: &Path) -> Vec<PathBuf> {
+        self.orphaned_dependencies_with_removed(std::iter::once(relative_path.to_owned()))
+    }
+
+    pub fn orphaned_dependencies(&self) -> Vec<PathBuf> {
+        self.orphaned_dependencies_with_removed(std::iter::empty())
+    }
+
+    fn orphaned_dependencies_with_removed(
+        &self,
+        removed: impl IntoIterator<Item = PathBuf>,
+    ) -> Vec<PathBuf> {
+        let mut removed = removed
+            .into_iter()
+            .collect::<std::collections::HashSet<_>>();
+        let mut orphans = Vec::new();
+        loop {
+            let mut found = false;
+            for candidate in &self.files {
+                if !candidate.automatic_dependency || removed.contains(&candidate.relative_path) {
+                    continue;
+                }
+                let still_required = self
+                    .files
+                    .iter()
+                    .filter(|record| !removed.contains(&record.relative_path))
+                    .any(|record| {
+                        record.required_dependencies.iter().any(|dependency| {
+                            candidate.matches_project(&dependency.provider, &dependency.project_id)
+                        })
+                    });
+                if !still_required {
+                    removed.insert(candidate.relative_path.clone());
+                    orphans.push(candidate.relative_path.clone());
+                    found = true;
+                }
+            }
+            if !found {
+                break;
+            }
+        }
+        orphans
+    }
+}
+
+impl ContentFileRecord {
+    pub fn resolved_project(&self) -> Option<&ProviderProject> {
+        match &self.resolution {
+            Resolution::Resolved { project } => Some(project),
+            _ => None,
+        }
+    }
+
+    pub fn matches_project(&self, provider: &str, project_id: &str) -> bool {
+        self.resolved_project()
+            .into_iter()
+            .chain(self.provider_aliases.iter())
+            .any(|project| project.provider == provider && project.project_id == project_id)
+    }
+
+    pub fn project_for_provider(
+        &self,
+        provider: &str,
+        project_id: &str,
+    ) -> Option<&ProviderProject> {
+        self.resolved_project()
+            .into_iter()
+            .chain(self.provider_aliases.iter())
+            .find(|project| project.provider == provider && project.project_id == project_id)
     }
 }
 

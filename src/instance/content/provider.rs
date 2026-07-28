@@ -50,6 +50,8 @@ pub trait ContentProvider: Send + Sync {
         loader: ModLoader,
     ) -> Result<Vec<VersionInfo>, crate::net::NetError>;
 
+    async fn version(&self, version_id: &str) -> Result<VersionInfo, crate::net::NetError>;
+
     async fn icon(&self, url: &str) -> Result<Vec<u8>, crate::net::NetError>;
 
     async fn download_version(
@@ -156,6 +158,10 @@ impl ContentProvider for ModrinthProvider {
             loader,
         )
         .await
+    }
+
+    async fn version(&self, version_id: &str) -> Result<VersionInfo, crate::net::NetError> {
+        crate::net::modrinth::fetch_version(&self.client, version_id).await
     }
 
     async fn icon(&self, url: &str) -> Result<Vec<u8>, crate::net::NetError> {
@@ -292,6 +298,19 @@ impl ContentProvider for CurseForgeProvider {
         .await
     }
 
+    async fn version(&self, version_id: &str) -> Result<VersionInfo, crate::net::NetError> {
+        let id = version_id.parse::<u64>().map_err(|_| {
+            crate::net::NetError::Parse(format!("Invalid CurseForge file id '{version_id}'"))
+        })?;
+        crate::net::curseforge::fetch_file_versions(&self.client, &self.api_key, &[id])
+            .await?
+            .into_iter()
+            .next()
+            .ok_or_else(|| {
+                crate::net::NetError::Parse(format!("CurseForge file '{version_id}' was not found"))
+            })
+    }
+
     async fn icon(&self, url: &str) -> Result<Vec<u8>, crate::net::NetError> {
         self.client.get_bytes(url).await
     }
@@ -324,10 +343,12 @@ pub struct ProviderRegistry {
 }
 
 impl ProviderRegistry {
+    pub(crate) fn new(providers: Vec<Box<dyn ContentProvider>>) -> Self {
+        Self { providers }
+    }
+
     pub fn modrinth(client: crate::net::HttpClient) -> Self {
-        Self {
-            providers: vec![Box::new(ModrinthProvider::new(client))],
-        }
+        Self::new(vec![Box::new(ModrinthProvider::new(client))])
     }
 
     pub fn configured(client: crate::net::HttpClient) -> Self {
@@ -336,7 +357,7 @@ impl ProviderRegistry {
         if let Some(api_key) = crate::config::SETTINGS.content.curseforge_api_key() {
             providers.push(Box::new(CurseForgeProvider::new(client, api_key)));
         }
-        Self { providers }
+        Self::new(providers)
     }
 
     pub fn providers(&self) -> &[Box<dyn ContentProvider>] {

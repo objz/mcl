@@ -35,6 +35,9 @@ fn manifest_round_trip_and_lookup_are_exact() {
                 version_id: "version".to_owned(),
             },
         },
+        provider_aliases: Vec::new(),
+        required_dependencies: Vec::new(),
+        automatic_dependency: false,
     };
     let mut manifest = ContentManifest::default();
     manifest.upsert(record);
@@ -84,6 +87,9 @@ fn renaming_a_record_preserves_its_resolution() {
                 version_id: "version".to_owned(),
             },
         },
+        provider_aliases: Vec::new(),
+        required_dependencies: Vec::new(),
+        automatic_dependency: false,
     });
 
     assert!(manifest.rename_record(
@@ -96,4 +102,112 @@ fn renaming_a_record_preserves_its_resolution() {
         .unwrap();
     assert!(!record.enabled);
     assert!(matches!(record.resolution, Resolution::Resolved { .. }));
+}
+
+fn managed_record(
+    path: &str,
+    project_id: &str,
+    automatic_dependency: bool,
+    required_dependencies: Vec<ProviderProject>,
+) -> ContentFileRecord {
+    ContentFileRecord {
+        relative_path: PathBuf::from(path),
+        kind: ContentKind::Mod,
+        enabled: true,
+        fingerprint: FileFingerprint {
+            size: 1,
+            modified_ns: 1,
+            hashes: BTreeMap::new(),
+        },
+        resolution: Resolution::Resolved {
+            project: ProviderProject {
+                provider: "modrinth".to_owned(),
+                project_id: project_id.to_owned(),
+                version_id: format!("{project_id}-version"),
+            },
+        },
+        provider_aliases: Vec::new(),
+        required_dependencies,
+        automatic_dependency,
+    }
+}
+
+fn dependency(project_id: &str) -> ProviderProject {
+    ProviderProject {
+        provider: "modrinth".to_owned(),
+        project_id: project_id.to_owned(),
+        version_id: format!("{project_id}-version"),
+    }
+}
+
+#[test]
+fn provider_aliases_match_the_same_installed_record() {
+    let mut record = managed_record("mods/library.jar", "curseforge-library", false, Vec::new());
+    record.provider_aliases.push(ProviderProject {
+        provider: "modrinth".to_owned(),
+        project_id: "modrinth-library".to_owned(),
+        version_id: "modrinth-version".to_owned(),
+    });
+    let manifest = ContentManifest {
+        version: 1,
+        files: vec![record],
+    };
+
+    assert!(
+        manifest
+            .resolved_project_record("modrinth", "modrinth-library")
+            .is_some()
+    );
+}
+
+#[test]
+fn orphan_cleanup_keeps_shared_and_user_managed_libraries() {
+    let manifest = ContentManifest {
+        version: 1,
+        files: vec![
+            managed_record("mods/first.jar", "first", false, vec![dependency("shared")]),
+            managed_record(
+                "mods/second.jar",
+                "second",
+                false,
+                vec![dependency("shared"), dependency("explicit")],
+            ),
+            managed_record("mods/shared.jar", "shared", true, Vec::new()),
+            managed_record("mods/explicit.jar", "explicit", false, Vec::new()),
+        ],
+    };
+
+    assert_eq!(
+        manifest.orphaned_dependencies_after_removing(Path::new("mods/first.jar")),
+        Vec::<PathBuf>::new()
+    );
+    assert_eq!(
+        manifest.orphaned_dependencies_after_removing(Path::new("mods/second.jar")),
+        Vec::<PathBuf>::new()
+    );
+}
+
+#[test]
+fn orphan_cleanup_follows_automatic_dependency_chains() {
+    let manifest = ContentManifest {
+        version: 1,
+        files: vec![
+            managed_record("mods/root.jar", "root", false, vec![dependency("library")]),
+            managed_record(
+                "mods/library.jar",
+                "library",
+                true,
+                vec![dependency("nested")],
+            ),
+            managed_record("mods/nested.jar", "nested", true, Vec::new()),
+        ],
+    };
+
+    assert_eq!(
+        manifest.orphaned_dependencies_after_removing(Path::new("mods/root.jar")),
+        vec![
+            PathBuf::from("mods/library.jar"),
+            PathBuf::from("mods/nested.jar")
+        ]
+    );
 }

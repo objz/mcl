@@ -5,7 +5,8 @@ use serde::Deserialize;
 
 use crate::instance::{ContentKind, ModLoader};
 use crate::net::modrinth::{
-    DiscoveryProject, DiscoveryResults, ProjectInfo, VersionFile, VersionInfo, url_encode,
+    DependencyType, DiscoveryProject, DiscoveryResults, ProjectInfo, VersionDependency,
+    VersionFile, VersionInfo, VersionType, url_encode,
 };
 use crate::net::{HttpClient, NetError};
 
@@ -62,8 +63,23 @@ struct File {
     download_url: Option<String>,
     #[serde(default)]
     game_versions: Vec<String>,
+    #[serde(default = "default_release_type")]
+    release_type: u8,
+    #[serde(default)]
+    dependencies: Vec<FileDependency>,
     #[serde(default)]
     hashes: Vec<FileHash>,
+}
+
+fn default_release_type() -> u8 {
+    1
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FileDependency {
+    mod_id: u64,
+    relation_type: u8,
 }
 
 #[derive(Debug, Deserialize)]
@@ -423,6 +439,28 @@ fn version_info(file: File) -> VersionInfo {
         version_number: file.display_name,
         game_versions: file.game_versions,
         loaders,
+        version_type: match file.release_type {
+            1 => VersionType::Release,
+            2 => VersionType::Beta,
+            3 => VersionType::Alpha,
+            _ => VersionType::Unknown,
+        },
+        dependencies: file
+            .dependencies
+            .into_iter()
+            .map(|dependency| VersionDependency {
+                version_id: None,
+                project_id: Some(dependency.mod_id.to_string()),
+                file_name: None,
+                dependency_type: match dependency.relation_type {
+                    2 => DependencyType::Optional,
+                    3 => DependencyType::Required,
+                    5 => DependencyType::Incompatible,
+                    1 | 6 => DependencyType::Embedded,
+                    _ => DependencyType::Unknown,
+                },
+            })
+            .collect(),
         date_published: file.file_date,
         files: vec![VersionFile {
             url: file.download_url.unwrap_or_default(),

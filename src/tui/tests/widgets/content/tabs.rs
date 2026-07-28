@@ -37,6 +37,8 @@ fn discovery_version_rows_only_show_the_version_number() {
         version_number: "3.2.4-fabric-26.1".to_owned(),
         game_versions: vec![],
         loaders: vec![],
+        version_type: crate::net::modrinth::VersionType::Release,
+        dependencies: Vec::new(),
         date_published: String::new(),
         files: vec![],
     };
@@ -46,8 +48,8 @@ fn discovery_version_rows_only_show_the_version_number() {
 
 #[test]
 fn discovery_confirmation_popup_fits_its_summary() {
-    assert_eq!(version_popup_height(false), VERSION_POPUP_HEIGHT);
-    assert_eq!(version_popup_height(true), 6);
+    assert_eq!(version_popup_height(false, None), VERSION_POPUP_HEIGHT);
+    assert_eq!(version_popup_height(true, None), 6);
 }
 
 #[test]

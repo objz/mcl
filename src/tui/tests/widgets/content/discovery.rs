@@ -52,6 +52,8 @@ fn version(id: &str) -> VersionInfo {
         version_number: id.to_owned(),
         game_versions: vec!["1.21.1".to_owned()],
         loaders: vec!["fabric".to_owned()],
+        version_type: crate::net::modrinth::VersionType::Release,
+        dependencies: Vec::new(),
         date_published: "2026-01-02T12:00:00Z".to_owned(),
         files: Vec::new(),
     }
@@ -479,6 +481,64 @@ fn confirmation_can_return_to_version_selection() {
 }
 
 #[test]
+fn dependency_resolution_opens_the_existing_confirmation() {
+    let project = DiscoveryProject {
+        id: "project".to_owned(),
+        slug: "project".to_owned(),
+        title: "Project".to_owned(),
+        description: String::new(),
+        downloads: 0,
+        icon_url: None,
+        icon_bytes: None,
+    };
+    let mut state = DiscoveryState::new(ContentKind::Mod);
+    state.list.entries.push(project_entry(project, None));
+    state.list.list_state.selected = Some(0);
+    let versions = state.begin_versions().unwrap();
+    DiscoveryState::push_action_result(
+        &versions.pending,
+        DiscoveryActionResult::Versions {
+            request_id: versions.request_id,
+            project_id: versions.project_id,
+            result: Ok(vec![version("1.0.0")]),
+        },
+    );
+    state.drain_pending();
+    let request = state.begin_dependency_resolution().unwrap();
+    assert!(state.version_popup.as_ref().unwrap().loading);
+    let root_version = request.root.version.clone();
+    DiscoveryState::push_action_result(
+        &request.pending,
+        DiscoveryActionResult::Dependencies {
+            request_id: request.request_id,
+            project_id: request.project_id,
+            result: Ok(crate::instance::content::dependencies::DependencyPlan {
+                items: vec![crate::instance::content::dependencies::PlannedInstall {
+                    provider: "modrinth".to_owned(),
+                    project_id: "project".to_owned(),
+                    title: "Project".to_owned(),
+                    version: root_version,
+                    installed_path: None,
+                    provider_aliases: Vec::new(),
+                    required_dependencies: Vec::new(),
+                    automatic_dependency: false,
+                    replacement: false,
+                }],
+                optional_dependencies: 0,
+            }),
+        },
+    );
+
+    state.drain_pending();
+
+    let popup = state.version_popup.as_ref().unwrap();
+    assert!(popup.confirming);
+    assert!(!popup.loading);
+    assert!(popup.dependency_plan.is_some());
+    assert!(state.begin_install().unwrap().dependency_plan.is_some());
+}
+
+#[test]
 fn discovery_delete_only_clears_the_matching_installed_badge() {
     let first_path = PathBuf::from("mods/first.jar");
     let second_path = PathBuf::from("mods/second.jar");
@@ -559,6 +619,7 @@ fn successful_install_marks_the_project_and_closes_the_popup() {
                 path: PathBuf::from("mods/project.jar"),
                 replaced: false,
                 skipped: false,
+                orphaned_dependencies: Vec::new(),
             }),
         },
     );
@@ -607,6 +668,9 @@ fn installed_labels_follow_exact_manifest_projects() {
                 version_id: "version".to_owned(),
             },
         },
+        provider_aliases: Vec::new(),
+        required_dependencies: Vec::new(),
+        automatic_dependency: false,
     });
     state.refresh_installed_manifest(&manifest, std::path::Path::new("first"));
     assert_eq!(
