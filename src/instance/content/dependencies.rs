@@ -6,7 +6,9 @@ use crate::instance::{
     ContentFileRecord, ContentKind, ContentManifest, InstanceConfig, ProviderProject,
 };
 use crate::net::NetError;
-use crate::net::modrinth::{DependencyType, VersionDependency, VersionInfo, VersionType};
+use crate::net::modrinth::{
+    DependencyType, ProjectInfo, VersionDependency, VersionInfo, VersionType,
+};
 
 #[derive(Debug, Clone)]
 pub struct InstallRoot {
@@ -401,6 +403,7 @@ struct Incompatible {
 #[derive(Debug, Clone)]
 struct Requirement {
     parent: ProjectKey,
+    parent_version_id: String,
     dependency: VersionDependency,
     ancestors: Vec<ProjectKey>,
 }
@@ -452,6 +455,12 @@ pub async fn resolve(
     .await?;
 
     while let Some(requirement) = queue.pop_front() {
+        if nodes
+            .get(&requirement.parent)
+            .is_none_or(|parent| parent.version.id != requirement.parent_version_id)
+        {
+            continue;
+        }
         let exact = requirement.dependency.version_id.is_some();
         let choice = resolve_requirement(
             provider,
@@ -574,32 +583,65 @@ async fn resolve_requirement(
         })?;
     let installed = find_installed(manifest, remote_matches, provider.id(), &project_id);
     let version = if let Some(version) = exact_version {
-        validate_compatible(&version, instance)?;
         version
-    } else if let Some(installed) = &installed {
-        provider.version(&installed.identity.version_id).await?
     } else {
-        let versions = provider
-            .compatible_versions(
-                &project_id,
-                ContentKind::Mod,
-                &instance.game_version,
-                instance.loader,
-            )
-            .await?;
-        select_preferred_version(versions).ok_or_else(|| {
-            NetError::Parse(format!(
-                "No compatible dependency version found for project '{project_id}'"
-            ))
-        })?
+        let installed_version = match &installed {
+            Some(installed) => match provider.version(&installed.identity.version_id).await {
+                Ok(version) => Some(version),
+                Err(error) => {
+                    tracing::warn!(
+                        "Could not load installed dependency version '{}'; selecting a compatible replacement: {error}",
+                        installed.identity.version_id
+                    );
+                    None
+                }
+            },
+            None => None,
+        };
+        match installed_version {
+            Some(version) if validate_compatible(&version, instance).is_ok() => version,
+            _ => {
+                let versions = provider
+                    .compatible_versions(
+                        &project_id,
+                        ContentKind::Mod,
+                        &instance.game_version,
+                        instance.loader,
+                    )
+                    .await?;
+                select_preferred_version(versions).ok_or_else(|| {
+                    NetError::Parse(format!(
+                        "No compatible dependency version found for project '{project_id}'"
+                    ))
+                })?
+            }
+        }
     };
-    let project = provider.project(&project_id).await?;
+    validate_compatible(&version, instance)?;
+    if !version.project_id.is_empty() && version.project_id != project_id {
+        return Err(NetError::Parse(format!(
+            "Dependency version '{}' belongs to project '{}', not '{}'",
+            version.version_number, version.project_id, project_id
+        )));
+    }
+    let project = match provider.project(&project_id).await {
+        Ok(project) => Some(project),
+        Err(error) => {
+            tracing::warn!(
+                "Could not load metadata for dependency '{project_id}'; keeping it out of automatic cleanup: {error}"
+            );
+            None
+        }
+    };
     let automatic_dependency = installed
         .as_ref()
         .is_none_or(|installed| installed.automatic_dependency);
-    let cleanup_eligible = automatic_dependency && project.is_library_only();
+    let cleanup_eligible =
+        automatic_dependency && project.as_ref().is_some_and(ProjectInfo::is_library_only);
     Ok(ResolvedChoice {
-        title: project.title,
+        title: project
+            .map(|project| project.title)
+            .unwrap_or_else(|| project_id.clone()),
         version,
         automatic_dependency,
         cleanup_eligible,
@@ -638,6 +680,7 @@ async fn expand_node(
     }
     queue.extend(required.into_iter().map(|dependency| Requirement {
         parent: key.clone(),
+        parent_version_id: version.id.clone(),
         dependency,
         ancestors: ancestors.clone(),
     }));
@@ -702,7 +745,7 @@ async fn resolve_installed_files(
     let files = manifest
         .files
         .iter()
-        .filter(|record| record.kind == ContentKind::Mod)
+        .filter(|record| record.kind == ContentKind::Mod && record.enabled)
         .map(|record| FingerprintQuery {
             key: record.relative_path.to_string_lossy().into_owned(),
             kind: ContentKind::Mod,
@@ -743,17 +786,21 @@ fn find_installed(
     provider: &str,
     project_id: &str,
 ) -> Option<InstalledMatch> {
-    manifest.files.iter().find_map(|record| {
-        let remote = remote_matches.get(&record.relative_path);
-        if !record.matches_project(provider, project_id)
-            && !remote.is_some_and(|project| {
-                project.provider == provider && project.project_id == project_id
-            })
-        {
-            return None;
-        }
-        Some(installed_match(record, remote, provider, project_id))
-    })
+    manifest
+        .files
+        .iter()
+        .filter(|record| record.enabled)
+        .find_map(|record| {
+            let remote = remote_matches.get(&record.relative_path);
+            if !record.matches_project(provider, project_id)
+                && !remote.is_some_and(|project| {
+                    project.provider == provider && project.project_id == project_id
+                })
+            {
+                return None;
+            }
+            Some(installed_match(record, remote, provider, project_id))
+        })
 }
 
 fn installed_match(
