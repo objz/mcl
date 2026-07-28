@@ -20,6 +20,8 @@ use crate::tui::widgets::styled_title;
 type ContentScanner =
     fn(&std::path::Path, &str, bool) -> crate::instance::content::entry::ContentEntry;
 
+const VERSION_POPUP_HEIGHT: u16 = 18;
+
 #[derive(Clone, Copy)]
 struct DownloadableTab {
     directory: &'static str,
@@ -614,15 +616,9 @@ fn render_version_popup(frame: &mut Frame, area: Rect, state: &DiscoveryState) {
     let Some(popup) = state.version_popup.as_ref() else {
         return;
     };
-    let desired_height = version_popup_height(
-        popup.versions.len(),
-        popup.confirming,
-        popup.loading || popup.installing,
-        popup.error.is_some(),
-    );
     let popup_area = area.centered(
         Constraint::Percentage(50),
-        Constraint::Length(desired_height.min(area.height.saturating_sub(2))),
+        Constraint::Length(VERSION_POPUP_HEIGHT.min(area.height.saturating_sub(2))),
     );
     let theme = THEME.as_ref();
     let title = popup.title();
@@ -729,16 +725,6 @@ fn render_version_popup(frame: &mut Frame, area: Rect, state: &DiscoveryState) {
         }),
     };
     frame.render_widget(popup, popup_area);
-}
-
-fn version_popup_height(version_count: usize, confirming: bool, compact: bool, error: bool) -> u16 {
-    if confirming || error {
-        8
-    } else if compact {
-        5
-    } else {
-        (version_count as u16).saturating_add(2).clamp(6, 18)
-    }
 }
 
 fn confirmation_values(values: &[String]) -> String {
