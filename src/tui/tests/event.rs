@@ -90,14 +90,23 @@ fn terminal_image_markers_exclude_normal_text_and_toggle() {
 }
 
 #[test]
-fn image_cells_are_reexposed_when_an_overlay_shrinks() {
-    assert!(image_cells_reexposed(
+fn terminal_image_cells_change_when_an_overlay_opens_or_closes() {
+    assert!(terminal_image_cells_changed(
         &[true, false, false],
         &[true, true, false]
     ));
-    assert!(!image_cells_reexposed(
+    assert!(terminal_image_cells_changed(
         &[true, true, false],
         &[true, false, false]
     ));
-    assert!(!image_cells_reexposed(&[], &[true]));
+    assert!(!terminal_image_cells_changed(&[], &[true]));
+}
+
+#[test]
+fn repainting_an_overlay_redraws_images_even_when_its_area_is_unchanged() {
+    assert!(terminal_images_need_redraw(
+        &[true, false, true],
+        &[true, false, true],
+        true,
+    ));
 }

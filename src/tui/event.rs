@@ -105,6 +105,9 @@ impl App {
             let input_changed = self.handle_events().wrap_err("handle events failed")?;
             let overlay_count = self.overlay_count();
             let overlay_closed = overlay_count < drawn_overlay_count;
+            let overlay_repainted =
+                (input_changed || redraw_requested || overlay_count != drawn_overlay_count)
+                    && (overlay_count > 0 || drawn_overlay_count > 0);
             let continuously_animated = spinner_active || error_buffer::has_errors();
             let safety_refresh = last_draw.elapsed() >= Duration::from_secs(1);
             if input_changed
@@ -117,7 +120,11 @@ impl App {
                 terminal.draw(|frame| {
                     self.render_frame(frame);
                     image_skips = terminal_image_skips(frame.buffer_mut());
-                    if image_cells_reexposed(&drawn_image_skips, &image_skips) {
+                    if terminal_images_need_redraw(
+                        &drawn_image_skips,
+                        &image_skips,
+                        overlay_repainted,
+                    ) {
                         image_redraw_marker = !image_redraw_marker;
                     }
                     mark_terminal_images(frame.buffer_mut(), image_redraw_marker);
@@ -646,12 +653,16 @@ fn terminal_image_skips(buffer: &Buffer) -> Vec<bool> {
         .collect()
 }
 
-fn image_cells_reexposed(previous: &[bool], current: &[bool]) -> bool {
-    previous.len() == current.len()
-        && previous
-            .iter()
-            .zip(current)
-            .any(|(previous, current)| !*previous && *current)
+fn terminal_image_cells_changed(previous: &[bool], current: &[bool]) -> bool {
+    !previous.is_empty() && previous != current
+}
+
+fn terminal_images_need_redraw(
+    previous: &[bool],
+    current: &[bool],
+    overlay_repainted: bool,
+) -> bool {
+    overlay_repainted || terminal_image_cells_changed(previous, current)
 }
 
 fn editor_runs_in_terminal(editor: &str) -> bool {
