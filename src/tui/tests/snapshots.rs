@@ -47,8 +47,12 @@ fn orphan_dependency_confirmation_wraps_its_complete_message() {
     ui.draw();
 
     let screen = ui.screen();
-    assert!(screen.contains("longer required"));
-    assert!(screen.contains("sodium-fabric-0.9.1+mc26.2.jar"));
+    assert!(screen.contains("needs these libraries anymore"), "{screen}");
+    assert!(screen.contains('▣'), "{screen}");
+    assert!(
+        screen.contains("sodium-fabric-0.9.1+mc26.2.jar"),
+        "{screen}"
+    );
 }
 
 #[test]

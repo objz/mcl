@@ -47,7 +47,7 @@ pub enum ConfirmTarget {
 impl ConfirmTarget {
     fn title(&self) -> String {
         match self {
-            Self::OrphanDependencies { .. } => " Remove unused libraries ".to_owned(),
+            Self::OrphanDependencies { .. } => " ◇ Clean up libraries ".to_owned(),
             _ => format!(" Delete '{}' ", self.name()),
         }
     }
@@ -63,10 +63,10 @@ impl ConfirmTarget {
             }
             ConfirmTarget::Content { dependents, .. } if !dependents.is_empty() => {
                 format!(
-                    "This library is still required by:\n{}\n\nDeleting it may break those mods.",
+                    "Still required by installed mods:\n\n{}\n\n! Deleting this library may break those mods.",
                     dependents
                         .iter()
-                        .map(|name| format!("- {name}"))
+                        .map(|name| format!("  ▣ {name}"))
                         .collect::<Vec<_>>()
                         .join("\n")
                 )
@@ -76,11 +76,11 @@ impl ConfirmTarget {
             }
             ConfirmTarget::OrphanDependencies { paths } => {
                 format!(
-                    "These automatically installed libraries are no longer required:\n{}",
+                    "No installed mod needs these libraries anymore.\n\n{}",
                     paths
                         .iter()
                         .map(|path| format!(
-                            "- {}",
+                            "  ▣ {}",
                             path.file_name()
                                 .and_then(|name| name.to_str())
                                 .unwrap_or("library")
@@ -175,20 +175,12 @@ pub struct ConfirmPopup {
 }
 
 impl ConfirmPopup {
-    pub fn new(
-        title: impl Into<String>,
-        body: impl Into<String>,
-        confirm_label: &'static str,
-    ) -> Self {
-        Self {
-            title: title.into(),
-            body: body.into(),
-            confirm_label,
-        }
-    }
-
     pub fn for_target(target: &ConfirmTarget) -> Self {
-        Self::new(target.title(), target.body(), target.confirm_label())
+        Self {
+            title: target.title(),
+            body: target.body(),
+            confirm_label: target.confirm_label(),
+        }
     }
 }
 
@@ -200,15 +192,19 @@ impl Widget for ConfirmPopup {
         let title = Line::from(vec![Span::styled(
             self.title,
             Style::default()
-                .fg(theme.text_dim())
+                .fg(theme.accent())
                 .add_modifier(Modifier::BOLD),
         )]);
         let kb = keybind_line(&[("Enter", self.confirm_label)]);
 
         let border_color = theme.text_dim();
         let bg_color = theme.surface();
-        let text_color = theme.text();
+        let accent = theme.accent();
+        let text = theme.text();
+        let text_dim = theme.text_dim();
+        let error = theme.error();
         let body = self.body;
+        let styled_list = body.contains("▣ ");
         let popup = PopupFrame {
             title,
             border_color,
@@ -216,8 +212,28 @@ impl Widget for ConfirmPopup {
             keybinds: Some(kb),
             search_line: None,
             content: Box::new(move |inner, buf| {
-                Paragraph::new(body.as_str())
-                    .style(Style::default().fg(text_color))
+                let lines = body
+                    .lines()
+                    .map(|line| {
+                        if let Some(value) = line.trim_start().strip_prefix("▣ ") {
+                            Line::from(vec![
+                                Span::styled("  ▣ ", Style::default().fg(accent)),
+                                Span::styled(
+                                    value.to_owned(),
+                                    Style::default().fg(text).add_modifier(Modifier::BOLD),
+                                ),
+                            ])
+                        } else if line.starts_with('!') {
+                            Line::styled(line.to_owned(), Style::default().fg(error))
+                        } else {
+                            Line::styled(
+                                line.to_owned(),
+                                Style::default().fg(if styled_list { text_dim } else { text }),
+                            )
+                        }
+                    })
+                    .collect::<Vec<_>>();
+                Paragraph::new(lines)
                     .wrap(Wrap { trim: true })
                     .render(inner, buf);
             }),
