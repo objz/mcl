@@ -2,7 +2,7 @@
 source: src/tui/tests/widgets/popups/import_modpack/render.rs
 expression: terminal.backend()
 ---
-"╭Import Modpack────────────────────────────────────────────╮"
+"╭Install Modpack───────────────────────────────────────────╮"
 "│Name: Vanilla Pack                                        │"
 "│Pack Version: 2.0                                         │"
 "│MC Version: 1.20.1                                        │"
@@ -15,4 +15,4 @@ expression: terminal.backend()
 "│                                                          │"
 "│                                                          │"
 "│                                                          │"
-"╰──────────────────────────────────[h] back  [Enter] import╯"
+"╰─────────────────────────────────[h] back  [Enter] install╯"

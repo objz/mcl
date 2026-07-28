@@ -30,6 +30,7 @@ fn summary() -> ImportSummary {
 #[test]
 fn empty_input_is_ignored_and_escape_returns_to_discovery() {
     let _guard = TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+    *DISCOVERY_STATE.lock().unwrap() = crate::tui::widgets::content::DiscoveryState::new_modpacks();
     let mut instances = instances::State {
         show_import_popup: true,
         ..instances::State::default()
@@ -71,6 +72,53 @@ fn confirm_returns_the_import_summary() {
     let result = take_result().expect("import result");
     assert_eq!(result.summary.name, "Test Pack");
     assert!(!instances.show_import_popup);
+}
+
+#[test]
+fn discovered_modpack_version_skips_content_install_confirmation() {
+    let project = crate::net::modrinth::DiscoveryProject {
+        id: "pack-id".to_owned(),
+        slug: "test-pack".to_owned(),
+        title: "Test Pack".to_owned(),
+        description: "A pack".to_owned(),
+        downloads: 1,
+        icon_url: None,
+        icon_bytes: None,
+    };
+    let mut discovery = crate::tui::widgets::content::DiscoveryState::new_modpacks();
+    discovery.list.entries.push(
+        crate::tui::widgets::content::discovery::provider_project_entry(
+            project,
+            "modrinth",
+            "test-pack".to_owned(),
+            None,
+        ),
+    );
+    discovery.list.list_state.select(Some(0));
+    let versions = discovery.begin_versions().unwrap();
+    crate::tui::widgets::content::DiscoveryState::push_action_result(
+        &versions.pending,
+        crate::tui::widgets::content::discovery::DiscoveryActionResult::Versions {
+            request_id: versions.request_id,
+            project_id: versions.project_id,
+            result: Ok(vec![VersionInfo {
+                id: "version-id".to_owned(),
+                project_id: "pack-id".to_owned(),
+                name: "1.0".to_owned(),
+                version_number: "1.0".to_owned(),
+                game_versions: vec!["1.21.1".to_owned()],
+                loaders: vec!["fabric".to_owned()],
+                date_published: String::new(),
+                files: Vec::new(),
+            }]),
+        },
+    );
+    discovery.drain_pending();
+
+    let selected = take_discovered_version(&mut discovery).expect("selected version");
+
+    assert_eq!(selected.version.id, "version-id");
+    assert!(discovery.version_popup.is_none());
 }
 
 #[test]

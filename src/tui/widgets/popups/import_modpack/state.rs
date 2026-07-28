@@ -162,18 +162,10 @@ fn handle_discovery_key(key_event: &KeyEvent, instances_state: &mut instances::S
             }
         }
         KeyCode::Enter if popup_open => {
-            let confirming = discovery
-                .version_popup
-                .as_ref()
-                .is_some_and(|popup| popup.confirming);
-            if confirming {
-                let request = discovery.begin_install();
-                drop(discovery);
-                if let Some(request) = request {
-                    start_discovered_download(request);
-                }
-            } else {
-                discovery.begin_confirmation();
+            let request = take_discovered_version(&mut discovery);
+            drop(discovery);
+            if let Some(request) = request {
+                start_discovered_download(request);
             }
         }
         _ => {
@@ -189,6 +181,14 @@ fn handle_discovery_key(key_event: &KeyEvent, instances_state: &mut instances::S
             }
         }
     }
+}
+
+fn take_discovered_version(
+    discovery: &mut crate::tui::widgets::content::DiscoveryState,
+) -> Option<crate::tui::widgets::content::discovery::InstallRequest> {
+    discovery
+        .begin_confirmation()
+        .then(|| discovery.begin_install())?
 }
 
 pub fn take_result() -> Option<ImportResult> {

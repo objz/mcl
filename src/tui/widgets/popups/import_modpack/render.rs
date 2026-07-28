@@ -297,9 +297,16 @@ fn render_confirm_step(state: &ImportWizardState, area: Rect, buf: &mut ratatui:
     .render(area, buf);
 }
 
-fn wizard_title(_state: &ImportWizardState) -> Line<'static> {
+fn wizard_title(state: &ImportWizardState) -> Line<'static> {
     use crate::tui::widgets::styled_title;
-    styled_title("Import Modpack", false)
+    styled_title(
+        if state.step == ImportStep::Confirm {
+            "Install Modpack"
+        } else {
+            "Import Modpack"
+        },
+        false,
+    )
 }
 
 fn step_keybinds(state: &ImportWizardState) -> Line<'static> {
@@ -311,7 +318,7 @@ fn step_keybinds(state: &ImportWizardState) -> Line<'static> {
         ImportStep::Version => {
             keybind_line(&[("/", " search"), ("h", " back"), ("Enter", " select")])
         }
-        ImportStep::Confirm => keybind_line(&[("h", " back"), ("Enter", " import")]),
+        ImportStep::Confirm => keybind_line(&[("h", " back"), ("Enter", " install")]),
     }
 }
 
