@@ -109,6 +109,7 @@ fn update_task_action(id: u64, text: String) {
     if let Ok(mut state) = PROGRESS.lock() {
         if let Some(task) = state.tasks.get_mut(&id) {
             task.action = text;
+            task.progress = None;
         }
         refresh_visible(&mut state);
     }
@@ -161,6 +162,7 @@ pub fn set_action(text: impl Into<String>) {
         Ok(mut state) => {
             state.legacy_active = true;
             state.current_action = Some(text.clone());
+            state.progress = None;
             super::request_redraw();
         }
         Err(e) => {
