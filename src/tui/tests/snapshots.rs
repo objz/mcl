@@ -51,7 +51,9 @@ fn orphan_dependency_confirmation_renders_simple_list() {
         !screen.contains("needs these libraries anymore"),
         "{screen}"
     );
+    assert!(screen.contains("Remove unused dependencies"), "{screen}");
     assert!(screen.contains('•'), "{screen}");
+    assert!(screen.contains("[Esc] cancel"), "{screen}");
     assert!(
         screen.contains("sodium-fabric-0.9.1+mc26.2.jar"),
         "{screen}"
