@@ -1,8 +1,7 @@
 use color_eyre::eyre::Context;
 use crossterm::event::{self, Event};
 use ratatui::{
-    backend::Backend,
-    buffer::{Buffer, Cell, CellDiffOption},
+    buffer::{Buffer, CellDiffOption},
     crossterm::event::KeyEventKind,
 };
 use std::time::Duration;
@@ -22,6 +21,7 @@ impl App {
             .unwrap_or_else(std::time::Instant::now);
         let mut drawn_overlay_count = self.overlay_count();
         let mut drawn_image_skips = Vec::new();
+        let mut image_redraw_marker = false;
         while !self.exit {
             let redraw_requested = crate::feedback::take_redraw_request();
             // check if any popup wizard finished and wants to create/import
@@ -113,17 +113,15 @@ impl App {
                 || redraw_requested
                 || overlay_closed
             {
-                let completed = terminal.draw(|frame| self.render_frame(frame))?;
-                let image_skips = terminal_image_skips(completed.buffer);
-                let image_cells = image_cells_reexposed(&drawn_image_skips, &image_skips)
-                    .then(|| terminal_image_cells(completed.buffer))
-                    .unwrap_or_default();
-                if !image_cells.is_empty() {
-                    terminal
-                        .backend_mut()
-                        .draw(image_cells.iter().map(|(x, y, cell)| (*x, *y, cell)))?;
-                    terminal.backend_mut().flush()?;
-                }
+                let mut image_skips = Vec::new();
+                terminal.draw(|frame| {
+                    self.render_frame(frame);
+                    image_skips = terminal_image_skips(frame.buffer_mut());
+                    if image_cells_reexposed(&drawn_image_skips, &image_skips) {
+                        image_redraw_marker = !image_redraw_marker;
+                    }
+                    mark_terminal_images(frame.buffer_mut(), image_redraw_marker);
+                })?;
                 last_draw = std::time::Instant::now();
                 drawn_overlay_count = overlay_count;
                 drawn_image_skips = image_skips;
@@ -621,20 +619,23 @@ impl App {
     }
 }
 
-fn terminal_image_cells(buffer: &Buffer) -> Vec<(u16, u16, Cell)> {
-    buffer
-        .content
-        .iter()
-        .enumerate()
-        .filter(|(_, cell)| {
-            matches!(cell.diff_option, CellDiffOption::ForcedWidth(_))
-                && cell.symbol().contains('\x1b')
-        })
-        .map(|(index, cell)| {
-            let (x, y) = buffer.pos_of(index);
-            (x, y, cell.clone())
-        })
-        .collect()
+fn mark_terminal_images(buffer: &mut Buffer, alternate: bool) {
+    // toggling an invisible suffix lets the normal cell diff redraw exposed
+    // images before later popup cells, without clearing or repainting the screen
+    let marker = if alternate {
+        "\u{200b}\u{200b}"
+    } else {
+        "\u{200b}"
+    };
+    for cell in &mut buffer.content {
+        if matches!(cell.diff_option, CellDiffOption::ForcedWidth(_))
+            && cell.symbol().contains('\x1b')
+        {
+            let mut symbol = cell.symbol().to_owned();
+            symbol.push_str(marker);
+            cell.set_symbol(&symbol);
+        }
+    }
 }
 
 fn terminal_image_skips(buffer: &Buffer) -> Vec<bool> {

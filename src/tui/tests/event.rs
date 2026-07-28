@@ -65,7 +65,7 @@ fn overlay_count_tracks_independent_popup_layers() {
 }
 
 #[test]
-fn terminal_image_cells_exclude_normal_text() {
+fn terminal_image_markers_exclude_normal_text_and_toggle() {
     use std::num::NonZeroU16;
 
     let mut buffer = ratatui::buffer::Buffer::empty(ratatui::layout::Rect::new(4, 7, 3, 1));
@@ -79,10 +79,14 @@ fn terminal_image_cells_exclude_normal_text() {
     );
     buffer[(6, 7)].set_symbol("\x1b[0m");
 
-    let cells = terminal_image_cells(&buffer);
+    mark_terminal_images(&mut buffer, false);
+    assert_eq!(buffer[(4, 7)].symbol(), "\x1b_Gimage\x1b\\\u{200b}");
+    assert_eq!(buffer[(5, 7)].symbol(), "text");
+    assert_eq!(buffer[(6, 7)].symbol(), "\x1b[0m");
 
-    assert_eq!(cells.len(), 1);
-    assert_eq!((cells[0].0, cells[0].1), (4, 7));
+    buffer[(4, 7)].set_symbol("\x1b_Gimage\x1b\\");
+    mark_terminal_images(&mut buffer, true);
+    assert_eq!(buffer[(4, 7)].symbol(), "\x1b_Gimage\x1b\\\u{200b}\u{200b}");
 }
 
 #[test]
