@@ -17,6 +17,7 @@ struct FakeProvider {
     projects: HashMap<String, String>,
     categories: HashMap<String, Vec<String>>,
     resolved: HashMap<String, ProviderProject>,
+    fail_project: Option<String>,
     fail_download: Option<String>,
 }
 
@@ -62,6 +63,11 @@ impl ContentProvider for FakeProvider {
     }
 
     async fn project(&self, project_id: &str) -> Result<ProjectInfo, NetError> {
+        if self.fail_project.as_deref() == Some(project_id) {
+            return Err(NetError::Parse(format!(
+                "failed to load project {project_id}"
+            )));
+        }
         Ok(ProjectInfo {
             id: project_id.to_owned(),
             slug: project_id.to_owned(),
@@ -180,6 +186,30 @@ fn root(version: VersionInfo) -> InstallRoot {
     }
 }
 
+fn installed_record(project_id: &str, version_id: &str, enabled: bool) -> ContentFileRecord {
+    ContentFileRecord {
+        relative_path: PathBuf::from(format!("mods/{project_id}.jar")),
+        kind: ContentKind::Mod,
+        enabled,
+        fingerprint: FileFingerprint {
+            size: 1,
+            modified_ns: 1,
+            hashes: Default::default(),
+        },
+        resolution: Resolution::Resolved {
+            project: ProviderProject {
+                provider: "modrinth".to_owned(),
+                project_id: project_id.to_owned(),
+                version_id: version_id.to_owned(),
+            },
+        },
+        provider_aliases: Vec::new(),
+        required_dependencies: Vec::new(),
+        automatic_dependency: false,
+        cleanup_eligible: false,
+    }
+}
+
 fn provider(versions: Vec<VersionInfo>) -> FakeProvider {
     let compatible = versions.iter().fold(
         HashMap::<String, Vec<String>>::new(),
@@ -208,6 +238,7 @@ fn provider(versions: Vec<VersionInfo>) -> FakeProvider {
         projects,
         categories,
         resolved: HashMap::new(),
+        fail_project: None,
         fail_download: None,
     }
 }
@@ -298,6 +329,262 @@ async fn functional_mod_dependencies_are_not_cleanup_eligible() {
 
     assert!(plan.items[1].automatic_dependency);
     assert!(!plan.items[1].cleanup_eligible);
+}
+
+#[tokio::test]
+async fn missing_project_metadata_does_not_block_required_dependencies() {
+    let root_version = version(
+        "root",
+        "root",
+        VersionType::Release,
+        "2026-01-01",
+        vec![dependency("library", DependencyType::Required)],
+    );
+    let library = version(
+        "library",
+        "library",
+        VersionType::Release,
+        "2026-01-01",
+        Vec::new(),
+    );
+    let mut fake = provider(vec![root_version.clone(), library]);
+    fake.fail_project = Some("library".to_owned());
+    let registry = fake.registry();
+
+    let plan = resolve(
+        &registry,
+        &ContentManifest::default(),
+        Path::new("/minecraft"),
+        &instance(),
+        root(root_version),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(plan.items[1].title, "library");
+    assert!(plan.items[1].automatic_dependency);
+    assert!(!plan.items[1].cleanup_eligible);
+}
+
+#[tokio::test]
+async fn incompatible_installed_dependency_is_replaced_with_a_compatible_version() {
+    let root_version = version(
+        "root",
+        "root",
+        VersionType::Release,
+        "2026-01-01",
+        vec![dependency("library", DependencyType::Required)],
+    );
+    let mut incompatible = version(
+        "library-old",
+        "library",
+        VersionType::Release,
+        "2026-01-01",
+        Vec::new(),
+    );
+    incompatible.game_versions = vec!["1.20.1".to_owned()];
+    let compatible = version(
+        "library-new",
+        "library",
+        VersionType::Release,
+        "2026-02-01",
+        Vec::new(),
+    );
+    let registry = provider(vec![root_version.clone(), incompatible, compatible]).registry();
+    let manifest = ContentManifest {
+        version: 1,
+        files: vec![installed_record("library", "library-old", true)],
+    };
+
+    let plan = resolve(
+        &registry,
+        &manifest,
+        Path::new("/minecraft"),
+        &instance(),
+        root(root_version),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(plan.items[1].version.id, "library-new");
+    assert!(plan.items[1].replacement);
+}
+
+#[tokio::test]
+async fn missing_installed_dependency_version_is_replaced() {
+    let root_version = version(
+        "root",
+        "root",
+        VersionType::Release,
+        "2026-01-01",
+        vec![dependency("library", DependencyType::Required)],
+    );
+    let compatible = version(
+        "library-new",
+        "library",
+        VersionType::Release,
+        "2026-02-01",
+        Vec::new(),
+    );
+    let registry = provider(vec![root_version.clone(), compatible]).registry();
+    let manifest = ContentManifest {
+        version: 1,
+        files: vec![installed_record("library", "deleted-version", true)],
+    };
+
+    let plan = resolve(
+        &registry,
+        &manifest,
+        Path::new("/minecraft"),
+        &instance(),
+        root(root_version),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(plan.items[1].version.id, "library-new");
+    assert!(plan.items[1].replacement);
+}
+
+#[tokio::test]
+async fn disabled_dependency_is_not_treated_as_installed() {
+    let root_version = version(
+        "root",
+        "root",
+        VersionType::Release,
+        "2026-01-01",
+        vec![dependency("library", DependencyType::Required)],
+    );
+    let library = version(
+        "library",
+        "library",
+        VersionType::Release,
+        "2026-01-01",
+        Vec::new(),
+    );
+    let registry = provider(vec![root_version.clone(), library]).registry();
+    let manifest = ContentManifest {
+        version: 1,
+        files: vec![installed_record("library", "library", false)],
+    };
+
+    let plan = resolve(
+        &registry,
+        &manifest,
+        Path::new("/minecraft"),
+        &instance(),
+        root(root_version),
+    )
+    .await
+    .unwrap();
+
+    assert!(plan.items[1].installed_path.is_none());
+    assert!(!plan.items[1].replacement);
+}
+
+#[tokio::test]
+async fn superseded_version_dependencies_are_not_kept_in_the_plan() {
+    let root_version = version(
+        "root",
+        "root",
+        VersionType::Release,
+        "2026-01-01",
+        vec![
+            dependency("library", DependencyType::Required),
+            VersionDependency {
+                version_id: Some("library-old".to_owned()),
+                project_id: Some("library".to_owned()),
+                file_name: None,
+                dependency_type: DependencyType::Required,
+            },
+        ],
+    );
+    let library_new = version(
+        "library-new",
+        "library",
+        VersionType::Release,
+        "2026-03-01",
+        vec![dependency("stale", DependencyType::Required)],
+    );
+    let library_old = version(
+        "library-old",
+        "library",
+        VersionType::Release,
+        "2026-02-01",
+        vec![dependency("current", DependencyType::Required)],
+    );
+    let stale = version(
+        "stale",
+        "stale",
+        VersionType::Release,
+        "2026-01-01",
+        Vec::new(),
+    );
+    let current = version(
+        "current",
+        "current",
+        VersionType::Release,
+        "2026-01-01",
+        Vec::new(),
+    );
+    let registry = provider(vec![
+        root_version.clone(),
+        library_new,
+        library_old,
+        stale,
+        current,
+    ])
+    .registry();
+
+    let plan = resolve(
+        &registry,
+        &ContentManifest::default(),
+        Path::new("/minecraft"),
+        &instance(),
+        root(root_version),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(plan.items[1].version.id, "library-old");
+    assert!(plan.items.iter().any(|item| item.project_id == "current"));
+    assert!(!plan.items.iter().any(|item| item.project_id == "stale"));
+}
+
+#[tokio::test]
+async fn dependency_version_from_another_project_is_rejected() {
+    let root_version = version(
+        "root",
+        "root",
+        VersionType::Release,
+        "2026-01-01",
+        vec![VersionDependency {
+            version_id: Some("wrong-version".to_owned()),
+            project_id: Some("expected".to_owned()),
+            file_name: None,
+            dependency_type: DependencyType::Required,
+        }],
+    );
+    let wrong = version(
+        "wrong-version",
+        "other",
+        VersionType::Release,
+        "2026-01-01",
+        Vec::new(),
+    );
+    let registry = provider(vec![root_version.clone(), wrong]).registry();
+
+    let error = resolve(
+        &registry,
+        &ContentManifest::default(),
+        Path::new("/minecraft"),
+        &instance(),
+        root(root_version),
+    )
+    .await
+    .unwrap_err();
+
+    assert!(error.to_string().contains("not 'expected'"));
 }
 
 #[tokio::test]
