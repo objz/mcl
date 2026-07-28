@@ -47,7 +47,7 @@ pub enum ConfirmTarget {
 impl ConfirmTarget {
     fn title(&self) -> String {
         match self {
-            Self::OrphanDependencies { .. } => " ◇ Clean up libraries ".to_owned(),
+            Self::OrphanDependencies { .. } => " Remove unused libraries ".to_owned(),
             _ => format!(" Delete '{}' ", self.name()),
         }
     }
@@ -63,10 +63,10 @@ impl ConfirmTarget {
             }
             ConfirmTarget::Content { dependents, .. } if !dependents.is_empty() => {
                 format!(
-                    "Still required by installed mods:\n\n{}\n\n! Deleting this library may break those mods.",
+                    "Still required by installed mods:\n{}\n! Deleting this library may break those mods.",
                     dependents
                         .iter()
-                        .map(|name| format!("  ▣ {name}"))
+                        .map(|name| format!("• {name}"))
                         .collect::<Vec<_>>()
                         .join("\n")
                 )
@@ -74,21 +74,18 @@ impl ConfirmTarget {
             ConfirmTarget::Content { .. } => {
                 "This will permanently remove the selected item".to_owned()
             }
-            ConfirmTarget::OrphanDependencies { paths } => {
-                format!(
-                    "No installed mod needs these libraries anymore.\n\n{}",
-                    paths
-                        .iter()
-                        .map(|path| format!(
-                            "  ▣ {}",
-                            path.file_name()
-                                .and_then(|name| name.to_str())
-                                .unwrap_or("library")
-                        ))
-                        .collect::<Vec<_>>()
-                        .join("\n")
-                )
-            }
+            ConfirmTarget::OrphanDependencies { paths } => paths
+                .iter()
+                .map(|path| {
+                    format!(
+                        "• {}",
+                        path.file_name()
+                            .and_then(|name| name.to_str())
+                            .unwrap_or("library")
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("\n"),
         }
     }
 
@@ -204,7 +201,7 @@ impl Widget for ConfirmPopup {
         let text_dim = theme.text_dim();
         let error = theme.error();
         let body = self.body;
-        let styled_list = body.contains("▣ ");
+        let styled_list = body.contains("• ");
         let popup = PopupFrame {
             title,
             border_color,
@@ -215,13 +212,10 @@ impl Widget for ConfirmPopup {
                 let lines = body
                     .lines()
                     .map(|line| {
-                        if let Some(value) = line.trim_start().strip_prefix("▣ ") {
+                        if let Some(value) = line.strip_prefix("• ") {
                             Line::from(vec![
-                                Span::styled("  ▣ ", Style::default().fg(accent)),
-                                Span::styled(
-                                    value.to_owned(),
-                                    Style::default().fg(text).add_modifier(Modifier::BOLD),
-                                ),
+                                Span::styled("• ", Style::default().fg(accent)),
+                                Span::styled(value.to_owned(), Style::default().fg(text)),
                             ])
                         } else if line.starts_with('!') {
                             Line::styled(line.to_owned(), Style::default().fg(error))
