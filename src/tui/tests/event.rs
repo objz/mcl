@@ -26,8 +26,10 @@ fn edited_instance_config_reloads_into_the_ui() {
 #[test]
 fn completed_background_instance_is_drained_into_the_ui() {
     let mut ui = UiHarness::new();
+    ui.add_instance("Existing");
     ui.add_instance("Pending");
     let config = ui.app.instances_state.instances.pop().unwrap();
+    ui.app.instances_state.list_state.selected = Some(0);
     PENDING_INSTANCES.lock().unwrap().push(config);
 
     ui.app.drain_pending_instances();
@@ -37,6 +39,9 @@ fn completed_background_instance_is_drained_into_the_ui() {
         "Pending"
     );
     assert!(PENDING_INSTANCES.lock().unwrap().is_empty());
+
+    ui.draw();
+    assert_eq!(ui.app.mods_state.loaded_for.as_deref(), Some("Pending"));
 }
 
 #[test]

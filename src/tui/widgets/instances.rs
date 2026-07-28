@@ -147,6 +147,7 @@ impl State {
 
     pub fn add_instance(&mut self, instance: InstanceConfig) {
         self.instances.push(instance);
+        self.list_state.selected = self.filtered_indices().len().checked_sub(1);
         self.update_scrollbar();
     }
 
