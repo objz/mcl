@@ -189,6 +189,9 @@ fn handle_discovery_key(key_event: &KeyEvent, instances_state: &mut instances::S
             }
         }
         KeyCode::Enter if popup_open => {
+            if discovery.select_minecraft_version() {
+                return;
+            }
             let request = take_discovered_version(&mut discovery);
             drop(discovery);
             if let Some(request) = request {

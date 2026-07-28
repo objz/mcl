@@ -114,6 +114,7 @@ fn discovered_modpack_version_skips_content_install_confirmation() {
         },
     );
     discovery.drain_pending();
+    assert!(discovery.select_minecraft_version());
 
     let selected = take_discovered_version(&mut discovery).expect("selected version");
 

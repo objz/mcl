@@ -284,6 +284,44 @@ fn compatible_versions_populate_the_open_popup() {
 }
 
 #[test]
+fn modpacks_choose_minecraft_before_filtering_pack_versions() {
+    let mut state = DiscoveryState::new_modpacks();
+    state
+        .list
+        .entries
+        .push(project_entry(project("pack"), None));
+    state.list.list_state.selected = Some(0);
+    let request = state.begin_versions().unwrap();
+    let mut older = version("1.0.0");
+    older.game_versions = vec!["1.20.1".to_owned(), "fabric".to_owned()];
+    DiscoveryState::push_action_result(
+        &request.pending,
+        DiscoveryActionResult::Versions {
+            request_id: request.request_id,
+            project_id: request.project_id,
+            result: Ok(vec![older, version("2.0.0")]),
+        },
+    );
+    state.drain_pending();
+
+    let popup = state.version_popup.as_mut().unwrap();
+    assert!(popup.selecting_minecraft_version);
+    assert_eq!(popup.minecraft_versions, ["1.21.1", "1.20.1"]);
+    popup.selected = 1;
+
+    assert!(state.select_minecraft_version());
+    let popup = state.version_popup.as_ref().unwrap();
+    assert_eq!(popup.selected_minecraft_version.as_deref(), Some("1.20.1"));
+    assert_eq!(
+        popup
+            .visible_versions()
+            .map(|version| version.version_number.as_str())
+            .collect::<Vec<_>>(),
+        ["1.0.0"]
+    );
+}
+
+#[test]
 fn project_page_loads_for_the_selected_discovery_entry() {
     let project = DiscoveryProject {
         id: "project".to_owned(),

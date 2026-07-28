@@ -89,6 +89,9 @@ pub struct VersionPopupState {
     pub sources: Vec<crate::instance::ProviderProject>,
     pub source_index: usize,
     pub installed_path: Option<PathBuf>,
+    pub minecraft_versions: Vec<String>,
+    pub selected_minecraft_version: Option<String>,
+    pub selecting_minecraft_version: bool,
     pub versions: Vec<VersionInfo>,
     pub selected: usize,
     pub loading: bool,
@@ -110,6 +113,31 @@ impl VersionPopupState {
         match self.provider.as_str() {
             "curseforge" => "CurseForge",
             _ => "Modrinth",
+        }
+    }
+
+    pub fn visible_versions(&self) -> impl Iterator<Item = &VersionInfo> {
+        self.versions.iter().filter(|version| {
+            self.selected_minecraft_version
+                .as_ref()
+                .is_none_or(|selected| {
+                    version
+                        .game_versions
+                        .iter()
+                        .any(|version| version == selected)
+                })
+        })
+    }
+
+    pub fn selected_version(&self) -> Option<&VersionInfo> {
+        self.visible_versions().nth(self.selected)
+    }
+
+    fn item_count(&self) -> usize {
+        if self.selecting_minecraft_version {
+            self.minecraft_versions.len()
+        } else {
+            self.visible_versions().count()
         }
     }
 }
@@ -387,6 +415,9 @@ impl DiscoveryState {
             sources,
             source_index: 0,
             installed_path,
+            minecraft_versions: Vec::new(),
+            selected_minecraft_version: None,
+            selecting_minecraft_version: self.modpacks,
             versions: Vec::new(),
             selected: 0,
             loading: true,
@@ -403,6 +434,7 @@ impl DiscoveryState {
     }
 
     pub fn switch_version_source(&mut self) -> Option<VersionsRequest> {
+        let selecting_minecraft_version = self.modpacks;
         let popup = self.version_popup.as_mut()?;
         if popup.loading || popup.installing || popup.sources.len() < 2 {
             return None;
@@ -413,6 +445,9 @@ impl DiscoveryState {
         popup.request_id = self.next_action_request_id;
         popup.project_id.clone_from(&source.project_id);
         popup.provider.clone_from(&source.provider);
+        popup.minecraft_versions.clear();
+        popup.selected_minecraft_version = None;
+        popup.selecting_minecraft_version = selecting_minecraft_version;
         popup.versions.clear();
         popup.selected = 0;
         popup.loading = true;
@@ -572,7 +607,7 @@ impl DiscoveryState {
         if popup.loading || popup.installing || !popup.confirming {
             return None;
         }
-        let version = popup.versions.get(popup.selected)?.clone();
+        let version = popup.selected_version()?.clone();
         let request = InstallRequest {
             request_id: popup.request_id,
             generation: self.generation,
@@ -591,10 +626,31 @@ impl DiscoveryState {
         let Some(popup) = self.version_popup.as_mut() else {
             return false;
         };
-        if popup.loading || popup.installing || popup.versions.get(popup.selected).is_none() {
+        if popup.loading
+            || popup.installing
+            || popup.selecting_minecraft_version
+            || popup.selected_version().is_none()
+        {
             return false;
         }
         popup.confirming = true;
+        popup.error = None;
+        true
+    }
+
+    pub fn select_minecraft_version(&mut self) -> bool {
+        let Some(popup) = self.version_popup.as_mut() else {
+            return false;
+        };
+        if popup.loading || popup.installing || !popup.selecting_minecraft_version {
+            return false;
+        }
+        let Some(version) = popup.minecraft_versions.get(popup.selected).cloned() else {
+            return false;
+        };
+        popup.selected_minecraft_version = Some(version);
+        popup.selecting_minecraft_version = false;
+        popup.selected = 0;
         popup.error = None;
         true
     }
@@ -787,6 +843,7 @@ impl DiscoveryState {
                     popup.loading = false;
                     match result {
                         Ok(versions) => {
+                            popup.minecraft_versions = minecraft_versions(&versions);
                             popup.versions = versions;
                             popup.selected = 0;
                             popup.error = None;
@@ -890,12 +947,31 @@ pub fn handle_key(key_event: &KeyEvent, state: &mut DiscoveryState) -> bool {
             popup.error = None;
             return true;
         }
+        if !popup.selecting_minecraft_version
+            && popup.selected_minecraft_version.is_some()
+            && matches!(key_event.code, KeyCode::Left | KeyCode::Char('h'))
+            && !popup.loading
+            && !popup.installing
+        {
+            popup.selecting_minecraft_version = true;
+            popup.selected = popup
+                .selected_minecraft_version
+                .as_ref()
+                .and_then(|selected| {
+                    popup
+                        .minecraft_versions
+                        .iter()
+                        .position(|version| version == selected)
+                })
+                .unwrap_or(0);
+            return true;
+        }
         match key_event.code {
             KeyCode::Esc if !popup.installing => state.version_popup = None,
             KeyCode::Char('j') | KeyCode::Down
                 if !popup.loading && !popup.installing && !popup.confirming =>
             {
-                if popup.selected + 1 < popup.versions.len() {
+                if popup.selected + 1 < popup.item_count() {
                     popup.selected += 1;
                 }
             }
@@ -957,6 +1033,27 @@ pub fn handle_key(key_event: &KeyEvent, state: &mut DiscoveryState) -> bool {
     } else {
         super::list::handle_key_no_toggle(key_event, &mut state.list)
     }
+}
+
+fn minecraft_versions(versions: &[VersionInfo]) -> Vec<String> {
+    let mut seen = std::collections::HashSet::new();
+    let mut minecraft_versions = versions
+        .iter()
+        .flat_map(|version| &version.game_versions)
+        .filter(|game_version| {
+            !versions.iter().any(|version| {
+                version
+                    .loaders
+                    .iter()
+                    .any(|loader| loader.eq_ignore_ascii_case(game_version))
+            })
+        })
+        .filter(|game_version| seen.insert((*game_version).clone()))
+        .cloned()
+        .collect::<Vec<_>>();
+    minecraft_versions
+        .sort_by(|a, b| crate::tui::widgets::popups::compare_game_versions(b.as_str(), a.as_str()));
+    minecraft_versions
 }
 
 pub(crate) fn page_key_direction(key_event: &KeyEvent) -> Option<bool> {

@@ -17,6 +17,24 @@ use ratatui::{
     widgets::Paragraph,
 };
 
+pub(crate) fn compare_game_versions(a: &str, b: &str) -> std::cmp::Ordering {
+    let parse_parts = |version: &str| {
+        version
+            .split('.')
+            .map(|part| part.parse::<u64>().unwrap_or(0))
+            .collect::<Vec<_>>()
+    };
+    let a_parts = parse_parts(a);
+    let b_parts = parse_parts(b);
+    for (a, b) in a_parts.iter().zip(&b_parts) {
+        match a.cmp(b) {
+            std::cmp::Ordering::Equal => {}
+            ordering => return ordering,
+        }
+    }
+    a_parts.len().cmp(&b_parts.len())
+}
+
 // figures out the (width, height) a text block will need after word wrapping.
 // used to size popups before rendering so they fit their content snugly.
 pub fn word_wrap_size(text: &str, max_inner_width: usize) -> (usize, usize) {

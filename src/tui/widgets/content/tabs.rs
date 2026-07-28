@@ -635,36 +635,41 @@ fn render_version_popup(frame: &mut Frame, area: Rect, state: &DiscoveryState) {
     let confirming = popup.confirming;
     let error = popup.error.clone();
     let selected = popup.selected;
+    let selecting_minecraft_version = popup.selecting_minecraft_version;
     let selected_version = popup
-        .versions
-        .get(selected)
+        .selected_version()
         .map(|version| version.version_number.clone())
         .unwrap_or_default();
     let minecraft_versions = popup
-        .versions
-        .get(selected)
+        .selected_version()
         .map(|version| confirmation_values(&version.game_versions))
         .unwrap_or_else(|| "Unknown".to_owned());
     let loaders = popup
-        .versions
-        .get(selected)
+        .selected_version()
         .map(|version| confirmation_loaders(&version.loaders))
         .unwrap_or_else(|| "Unknown".to_owned());
     let release_date = popup
-        .versions
-        .get(selected)
+        .selected_version()
         .map(|version| confirmation_release_date(&version.date_published))
         .unwrap_or_else(|| "Unknown".to_owned());
     let replacing = popup.installed_path.is_some();
     let provider_label = popup.provider_label().to_owned();
     let can_switch_provider = popup.sources.len() > 1;
-    let items = popup
-        .versions
-        .iter()
-        .map(|version| {
-            ListItem::new(discovery_version_label(version)).style(Style::default().fg(theme.text()))
-        })
-        .collect::<Vec<_>>();
+    let items = if selecting_minecraft_version {
+        popup
+            .minecraft_versions
+            .iter()
+            .map(|version| ListItem::new(version.clone()).style(Style::default().fg(theme.text())))
+            .collect::<Vec<_>>()
+    } else {
+        popup
+            .visible_versions()
+            .map(|version| {
+                ListItem::new(discovery_version_label(version))
+                    .style(Style::default().fg(theme.text()))
+            })
+            .collect::<Vec<_>>()
+    };
     let keybinds = if confirming {
         crate::tui::widgets::popups::keybind_line(&[
             ("h", " back"),
@@ -674,6 +679,9 @@ fn render_version_popup(frame: &mut Frame, area: Rect, state: &DiscoveryState) {
         let mut keybinds = vec![("j/k", " navigate")];
         if can_switch_provider {
             keybinds.push(("Tab", " source"));
+        }
+        if popup.selected_minecraft_version.is_some() {
+            keybinds.push(("h", " back"));
         }
         keybinds.extend([("Enter", " continue"), ("Esc", " close")]);
         crate::tui::widgets::popups::keybind_line(&keybinds)
@@ -719,9 +727,13 @@ fn render_version_popup(frame: &mut Frame, area: Rect, state: &DiscoveryState) {
                     buffer,
                 );
             } else if items.is_empty() {
-                Paragraph::new("No compatible versions found.")
-                    .style(Style::default().fg(THEME.as_ref().text_dim()))
-                    .render(area, buffer);
+                Paragraph::new(if selecting_minecraft_version {
+                    "No compatible Minecraft versions found."
+                } else {
+                    "No compatible versions found."
+                })
+                .style(Style::default().fg(THEME.as_ref().text_dim()))
+                .render(area, buffer);
             } else {
                 crate::tui::widgets::popups::new_instance::render_select_list(
                     items.clone(),

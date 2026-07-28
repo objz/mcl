@@ -463,27 +463,8 @@ pub(crate) fn ensure_loader_versions_loaded(
     });
 }
 
-// quick and dirty semver compare. doesn't handle pre-release tags or anything
-// fancy, just splits on dots and compares numerically. good enough for mc versions.
-fn compare_semver(a: &str, b: &str) -> std::cmp::Ordering {
-    let parse_parts = |s: &str| -> Vec<u64> {
-        s.split('.')
-            .map(|p| p.parse::<u64>().unwrap_or(0))
-            .collect()
-    };
-    let a_parts = parse_parts(a);
-    let b_parts = parse_parts(b);
-    for (ap, bp) in a_parts.iter().zip(b_parts.iter()) {
-        match ap.cmp(bp) {
-            std::cmp::Ordering::Equal => continue,
-            other => return other,
-        }
-    }
-    a_parts.len().cmp(&b_parts.len())
-}
-
 fn sort_versions_semver(versions: &mut [GameVersion]) {
-    versions.sort_by(|a, b| compare_semver(&b.id, &a.id));
+    versions.sort_by(|a, b| super::super::compare_game_versions(&b.id, &a.id));
 }
 
 #[cfg(test)]

@@ -277,6 +277,12 @@ impl App {
                 return Ok(());
             }
             if popup_open && key_event.code == KeyCode::Enter {
+                if self
+                    .active_discovery_state_mut()
+                    .is_some_and(|state| state.select_minecraft_version())
+                {
+                    return Ok(());
+                }
                 let confirming = self
                     .active_discovery_state_mut()
                     .and_then(|state| state.version_popup.as_ref())
