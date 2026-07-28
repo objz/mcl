@@ -26,8 +26,46 @@ pub struct VersionInfo {
     pub game_versions: Vec<String>,
     pub loaders: Vec<String>,
     #[serde(default)]
+    pub version_type: VersionType,
+    #[serde(default)]
+    pub dependencies: Vec<VersionDependency>,
+    #[serde(default)]
     pub date_published: String,
     pub files: Vec<VersionFile>,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum VersionType {
+    #[default]
+    Release,
+    Beta,
+    Alpha,
+    #[serde(other)]
+    Unknown,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, serde::Serialize)]
+pub struct VersionDependency {
+    #[serde(default)]
+    pub version_id: Option<String>,
+    #[serde(default)]
+    pub project_id: Option<String>,
+    #[serde(default)]
+    pub file_name: Option<String>,
+    pub dependency_type: DependencyType,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DependencyType {
+    #[default]
+    Required,
+    Optional,
+    Incompatible,
+    Embedded,
+    #[serde(other)]
+    Unknown,
 }
 
 #[derive(Debug, Clone, Deserialize, serde::Serialize)]

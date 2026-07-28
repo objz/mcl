@@ -625,12 +625,14 @@ fn render_version_popup(frame: &mut Frame, area: Rect, state: &DiscoveryState) {
     let popup_area = area.centered(
         Constraint::Percentage(50),
         Constraint::Length(
-            version_popup_height(popup.confirming).min(area.height.saturating_sub(2)),
+            version_popup_height(popup.confirming, popup.dependency_plan.as_ref())
+                .min(area.height.saturating_sub(2)),
         ),
     );
     let theme = THEME.as_ref();
     let title = popup.title();
     let loading = popup.loading;
+    let resolving_dependencies = popup.resolving_dependencies;
     let installing = popup.installing;
     let confirming = popup.confirming;
     let error = popup.error.clone();
@@ -654,6 +656,31 @@ fn render_version_popup(frame: &mut Frame, area: Rect, state: &DiscoveryState) {
         .unwrap_or_else(|| "Unknown".to_owned());
     let replacing = popup.installed_path.is_some();
     let provider_label = popup.provider_label().to_owned();
+    let dependency_installs = popup
+        .dependency_plan
+        .as_ref()
+        .map(|plan| {
+            plan.dependency_installs()
+                .map(|item| item.title.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        })
+        .unwrap_or_default();
+    let dependency_replacements = popup
+        .dependency_plan
+        .as_ref()
+        .map(|plan| {
+            plan.dependency_replacements()
+                .map(|item| format!("{} -> {}", item.title, item.version.version_number))
+                .collect::<Vec<_>>()
+                .join(", ")
+        })
+        .unwrap_or_default();
+    let optional_dependencies = popup
+        .dependency_plan
+        .as_ref()
+        .map(|plan| plan.optional_dependencies)
+        .unwrap_or_default();
     let can_switch_provider = popup.sources.len() > 1;
     let items = if selecting_minecraft_version {
         popup
@@ -707,25 +734,37 @@ fn render_version_popup(frame: &mut Frame, area: Rect, state: &DiscoveryState) {
                     .style(Style::default().fg(THEME.as_ref().text_dim()))
                     .render(area, buffer);
             } else if loading {
-                Paragraph::new("Loading compatible versions...")
-                    .style(Style::default().fg(THEME.as_ref().text_dim()))
-                    .render(area, buffer);
+                Paragraph::new(if resolving_dependencies {
+                    "Resolving required dependencies..."
+                } else {
+                    "Loading compatible versions..."
+                })
+                .style(Style::default().fg(THEME.as_ref().text_dim()))
+                .render(area, buffer);
             } else if let Some(error) = &error {
                 Paragraph::new(error.as_str())
                     .style(Style::default().fg(THEME.as_ref().error()))
                     .wrap(Wrap { trim: true })
                     .render(area, buffer);
             } else if confirming {
-                crate::tui::widgets::popups::base::render_summary(
-                    &[
-                        ("Version", selected_version.as_str()),
-                        ("Minecraft", minecraft_versions.as_str()),
-                        ("Loader", loaders.as_str()),
-                        ("Released", release_date.as_str()),
-                    ],
-                    area,
-                    buffer,
-                );
+                let mut rows = vec![
+                    ("Version", selected_version.as_str()),
+                    ("Minecraft", minecraft_versions.as_str()),
+                    ("Loader", loaders.as_str()),
+                    ("Released", release_date.as_str()),
+                ];
+                if !dependency_installs.is_empty() {
+                    rows.push(("Also installs", dependency_installs.as_str()));
+                }
+                if !dependency_replacements.is_empty() {
+                    rows.push(("Also changes", dependency_replacements.as_str()));
+                }
+                let optional_text;
+                if optional_dependencies > 0 {
+                    optional_text = optional_dependencies.to_string();
+                    rows.push(("Optional not installed", optional_text.as_str()));
+                }
+                crate::tui::widgets::popups::base::render_summary(&rows, area, buffer);
             } else if items.is_empty() {
                 Paragraph::new(if selecting_minecraft_version {
                     "No compatible Minecraft versions found."
@@ -747,8 +786,19 @@ fn render_version_popup(frame: &mut Frame, area: Rect, state: &DiscoveryState) {
     frame.render_widget(popup, popup_area);
 }
 
-fn version_popup_height(confirming: bool) -> u16 {
-    if confirming { 6 } else { VERSION_POPUP_HEIGHT }
+fn version_popup_height(
+    confirming: bool,
+    plan: Option<&crate::instance::content::dependencies::DependencyPlan>,
+) -> u16 {
+    if !confirming {
+        return VERSION_POPUP_HEIGHT;
+    }
+    let Some(plan) = plan else {
+        return 6;
+    };
+    6 + u16::from(plan.dependency_installs().next().is_some())
+        + u16::from(plan.dependency_replacements().next().is_some())
+        + u16::from(plan.optional_dependencies > 0)
 }
 
 fn confirmation_values(values: &[String]) -> String {

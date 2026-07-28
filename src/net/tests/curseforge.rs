@@ -11,6 +11,12 @@ fn curseforge_file_maps_to_shared_version() {
             "fileLength": 12,
             "downloadUrl": "https://example.invalid/example.jar",
             "gameVersions": ["1.21.1", "Fabric"],
+            "releaseType": 2,
+            "dependencies": [
+                {"modId": 8, "relationType": 3},
+                {"modId": 9, "relationType": 2},
+                {"modId": 10, "relationType": 5}
+            ],
             "hashes": [{"value": "abc", "algo": 1}]
         }"#,
     )
@@ -18,6 +24,19 @@ fn curseforge_file_maps_to_shared_version() {
     let version = version_info(file);
     assert_eq!(version.project_id, "7");
     assert_eq!(version.loaders, ["fabric"]);
+    assert_eq!(version.version_type, VersionType::Beta);
+    assert_eq!(
+        version
+            .dependencies
+            .iter()
+            .map(|dependency| dependency.dependency_type)
+            .collect::<Vec<_>>(),
+        [
+            DependencyType::Required,
+            DependencyType::Optional,
+            DependencyType::Incompatible
+        ]
+    );
     assert_eq!(version.files[0].hashes["sha1"], "abc");
 }
 

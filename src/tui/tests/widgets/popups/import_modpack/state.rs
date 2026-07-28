@@ -108,6 +108,8 @@ fn discovered_modpack_version_skips_content_install_confirmation() {
                 version_number: "1.0".to_owned(),
                 game_versions: vec!["1.21.1".to_owned()],
                 loaders: vec!["fabric".to_owned()],
+                version_type: crate::net::modrinth::VersionType::Release,
+                dependencies: Vec::new(),
                 date_published: String::new(),
                 files: Vec::new(),
             }]),

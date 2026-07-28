@@ -15,6 +15,7 @@ fn keybind_wrapping_uses_terminal_width_for_unicode_keys() {
 fn word_wrap_size_uses_terminal_width_for_unicode_text() {
     assert_eq!(word_wrap_size("Übergröße", 20), (9, 1));
     assert_eq!(word_wrap_size("世界 test", 6), (4, 2));
+    assert_eq!(word_wrap_size("one\n\ntwo", 20), (3, 3));
 }
 
 #[test]

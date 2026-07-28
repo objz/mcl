@@ -8,9 +8,43 @@ fn version_with_files(files: Vec<VersionFile>) -> VersionInfo {
         version_number: "1.0.0".to_owned(),
         game_versions: vec!["1.21.1".to_owned()],
         loaders: vec!["fabric".to_owned()],
+        version_type: VersionType::Release,
+        dependencies: Vec::new(),
         date_published: String::new(),
         files,
     }
+}
+
+#[test]
+fn version_dependencies_and_release_type_are_deserialized() {
+    let version: VersionInfo = serde_json::from_str(
+        r#"{
+            "id": "version",
+            "project_id": "project",
+            "name": "Beta",
+            "version_number": "2.0.0",
+            "game_versions": ["1.21.1"],
+            "loaders": ["fabric"],
+            "version_type": "beta",
+            "dependencies": [{
+                "project_id": "fabric-api",
+                "dependency_type": "required"
+            }],
+            "files": []
+        }"#,
+    )
+    .unwrap();
+
+    assert_eq!(version.version_type, VersionType::Beta);
+    assert_eq!(version.dependencies.len(), 1);
+    assert_eq!(
+        version.dependencies[0].project_id.as_deref(),
+        Some("fabric-api")
+    );
+    assert_eq!(
+        version.dependencies[0].dependency_type,
+        DependencyType::Required
+    );
 }
 
 #[test]

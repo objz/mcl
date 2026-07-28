@@ -7,7 +7,7 @@ use ratatui::{
 use std::time::Duration;
 
 use super::Tui;
-use super::app::{App, PENDING_INSTANCES};
+use super::app::{App, FocusedArea, PENDING_INSTANCES};
 use super::widgets::{self, popups::import_modpack, popups::new_instance};
 use crate::feedback::errors as error_buffer;
 use crate::feedback::progress;
@@ -44,6 +44,7 @@ impl App {
             let mut local_streamed = false;
             let mut content_changed = false;
             let mut toggles = Vec::new();
+            let mut orphan_cleanup = None;
             for (local, discovery) in [
                 (&mut self.mods_state, &mut self.mods_discovery_state),
                 (
@@ -60,9 +61,16 @@ impl App {
                 local.request_image_loads(&self.picker);
                 local.drain_image_loads(&self.picker);
                 discovery.drain_pending();
+                if self.focused == FocusedArea::Content {
+                    orphan_cleanup = orphan_cleanup.or_else(|| discovery.take_orphan_cleanup());
+                }
                 discovery.list.drain_pending();
                 discovery.list.request_image_loads(&self.picker);
                 discovery.list.drain_image_loads(&self.picker);
+            }
+            if let Some(paths) = orphan_cleanup {
+                widgets::popups::confirm::set_pending_orphan_dependencies(paths);
+                self.focused = FocusedArea::ConfirmDelete;
             }
             self.worlds_state.drain_pending();
             self.worlds_state.drain_watcher();

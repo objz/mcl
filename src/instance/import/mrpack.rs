@@ -347,6 +347,9 @@ fn seed_content_manifest(
                     version_id,
                 },
             },
+            provider_aliases: Vec::new(),
+            required_dependencies: Vec::new(),
+            automatic_dependency: false,
         });
     }
     let seeded = manifest.files.len();
