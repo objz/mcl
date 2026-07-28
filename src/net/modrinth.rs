@@ -103,11 +103,7 @@ pub async fn search_discovery(
     offset: usize,
     limit: usize,
 ) -> Result<DiscoveryResults, crate::net::NetError> {
-    let progress = crate::feedback::progress::ProgressTask::start(if query.trim().is_empty() {
-        "Loading Modrinth discovery".to_owned()
-    } else {
-        format!("Searching Modrinth for '{}'", query.trim())
-    });
+    let progress = crate::feedback::progress::ProgressTask::start("Fetching Modrinth");
     let facets = discovery_facets(kind, game_version, loader);
     let query = query.trim();
     let index = if query.is_empty() {
@@ -260,8 +256,7 @@ pub async fn fetch_content_versions(
     game_version: &str,
     loader: ModLoader,
 ) -> Result<Vec<VersionInfo>, crate::net::NetError> {
-    let progress =
-        crate::feedback::progress::ProgressTask::start("Loading compatible project versions");
+    let progress = crate::feedback::progress::ProgressTask::start("Fetching Modrinth versions");
     let url = content_versions_url(API_BASE, project_id, kind, game_version, loader);
     tracing::debug!(
         "Fetching compatible Modrinth versions for '{}' ({}, {})",
