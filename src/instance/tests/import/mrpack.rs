@@ -158,11 +158,13 @@ fn mod_files_download_to_their_manifest_paths() {
             files: vec![
                 MrpackFile {
                     path: "mods/first.jar".to_owned(),
+                    hashes: Default::default(),
                     downloads: vec![format!("{}/first.jar", server.uri())],
                     file_size: 5,
                 },
                 MrpackFile {
                     path: "resourcepacks/second.jar".to_owned(),
+                    hashes: Default::default(),
                     downloads: vec![format!("{}/second.jar", server.uri())],
                     file_size: 6,
                 },
@@ -202,6 +204,7 @@ fn mod_file_without_a_download_url_fails_without_creating_a_file() {
             dependencies: Default::default(),
             files: vec![MrpackFile {
                 path: "mods/missing.jar".to_owned(),
+                hashes: Default::default(),
                 downloads: Vec::new(),
                 file_size: 0,
             }],
@@ -212,4 +215,50 @@ fn mod_file_without_a_download_url_fails_without_creating_a_file() {
         assert!(!tmp.path().join("mods/missing.jar").exists());
         crate::feedback::progress::clear();
     });
+}
+
+#[test]
+fn import_seeds_exact_modrinth_content_identity() {
+    let tmp = tempfile::tempdir().unwrap();
+    let paths = crate::storage::InstancePaths::new(tmp.path());
+    let relative_path = PathBuf::from("resourcepacks/example.zip");
+    std::fs::create_dir_all(paths.minecraft().join("resourcepacks")).unwrap();
+    std::fs::write(paths.minecraft().join(&relative_path), b"resource pack").unwrap();
+    let sha512 =
+        crate::instance::content::manifest::fingerprint(&paths.minecraft().join(&relative_path))
+            .unwrap()
+            .hash("sha512")
+            .unwrap()
+            .to_owned();
+    let index = MrpackIndex {
+        format_version: 1,
+        game: "minecraft".to_owned(),
+        version_id: "1".to_owned(),
+        name: "Indexed".to_owned(),
+        dependencies: Default::default(),
+        files: vec![MrpackFile {
+            path: relative_path.to_string_lossy().into_owned(),
+            hashes: HashMap::from([("sha512".to_owned(), sha512)]),
+            downloads: vec![
+                "https://cdn.modrinth.com/data/project/versions/version/example.zip".to_owned(),
+            ],
+            file_size: 13,
+        }],
+    };
+
+    seed_content_manifest(&index, &paths).unwrap();
+
+    let manifest = crate::instance::ContentManifest::load(&paths.content_manifest()).unwrap();
+    let record = manifest.record(&relative_path).unwrap();
+    assert_eq!(record.kind, crate::instance::ContentKind::ResourcePack);
+    assert_eq!(
+        record.resolution,
+        crate::instance::Resolution::Resolved {
+            project: crate::instance::ProviderProject {
+                provider: "modrinth".to_owned(),
+                project_id: "project".to_owned(),
+                version_id: "version".to_owned(),
+            },
+        }
+    );
 }

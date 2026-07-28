@@ -7,8 +7,12 @@ use std::path::Path;
 use serde::Deserialize;
 
 use crate::feedback::progress;
+use crate::instance::content::manifest::{
+    ContentFileRecord, ContentKind, ContentManifest, ProviderProject, Resolution, fingerprint,
+};
 use crate::instance::manager::InstanceManager;
 use crate::instance::models::ModLoader;
+use crate::storage::InstancePaths;
 
 use super::{ImportSummary, PackFormat};
 
@@ -29,6 +33,8 @@ pub struct MrpackIndex {
 #[derive(Debug, Clone, Deserialize)]
 pub struct MrpackFile {
     pub path: String,
+    #[serde(default)]
+    pub hashes: HashMap<String, String>,
     pub downloads: Vec<String>,
     #[serde(rename = "fileSize")]
     pub file_size: u64,
@@ -170,6 +176,10 @@ pub async fn execute_import(
             .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> { e.into() })?;
         download_mod_files(&index, &minecraft_dir).await?;
         extract_overrides(&summary.archive_path, &minecraft_dir)?;
+        seed_content_manifest(
+            &index,
+            &InstancePaths::new(manager.instances_dir.join(&name)),
+        )?;
         Ok(())
     }
     .await;
@@ -290,6 +300,82 @@ async fn download_mod_files(
     }
 
     Ok(())
+}
+
+fn seed_content_manifest(
+    index: &MrpackIndex,
+    paths: &InstancePaths,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let mut manifest = ContentManifest::default();
+    for file in &index.files {
+        let relative_path = Path::new(&file.path);
+        let Some(kind) = mrpack_content_kind(relative_path) else {
+            continue;
+        };
+        let Some((project_id, version_id)) = file.downloads.iter().find_map(|url| {
+            let path = url.strip_prefix("https://cdn.modrinth.com/data/")?;
+            let (project_id, path) = path.split_once("/versions/")?;
+            let version_id = path.split('/').next()?;
+            (!project_id.is_empty() && !version_id.is_empty())
+                .then_some((project_id.to_owned(), version_id.to_owned()))
+        }) else {
+            continue;
+        };
+        let Some(expected_sha512) = file.hashes.get("sha512") else {
+            continue;
+        };
+        let file_fingerprint = fingerprint(&paths.minecraft().join(relative_path))?;
+        if file_fingerprint
+            .hash("sha512")
+            .is_none_or(|actual| !actual.eq_ignore_ascii_case(expected_sha512))
+        {
+            tracing::warn!(
+                "Skipping stale Modrinth identity for '{}' because its downloaded hash changed",
+                file.path
+            );
+            continue;
+        }
+        manifest.upsert(ContentFileRecord {
+            relative_path: relative_path.to_owned(),
+            kind,
+            enabled: true,
+            fingerprint: file_fingerprint,
+            resolution: Resolution::Resolved {
+                project: ProviderProject {
+                    provider: "modrinth".to_owned(),
+                    project_id,
+                    version_id,
+                },
+            },
+        });
+    }
+    let seeded = manifest.files.len();
+    manifest.save(&paths.content_manifest())?;
+    tracing::debug!(
+        "Seeded {} exact Modrinth content record(s) from .mrpack '{}'",
+        seeded,
+        index.name
+    );
+    Ok(())
+}
+
+fn mrpack_content_kind(path: &Path) -> Option<ContentKind> {
+    use std::path::Component;
+
+    if path
+        .components()
+        .any(|component| !matches!(component, Component::Normal(_)))
+    {
+        return None;
+    }
+    let directory = path.components().next()?.as_os_str().to_str()?;
+    let name = path.file_name()?.to_str()?.to_ascii_lowercase();
+    match (directory, name.as_str()) {
+        ("mods", name) if name.ends_with(".jar") => Some(ContentKind::Mod),
+        ("resourcepacks", name) if name.ends_with(".zip") => Some(ContentKind::ResourcePack),
+        ("shaderpacks", name) if name.ends_with(".zip") => Some(ContentKind::Shader),
+        _ => None,
+    }
 }
 
 fn extract_overrides(
