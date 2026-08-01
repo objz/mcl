@@ -20,8 +20,9 @@ use ratatui_image::{CropOptions, Resize, StatefulImage, protocol::StatefulProtoc
 use tui_widget_list::{ListBuilder, ListState as TuiListState, ListView};
 
 use crate::config::theme::THEME;
-use crate::instance::content::entry::ContentEntry;
+use crate::instance::content::entry::{ContentEntry, WorldDetails, WorldGameMode};
 use crate::instance::content::icons::IconCell;
+use crate::time::format_relative_time;
 
 type ScanOneFn = fn(&Path, &str, bool) -> ContentEntry;
 static PROVIDER_ICON_SLOTS: LazyLock<Arc<tokio::sync::Semaphore>> =
@@ -197,6 +198,7 @@ pub struct ContentListState {
     scan_one_fn: Option<ScanOneFn>,
     content_ext: Option<&'static str>,
     pagination: Option<PaginationState>,
+    pub(crate) expected_game_version: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -234,6 +236,7 @@ impl Default for ContentListState {
             scan_one_fn: None,
             content_ext: None,
             pagination: None,
+            expected_game_version: None,
         }
     }
 }
@@ -447,7 +450,8 @@ impl ContentListState {
         let icon_rows = entry.icon_lines.as_ref().map_or(0, Vec::len);
         let metadata = self.display_metadata.get(&entry.file_stem);
         let has_second_line = metadata.is_some_and(|metadata| metadata.has_description)
-            || entry.footer_label.is_some();
+            || entry.footer_label.is_some()
+            || entry.world_details.is_some();
         icon_rows.max(if has_second_line { 2 } else { 1 }) as u16
     }
 
@@ -1482,6 +1486,7 @@ pub fn render(
     let display_metadata = &state.display_metadata;
     let filtered_rows = &filtered;
     let search = &state.search;
+    let expected_game_version = state.expected_game_version.as_deref();
     let ready_image_stems: HashSet<String> = state.image_protocols.keys().cloned().collect();
 
     let builder = ListBuilder::new(move |context| {
@@ -1491,8 +1496,13 @@ pub fn render(
         let metadata = display_metadata.get(&entry.file_stem);
         let enabled = entry.enabled;
         let icon_pixels = &entry.icon_lines;
-        let title_suffix = entry.title_suffix.as_deref();
-        let footer_label = entry.footer_label.as_deref();
+        let world_details = entry.world_details.as_ref();
+        let title_suffix = world_details
+            .and_then(|details| details.game_mode)
+            .map(WorldGameMode::label)
+            .or(entry.title_suffix.as_deref());
+        let world_footer = world_details.map(|details| format_relative_time(details.last_played));
+        let footer_label = world_footer.as_deref().or(entry.footer_label.as_deref());
         // Keep rendering the terminal fallback until the asynchronous image
         // decoder has produced a protocol. Invalid and unsupported images
         // therefore remain visible as a question mark instead of blank space.
@@ -1537,23 +1547,38 @@ pub fn render(
                 stripe_bg,
             ),
         };
+        let title_suffix_color = world_details
+            .and_then(|details| details.game_mode)
+            .map(world_game_mode_color)
+            .unwrap_or_else(|| theme.success());
         let title_suffix_style = Style::default()
             .fg(theme.background())
-            .bg(theme.success())
+            .bg(title_suffix_color)
             .add_modifier(Modifier::BOLD);
-        let footer_label_style = Style::default().fg(theme.text());
+        let footer_label_style = Style::default().fg(if world_details.is_some() {
+            theme.text_dim()
+        } else {
+            theme.text()
+        });
 
+        let world_summary = world_details
+            .map(world_summary)
+            .filter(|line| !line.is_empty());
         let has_icon = icon_pixels.is_some();
-        let mut descriptions = metadata
-            .map(|metadata| {
-                metadata
-                    .description
-                    .lines()
-                    .map(str::trim)
-                    .filter(|line| !line.is_empty())
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or_default();
+        let mut descriptions = if let Some(summary) = world_summary.as_deref() {
+            vec![summary]
+        } else {
+            metadata
+                .map(|metadata| {
+                    metadata
+                        .description
+                        .lines()
+                        .map(str::trim)
+                        .filter(|line| !line.is_empty())
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default()
+        };
         if !multiline_descriptions {
             descriptions.truncate(1);
         }
@@ -1646,7 +1671,19 @@ pub fn render(
                 ));
                 row.push(Span::raw(" "));
                 if let Some(description) = visible_descriptions.get(r - 1) {
-                    row.extend(search.highlight_spans(description, description_style));
+                    if r == 1
+                        && let Some(details) = world_details
+                    {
+                        row.extend(world_summary_spans(
+                            details,
+                            expected_game_version,
+                            world_summary.as_deref().unwrap_or_default(),
+                            description,
+                            description_style,
+                        ));
+                    } else {
+                        row.extend(search.highlight_spans(description, description_style));
+                    }
                 }
                 if r == 1
                     && let Some(footer_label) = footer_label
@@ -2066,6 +2103,63 @@ fn icon_spans(
             )]
         }
     }
+}
+
+fn world_game_mode_color(mode: WorldGameMode) -> Color {
+    let theme = THEME.as_ref();
+    match mode {
+        WorldGameMode::Survival => theme.success(),
+        WorldGameMode::Creative => theme.info(),
+        WorldGameMode::Adventure => theme.warning(),
+        WorldGameMode::Spectator => theme.text_dim(),
+        WorldGameMode::Hardcore => theme.error(),
+    }
+}
+
+fn world_summary(details: &WorldDetails) -> String {
+    match (&details.minecraft_version, &details.size) {
+        (Some(version), Some(size)) => format!("Minecraft {version}  •  {size}"),
+        (Some(version), None) => format!("Minecraft {version}"),
+        (None, Some(size)) => size.clone(),
+        (None, None) => String::new(),
+    }
+}
+
+fn world_summary_spans(
+    details: &WorldDetails,
+    expected_game_version: Option<&str>,
+    summary: &str,
+    visible_summary: &str,
+    fallback_style: Style,
+) -> Vec<Span<'static>> {
+    if summary != visible_summary {
+        return vec![Span::styled(visible_summary.to_owned(), fallback_style)];
+    }
+
+    let theme = THEME.as_ref();
+    let mut spans = Vec::new();
+    if let Some(version) = &details.minecraft_version {
+        let color = if expected_game_version.is_some_and(|expected| expected != version) {
+            theme.error()
+        } else {
+            theme.info()
+        };
+        spans.push(Span::styled("Minecraft ", fallback_style));
+        spans.push(Span::styled(
+            version.clone(),
+            Style::default().fg(color).add_modifier(Modifier::BOLD),
+        ));
+    }
+    if let Some(size) = &details.size {
+        if !spans.is_empty() {
+            spans.push(Span::styled("  •  ", fallback_style));
+        }
+        spans.push(Span::styled(
+            size.clone(),
+            Style::default().fg(theme.text_bright()).bg(theme.surface()),
+        ));
+    }
+    spans
 }
 
 fn title_suffix_spans(

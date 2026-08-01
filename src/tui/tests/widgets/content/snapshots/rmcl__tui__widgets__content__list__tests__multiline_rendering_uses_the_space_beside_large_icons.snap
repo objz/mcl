@@ -2,9 +2,9 @@
 source: src/tui/tests/widgets/content/list.rs
 expression: terminal.backend().to_string()
 ---
-"▌▄▄▄▄▄▄▄▄▄▄▄▄ World                               "
-"▌▄▄▄▄▄▄▄▄▄▄▄▄ Last played                         "
-"▌▄▄▄▄▄▄▄▄▄▄▄▄ Difficulty: Normal                  "
-"▌▄▄▄▄▄▄▄▄▄▄▄▄ Minecraft: 1.21.1                   "
-"▌▄▄▄▄▄▄▄▄▄▄▄▄ Created                             "
-"▌▄▄▄▄▄▄▄▄▄▄▄▄ Approx. size                        "
+"▌▄▄▄▄▄▄▄▄▄▄▄▄ World   Survival                                        "
+"▌▄▄▄▄▄▄▄▄▄▄▄▄ Minecraft 1.21.1  •  2.0 MB                Never played "
+"▌▄▄▄▄▄▄▄▄▄▄▄▄                                                         "
+"▌▄▄▄▄▄▄▄▄▄▄▄▄                                                         "
+"▌▄▄▄▄▄▄▄▄▄▄▄▄                                                         "
+"▌▄▄▄▄▄▄▄▄▄▄▄▄                                                         "

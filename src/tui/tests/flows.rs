@@ -235,6 +235,7 @@ fn content_entry(name: &str, path: PathBuf) -> ContentEntry {
         source_slug: None,
         installed_path: Some(path.clone()),
         provider_project: None,
+        world_details: None,
         title_suffix: None,
         footer_label: None,
         description: String::new(),

@@ -2,6 +2,35 @@ use std::path::PathBuf;
 
 use super::icons::IconCell;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WorldGameMode {
+    Survival,
+    Creative,
+    Adventure,
+    Spectator,
+    Hardcore,
+}
+
+impl WorldGameMode {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Survival => "Survival",
+            Self::Creative => "Creative",
+            Self::Adventure => "Adventure",
+            Self::Spectator => "Spectator",
+            Self::Hardcore => "Hardcore",
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct WorldDetails {
+    pub game_mode: Option<WorldGameMode>,
+    pub last_played: Option<chrono::DateTime<chrono::Utc>>,
+    pub minecraft_version: Option<String>,
+    pub size: Option<String>,
+}
+
 #[derive(Debug, Clone)]
 pub struct ContentEntry {
     pub file_stem: String,
@@ -9,6 +38,7 @@ pub struct ContentEntry {
     pub source_slug: Option<String>,
     pub installed_path: Option<PathBuf>,
     pub provider_project: Option<super::manifest::ProviderProject>,
+    pub world_details: Option<WorldDetails>,
     pub title_suffix: Option<String>,
     pub footer_label: Option<String>,
     pub description: String,
