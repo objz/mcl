@@ -198,7 +198,6 @@ pub struct ContentListState {
     scan_one_fn: Option<ScanOneFn>,
     content_ext: Option<&'static str>,
     pagination: Option<PaginationState>,
-    pub(crate) expected_game_version: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -236,7 +235,6 @@ impl Default for ContentListState {
             scan_one_fn: None,
             content_ext: None,
             pagination: None,
-            expected_game_version: None,
         }
     }
 }
@@ -1486,7 +1484,6 @@ pub fn render(
     let display_metadata = &state.display_metadata;
     let filtered_rows = &filtered;
     let search = &state.search;
-    let expected_game_version = state.expected_game_version.as_deref();
     let ready_image_stems: HashSet<String> = state.image_protocols.keys().cloned().collect();
 
     let builder = ListBuilder::new(move |context| {
@@ -1671,19 +1668,7 @@ pub fn render(
                 ));
                 row.push(Span::raw(" "));
                 if let Some(description) = visible_descriptions.get(r - 1) {
-                    if r == 1
-                        && let Some(details) = world_details
-                    {
-                        row.extend(world_summary_spans(
-                            details,
-                            expected_game_version,
-                            world_summary.as_deref().unwrap_or_default(),
-                            description,
-                            description_style,
-                        ));
-                    } else {
-                        row.extend(search.highlight_spans(description, description_style));
-                    }
+                    row.extend(search.highlight_spans(description, description_style));
                 }
                 if r == 1
                     && let Some(footer_label) = footer_label
@@ -2118,48 +2103,11 @@ fn world_game_mode_color(mode: WorldGameMode) -> Color {
 
 fn world_summary(details: &WorldDetails) -> String {
     match (&details.minecraft_version, &details.size) {
-        (Some(version), Some(size)) => format!("Minecraft {version}  •  {size}"),
-        (Some(version), None) => format!("Minecraft {version}"),
+        (Some(version), Some(size)) => format!("{version}  •  {size}"),
+        (Some(version), None) => version.clone(),
         (None, Some(size)) => size.clone(),
         (None, None) => String::new(),
     }
-}
-
-fn world_summary_spans(
-    details: &WorldDetails,
-    expected_game_version: Option<&str>,
-    summary: &str,
-    visible_summary: &str,
-    fallback_style: Style,
-) -> Vec<Span<'static>> {
-    if summary != visible_summary {
-        return vec![Span::styled(visible_summary.to_owned(), fallback_style)];
-    }
-
-    let theme = THEME.as_ref();
-    let mut spans = Vec::new();
-    if let Some(version) = &details.minecraft_version {
-        let color = if expected_game_version.is_some_and(|expected| expected != version) {
-            theme.error()
-        } else {
-            theme.info()
-        };
-        spans.push(Span::styled("Minecraft ", fallback_style));
-        spans.push(Span::styled(
-            version.clone(),
-            Style::default().fg(color).add_modifier(Modifier::BOLD),
-        ));
-    }
-    if let Some(size) = &details.size {
-        if !spans.is_empty() {
-            spans.push(Span::styled("  •  ", fallback_style));
-        }
-        spans.push(Span::styled(
-            size.clone(),
-            Style::default().fg(theme.text_bright()).bg(theme.surface()),
-        ));
-    }
-    spans
 }
 
 fn title_suffix_spans(
