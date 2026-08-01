@@ -1006,6 +1006,15 @@ impl ContentListState {
             .map(|entry| entry.file_stem.clone())
     }
 
+    pub fn selected_entry(&self) -> Option<&ContentEntry> {
+        let filtered = self.filtered_indices();
+        let index = self
+            .list_state
+            .selected
+            .and_then(|index| filtered.get(index))?;
+        self.entries.get(*index)
+    }
+
     fn restore_selected_file_stem(&mut self, file_stem: Option<&str>) {
         let filtered = self.filtered_indices();
         self.list_state.selected = file_stem
@@ -1421,6 +1430,7 @@ pub fn render(
     empty_text: &str,
     picker: &ratatui_image::picker::Picker,
     paginate: bool,
+    multiline_descriptions: bool,
 ) {
     let theme = THEME.as_ref();
     state.pagination = None;
@@ -1534,8 +1544,20 @@ pub fn render(
         let footer_label_style = Style::default().fg(theme.text());
 
         let has_icon = icon_pixels.is_some();
-        let stripped_desc = metadata.map_or("", |metadata| metadata.description.as_str());
-        let has_description = metadata.is_some_and(|metadata| metadata.has_description);
+        let mut descriptions = metadata
+            .map(|metadata| {
+                metadata
+                    .description
+                    .lines()
+                    .map(str::trim)
+                    .filter(|line| !line.is_empty())
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        if !multiline_descriptions {
+            descriptions.truncate(1);
+        }
+        let has_description = !descriptions.is_empty();
         let rendered_icon_columns = if use_image_protocol && has_image {
             protocol_columns
         } else {
@@ -1549,10 +1571,21 @@ pub fn render(
             rendered_icon_columns,
             has_icon,
         );
-        let visible_description = ellipsize(
-            stripped_desc,
-            description_text_width(description_width, footer_label, has_description),
-        );
+        let visible_descriptions = descriptions
+            .iter()
+            .enumerate()
+            .map(|(index, description)| {
+                ellipsize(
+                    description,
+                    if index == 0 {
+                        description_text_width(description_width, footer_label, has_description)
+                    } else {
+                        description_width
+                    },
+                )
+            })
+            .collect::<Vec<_>>();
+        let visible_description = visible_descriptions.first().map_or("", String::as_str);
         let compact = !has_icon && !has_description && footer_label.is_none();
 
         let selector = if show_selected {
@@ -1575,11 +1608,9 @@ pub fn render(
             (item, 1)
         } else if has_icon {
             let icon_row_count = icon_pixels.as_ref().map(|r| r.len()).unwrap_or(0);
-            let text_rows = if has_description || footer_label.is_some() {
-                2
-            } else {
-                1
-            };
+            let text_rows = 1 + visible_descriptions
+                .len()
+                .max(usize::from(footer_label.is_some()));
             let height = icon_row_count.max(text_rows) as u16;
 
             let pad = if show_selected {
@@ -1605,22 +1636,24 @@ pub fn render(
 
             let mut lines = vec![Line::from(line_0)];
 
-            if has_description || footer_label.is_some() {
+            for r in 1..text_rows {
                 let mut row = vec![pad.clone()];
                 row.extend(icon_spans(
                     icon_pixels.as_ref(),
-                    1,
+                    r,
                     use_image_protocol && has_image,
                     protocol_columns,
                 ));
                 row.push(Span::raw(" "));
-                if has_description {
-                    row.extend(search.highlight_spans(&visible_description, description_style));
+                if let Some(description) = visible_descriptions.get(r - 1) {
+                    row.extend(search.highlight_spans(description, description_style));
                 }
-                if let Some(footer_label) = footer_label {
+                if r == 1
+                    && let Some(footer_label) = footer_label
+                {
                     row.extend(right_aligned_footer_spans(
                         description_width,
-                        &visible_description,
+                        visible_description,
                         has_description,
                         footer_label,
                         footer_label_style,
@@ -1663,12 +1696,12 @@ pub fn render(
                 let mut description = vec![pad];
                 if has_description {
                     description
-                        .extend(search.highlight_spans(&visible_description, description_style));
+                        .extend(search.highlight_spans(visible_description, description_style));
                 }
                 if let Some(footer_label) = footer_label {
                     description.extend(right_aligned_footer_spans(
                         description_width,
-                        &visible_description,
+                        visible_description,
                         has_description,
                         footer_label,
                         footer_label_style,
@@ -1994,7 +2027,7 @@ fn strip_mc_codes(text: &str) -> String {
 
 fn display_metadata(entry: &ContentEntry) -> DisplayMetadata {
     let description = strip_mc_codes(&entry.description);
-    let description = description.lines().next().unwrap_or("").trim().to_string();
+    let description = description.trim().to_string();
     DisplayMetadata {
         has_description: !description.is_empty(),
         description,

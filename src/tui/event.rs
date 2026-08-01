@@ -552,7 +552,11 @@ impl App {
         }
     }
 
-    pub(super) fn spawn_launch(&self, instance: crate::instance::InstanceConfig) {
+    pub(super) fn spawn_launch(
+        &self,
+        instance: crate::instance::InstanceConfig,
+        quick_play_world: Option<String>,
+    ) {
         use crate::instance::launch;
         use crate::instance::runtime;
 
@@ -569,13 +573,30 @@ impl App {
             }
         };
 
+        let can_launch = matches!(
+            runtime::get(&instance.name),
+            None | Some(runtime::RunState::Crashed(_))
+        );
+        if !can_launch {
+            return;
+        }
+        runtime::remove(&instance.name);
+        crate::instance::logs::live::clear(&instance.name);
+
         runtime::set_state(&instance.name, runtime::RunState::Authenticating);
 
         let instances_dir = self.instance_manager.instances_dir.clone();
         let meta_dir = self.instance_manager.meta_dir.clone();
 
         tokio::spawn(async move {
-            if let Err(e) = launch::launch(&instance, &instances_dir, &meta_dir).await {
+            if let Err(e) = launch::launch(
+                &instance,
+                &instances_dir,
+                &meta_dir,
+                quick_play_world.as_deref(),
+            )
+            .await
+            {
                 tracing::error!("Failed to launch '{}': {}", instance.name, e);
                 runtime::remove(&instance.name);
             }

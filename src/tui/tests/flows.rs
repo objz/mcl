@@ -33,6 +33,41 @@ fn global_navigation_returns_from_log_overlay() {
 }
 
 #[test]
+fn worlds_reserves_q_for_available_quick_launch() {
+    let mut ui = UiHarness::new();
+    ui.add_instance("Test Instance");
+    ui.app.focused = FocusedArea::Content;
+    ui.app.content_tab = ContentTab::Worlds;
+
+    ui.key(KeyCode::Char('q'));
+    assert!(!ui.app.exit, "unsupported Quick Play must not quit rmcl");
+
+    let meta = serde_json::json!({
+        "id": "1.21.1",
+        "mainClass": "net.minecraft.client.main.Main",
+        "arguments": {
+            "game": [{
+                "rules": [{
+                    "action": "allow",
+                    "features": { "is_quick_play_singleplayer": true }
+                }],
+                "value": ["--quickPlaySingleplayer", "${quickPlaySingleplayer}"]
+            }],
+            "jvm": []
+        }
+    });
+    let meta_path = crate::storage::MetadataPaths::new(&ui.app.instance_manager.meta_dir)
+        .versions()
+        .join("1.21.1/meta.json");
+    std::fs::create_dir_all(meta_path.parent().unwrap()).unwrap();
+    std::fs::write(meta_path, serde_json::to_vec(&meta).unwrap()).unwrap();
+    ui.app.world_quick_play_support = None;
+    ui.draw();
+
+    assert!(ui.screen().contains("quick launch"));
+}
+
+#[test]
 fn mouse_wheel_uses_the_focused_views_scroll_navigation() {
     let mut ui = UiHarness::new();
     ui.app.focused = FocusedArea::OverviewExpanded;

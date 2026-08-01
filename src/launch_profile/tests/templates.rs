@@ -54,6 +54,7 @@ impl Fixture {
             launcher_name: "rmcl",
             launcher_version: "0.3.0",
             clientid: "0",
+            quick_play_singleplayer: None,
         }
     }
 }
@@ -98,5 +99,16 @@ fn windows_style_backslashes_in_value_pass_through() {
     assert!(
         result.contains(r"C:\Users\test\.minecraft\libraries"),
         "expected backslashes preserved, got: {result}"
+    );
+}
+
+#[test]
+fn quick_play_world_is_substituted_when_present() {
+    let fx = Fixture::unix();
+    let mut context = fx.ctx();
+    context.quick_play_singleplayer = Some("New World");
+    assert_eq!(
+        substitute("${quickPlaySingleplayer}", &context),
+        "New World"
     );
 }

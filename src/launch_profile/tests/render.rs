@@ -46,6 +46,7 @@ impl Fixture {
             launcher_name: "rmcl",
             launcher_version: "0.3.0",
             clientid: "0",
+            quick_play_singleplayer: None,
         }
     }
 

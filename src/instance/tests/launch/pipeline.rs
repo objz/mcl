@@ -13,6 +13,17 @@ fn parse_java_major_version_handles_common_outputs(
 }
 
 #[test]
+fn quick_play_world_must_be_a_direct_save_directory() {
+    let temp = tempfile::tempdir().unwrap();
+    let minecraft = temp.path().join("minecraft");
+    std::fs::create_dir_all(minecraft.join("saves/World")).unwrap();
+
+    assert!(validate_quick_play_world(&minecraft, "World").is_ok());
+    assert!(validate_quick_play_world(&minecraft, "../World").is_err());
+    assert!(validate_quick_play_world(&minecraft, "Missing").is_err());
+}
+
+#[test]
 fn build_game_args_renders_upstream_arguments() {
     use crate::launch_profile::model::{Argument, Arguments, LaunchProfile};
     use crate::launch_profile::rules::{FeatureSet, RuleContext};
@@ -42,6 +53,7 @@ fn build_game_args_renders_upstream_arguments() {
         launcher_name: "rmcl",
         launcher_version: "test",
         clientid: "0",
+        quick_play_singleplayer: None,
         version_type: "release",
     };
     let features = FeatureSet::default();

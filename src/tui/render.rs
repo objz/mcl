@@ -60,6 +60,7 @@ impl App {
             self.instances_state.selected_instance(),
             &mut self.throbber_state,
         );
+        let world_quick_play_supported = self.selected_instance_supports_quick_play();
         if load_content {
             widgets::content::render(
                 frame,
@@ -79,6 +80,7 @@ impl App {
                 &mut self.logs_state,
                 &self.instance_manager.instances_dir,
                 &self.picker,
+                world_quick_play_supported,
             );
         } else {
             frame.render_widget(
