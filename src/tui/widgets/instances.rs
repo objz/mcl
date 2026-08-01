@@ -15,29 +15,10 @@ use tui_widget_list::{ListBuilder, ListState as TuiListState, ListView};
 
 use crate::instance::models::InstanceConfig;
 use crate::instance::runtime::{RunState, get as get_run_state};
+use crate::time::format_relative_time;
 use crate::tui::app::FocusedArea;
 
 use super::{WidgetKey, search::SearchState, styled_title};
-
-// rough human-friendly time delta. not trying to be precise here,
-// "2 months ago" is close enough when months are ~30 days
-fn format_last_played(last_played: Option<chrono::DateTime<chrono::Utc>>) -> String {
-    let Some(dt) = last_played else {
-        return "Never played".to_string();
-    };
-    let secs = chrono::Utc::now()
-        .signed_duration_since(dt)
-        .num_seconds()
-        .max(0) as u64;
-    match secs {
-        0..=59 => "Just now".to_string(),
-        60..=3599 => format!("{} minutes ago", secs / 60),
-        3600..=86399 => format!("{} hours ago", secs / 3600),
-        86400..=2591999 => format!("{} days ago", secs / 86400),
-        2592000..=31535999 => format!("{} months ago", secs / 2592000),
-        _ => "Over a year ago".to_string(),
-    }
-}
 
 #[derive(Debug, Default)]
 pub struct State {
@@ -305,7 +286,7 @@ pub fn render(frame: &mut Frame, area: Rect, focused: FocusedArea, state: &mut S
             Some(RunState::Running) | Some(RunState::Starting) => {
                 ("Playing".to_string(), Style::default().fg(theme.success()))
             }
-            _ => (format_last_played(instance.last_played), meta_style),
+            _ => (format_relative_time(instance.last_played), meta_style),
         };
 
         let meta_line = Line::from(vec![

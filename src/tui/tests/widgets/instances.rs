@@ -1,8 +1,8 @@
 use super::*;
 
 #[test]
-fn format_last_played_none_returns_never_played() {
-    assert_eq!(format_last_played(None), "Never played");
+fn format_relative_time_none_returns_never_played() {
+    assert_eq!(format_relative_time(None), "Never played");
 }
 
 // each #[case] picks a "seconds ago" value that lands in exactly one
@@ -11,18 +11,18 @@ fn format_last_played_none_returns_never_played() {
 #[rstest::rstest]
 #[case::just_now(0, "Just now")]
 #[case::just_now_upper(59, "Just now")]
-#[case::minutes(60, "1 minutes ago")]
+#[case::minutes(60, "1 minute ago")]
 #[case::minutes_upper(3599, "59 minutes ago")]
-#[case::hours(3600, "1 hours ago")]
+#[case::hours(3600, "1 hour ago")]
 #[case::hours_upper(86_399, "23 hours ago")]
-#[case::days(86_400, "1 days ago")]
+#[case::days(86_400, "1 day ago")]
 #[case::days_upper(2_591_999, "29 days ago")]
-#[case::months(2_592_000, "1 months ago")]
+#[case::months(2_592_000, "1 month ago")]
 #[case::months_upper(31_535_999, "12 months ago")]
 #[case::over_a_year(31_536_000, "Over a year ago")]
-fn format_last_played_buckets(#[case] seconds_ago: i64, #[case] expected: &str) {
+fn format_relative_time_buckets(#[case] seconds_ago: i64, #[case] expected: &str) {
     let dt = chrono::Utc::now() - chrono::Duration::seconds(seconds_ago);
-    assert_eq!(format_last_played(Some(dt)), expected);
+    assert_eq!(format_relative_time(Some(dt)), expected);
 }
 
 use crate::instance::models::{InstanceConfig, ModLoader};
