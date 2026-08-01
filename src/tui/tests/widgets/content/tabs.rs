@@ -9,14 +9,18 @@ fn mode_labels_have_the_same_rendered_width() {
 }
 
 #[test]
-fn discovery_navigation_only_cycles_downloadable_tabs() {
+fn discovery_navigation_includes_datapacks() {
     assert_eq!(
         ContentTab::Shaders.next_for_mode(ContentMode::Discover),
+        ContentTab::DataPacks
+    );
+    assert_eq!(
+        ContentTab::DataPacks.next_for_mode(ContentMode::Discover),
         ContentTab::Mods
     );
     assert_eq!(
         ContentTab::Mods.previous_for_mode(ContentMode::Discover),
-        ContentTab::Shaders
+        ContentTab::DataPacks
     );
 }
 
@@ -48,8 +52,11 @@ fn discovery_version_rows_only_show_the_version_number() {
 
 #[test]
 fn discovery_confirmation_popup_fits_its_summary() {
-    assert_eq!(version_popup_height(false, None), VERSION_POPUP_HEIGHT);
-    assert_eq!(version_popup_height(true, None), 6);
+    assert_eq!(
+        version_popup_height(false, None, false),
+        VERSION_POPUP_HEIGHT
+    );
+    assert_eq!(version_popup_height(true, None, false), 6);
 }
 
 #[test]

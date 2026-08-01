@@ -61,6 +61,8 @@ fn only_exclusively_library_categorized_projects_are_cleanup_eligible() {
             .map(|category| (*category).to_owned())
             .collect(),
         additional_categories: Vec::new(),
+        project_type: "mod".to_owned(),
+        loaders: Vec::new(),
     };
 
     assert!(project(&["library"]).is_library_only());
@@ -92,6 +94,15 @@ fn discovery_resource_pack_facets_do_not_require_loader() {
 }
 
 #[test]
+fn discovery_datapack_facets_use_the_datapack_project_type() {
+    let facets = discovery_facets(ContentKind::DataPack, "1.21.1", ModLoader::Fabric);
+    assert_eq!(
+        serde_json::from_str::<Vec<Vec<String>>>(&facets).unwrap(),
+        vec![vec!["all_project_types:datapack"], vec!["versions:1.21.1"]]
+    );
+}
+
+#[test]
 fn compatible_mod_versions_filter_by_game_and_loader() {
     let url = content_versions_url(
         "https://example.test/v2",
@@ -118,6 +129,21 @@ fn compatible_resource_pack_versions_do_not_filter_by_loader() {
     assert_eq!(
         url,
         "https://example.test/v2/project/stay-true/version?include_changelog=false&game_versions=%5B%221.21.1%22%5D"
+    );
+}
+
+#[test]
+fn compatible_datapack_versions_filter_by_datapack_loader() {
+    let url = content_versions_url(
+        "https://example.test/v2",
+        "terralith",
+        ContentKind::DataPack,
+        "1.21.1",
+        ModLoader::Fabric,
+    );
+    assert_eq!(
+        url,
+        "https://example.test/v2/project/terralith/version?include_changelog=false&game_versions=%5B%221.21.1%22%5D&loaders=%5B%22datapack%22%5D"
     );
 }
 

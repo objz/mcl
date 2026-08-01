@@ -522,13 +522,29 @@ fn content_files(minecraft_dir: &Path) -> std::io::Result<Vec<(ContentKind, Path
             }
         }
     }
+    if let Ok(worlds) = std::fs::read_dir(minecraft_dir.join("saves")) {
+        for world in worlds.flatten().filter(|entry| entry.path().is_dir()) {
+            let Ok(entries) = std::fs::read_dir(world.path().join("datapacks")) else {
+                continue;
+            };
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if supported_content_path(ContentKind::DataPack, &path) {
+                    files.push((ContentKind::DataPack, path));
+                }
+            }
+        }
+    }
     files.sort_by(|left, right| left.1.cmp(&right.1));
     Ok(files)
 }
 
 fn supported_content_path(kind: ContentKind, path: &Path) -> bool {
     if path.is_dir() {
-        return matches!(kind, ContentKind::ResourcePack | ContentKind::Shader);
+        return matches!(
+            kind,
+            ContentKind::ResourcePack | ContentKind::Shader | ContentKind::DataPack
+        );
     }
     if !path.is_file() {
         return false;
@@ -538,7 +554,7 @@ fn supported_content_path(kind: ContentKind, path: &Path) -> bool {
     };
     match kind {
         ContentKind::Mod => name.ends_with(".jar") || name.ends_with(".jar.disabled"),
-        ContentKind::ResourcePack | ContentKind::Shader => {
+        ContentKind::ResourcePack | ContentKind::Shader | ContentKind::DataPack => {
             name.ends_with(".zip") || name.ends_with(".zip.disabled")
         }
     }

@@ -4,7 +4,7 @@
 
 use ratatui::{
     Frame,
-    layout::{Alignment, Constraint, Layout, Rect},
+    layout::{Alignment, Constraint, Layout, Margin, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, ListItem, Paragraph, Widget, Wrap},
@@ -37,6 +37,7 @@ pub enum ContentTab {
     Mods,
     ResourcePacks,
     Shaders,
+    DataPacks,
     Screenshots,
     Worlds,
     Logs,
@@ -56,6 +57,7 @@ impl ContentTab {
         ContentTab::Mods,
         ContentTab::ResourcePacks,
         ContentTab::Shaders,
+        ContentTab::DataPacks,
     ];
 
     pub fn label(self) -> &'static str {
@@ -63,6 +65,7 @@ impl ContentTab {
             ContentTab::Mods => "Mods",
             ContentTab::ResourcePacks => "Resource Packs",
             ContentTab::Shaders => "Shaders",
+            ContentTab::DataPacks => "Datapacks",
             ContentTab::Screenshots => "Screenshots",
             ContentTab::Worlds => "Worlds",
             ContentTab::Logs => "Logs",
@@ -160,7 +163,10 @@ pub fn render(
     resource_packs_discovery_state: &mut DiscoveryState,
     shaders_state: &mut super::list::ContentListState,
     shaders_discovery_state: &mut DiscoveryState,
+    datapacks_discovery_state: &mut DiscoveryState,
     worlds_state: &mut super::list::ContentListState,
+    world_datapacks_state: &mut super::list::ContentListState,
+    open_world_datapacks: Option<&(String, std::path::PathBuf)>,
     screenshots_state: &mut crate::tui::widgets::screenshots_grid::ScreenshotsState,
     logs_state: &mut crate::tui::widgets::logs_viewer::LogsState,
     instances_dir: &std::path::Path,
@@ -216,6 +222,10 @@ pub fn render(
             shaders_discovery_state.search.title_line()
         }
         ContentTab::Shaders => shaders_state.search.title_line(),
+        ContentTab::DataPacks => datapacks_discovery_state.search.title_line(),
+        ContentTab::Worlds if open_world_datapacks.is_some() => {
+            world_datapacks_state.search.title_line()
+        }
         ContentTab::Worlds => worlds_state.search.title_line(),
         ContentTab::Screenshots => screenshots_state.search.title_line(),
         ContentTab::Logs => {
@@ -257,12 +267,14 @@ pub fn render(
         ContentTab::Mods => mods_discovery_state.selected_is_installed(),
         ContentTab::ResourcePacks => resource_packs_discovery_state.selected_is_installed(),
         ContentTab::Shaders => shaders_discovery_state.selected_is_installed(),
+        ContentTab::DataPacks => false,
         _ => false,
     };
     let discovery_page_open = match tab {
         ContentTab::Mods => mods_discovery_state.project_page_open(),
         ContentTab::ResourcePacks => resource_packs_discovery_state.project_page_open(),
         ContentTab::Shaders => shaders_discovery_state.project_page_open(),
+        ContentTab::DataPacks => datapacks_discovery_state.project_page_open(),
         _ => false,
     };
     let discovery_unavailable = mode == ContentMode::Discover
@@ -272,6 +284,9 @@ pub fn render(
                 .unavailable_message(instance)
                 .is_some(),
             ContentTab::Shaders => shaders_discovery_state
+                .unavailable_message(instance)
+                .is_some(),
+            ContentTab::DataPacks => datapacks_discovery_state
                 .unavailable_message(instance)
                 .is_some(),
             _ => false,
@@ -320,8 +335,16 @@ pub fn render(
                 ("/", " search"),
                 ("Tab", " discover"),
             ],
+            (ContentMode::Installed, ContentTab::Worlds) if open_world_datapacks.is_some() => &[
+                ("j/k", " navigate"),
+                ("d", " delete"),
+                ("Shift+Enter", " open dir"),
+                ("h/Esc", " back"),
+                ("/", " search"),
+            ],
             (ContentMode::Installed, ContentTab::Worlds) if world_quick_play_supported => &[
                 ("j/k", " navigate"),
+                ("Enter", " datapacks"),
                 ("q", " quick launch"),
                 ("d", " delete"),
                 ("Shift+⏎", " open dir"),
@@ -331,12 +354,14 @@ pub fn render(
             ],
             (ContentMode::Installed, ContentTab::Worlds) => &[
                 ("j/k", " navigate"),
+                ("Enter", " datapacks"),
                 ("d", " delete"),
                 ("Shift+⏎", " open dir"),
                 ("h/l", " tabs"),
                 ("/", " search"),
                 ("Tab", " discover"),
             ],
+            (ContentMode::Installed, ContentTab::DataPacks) => &[],
             (ContentMode::Installed, ContentTab::Screenshots) => &[
                 ("Shift+HJKL", " grid"),
                 ("⏎", " open"),
@@ -418,9 +443,46 @@ pub fn render(
         return;
     }
 
+    if tab == ContentTab::DataPacks {
+        if let Some(instance) = instance {
+            if worlds_state.loaded_for.as_deref() != Some(instance.name.as_str()) {
+                let saves = instances_dir
+                    .join(&instance.name)
+                    .join(crate::storage::MINECRAFT_DIR_NAME)
+                    .join("saves");
+                worlds_state.start_load(
+                    &saves,
+                    &instance.name,
+                    crate::instance::scan_one_world,
+                    "",
+                );
+                worlds_state.watch_dir(saves);
+            }
+            render_discovery(
+                frame,
+                content_area,
+                datapacks_discovery_state,
+                instance,
+                is_focused,
+                "Searching datapacks...",
+                picker,
+            );
+        } else {
+            frame.render_widget(
+                Paragraph::new("No instance selected.")
+                    .style(Style::default().fg(theme.text_dim())),
+                content_area,
+            );
+        }
+        return;
+    }
+
     // lazy-load: only scan when switching to an instance that hasn't been loaded yet
     match tab {
-        ContentTab::Mods | ContentTab::ResourcePacks | ContentTab::Shaders => unreachable!(),
+        ContentTab::Mods
+        | ContentTab::ResourcePacks
+        | ContentTab::Shaders
+        | ContentTab::DataPacks => unreachable!(),
         ContentTab::Logs => {
             if let Some(instance) = instance {
                 if logs_state.loaded_for.as_deref() != Some(instance.name.as_str()) {
@@ -461,6 +523,31 @@ pub fn render(
         }
         ContentTab::Worlds => {
             if let Some(instance) = instance {
+                if let Some((world_name, world_path)) = open_world_datapacks {
+                    let cache_key = format!("{}:{world_name}", instance.name);
+                    let content_dir = world_path.join("datapacks");
+                    if world_datapacks_state.loaded_for.as_deref() != Some(cache_key.as_str()) {
+                        world_datapacks_state.start_load(
+                            &content_dir,
+                            &cache_key,
+                            crate::instance::scan_one_datapack,
+                            ".zip",
+                        );
+                        world_datapacks_state.watch_dir(content_dir);
+                    }
+                    super::list::render(
+                        frame,
+                        content_area,
+                        world_datapacks_state,
+                        is_focused,
+                        "Loading datapacks...",
+                        "No datapacks installed.",
+                        picker,
+                        false,
+                        false,
+                    );
+                    return;
+                }
                 if worlds_state.loaded_for.as_deref() != Some(instance.name.as_str()) {
                     let content_dir = instances_dir
                         .join(&instance.name)
@@ -627,19 +714,32 @@ fn render_discovery_body(
         );
     }
     if state.version_popup.is_some() {
-        render_version_popup(frame, area, state);
+        render_version_popup(frame, area, state, picker);
     }
 }
 
-fn render_version_popup(frame: &mut Frame, area: Rect, state: &DiscoveryState) {
-    let Some(popup) = state.version_popup.as_ref() else {
+fn render_version_popup(
+    frame: &mut Frame,
+    area: Rect,
+    state: &mut DiscoveryState,
+    picker: &ratatui_image::picker::Picker,
+) {
+    let Some(popup) = state.version_popup.as_mut() else {
         return;
     };
+    if popup.selecting_world {
+        render_world_picker(frame, area, popup, picker);
+        return;
+    }
     let popup_area = area.centered(
         Constraint::Percentage(50),
         Constraint::Length(
-            version_popup_height(popup.confirming, popup.dependency_plan.as_ref())
-                .min(area.height.saturating_sub(2)),
+            version_popup_height(
+                popup.confirming,
+                popup.dependency_plan.as_ref(),
+                popup.target_world.is_some(),
+            )
+            .min(area.height.saturating_sub(2)),
         ),
     );
     let theme = THEME.as_ref();
@@ -669,6 +769,7 @@ fn render_version_popup(frame: &mut Frame, area: Rect, state: &DiscoveryState) {
         .unwrap_or_else(|| "Unknown".to_owned());
     let replacing = popup.installed_path.is_some();
     let provider_label = popup.provider_label().to_owned();
+    let target_world = popup.target_world.as_ref().map(|(name, _)| name.clone());
     let dependency_installs = popup
         .dependency_plan
         .as_ref()
@@ -727,7 +828,7 @@ fn render_version_popup(frame: &mut Frame, area: Rect, state: &DiscoveryState) {
         crate::tui::widgets::popups::keybind_line(&keybinds)
     };
 
-    let popup = crate::tui::widgets::popups::base::PopupFrame {
+    let popup_frame = crate::tui::widgets::popups::base::PopupFrame {
         title: styled_title(&title, false),
         border_color: theme.accent(),
         bg: Some(theme.surface()),
@@ -766,6 +867,9 @@ fn render_version_popup(frame: &mut Frame, area: Rect, state: &DiscoveryState) {
                     ("Loader", loaders.as_str()),
                     ("Released", release_date.as_str()),
                 ];
+                if let Some(world) = target_world.as_deref() {
+                    rows.push(("World", world));
+                }
                 if !dependency_installs.is_empty() {
                     rows.push(("Also installs", dependency_installs.as_str()));
                 }
@@ -796,20 +900,70 @@ fn render_version_popup(frame: &mut Frame, area: Rect, state: &DiscoveryState) {
             }
         }),
     };
-    frame.render_widget(popup, popup_area);
+    frame.render_widget(popup_frame, popup_area);
+}
+
+fn render_world_picker(
+    frame: &mut Frame,
+    area: Rect,
+    popup: &mut super::discovery::VersionPopupState,
+    picker: &ratatui_image::picker::Picker,
+) {
+    let popup_area = area.centered(
+        Constraint::Percentage(50),
+        Constraint::Length(VERSION_POPUP_HEIGHT.min(area.height.saturating_sub(2))),
+    );
+    let theme = THEME.as_ref();
+    let title = popup.title();
+    let provider_label = popup.provider_label().to_owned();
+    let frame_widget = crate::tui::widgets::popups::base::PopupFrame {
+        title: styled_title(&title, false),
+        border_color: theme.accent(),
+        bg: Some(theme.surface()),
+        keybinds: Some(crate::tui::widgets::popups::keybind_line(&[
+            ("j/k", " navigate"),
+            ("Enter", " continue"),
+            ("h", " back"),
+            ("Esc", " close"),
+        ])),
+        search_line: Some(
+            Line::from(Span::styled(
+                format!(" {provider_label} "),
+                Style::default()
+                    .fg(theme.accent())
+                    .add_modifier(Modifier::BOLD),
+            ))
+            .alignment(Alignment::Right),
+        ),
+        content: Box::new(|_, _| {}),
+    };
+    frame.render_widget(frame_widget, popup_area);
+    super::list::render(
+        frame,
+        popup_area.inner(Margin::new(1, 1)),
+        &mut popup.worlds,
+        true,
+        "Loading worlds...",
+        "No worlds available.",
+        picker,
+        false,
+        false,
+    );
 }
 
 fn version_popup_height(
     confirming: bool,
     plan: Option<&crate::instance::content::dependencies::DependencyPlan>,
+    has_world: bool,
 ) -> u16 {
     if !confirming {
         return VERSION_POPUP_HEIGHT;
     }
     let Some(plan) = plan else {
-        return 6;
+        return 6 + u16::from(has_world);
     };
-    6 + u16::from(plan.dependency_installs().next().is_some())
+    6 + u16::from(has_world)
+        + u16::from(plan.dependency_installs().next().is_some())
         + u16::from(plan.dependency_replacements().next().is_some())
         + u16::from(plan.optional_dependencies > 0)
 }
@@ -831,6 +985,7 @@ fn confirmation_loaders(loaders: &[String]) -> String {
             "neoforge" => "NeoForge",
             "quilt" => "Quilt",
             "minecraft" => "Minecraft",
+            "datapack" => "Datapack",
             other => other,
         })
         .map(str::to_owned)

@@ -18,6 +18,10 @@ pub struct ProjectInfo {
     pub categories: Vec<String>,
     #[serde(default)]
     pub additional_categories: Vec<String>,
+    #[serde(default)]
+    pub project_type: String,
+    #[serde(default)]
+    pub loaders: Vec<String>,
 }
 
 impl ProjectInfo {
@@ -229,7 +233,7 @@ pub async fn search_modpacks(
 }
 
 fn discovery_facets(kind: ContentKind, game_version: &str, loader: ModLoader) -> String {
-    let mut facets = vec![vec![format!("project_type:{}", project_type(kind))]];
+    let mut facets = vec![vec![project_type_facet(kind)]];
     if !game_version.is_empty() {
         facets.push(vec![format!("versions:{game_version}")]);
     }
@@ -241,11 +245,19 @@ fn discovery_facets(kind: ContentKind, game_version: &str, loader: ModLoader) ->
     serde_json::to_string(&facets).unwrap_or_else(|_| "[]".to_string())
 }
 
+fn project_type_facet(kind: ContentKind) -> String {
+    match kind {
+        ContentKind::DataPack => "all_project_types:datapack".to_owned(),
+        _ => format!("project_type:{}", project_type(kind)),
+    }
+}
+
 fn project_type(kind: ContentKind) -> &'static str {
     match kind {
         ContentKind::Mod => "mod",
         ContentKind::ResourcePack => "resourcepack",
         ContentKind::Shader => "shader",
+        ContentKind::DataPack => "datapack",
     }
 }
 
@@ -360,6 +372,11 @@ fn content_versions_url(
         params.push(format!(
             "loaders={}",
             url_encode(&serde_json::to_string(&[loader]).unwrap_or_default())
+        ));
+    } else if kind == ContentKind::DataPack {
+        params.push(format!(
+            "loaders={}",
+            url_encode(&serde_json::to_string(&["datapack"]).unwrap_or_default())
         ));
     }
     format!(

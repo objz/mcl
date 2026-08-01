@@ -15,6 +15,7 @@ const MINECRAFT_GAME_ID: u32 = 432;
 const MODS_CLASS_ID: u32 = 6;
 const RESOURCE_PACKS_CLASS_ID: u32 = 12;
 const SHADERS_CLASS_ID: u32 = 6552;
+const DATA_PACKS_CLASS_ID: u32 = 6945;
 pub const MODPACKS_CLASS_ID: u32 = 4471;
 
 #[derive(Debug, Deserialize)]
@@ -34,6 +35,8 @@ struct Pagination {
 #[serde(rename_all = "camelCase")]
 struct Mod {
     id: u64,
+    #[serde(default)]
+    class_id: u32,
     name: String,
     slug: String,
     #[serde(default)]
@@ -314,6 +317,15 @@ fn project_info(project: Mod, body: String) -> ProjectInfo {
             })
             .collect(),
         additional_categories: Vec::new(),
+        project_type: match project.class_id {
+            MODS_CLASS_ID => "mod",
+            RESOURCE_PACKS_CLASS_ID => "resourcepack",
+            SHADERS_CLASS_ID => "shader",
+            DATA_PACKS_CLASS_ID => "datapack",
+            _ => "",
+        }
+        .to_owned(),
+        loaders: Vec::new(),
     }
 }
 
@@ -501,6 +513,7 @@ fn class_id(kind: ContentKind) -> u32 {
         ContentKind::Mod => MODS_CLASS_ID,
         ContentKind::ResourcePack => RESOURCE_PACKS_CLASS_ID,
         ContentKind::Shader => SHADERS_CLASS_ID,
+        ContentKind::DataPack => DATA_PACKS_CLASS_ID,
     }
 }
 

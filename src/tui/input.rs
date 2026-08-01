@@ -306,6 +306,30 @@ impl App {
                 {
                     return Ok(());
                 }
+                let selecting_world = self
+                    .active_discovery_state_mut()
+                    .and_then(|state| state.version_popup.as_ref())
+                    .is_some_and(|popup| popup.selecting_world);
+                if selecting_world {
+                    let minecraft_dir = self.instances_state.selected_instance().map(|instance| {
+                        crate::storage::InstancePaths::new(
+                            self.instance_manager.instances_dir.join(&instance.name),
+                        )
+                        .minecraft()
+                    });
+                    let manifest = self
+                        .content_manifest
+                        .as_ref()
+                        .map(|(_, manifest)| manifest.clone());
+                    if let Some(minecraft_dir) = minecraft_dir
+                        && self.active_discovery_state_mut().is_some_and(|state| {
+                            state.select_world(manifest.as_ref(), &minecraft_dir)
+                        })
+                    {
+                        self.spawn_active_discovery_dependencies();
+                    }
+                    return Ok(());
+                }
                 let confirming = self
                     .active_discovery_state_mut()
                     .and_then(|state| state.version_popup.as_ref())
@@ -313,10 +337,13 @@ impl App {
                 if confirming {
                     self.spawn_active_discovery_install();
                 } else {
-                    let resolve_dependencies = self
-                        .active_discovery_state_mut()
-                        .is_some_and(|state| state.kind == crate::instance::ContentKind::Mod);
-                    if resolve_dependencies {
+                    let kind = self.active_discovery_state_mut().map(|state| state.kind);
+                    if kind == Some(crate::instance::ContentKind::DataPack) {
+                        let worlds = self.worlds_state.entries.clone();
+                        if let Some(state) = self.active_discovery_state_mut() {
+                            state.begin_world_selection(worlds);
+                        }
+                    } else if kind == Some(crate::instance::ContentKind::Mod) {
                         self.spawn_active_discovery_dependencies();
                     } else if let Some(state) = self.active_discovery_state_mut() {
                         state.begin_confirmation();
@@ -366,6 +393,36 @@ impl App {
                     return Ok(());
                 }
             } else if self.content_tab == widgets::content::ContentTab::Worlds {
+                if self.open_world_datapacks.is_some() {
+                    if matches!(key_event.code, KeyCode::Esc | KeyCode::Char('h'))
+                        && !self.world_datapacks_state.search.active
+                    {
+                        self.open_world_datapacks = None;
+                        return Ok(());
+                    }
+                    if key_event.code == KeyCode::Char('d')
+                        && !self.world_datapacks_state.search.active
+                    {
+                        if let Some(pending) = self.world_datapacks_state.pending_delete() {
+                            self.confirm_content_delete(pending);
+                        }
+                        return Ok(());
+                    }
+                    if widgets::content::list::handle_key_no_toggle(
+                        &key_event,
+                        &mut self.world_datapacks_state,
+                    ) {
+                        return Ok(());
+                    }
+                    return Ok(());
+                }
+                if key_event.code == KeyCode::Enter && !self.worlds_state.search.active {
+                    self.open_world_datapacks = self
+                        .worlds_state
+                        .selected_entry()
+                        .map(|entry| (entry.name.clone(), entry.path.clone()));
+                    return Ok(());
+                }
                 if key_event.code == KeyCode::Char('q') && !self.worlds_state.search.active {
                     if self.selected_instance_supports_quick_play() {
                         let instance = self.instances_state.selected_instance().cloned();
@@ -585,15 +642,30 @@ impl App {
                     }
                     KeyCode::Tab if self.focused == FocusedArea::Content => {
                         self.content_mode = self.content_mode.toggle();
-                        if self.content_mode == widgets::content::ContentMode::Discover
-                            && !matches!(
-                                self.content_tab,
+                        self.content_tab = match (self.content_mode, self.content_tab) {
+                            (
+                                widgets::content::ContentMode::Installed,
+                                widgets::content::ContentTab::DataPacks,
+                            ) => widgets::content::ContentTab::Worlds,
+                            (
+                                widgets::content::ContentMode::Discover,
+                                widgets::content::ContentTab::Worlds,
+                            ) => widgets::content::ContentTab::DataPacks,
+                            (widgets::content::ContentMode::Discover, tab)
+                                if !matches!(
+                                    tab,
+                                    widgets::content::ContentTab::Mods
+                                        | widgets::content::ContentTab::ResourcePacks
+                                        | widgets::content::ContentTab::Shaders
+                                        | widgets::content::ContentTab::DataPacks
+                                ) =>
+                            {
                                 widgets::content::ContentTab::Mods
-                                    | widgets::content::ContentTab::ResourcePacks
-                                    | widgets::content::ContentTab::Shaders
-                            )
-                        {
-                            self.content_tab = widgets::content::ContentTab::Mods;
+                            }
+                            (_, tab) => tab,
+                        };
+                        if self.content_mode == widgets::content::ContentMode::Discover {
+                            self.open_world_datapacks = None;
                         }
                         self.ensure_active_discovery_loaded();
                     }
@@ -725,6 +797,7 @@ impl App {
                 Some(&mut self.resource_packs_discovery_state)
             }
             widgets::content::ContentTab::Shaders => Some(&mut self.shaders_discovery_state),
+            widgets::content::ContentTab::DataPacks => Some(&mut self.datapacks_discovery_state),
             _ => None,
         }
     }
@@ -990,16 +1063,14 @@ impl App {
         let Some(request) = state.begin_install() else {
             return;
         };
-        let destination = self
-            .instance_manager
-            .instances_dir
-            .join(&instance.name)
-            .join(crate::storage::MINECRAFT_DIR_NAME)
-            .join(kind.directory());
         let instances_dir = self.instance_manager.instances_dir.clone();
         let instance_paths = crate::storage::InstancePaths::new(instances_dir.join(&instance.name));
         let manifest_path = instance_paths.content_manifest();
         let minecraft_dir = instance_paths.minecraft();
+        let destination = match (&request.target_world, kind) {
+            (Some((_, world)), crate::instance::ContentKind::DataPack) => world.join("datapacks"),
+            _ => minecraft_dir.join(kind.directory()),
+        };
         tokio::spawn(async move {
             let action = if request.installed_path.is_some() {
                 format!("Changing {} version", request.project_title)
@@ -1010,6 +1081,14 @@ impl App {
             progress.set_sub_action(&request.version.version_number);
             let client = crate::net::HttpClient::new();
             let result = async {
+                if kind == crate::instance::ContentKind::DataPack
+                    && (request.target_world.is_none()
+                        || !destination.starts_with(minecraft_dir.join("saves")))
+                {
+                    return Err(crate::net::NetError::Parse(
+                        "Invalid datapack target world".to_owned(),
+                    ));
+                }
                 tokio::fs::create_dir_all(&destination)
                     .await
                     .map_err(crate::net::NetError::from)?;
@@ -1020,7 +1099,6 @@ impl App {
                         &registry,
                         &manifest_path,
                         &minecraft_dir,
-                        &destination,
                         plan,
                         request.request_id,
                     )
@@ -1446,6 +1524,7 @@ impl App {
         self.mods_state.remove_path(path);
         self.resource_packs_state.remove_path(path);
         self.shaders_state.remove_path(path);
+        self.world_datapacks_state.remove_path(path);
         self.worlds_state.remove_path(path);
         self.screenshots_state.remove_path(path);
         self.logs_state.remove_path(path);
@@ -1453,6 +1532,21 @@ impl App {
         self.resource_packs_discovery_state
             .clear_installed_path(path);
         self.shaders_discovery_state.clear_installed_path(path);
+        self.datapacks_discovery_state.clear_installed_path(path);
+        if path
+            .parent()
+            .and_then(std::path::Path::file_name)
+            .is_some_and(|name| name == "datapacks")
+            && let Some(world_path) = path.parent().and_then(std::path::Path::parent)
+            && let Some(world) = self
+                .worlds_state
+                .entries
+                .iter_mut()
+                .find(|world| world.path == world_path)
+            && let Some(details) = world.world_details.as_mut()
+        {
+            details.datapacks = crate::instance::content::worlds::datapack_names(world_path);
+        }
     }
 
     fn remove_content_path_from_manifest(&mut self, path: &std::path::Path) {

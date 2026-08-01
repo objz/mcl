@@ -18,8 +18,8 @@ pub use content::manifest::{
     ContentFileRecord, ContentKind, ContentManifest, FileFingerprint, ProviderProject, Resolution,
 };
 pub use content::{
-    scan_mods, scan_one_mod, scan_one_resource_pack, scan_one_shader, scan_one_world,
-    scan_resource_packs, scan_shaders, scan_worlds,
+    scan_mods, scan_one_datapack, scan_one_mod, scan_one_resource_pack, scan_one_shader,
+    scan_one_world, scan_resource_packs, scan_shaders, scan_worlds,
 };
 pub use launch::LaunchError;
 pub use loader::{GameVersion, ModLoaderInstaller, VanillaInstaller, get_installer};

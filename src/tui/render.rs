@@ -61,6 +61,23 @@ impl App {
             &mut self.throbber_state,
         );
         let world_quick_play_supported = self.selected_instance_supports_quick_play();
+        if let Some((_, world)) = self.open_world_datapacks.as_ref() {
+            let valid = self
+                .instances_state
+                .selected_instance()
+                .is_some_and(|instance| {
+                    world.starts_with(
+                        crate::storage::InstancePaths::new(
+                            self.instance_manager.instances_dir.join(&instance.name),
+                        )
+                        .minecraft()
+                        .join("saves"),
+                    )
+                });
+            if !valid {
+                self.open_world_datapacks = None;
+            }
+        }
         if load_content {
             widgets::content::render(
                 frame,
@@ -75,7 +92,10 @@ impl App {
                 &mut self.resource_packs_discovery_state,
                 &mut self.shaders_state,
                 &mut self.shaders_discovery_state,
+                &mut self.datapacks_discovery_state,
                 &mut self.worlds_state,
+                &mut self.world_datapacks_state,
+                self.open_world_datapacks.as_ref(),
                 &mut self.screenshots_state,
                 &mut self.logs_state,
                 &self.instance_manager.instances_dir,

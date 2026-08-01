@@ -29,6 +29,7 @@ pub struct WorldDetails {
     pub last_played: Option<chrono::DateTime<chrono::Utc>>,
     pub minecraft_version: Option<String>,
     pub size: Option<String>,
+    pub datapacks: Vec<String>,
 }
 
 #[derive(Debug, Clone)]

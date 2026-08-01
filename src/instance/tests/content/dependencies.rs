@@ -15,6 +15,7 @@ struct FakeProvider {
     versions: HashMap<String, VersionInfo>,
     compatible: HashMap<String, Vec<String>>,
     projects: HashMap<String, String>,
+    project_types: HashMap<String, String>,
     categories: HashMap<String, Vec<String>>,
     resolved: HashMap<String, ProviderProject>,
     fail_project: Option<String>,
@@ -81,6 +82,12 @@ impl ContentProvider for FakeProvider {
             icon_url: None,
             categories: self.categories.get(project_id).cloned().unwrap_or_default(),
             additional_categories: Vec::new(),
+            project_type: self
+                .project_types
+                .get(project_id)
+                .cloned()
+                .unwrap_or_else(|| "mod".to_owned()),
+            loaders: Vec::new(),
         })
     }
 
@@ -123,7 +130,12 @@ impl ContentProvider for FakeProvider {
                 version.id
             )));
         }
-        let path = destination.join(format!("{}.jar", version.id));
+        let extension = if version.loaders.iter().any(|loader| loader == "datapack") {
+            "zip"
+        } else {
+            "jar"
+        };
+        let path = destination.join(format!("{}.{extension}", version.id));
         tokio::fs::write(&path, version.id.as_bytes()).await?;
         Ok(crate::net::modrinth::DownloadOutcome::Downloaded(path))
     }
@@ -183,6 +195,8 @@ fn root(version: VersionInfo) -> InstallRoot {
         title: "Root".to_owned(),
         version,
         installed_path: None,
+        kind: ContentKind::Mod,
+        target_world: None,
     }
 }
 
@@ -236,11 +250,123 @@ fn provider(versions: Vec<VersionInfo>) -> FakeProvider {
             .collect(),
         compatible,
         projects,
+        project_types: HashMap::new(),
         categories,
         resolved: HashMap::new(),
         fail_project: None,
         fail_download: None,
     }
+}
+
+#[tokio::test]
+async fn datapack_dependencies_are_routed_to_the_world_or_instance_by_kind() {
+    let temp = tempfile::tempdir().unwrap();
+    let minecraft = temp.path().join("minecraft");
+    let world = minecraft.join("saves/world");
+    let manifest_path = temp.path().join("manifest.json");
+    let mut root_version = version(
+        "root",
+        "root",
+        VersionType::Release,
+        "2026-01-01",
+        vec![dependency("library", DependencyType::Required)],
+    );
+    root_version.loaders = vec!["datapack".to_owned()];
+    let library = version(
+        "library",
+        "library",
+        VersionType::Release,
+        "2026-01-01",
+        Vec::new(),
+    );
+    let registry = provider(vec![root_version.clone(), library]).registry();
+    let mut install_root = root(root_version);
+    install_root.kind = ContentKind::DataPack;
+    install_root.target_world = Some(world.clone());
+
+    let plan = resolve(
+        &registry,
+        &ContentManifest::default(),
+        &minecraft,
+        &instance(),
+        install_root,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(plan.items[0].kind, ContentKind::DataPack);
+    assert_eq!(plan.items[0].destination, world.join("datapacks"));
+    assert_eq!(plan.items[1].kind, ContentKind::Mod);
+    assert_eq!(plan.items[1].destination, minecraft.join("mods"));
+
+    install(&registry, &manifest_path, &minecraft, &plan, 7)
+        .await
+        .unwrap();
+    let manifest = ContentManifest::load(&manifest_path).unwrap();
+    assert_eq!(
+        manifest
+            .record(Path::new("saves/world/datapacks/root.zip"))
+            .unwrap()
+            .kind,
+        ContentKind::DataPack
+    );
+    assert_eq!(
+        manifest.record(Path::new("mods/library.jar")).unwrap().kind,
+        ContentKind::Mod
+    );
+}
+
+#[tokio::test]
+async fn datapack_install_rejects_an_incompatible_instance_mod() {
+    let mut root_version = version(
+        "root",
+        "root",
+        VersionType::Release,
+        "2026-01-01",
+        vec![dependency("conflict", DependencyType::Incompatible)],
+    );
+    root_version.loaders = vec!["datapack".to_owned()];
+    let registry = provider(vec![root_version.clone()]).registry();
+    let mut install_root = root(root_version);
+    install_root.kind = ContentKind::DataPack;
+    install_root.target_world = Some(PathBuf::from("/minecraft/saves/world"));
+    let manifest = ContentManifest {
+        version: 1,
+        files: vec![installed_record("conflict", "conflict-version", true)],
+    };
+
+    let error = resolve(
+        &registry,
+        &manifest,
+        Path::new("/minecraft"),
+        &instance(),
+        install_root,
+    )
+    .await
+    .unwrap_err();
+
+    assert!(error.to_string().contains("incompatible"));
+}
+
+#[test]
+fn legacy_modrinth_datapack_projects_are_classified_by_loader() {
+    let project = ProjectInfo {
+        id: "legacy".to_owned(),
+        slug: "legacy".to_owned(),
+        title: "Legacy datapack".to_owned(),
+        description: String::new(),
+        body: String::new(),
+        icon_url: None,
+        categories: Vec::new(),
+        additional_categories: Vec::new(),
+        project_type: "mod".to_owned(),
+        loaders: vec!["datapack".to_owned()],
+    };
+
+    assert_eq!(
+        dependency_kind(Some(&project), None, ContentKind::DataPack),
+        ContentKind::DataPack
+    );
 }
 
 #[tokio::test]
@@ -810,7 +936,7 @@ async fn dependency_install_commits_files_and_manifest_together() {
     .await
     .unwrap();
 
-    let installed = install(&registry, &manifest_path, &minecraft, &mods, &plan, 1)
+    let installed = install(&registry, &manifest_path, &minecraft, &plan, 1)
         .await
         .unwrap();
 
@@ -874,7 +1000,7 @@ async fn failed_dependency_download_leaves_no_partial_install() {
     .unwrap();
 
     assert!(
-        install(&registry, &manifest_path, &minecraft, &mods, &plan, 2)
+        install(&registry, &manifest_path, &minecraft, &plan, 2)
             .await
             .is_err()
     );
