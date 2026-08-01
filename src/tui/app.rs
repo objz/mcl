@@ -30,7 +30,10 @@ pub struct App {
     pub(super) resource_packs_discovery_state: widgets::content::DiscoveryState,
     pub(super) shaders_state: widgets::content::list::ContentListState,
     pub(super) shaders_discovery_state: widgets::content::DiscoveryState,
+    pub(super) datapacks_discovery_state: widgets::content::DiscoveryState,
     pub(super) worlds_state: widgets::content::list::ContentListState,
+    pub(super) world_datapacks_state: widgets::content::list::ContentListState,
+    pub(super) open_world_datapacks: Option<(String, PathBuf)>,
     pub(super) world_quick_play_support: Option<(String, String, bool)>,
     pub(super) screenshots_state: widgets::screenshots_grid::ScreenshotsState,
     pub(super) logs_state: widgets::logs_viewer::LogsState,
@@ -117,11 +120,13 @@ impl App {
         let mut mods_state = widgets::content::list::ContentListState::default();
         let mut resource_packs_state = widgets::content::list::ContentListState::default();
         let mut shaders_state = widgets::content::list::ContentListState::default();
+        let mut world_datapacks_state = widgets::content::list::ContentListState::default();
         let provider_icon_client = crate::net::HttpClient::new();
         for state in [
             &mut mods_state,
             &mut resource_packs_state,
             &mut shaders_state,
+            &mut world_datapacks_state,
         ] {
             state.enable_provider_icons(manager.meta_dir.clone(), provider_icon_client.clone());
         }
@@ -145,7 +150,12 @@ impl App {
             shaders_discovery_state: widgets::content::DiscoveryState::new(
                 crate::instance::ContentKind::Shader,
             ),
+            datapacks_discovery_state: widgets::content::DiscoveryState::new(
+                crate::instance::ContentKind::DataPack,
+            ),
             worlds_state: widgets::content::list::ContentListState::default(),
+            world_datapacks_state,
+            open_world_datapacks: None,
             world_quick_play_support: None,
             logs_state: widgets::logs_viewer::LogsState::default(),
             account_state: widgets::account::AccountState::default(),

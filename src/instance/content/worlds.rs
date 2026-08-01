@@ -30,6 +30,7 @@ pub fn scan_one_world(path: &Path, file_stem: &str, enabled: bool) -> ContentEnt
             .filter(|version| !version.trim().is_empty())
             .map(str::to_owned),
         size: (size > 0).then(|| format_size(size)),
+        datapacks: datapack_names(path),
     };
 
     ContentEntry {
@@ -54,6 +55,28 @@ pub fn scan_one_world(path: &Path, file_stem: &str, enabled: bool) -> ContentEnt
         path: path.to_path_buf(),
         icon_lines,
     }
+}
+
+pub(crate) fn datapack_names(world: &Path) -> Vec<String> {
+    let Ok(entries) = std::fs::read_dir(world.join("datapacks")) else {
+        return Vec::new();
+    };
+    let mut names = entries
+        .flatten()
+        .filter_map(|entry| {
+            let path = entry.path();
+            let name = path.file_name()?.to_str()?;
+            if path.is_dir() {
+                Some(name.trim_end_matches(".disabled").to_owned())
+            } else {
+                name.strip_suffix(".zip")
+                    .or_else(|| name.strip_suffix(".zip.disabled"))
+                    .map(str::to_owned)
+            }
+        })
+        .collect::<Vec<_>>();
+    names.sort_by_key(|name| name.to_lowercase());
+    names
 }
 
 pub fn scan_worlds(instances_dir: &Path, instance_name: &str) -> Vec<ContentEntry> {

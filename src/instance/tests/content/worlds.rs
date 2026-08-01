@@ -53,3 +53,19 @@ fn world_scan_uses_level_dat_metadata_and_falls_back_cleanly() {
         Some("2.0 KB")
     );
 }
+
+#[test]
+fn world_scan_lists_directory_and_zip_datapacks() {
+    let temp = tempfile::tempdir().unwrap();
+    let world = temp.path().join("world");
+    std::fs::create_dir_all(world.join("datapacks/folder-pack")).unwrap();
+    std::fs::write(world.join("datapacks/zipped-pack.zip"), b"zip").unwrap();
+    std::fs::write(world.join("datapacks/disabled-pack.zip.disabled"), b"zip").unwrap();
+
+    let details = scan_one_world(&world, "world", true).world_details.unwrap();
+
+    assert_eq!(
+        details.datapacks,
+        ["disabled-pack", "folder-pack", "zipped-pack"]
+    );
+}

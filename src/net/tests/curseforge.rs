@@ -58,6 +58,11 @@ fn curseforge_library_category_maps_to_cleanup_metadata() {
     assert!(project_info(project, String::new()).is_library_only());
 }
 
+#[test]
+fn datapack_discovery_uses_the_curseforge_data_packs_class() {
+    assert_eq!(class_id(ContentKind::DataPack), 6945);
+}
+
 #[tokio::test]
 async fn curseforge_versions_follow_pagination() {
     use wiremock::matchers::{method, path, query_param};

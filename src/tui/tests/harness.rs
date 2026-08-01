@@ -65,7 +65,12 @@ impl UiHarness {
             shaders_discovery_state: widgets::content::DiscoveryState::new(
                 crate::instance::ContentKind::Shader,
             ),
+            datapacks_discovery_state: widgets::content::DiscoveryState::new(
+                crate::instance::ContentKind::DataPack,
+            ),
             worlds_state: widgets::content::ContentListState::default(),
+            world_datapacks_state: widgets::content::ContentListState::default(),
+            open_world_datapacks: None,
             world_quick_play_support: None,
             screenshots_state: {
                 let mut state = widgets::screenshots_grid::ScreenshotsState::default();

@@ -17,6 +17,7 @@ pub enum ContentKind {
     Mod,
     ResourcePack,
     Shader,
+    DataPack,
 }
 
 impl ContentKind {
@@ -25,6 +26,7 @@ impl ContentKind {
             Self::Mod => "mods",
             Self::ResourcePack => "resourcepacks",
             Self::Shader => "shaderpacks",
+            Self::DataPack => "datapacks",
         }
     }
 
@@ -35,7 +37,7 @@ impl ContentKind {
         match self {
             Self::Mod => Some("Vanilla does not support mods."),
             Self::Shader => Some("Vanilla does not support shaders."),
-            Self::ResourcePack => None,
+            Self::ResourcePack | Self::DataPack => None,
         }
     }
 }
@@ -207,6 +209,20 @@ impl ContentManifest {
         })
     }
 
+    pub fn resolved_project_path_under(
+        &self,
+        provider: &str,
+        project_id: &str,
+        minecraft_dir: &Path,
+        directory: &Path,
+    ) -> Option<PathBuf> {
+        self.files.iter().find_map(|record| {
+            let path = minecraft_dir.join(&record.relative_path);
+            (record.matches_project(provider, project_id) && path.starts_with(directory))
+                .then_some(path)
+        })
+    }
+
     pub fn resolved_project_record(
         &self,
         provider: &str,
@@ -224,11 +240,7 @@ impl ContentManifest {
         self.files
             .iter()
             .filter(|record| record.relative_path != relative_path)
-            .filter(|record| {
-                record.required_dependencies.iter().any(|dependency| {
-                    target.matches_project(&dependency.provider, &dependency.project_id)
-                })
-            })
+            .filter(|record| dependency_applies(target, record))
             .map(|record| record.relative_path.clone())
             .collect()
     }
@@ -262,11 +274,7 @@ impl ContentManifest {
                     .files
                     .iter()
                     .filter(|record| !removed.contains(&record.relative_path))
-                    .any(|record| {
-                        record.required_dependencies.iter().any(|dependency| {
-                            candidate.matches_project(&dependency.provider, &dependency.project_id)
-                        })
-                    });
+                    .any(|record| dependency_applies(candidate, record));
                 if !still_required {
                     removed.insert(candidate.relative_path.clone());
                     orphans.push(candidate.relative_path.clone());
@@ -279,6 +287,24 @@ impl ContentManifest {
         }
         orphans
     }
+}
+
+fn dependency_applies(candidate: &ContentFileRecord, dependent: &ContentFileRecord) -> bool {
+    let matches = dependent
+        .required_dependencies
+        .iter()
+        .any(|dependency| candidate.matches_project(&dependency.provider, &dependency.project_id));
+    if !matches || candidate.kind != ContentKind::DataPack {
+        return matches;
+    }
+    datapack_world(&candidate.relative_path) == datapack_world(&dependent.relative_path)
+}
+
+fn datapack_world(path: &Path) -> Option<&std::ffi::OsStr> {
+    let mut components = path.components();
+    (components.next()?.as_os_str() == "saves")
+        .then(|| components.next().map(std::path::Component::as_os_str))
+        .flatten()
 }
 
 impl ContentFileRecord {

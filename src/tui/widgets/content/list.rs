@@ -423,9 +423,8 @@ impl ContentListState {
             if visible_height == 0 {
                 continue;
             }
-            if entry.icon_bytes.is_none()
+            if (entry.icon_bytes.is_none() || entry.description.trim().is_empty())
                 && let Some(project) = entry.provider_project.clone()
-                && project.provider == "modrinth"
             {
                 projects.push(project);
             }
@@ -1558,12 +1557,10 @@ pub fn render(
             theme.text()
         });
 
-        let world_summary = world_details
-            .map(world_summary)
-            .filter(|line| !line.is_empty());
+        let world_descriptions = world_details.map(world_descriptions);
         let has_icon = icon_pixels.is_some();
-        let mut descriptions = if let Some(summary) = world_summary.as_deref() {
-            vec![summary]
+        let mut descriptions = if let Some(lines) = world_descriptions.as_ref() {
+            lines.iter().map(String::as_str).collect()
         } else {
             metadata
                 .map(|metadata| {
@@ -2101,13 +2098,28 @@ fn world_game_mode_color(mode: WorldGameMode) -> Color {
     }
 }
 
-fn world_summary(details: &WorldDetails) -> String {
-    match (&details.minecraft_version, &details.size) {
+fn world_descriptions(details: &WorldDetails) -> Vec<String> {
+    let summary = match (&details.minecraft_version, &details.size) {
         (Some(version), Some(size)) => format!("{version}  •  {size}"),
         (Some(version), None) => version.clone(),
         (None, Some(size)) => size.clone(),
         (None, None) => String::new(),
+    };
+    let mut lines = Vec::with_capacity(5);
+    if !summary.is_empty() {
+        lines.push(summary);
     }
+    lines.extend(
+        details
+            .datapacks
+            .iter()
+            .take(3)
+            .map(|name| format!("• {name}")),
+    );
+    if details.datapacks.len() > 3 {
+        lines.push(format!("+{} more", details.datapacks.len() - 3));
+    }
+    lines
 }
 
 fn title_suffix_spans(

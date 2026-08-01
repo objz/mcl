@@ -92,6 +92,9 @@ pub struct VersionPopupState {
     pub minecraft_versions: Vec<String>,
     pub selected_minecraft_version: Option<String>,
     pub selecting_minecraft_version: bool,
+    pub selecting_world: bool,
+    pub worlds: ContentListState,
+    pub target_world: Option<(String, PathBuf)>,
     pub versions: Vec<VersionInfo>,
     pub selected: usize,
     pub loading: bool,
@@ -138,6 +141,8 @@ impl VersionPopupState {
     fn item_count(&self) -> usize {
         if self.selecting_minecraft_version {
             self.minecraft_versions.len()
+        } else if self.selecting_world {
+            self.worlds.filtered_indices().len()
         } else {
             self.visible_versions().count()
         }
@@ -180,6 +185,7 @@ pub struct InstallRequest {
     pub version: VersionInfo,
     pub installed_path: Option<PathBuf>,
     pub dependency_plan: Option<crate::instance::content::dependencies::DependencyPlan>,
+    pub target_world: Option<(String, PathBuf)>,
     pub pending: PendingActions,
 }
 
@@ -413,7 +419,9 @@ impl DiscoveryState {
             .selected
             .and_then(|selected| filtered.get(selected))?;
         let entry = self.list.entries.get(*index)?;
-        let installed_path = entry.installed_path.clone();
+        let installed_path = (self.kind != ContentKind::DataPack)
+            .then(|| entry.installed_path.clone())
+            .flatten();
         let mut sources = self
             .sources
             .get(&entry.file_stem)
@@ -436,6 +444,9 @@ impl DiscoveryState {
             minecraft_versions: Vec::new(),
             selected_minecraft_version: None,
             selecting_minecraft_version: self.modpacks,
+            selecting_world: false,
+            worlds: ContentListState::default(),
+            target_world: None,
             versions: Vec::new(),
             selected: 0,
             loading: true,
@@ -456,7 +467,7 @@ impl DiscoveryState {
     pub fn switch_version_source(&mut self) -> Option<VersionsRequest> {
         let selecting_minecraft_version = self.modpacks;
         let popup = self.version_popup.as_mut()?;
-        if popup.loading || popup.installing || popup.sources.len() < 2 {
+        if popup.loading || popup.installing || popup.selecting_world || popup.sources.len() < 2 {
             return None;
         }
         popup.source_index = (popup.source_index + 1) % popup.sources.len();
@@ -468,6 +479,9 @@ impl DiscoveryState {
         popup.minecraft_versions.clear();
         popup.selected_minecraft_version = None;
         popup.selecting_minecraft_version = selecting_minecraft_version;
+        popup.selecting_world = false;
+        popup.worlds = ContentListState::default();
+        popup.target_world = None;
         popup.versions.clear();
         popup.selected = 0;
         popup.loading = true;
@@ -639,6 +653,7 @@ impl DiscoveryState {
             version,
             installed_path: popup.installed_path.clone(),
             dependency_plan: popup.dependency_plan.clone(),
+            target_world: popup.target_world.clone(),
             pending: self.pending_actions.clone(),
         };
         self.version_popup = None;
@@ -652,6 +667,7 @@ impl DiscoveryState {
         if popup.loading
             || popup.installing
             || popup.selecting_minecraft_version
+            || popup.selecting_world
             || popup.selected_version().is_none()
         {
             return false;
@@ -661,7 +677,66 @@ impl DiscoveryState {
         true
     }
 
+    pub fn begin_world_selection(&mut self, worlds: Vec<ContentEntry>) -> bool {
+        let Some(popup) = self.version_popup.as_mut() else {
+            return false;
+        };
+        if self.kind != ContentKind::DataPack
+            || popup.loading
+            || popup.installing
+            || popup.confirming
+            || popup.selected_version().is_none()
+        {
+            return false;
+        }
+        popup.worlds = ContentListState::default();
+        popup.worlds.entries = worlds;
+        popup
+            .worlds
+            .list_state
+            .select((!popup.worlds.entries.is_empty()).then_some(0));
+        popup.selecting_world = true;
+        popup.target_world = None;
+        popup.installed_path = None;
+        popup.dependency_plan = None;
+        popup.error = None;
+        true
+    }
+
+    pub fn select_world(
+        &mut self,
+        manifest: Option<&crate::instance::ContentManifest>,
+        minecraft_dir: &std::path::Path,
+    ) -> bool {
+        let Some(popup) = self.version_popup.as_mut() else {
+            return false;
+        };
+        if !popup.selecting_world || popup.loading || popup.installing {
+            return false;
+        }
+        let Some(world) = popup.worlds.selected_entry() else {
+            return false;
+        };
+        let world_name = world.name.clone();
+        let world_path = world.path.clone();
+        popup.installed_path = manifest.and_then(|manifest| {
+            popup.sources.iter().find_map(|source| {
+                manifest.resolved_project_path_under(
+                    &source.provider,
+                    &source.project_id,
+                    minecraft_dir,
+                    &world_path.join("datapacks"),
+                )
+            })
+        });
+        popup.target_world = Some((world_name, world_path));
+        popup.selecting_world = false;
+        popup.error = None;
+        true
+    }
+
     pub fn begin_dependency_resolution(&mut self) -> Option<DependencyRequest> {
+        let kind = self.kind;
         let popup = self.version_popup.as_mut()?;
         if popup.loading
             || popup.installing
@@ -683,6 +758,8 @@ impl DiscoveryState {
                 title: popup.project_title.clone(),
                 version,
                 installed_path: popup.installed_path.clone(),
+                kind,
+                target_world: popup.target_world.as_ref().map(|(_, path)| path.clone()),
             },
             pending: self.pending_actions.clone(),
         })
@@ -984,6 +1061,8 @@ impl DiscoveryState {
     pub fn empty_text(&self) -> &str {
         self.error.as_deref().unwrap_or(if self.modpacks {
             "No modpacks found."
+        } else if self.kind == ContentKind::DataPack {
+            "No datapacks found."
         } else {
             "No projects found."
         })
@@ -1022,6 +1101,21 @@ pub fn handle_key(key_event: &KeyEvent, state: &mut DiscoveryState) -> bool {
             && !popup.installing
         {
             popup.confirming = false;
+            if popup.target_world.is_some() {
+                popup.selecting_world = true;
+            }
+            popup.error = None;
+            return true;
+        }
+        if popup.selecting_world
+            && matches!(key_event.code, KeyCode::Left | KeyCode::Char('h'))
+            && !popup.loading
+            && !popup.installing
+        {
+            popup.selecting_world = false;
+            popup.target_world = None;
+            popup.installed_path = None;
+            popup.dependency_plan = None;
             popup.error = None;
             return true;
         }
@@ -1046,6 +1140,9 @@ pub fn handle_key(key_event: &KeyEvent, state: &mut DiscoveryState) -> bool {
         }
         match key_event.code {
             KeyCode::Esc if !popup.installing => state.version_popup = None,
+            _ if popup.selecting_world => {
+                super::list::handle_key_no_toggle(key_event, &mut popup.worlds);
+            }
             KeyCode::Char('j') | KeyCode::Down
                 if !popup.loading && !popup.installing && !popup.confirming =>
             {

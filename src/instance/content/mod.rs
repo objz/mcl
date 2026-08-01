@@ -1,6 +1,7 @@
 // scanning and toggling instance content (mods, resource packs, shaders, worlds).
 // minecraft uses a ".disabled" suffix convention for disabled content, so this leans on that heavily.
 
+pub mod datapacks;
 pub mod dependencies;
 pub mod entry;
 pub mod icons;
@@ -13,6 +14,7 @@ pub mod resource_packs;
 pub mod shaders;
 pub mod worlds;
 
+pub use datapacks::scan_one_datapack;
 pub(crate) use icons::{
     IconCell, fallback_icon, fallback_icon_large, make_icon_pixels, make_icon_pixels_from_image,
     make_icon_quadrants_from_image,

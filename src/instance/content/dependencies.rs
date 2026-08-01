@@ -17,6 +17,8 @@ pub struct InstallRoot {
     pub title: String,
     pub version: VersionInfo,
     pub installed_path: Option<PathBuf>,
+    pub kind: ContentKind,
+    pub target_world: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone)]
@@ -26,6 +28,8 @@ pub struct PlannedInstall {
     pub title: String,
     pub version: VersionInfo,
     pub installed_path: Option<PathBuf>,
+    pub kind: ContentKind,
+    pub destination: PathBuf,
     pub provider_aliases: Vec<ProviderProject>,
     pub required_dependencies: Vec<ProviderProject>,
     pub automatic_dependency: bool,
@@ -77,7 +81,6 @@ pub async fn install(
     registry: &ProviderRegistry,
     manifest_path: &Path,
     minecraft_dir: &Path,
-    destination: &Path,
     plan: &DependencyPlan,
     transaction_id: u64,
 ) -> Result<InstallResult, NetError> {
@@ -85,22 +88,16 @@ pub async fn install(
         .items
         .first()
         .ok_or_else(|| NetError::Parse("Dependency plan is empty".to_owned()))?;
-    tokio::fs::create_dir_all(destination).await?;
-    let staging = destination.join(format!(".rmcl-install-{transaction_id}"));
+    for item in &plan.items {
+        tokio::fs::create_dir_all(&item.destination).await?;
+    }
+    let staging = minecraft_dir.join(format!(".rmcl-install-{transaction_id}"));
     if staging.exists() {
         tokio::fs::remove_dir_all(&staging).await?;
     }
     tokio::fs::create_dir(&staging).await?;
 
-    let result = install_staged(
-        registry,
-        manifest_path,
-        minecraft_dir,
-        destination,
-        &staging,
-        plan,
-    )
-    .await;
+    let result = install_staged(registry, manifest_path, minecraft_dir, &staging, plan).await;
     if let Err(error) = tokio::fs::remove_dir_all(&staging).await
         && error.kind() != std::io::ErrorKind::NotFound
     {
@@ -133,7 +130,6 @@ async fn install_staged(
     registry: &ProviderRegistry,
     manifest_path: &Path,
     minecraft_dir: &Path,
-    destination: &Path,
     staging: &Path,
     plan: &DependencyPlan,
 ) -> Result<(PathBuf, Vec<PathBuf>), NetError> {
@@ -146,8 +142,10 @@ async fn install_staged(
         let provider = registry.get(&item.provider).ok_or_else(|| {
             NetError::Parse(format!("{} content provider is unavailable", item.provider))
         })?;
+        let item_staging = staging.join(format!("item-{index}"));
+        tokio::fs::create_dir(&item_staging).await?;
         let outcome = provider
-            .download_version(&item.version, staging, None)
+            .download_version(&item.version, &item_staging, None)
             .await?;
         let source = match outcome {
             crate::net::modrinth::DownloadOutcome::Downloaded(path)
@@ -159,7 +157,7 @@ async fn install_staged(
                 item.title
             ))
         })?;
-        let target = destination.join(file_name);
+        let target = item.destination.join(file_name);
         if !targets.insert(target.clone()) {
             return Err(NetError::Parse(format!(
                 "Multiple selected projects install '{}'",
@@ -321,7 +319,7 @@ fn build_records(
                 old_relative,
                 ContentFileRecord {
                     relative_path,
-                    kind: ContentKind::Mod,
+                    kind: item.kind,
                     enabled: true,
                     fingerprint: crate::instance::content::manifest::fingerprint(&path)?,
                     resolution: crate::instance::Resolution::Resolved {
@@ -376,6 +374,7 @@ impl ProjectKey {
 #[derive(Debug, Clone)]
 struct Node {
     title: String,
+    kind: ContentKind,
     version: VersionInfo,
     installed: Option<InstalledMatch>,
     automatic_dependency: bool,
@@ -415,11 +414,16 @@ pub async fn resolve(
     instance: &InstanceConfig,
     root: InstallRoot,
 ) -> Result<DependencyPlan, NetError> {
+    if root.kind == ContentKind::DataPack && root.target_world.is_none() {
+        return Err(NetError::Parse(
+            "A target world is required for datapack installation".to_owned(),
+        ));
+    }
     let provider = registry.get(&root.provider).ok_or_else(|| {
         NetError::Parse(format!("{} content provider is unavailable", root.provider))
     })?;
     let root_version = provider.version(&root.version.id).await?;
-    validate_compatible(&root_version, instance)?;
+    validate_compatible(&root_version, instance, root.kind)?;
     if !root_version.project_id.is_empty() && root_version.project_id != root.project_id {
         return Err(NetError::Parse(format!(
             "Selected version belongs to project '{}', not '{}'",
@@ -433,6 +437,7 @@ pub async fn resolve(
         root_key.clone(),
         Node {
             title: root.title,
+            kind: root.kind,
             version: root_version.clone(),
             automatic_dependency: false,
             cleanup_eligible: false,
@@ -462,14 +467,26 @@ pub async fn resolve(
             continue;
         }
         let exact = requirement.dependency.version_id.is_some();
+        let parent_kind = nodes
+            .get(&requirement.parent)
+            .map(|node| node.kind)
+            .unwrap_or(root.kind);
         let choice = resolve_requirement(
             provider,
             manifest,
             &remote_matches,
             instance,
+            parent_kind,
+            root.target_world.as_deref(),
             &requirement.dependency,
         )
         .await?;
+        if choice.kind == ContentKind::DataPack && root.target_world.is_none() {
+            return Err(NetError::Parse(format!(
+                "Datapack dependency '{}' requires a target world",
+                choice.title
+            )));
+        }
         let key = ProjectKey::new(provider.id(), choice.version.project_id.clone());
         if requirement.ancestors.contains(&key) {
             return Err(NetError::Parse(format!(
@@ -505,6 +522,7 @@ pub async fn resolve(
             key.clone(),
             Node {
                 title: choice.title,
+                kind: choice.kind,
                 version: choice.version.clone(),
                 installed: choice.installed,
                 automatic_dependency: choice.automatic_dependency,
@@ -527,7 +545,14 @@ pub async fn resolve(
     }
 
     let order = reachable_order(&root_key, &nodes);
-    reject_installed_incompatibilities(provider, manifest, &remote_matches, &order, &nodes)?;
+    reject_installed_incompatibilities(
+        provider,
+        manifest,
+        &remote_matches,
+        &order,
+        &nodes,
+        root.target_world.as_deref(),
+    )?;
     let optional_dependencies = order
         .iter()
         .filter_map(|key| nodes.get(key))
@@ -536,9 +561,15 @@ pub async fn resolve(
     let items = order
         .iter()
         .filter_map(|key| {
-            nodes
-                .get(key)
-                .map(|node| planned_install(key, node, &nodes, minecraft_dir))
+            nodes.get(key).map(|node| {
+                planned_install(
+                    key,
+                    node,
+                    &nodes,
+                    minecraft_dir,
+                    root.target_world.as_deref(),
+                )
+            })
         })
         .collect();
     Ok(DependencyPlan {
@@ -549,6 +580,7 @@ pub async fn resolve(
 
 struct ResolvedChoice {
     title: String,
+    kind: ContentKind,
     version: VersionInfo,
     installed: Option<InstalledMatch>,
     automatic_dependency: bool,
@@ -560,6 +592,8 @@ async fn resolve_requirement(
     manifest: &ContentManifest,
     remote_matches: &HashMap<PathBuf, ProviderProject>,
     instance: &InstanceConfig,
+    parent_kind: ContentKind,
+    target_world: Option<&Path>,
     dependency: &VersionDependency,
 ) -> Result<ResolvedChoice, NetError> {
     let exact_version = match dependency.version_id.as_deref() {
@@ -581,7 +615,24 @@ async fn resolve_requirement(
                 dependency.file_name.as_deref().unwrap_or("unknown")
             ))
         })?;
-    let installed = find_installed(manifest, remote_matches, provider.id(), &project_id);
+    let project = match provider.project(&project_id).await {
+        Ok(project) => Some(project),
+        Err(error) => {
+            tracing::warn!(
+                "Could not load metadata for dependency '{project_id}'; keeping it out of automatic cleanup: {error}"
+            );
+            None
+        }
+    };
+    let kind = dependency_kind(project.as_ref(), exact_version.as_ref(), parent_kind);
+    let installed = find_installed(
+        manifest,
+        remote_matches,
+        provider.id(),
+        &project_id,
+        kind,
+        target_world,
+    );
     let version = if let Some(version) = exact_version {
         version
     } else {
@@ -599,15 +650,10 @@ async fn resolve_requirement(
             None => None,
         };
         match installed_version {
-            Some(version) if validate_compatible(&version, instance).is_ok() => version,
+            Some(version) if validate_compatible(&version, instance, kind).is_ok() => version,
             _ => {
                 let versions = provider
-                    .compatible_versions(
-                        &project_id,
-                        ContentKind::Mod,
-                        &instance.game_version,
-                        instance.loader,
-                    )
+                    .compatible_versions(&project_id, kind, &instance.game_version, instance.loader)
                     .await?;
                 select_preferred_version(versions).ok_or_else(|| {
                     NetError::Parse(format!(
@@ -617,22 +663,13 @@ async fn resolve_requirement(
             }
         }
     };
-    validate_compatible(&version, instance)?;
+    validate_compatible(&version, instance, kind)?;
     if !version.project_id.is_empty() && version.project_id != project_id {
         return Err(NetError::Parse(format!(
             "Dependency version '{}' belongs to project '{}', not '{}'",
             version.version_number, version.project_id, project_id
         )));
     }
-    let project = match provider.project(&project_id).await {
-        Ok(project) => Some(project),
-        Err(error) => {
-            tracing::warn!(
-                "Could not load metadata for dependency '{project_id}'; keeping it out of automatic cleanup: {error}"
-            );
-            None
-        }
-    };
     let automatic_dependency = installed
         .as_ref()
         .is_none_or(|installed| installed.automatic_dependency);
@@ -643,6 +680,7 @@ async fn resolve_requirement(
             .map(|project| project.title)
             .unwrap_or_else(|| project_id.clone()),
         version,
+        kind,
         automatic_dependency,
         cleanup_eligible,
         installed,
@@ -710,6 +748,46 @@ fn select_preferred_version(mut versions: Vec<VersionInfo>) -> Option<VersionInf
     versions.into_iter().next()
 }
 
+fn dependency_kind(
+    project: Option<&ProjectInfo>,
+    version: Option<&VersionInfo>,
+    parent_kind: ContentKind,
+) -> ContentKind {
+    if version.is_some_and(|version| {
+        version
+            .loaders
+            .iter()
+            .any(|loader| loader.eq_ignore_ascii_case("datapack"))
+    }) {
+        return ContentKind::DataPack;
+    }
+    if version.is_some_and(|version| {
+        version.loaders.iter().any(|loader| {
+            matches!(
+                loader.to_ascii_lowercase().as_str(),
+                "fabric" | "forge" | "neoforge" | "quilt"
+            )
+        })
+    }) {
+        return ContentKind::Mod;
+    }
+    if project.is_some_and(|project| {
+        project
+            .loaders
+            .iter()
+            .any(|loader| loader.eq_ignore_ascii_case("datapack"))
+    }) {
+        return ContentKind::DataPack;
+    }
+    match project.map(|project| project.project_type.as_str()) {
+        Some("resourcepack") => ContentKind::ResourcePack,
+        Some("shader") => ContentKind::Shader,
+        Some("datapack") => ContentKind::DataPack,
+        Some("mod") => ContentKind::Mod,
+        _ => parent_kind,
+    }
+}
+
 fn release_rank(version_type: VersionType) -> u8 {
     match version_type {
         VersionType::Release => 0,
@@ -719,17 +797,22 @@ fn release_rank(version_type: VersionType) -> u8 {
     }
 }
 
-fn validate_compatible(version: &VersionInfo, instance: &InstanceConfig) -> Result<(), NetError> {
+fn validate_compatible(
+    version: &VersionInfo,
+    instance: &InstanceConfig,
+    kind: ContentKind,
+) -> Result<(), NetError> {
     let loader = instance.loader.to_string().to_ascii_lowercase();
-    if !version
+    let supports_game = version
         .game_versions
         .iter()
-        .any(|game_version| game_version == &instance.game_version)
-        || !version
+        .any(|game_version| game_version == &instance.game_version);
+    let supports_loader = kind != ContentKind::Mod
+        || version
             .loaders
             .iter()
-            .any(|candidate| candidate.eq_ignore_ascii_case(&loader))
-    {
+            .any(|candidate| candidate.eq_ignore_ascii_case(&loader));
+    if !supports_game || !supports_loader {
         return Err(NetError::Parse(format!(
             "Required dependency '{}' does not support Minecraft {} with {}",
             version.version_number, instance.game_version, instance.loader
@@ -745,10 +828,10 @@ async fn resolve_installed_files(
     let files = manifest
         .files
         .iter()
-        .filter(|record| record.kind == ContentKind::Mod && record.enabled)
+        .filter(|record| record.enabled)
         .map(|record| FingerprintQuery {
             key: record.relative_path.to_string_lossy().into_owned(),
-            kind: ContentKind::Mod,
+            kind: record.kind,
             fingerprint: record.fingerprint.clone(),
         })
         .collect::<Vec<_>>();
@@ -785,11 +868,14 @@ fn find_installed(
     remote_matches: &HashMap<PathBuf, ProviderProject>,
     provider: &str,
     project_id: &str,
+    kind: ContentKind,
+    target_world: Option<&Path>,
 ) -> Option<InstalledMatch> {
     manifest
         .files
         .iter()
-        .filter(|record| record.enabled)
+        .filter(|record| record.enabled && record.kind == kind)
+        .filter(|record| record_in_target(record, kind, target_world))
         .find_map(|record| {
             let remote = remote_matches.get(&record.relative_path);
             if !record.matches_project(provider, project_id)
@@ -801,6 +887,22 @@ fn find_installed(
             }
             Some(installed_match(record, remote, provider, project_id))
         })
+}
+
+fn record_in_target(
+    record: &ContentFileRecord,
+    kind: ContentKind,
+    target_world: Option<&Path>,
+) -> bool {
+    if kind != ContentKind::DataPack {
+        return true;
+    }
+    let Some(world_name) = target_world.and_then(Path::file_name) else {
+        return false;
+    };
+    record
+        .relative_path
+        .starts_with(Path::new("saves").join(world_name).join("datapacks"))
 }
 
 fn installed_match(
@@ -861,17 +963,19 @@ fn reject_installed_incompatibilities(
     remote_matches: &HashMap<PathBuf, ProviderProject>,
     order: &[ProjectKey],
     nodes: &HashMap<ProjectKey, Node>,
+    target_world: Option<&Path>,
 ) -> Result<(), NetError> {
     for key in order {
         let Some(node) = nodes.get(key) else {
             continue;
         };
         for incompatible in &node.incompatible {
-            let installed = find_installed(
+            let installed = find_installed_incompatible(
                 manifest,
                 remote_matches,
                 provider.id(),
                 &incompatible.project_id,
+                target_world,
             );
             let selected = order.iter().find_map(|selected_key| {
                 (selected_key.provider == provider.id()
@@ -901,11 +1005,37 @@ fn reject_installed_incompatibilities(
     Ok(())
 }
 
+fn find_installed_incompatible(
+    manifest: &ContentManifest,
+    remote_matches: &HashMap<PathBuf, ProviderProject>,
+    provider: &str,
+    project_id: &str,
+    target_world: Option<&Path>,
+) -> Option<InstalledMatch> {
+    manifest
+        .files
+        .iter()
+        .filter(|record| record.enabled)
+        .filter(|record| {
+            record.kind != ContentKind::DataPack
+                || record_in_target(record, ContentKind::DataPack, target_world)
+        })
+        .find_map(|record| {
+            let remote = remote_matches.get(&record.relative_path);
+            (record.matches_project(provider, project_id)
+                || remote.is_some_and(|project| {
+                    project.provider == provider && project.project_id == project_id
+                }))
+            .then(|| installed_match(record, remote, provider, project_id))
+        })
+}
+
 fn planned_install(
     key: &ProjectKey,
     node: &Node,
     nodes: &HashMap<ProjectKey, Node>,
     minecraft_dir: &Path,
+    target_world: Option<&Path>,
 ) -> PlannedInstall {
     let installed_path = node
         .installed
@@ -920,6 +1050,13 @@ fn planned_install(
         title: node.title.clone(),
         version: node.version.clone(),
         installed_path,
+        kind: node.kind,
+        destination: match node.kind {
+            ContentKind::DataPack => target_world
+                .expect("datapack dependency plan requires a world")
+                .join("datapacks"),
+            kind => minecraft_dir.join(kind.directory()),
+        },
         provider_aliases: node.installed.as_ref().map_or_else(Vec::new, |installed| {
             if replacement {
                 Vec::new()

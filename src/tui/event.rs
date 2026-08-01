@@ -68,6 +68,29 @@ impl App {
                 discovery.list.request_image_loads(&self.picker);
                 discovery.list.drain_image_loads(&self.picker);
             }
+            self.datapacks_discovery_state.drain_pending();
+            if self.focused == FocusedArea::Content {
+                orphan_cleanup =
+                    orphan_cleanup.or_else(|| self.datapacks_discovery_state.take_orphan_cleanup());
+            }
+            self.datapacks_discovery_state.list.drain_pending();
+            self.datapacks_discovery_state
+                .list
+                .request_image_loads(&self.picker);
+            self.datapacks_discovery_state
+                .list
+                .drain_image_loads(&self.picker);
+            if let Some(popup) = self.datapacks_discovery_state.version_popup.as_mut() {
+                popup.worlds.request_image_loads(&self.picker);
+                popup.worlds.drain_image_loads(&self.picker);
+            }
+            local_streamed |= self.world_datapacks_state.drain_pending();
+            let update = self.world_datapacks_state.drain_watcher();
+            content_changed |= update.requires_reconcile;
+            toggles.extend(update.toggles);
+            self.world_datapacks_state.drain_provider_icons();
+            self.world_datapacks_state.request_image_loads(&self.picker);
+            self.world_datapacks_state.drain_image_loads(&self.picker);
             if let Some(paths) = orphan_cleanup {
                 widgets::popups::confirm::set_pending_orphan_dependencies(paths);
                 self.focused = FocusedArea::ConfirmDelete;
@@ -163,6 +186,7 @@ impl App {
                 &self.mods_discovery_state,
                 &self.resource_packs_discovery_state,
                 &self.shaders_discovery_state,
+                &self.datapacks_discovery_state,
             ]
             .iter()
             .filter(|state| state.version_popup.is_some())
@@ -212,6 +236,8 @@ impl App {
             .refresh_installed_manifest(&manifest, &minecraft_dir);
         self.shaders_discovery_state
             .refresh_installed_manifest(&manifest, &minecraft_dir);
+        self.datapacks_discovery_state
+            .refresh_installed_manifest(&manifest, &minecraft_dir);
         self.content_manifest = Some((instance_name, manifest));
         !complete
     }
@@ -234,6 +260,7 @@ impl App {
                 &mut self.mods_discovery_state,
                 &mut self.resource_packs_discovery_state,
                 &mut self.shaders_discovery_state,
+                &mut self.datapacks_discovery_state,
             ] {
                 discovery.refresh_installed_manifest(
                     &crate::instance::ContentManifest::default(),
@@ -301,12 +328,24 @@ impl App {
             &minecraft_dir,
             crate::instance::ContentKind::Shader,
         );
+        self.world_datapacks_state.apply_manifest(
+            &result.manifest,
+            &minecraft_dir,
+            crate::instance::ContentKind::DataPack,
+        );
         self.mods_discovery_state
             .refresh_installed_manifest(&result.manifest, &minecraft_dir);
         self.resource_packs_discovery_state
             .refresh_installed_manifest(&result.manifest, &minecraft_dir);
         self.shaders_discovery_state
             .refresh_installed_manifest(&result.manifest, &minecraft_dir);
+        self.datapacks_discovery_state
+            .refresh_installed_manifest(&result.manifest, &minecraft_dir);
+        for world in &mut self.worlds_state.entries {
+            if let Some(details) = world.world_details.as_mut() {
+                details.datapacks = crate::instance::content::worlds::datapack_names(&world.path);
+            }
+        }
         self.content_manifest = Some((result.instance_name, result.manifest));
     }
 
@@ -336,6 +375,11 @@ impl App {
             manifest,
             &minecraft_dir,
             crate::instance::ContentKind::Shader,
+        );
+        self.world_datapacks_state.apply_manifest(
+            manifest,
+            &minecraft_dir,
+            crate::instance::ContentKind::DataPack,
         );
     }
 

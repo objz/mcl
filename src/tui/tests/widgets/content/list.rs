@@ -17,7 +17,7 @@ use super::{
     ContentListState, WatcherEventHandling, available_description_width, description_text_width,
     diff_directory, diff_event_paths, ellipsize, load_provider_metadata, read_dir_stems,
     right_aligned_footer_spans, square_icon_columns, title_suffix_spans, watcher_event_handling,
-    world_game_mode_color,
+    world_descriptions, world_game_mode_color,
 };
 
 fn entry(name: &str) -> ContentEntry {
@@ -38,6 +38,22 @@ fn entry(name: &str) -> ContentEntry {
         path: PathBuf::from(name.to_lowercase()),
         icon_lines: None,
     }
+}
+
+#[test]
+fn world_cards_preview_up_to_three_datapacks() {
+    let lines = world_descriptions(&WorldDetails {
+        game_mode: None,
+        last_played: None,
+        minecraft_version: Some("1.21.1".to_owned()),
+        size: Some("4.0 MB".to_owned()),
+        datapacks: ["A", "B", "C", "D"]
+            .into_iter()
+            .map(str::to_owned)
+            .collect(),
+    });
+
+    assert_eq!(lines, ["1.21.1  •  4.0 MB", "• A", "• B", "• C", "+1 more"]);
 }
 
 #[test]
@@ -363,9 +379,10 @@ fn provider_icons_are_requested_only_for_visible_missing_icons() {
 }
 
 #[test]
-fn embedded_icons_do_not_request_provider_fallbacks() {
+fn complete_local_pack_metadata_does_not_request_provider_fallbacks() {
     let mut state = ContentListState::default();
     let mut visible = entry("Visible");
+    visible.description = "Local description".to_owned();
     visible.icon_bytes = Some(vec![1, 2, 3]);
     visible.icon_lines = Some(crate::instance::content::fallback_icon());
     visible.provider_project = Some(crate::instance::ProviderProject {
@@ -457,6 +474,7 @@ fn multiline_rendering_uses_the_space_beside_large_icons() {
         last_played: None,
         minecraft_version: Some("1.21.1".to_owned()),
         size: Some("2.0 MB".to_owned()),
+        datapacks: Vec::new(),
     });
     world.icon_lines = Some(crate::instance::content::fallback_icon_large());
     let mut state = ContentListState::default();
@@ -647,6 +665,8 @@ async fn provider_metadata_loads_from_cache_without_network() {
             icon_url: None,
             categories: Vec::new(),
             additional_categories: Vec::new(),
+            project_type: "mod".to_owned(),
+            loaders: Vec::new(),
         })
         .unwrap(),
     )

@@ -192,11 +192,79 @@ fn version_popup_switches_to_the_other_provider() {
         .push(project_entry(project("sodium"), None));
     state.list.list_state.selected = Some(0);
     let first = state.begin_versions().unwrap();
-    assert_eq!(first.provider, "modrinth");
     state.version_popup.as_mut().unwrap().loading = false;
     let second = state.switch_version_source().unwrap();
-    assert_eq!(second.provider, "curseforge");
-    assert_eq!(state.version_popup.as_ref().unwrap().provider, "curseforge");
+    assert_ne!(second.provider, first.provider);
+    assert_eq!(
+        state.version_popup.as_ref().unwrap().provider,
+        second.provider
+    );
+}
+
+#[test]
+fn datapack_versions_select_a_world_before_dependency_resolution() {
+    let temp = tempfile::tempdir().unwrap();
+    let minecraft = temp.path().join("minecraft");
+    let world_path = minecraft.join("saves/world-folder");
+    std::fs::create_dir_all(world_path.join("datapacks")).unwrap();
+    let installed = world_path.join("datapacks/project.zip");
+    std::fs::write(&installed, b"zip").unwrap();
+
+    let mut state = DiscoveryState::new(ContentKind::DataPack);
+    state
+        .list
+        .entries
+        .push(project_entry(project("project"), Some(installed.clone())));
+    state.list.list_state.selected = Some(0);
+    let request = state.begin_versions().unwrap();
+    let mut datapack_version = version("1.0.0");
+    datapack_version.loaders = vec!["datapack".to_owned()];
+    DiscoveryState::push_action_result(
+        &request.pending,
+        DiscoveryActionResult::Versions {
+            request_id: request.request_id,
+            project_id: request.project_id,
+            result: Ok(vec![datapack_version]),
+        },
+    );
+    state.drain_pending();
+
+    let world = crate::instance::scan_one_world(&world_path, "world-folder", true);
+    assert!(state.begin_world_selection(vec![world]));
+    let mut manifest = crate::instance::ContentManifest::default();
+    manifest.upsert(crate::instance::ContentFileRecord {
+        relative_path: PathBuf::from("saves/world-folder/datapacks/project.zip"),
+        kind: ContentKind::DataPack,
+        enabled: true,
+        fingerprint: crate::instance::FileFingerprint {
+            size: 3,
+            modified_ns: 1,
+            hashes: Default::default(),
+        },
+        resolution: crate::instance::Resolution::Resolved {
+            project: crate::instance::ProviderProject {
+                provider: "modrinth".to_owned(),
+                project_id: "project".to_owned(),
+                version_id: "old".to_owned(),
+            },
+        },
+        provider_aliases: Vec::new(),
+        required_dependencies: Vec::new(),
+        automatic_dependency: false,
+        cleanup_eligible: false,
+    });
+
+    assert!(state.select_world(Some(&manifest), &minecraft));
+    let dependency = state.begin_dependency_resolution().unwrap();
+    assert_eq!(dependency.root.kind, ContentKind::DataPack);
+    assert_eq!(
+        dependency.root.target_world.as_deref(),
+        Some(world_path.as_path())
+    );
+    assert_eq!(
+        dependency.root.installed_path.as_deref(),
+        Some(installed.as_path())
+    );
 }
 
 #[test]
@@ -354,6 +422,8 @@ fn project_page_loads_for_the_selected_discovery_entry() {
                 icon_url: None,
                 categories: Vec::new(),
                 additional_categories: Vec::new(),
+                project_type: "mod".to_owned(),
+                loaders: Vec::new(),
             }),
         },
     );
@@ -521,6 +591,8 @@ fn dependency_resolution_opens_the_existing_confirmation() {
                     title: "Project".to_owned(),
                     version: root_version,
                     installed_path: None,
+                    kind: crate::instance::ContentKind::Mod,
+                    destination: std::path::PathBuf::from("mods"),
                     provider_aliases: Vec::new(),
                     required_dependencies: Vec::new(),
                     automatic_dependency: false,

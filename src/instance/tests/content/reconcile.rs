@@ -80,7 +80,7 @@ fn unchanged_saved_index_reuses_fingerprint_and_skips_provider_query() {
     let fingerprint = first.manifest.files[0].fingerprint.clone();
     first.manifest.files[0].resolution = Resolution::Unmatched {
         checked_at: chrono::Utc::now().timestamp(),
-        providers: vec!["modrinth".to_owned()],
+        providers: vec!["modrinth".to_owned(), "curseforge".to_owned()],
     };
     first.manifest.save(&manifest_path).unwrap();
 
@@ -122,4 +122,29 @@ fn directory_packs_are_indexed_without_provider_queries() {
         inventory.manifest.files[0].relative_path,
         PathBuf::from("resourcepacks/example")
     );
+}
+
+#[test]
+fn datapacks_are_indexed_under_their_world() {
+    let temp = tempfile::tempdir().unwrap();
+    let minecraft = temp.path().join("minecraft");
+    let datapacks = minecraft.join("saves/world/datapacks");
+    std::fs::create_dir_all(datapacks.join("folder-pack")).unwrap();
+    std::fs::write(datapacks.join("zipped-pack.zip"), b"zip").unwrap();
+
+    let inventory = reconcile_inventory(
+        &temp.path().join("manifest.json"),
+        &minecraft,
+        24,
+        512,
+        &NoopProgress,
+    )
+    .unwrap();
+
+    assert_eq!(inventory.manifest.files.len(), 2);
+    assert!(inventory.manifest.files.iter().all(|record| {
+        record.kind == ContentKind::DataPack
+            && record.relative_path.starts_with("saves/world/datapacks")
+    }));
+    assert_eq!(inventory.queries.len(), 1);
 }

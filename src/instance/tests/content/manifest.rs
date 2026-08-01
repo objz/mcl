@@ -233,3 +233,44 @@ fn orphan_cleanup_keeps_automatic_non_library_dependencies() {
             .is_empty()
     );
 }
+
+#[test]
+fn datapack_dependencies_are_scoped_to_their_world() {
+    let mut first_root = managed_record(
+        "saves/first/datapacks/root.zip",
+        "root",
+        false,
+        vec![dependency("library")],
+    );
+    first_root.kind = ContentKind::DataPack;
+    let mut second_root = managed_record(
+        "saves/second/datapacks/root.zip",
+        "root",
+        false,
+        vec![dependency("library")],
+    );
+    second_root.kind = ContentKind::DataPack;
+    let mut first_library = managed_record(
+        "saves/first/datapacks/library.zip",
+        "library",
+        true,
+        Vec::new(),
+    );
+    first_library.kind = ContentKind::DataPack;
+    let mut second_library = managed_record(
+        "saves/second/datapacks/library.zip",
+        "library",
+        true,
+        Vec::new(),
+    );
+    second_library.kind = ContentKind::DataPack;
+    let manifest = ContentManifest {
+        version: 1,
+        files: vec![first_root, second_root, first_library, second_library],
+    };
+
+    assert_eq!(
+        manifest.orphaned_dependencies_after_removing(Path::new("saves/first/datapacks/root.zip")),
+        vec![PathBuf::from("saves/first/datapacks/library.zip")]
+    );
+}
