@@ -31,6 +31,7 @@ pub struct App {
     pub(super) shaders_state: widgets::content::list::ContentListState,
     pub(super) shaders_discovery_state: widgets::content::DiscoveryState,
     pub(super) worlds_state: widgets::content::list::ContentListState,
+    pub(super) world_quick_play_support: Option<(String, String, bool)>,
     pub(super) screenshots_state: widgets::screenshots_grid::ScreenshotsState,
     pub(super) logs_state: widgets::logs_viewer::LogsState,
     pub(super) account_state: widgets::account::AccountState,
@@ -80,6 +81,28 @@ pub enum FocusedArea {
 }
 
 impl App {
+    pub(super) fn selected_instance_supports_quick_play(&mut self) -> bool {
+        let Some((name, game_version)) = self
+            .instances_state
+            .selected_instance()
+            .map(|instance| (instance.name.clone(), instance.game_version.clone()))
+        else {
+            return false;
+        };
+        if let Some((cached_name, cached_version, supported)) = &self.world_quick_play_support
+            && cached_name == &name
+            && cached_version == &game_version
+        {
+            return *supported;
+        }
+        let supported = crate::instance::launch::supports_quick_play(
+            &self.instance_manager.meta_dir,
+            &game_version,
+        );
+        self.world_quick_play_support = Some((name, game_version, supported));
+        supported
+    }
+
     pub fn new(picker: ratatui_image::picker::Picker) -> Self {
         let instances_dir = crate::config::SETTINGS.paths.resolve_instances_dir();
         let meta_dir = crate::config::SETTINGS.paths.resolve_meta_dir();
@@ -123,6 +146,7 @@ impl App {
                 crate::instance::ContentKind::Shader,
             ),
             worlds_state: widgets::content::list::ContentListState::default(),
+            world_quick_play_support: None,
             logs_state: widgets::logs_viewer::LogsState::default(),
             account_state: widgets::account::AccountState::default(),
             settings_state: widgets::settings::SettingsState::new(manager.meta_dir.clone()),

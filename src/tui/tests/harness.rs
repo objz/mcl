@@ -66,6 +66,7 @@ impl UiHarness {
                 crate::instance::ContentKind::Shader,
             ),
             worlds_state: widgets::content::ContentListState::default(),
+            world_quick_play_support: None,
             screenshots_state: {
                 let mut state = widgets::screenshots_grid::ScreenshotsState::default();
                 state.font_size = (font_size.width, font_size.height);

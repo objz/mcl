@@ -417,11 +417,43 @@ fn rendering_visible_entries_restores_the_first_selection() {
                 "Empty",
                 &picker,
                 false,
+                false,
             );
         })
         .unwrap();
 
     assert_eq!(state.list_state.selected, Some(0));
+}
+
+#[test]
+fn multiline_rendering_uses_the_space_beside_large_icons() {
+    let mut world = entry("World");
+    world.description =
+        "Last played\nDifficulty: Normal\nMinecraft: 1.21.1\nCreated\nApprox. size".to_owned();
+    world.icon_lines = Some(crate::instance::content::fallback_icon_large());
+    let mut state = ContentListState::default();
+    state.entries.push(world);
+    state.rebuild_display_metadata();
+    let picker = ratatui_image::picker::Picker::halfblocks();
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(50, 6)).unwrap();
+
+    terminal
+        .draw(|frame| {
+            super::render(
+                frame,
+                frame.area(),
+                &mut state,
+                true,
+                "Loading...",
+                "Empty",
+                &picker,
+                false,
+                true,
+            );
+        })
+        .unwrap();
+
+    insta::assert_snapshot!(terminal.backend().to_string());
 }
 
 #[test]
@@ -470,6 +502,7 @@ fn pager_tracks_viewport_pages_and_jumps_to_their_first_item() {
                 "Empty",
                 &picker,
                 true,
+                false,
             );
         })
         .unwrap();

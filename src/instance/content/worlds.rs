@@ -2,7 +2,10 @@
 // their icon as icon.png. also computes an approximate size from top-level
 // files + region data so the user gets some sense of how chonky their world is.
 
-use std::path::Path;
+use std::{fs::File, path::Path};
+
+use flate2::read::GzDecoder;
+use serde::Deserialize;
 
 use super::entry::ContentEntry;
 use super::{fallback_icon_large, make_icon_pixels};
@@ -14,15 +17,21 @@ pub fn scan_one_world(path: &Path, file_stem: &str, enabled: bool) -> ContentEnt
         .and_then(|bytes| make_icon_pixels(bytes, 12, 6))
         .or_else(|| Some(fallback_icon_large()));
 
-    let description = world_description(path);
+    let metadata = read_world_metadata(path);
+    let description = world_description(path, metadata.as_ref());
 
     ContentEntry {
-        name: file_stem.to_owned(),
+        name: metadata
+            .as_ref()
+            .and_then(|metadata| metadata.level_name.as_deref())
+            .filter(|name| !name.trim().is_empty())
+            .unwrap_or(file_stem)
+            .to_owned(),
         file_stem: file_stem.to_owned(),
         source_slug: None,
         installed_path: None,
         provider_project: None,
-        title_suffix: None,
+        title_suffix: metadata.as_ref().and_then(WorldMetadata::game_mode),
         footer_label: None,
         description,
         enabled,
@@ -66,7 +75,82 @@ pub fn scan_worlds(instances_dir: &Path, instance_name: &str) -> Vec<ContentEntr
     entries
 }
 
-fn world_description(world_dir: &Path) -> String {
+#[derive(Debug, Deserialize)]
+struct LevelDat {
+    #[serde(rename = "Data")]
+    data: WorldMetadata,
+}
+
+#[derive(Debug, Deserialize)]
+struct WorldMetadata {
+    #[serde(rename = "LevelName")]
+    level_name: Option<String>,
+    #[serde(rename = "GameType")]
+    game_type: Option<i32>,
+    #[serde(rename = "hardcore")]
+    hardcore: Option<i8>,
+    #[serde(rename = "Difficulty")]
+    difficulty: Option<i8>,
+    #[serde(rename = "allowCommands")]
+    allow_commands: Option<i8>,
+    #[serde(rename = "LastPlayed")]
+    last_played: Option<i64>,
+    #[serde(rename = "Version")]
+    version: Option<WorldVersion>,
+    #[serde(rename = "DataVersion")]
+    data_version: Option<i32>,
+}
+
+#[derive(Debug, Deserialize)]
+struct WorldVersion {
+    #[serde(rename = "Name")]
+    name: Option<String>,
+}
+
+impl WorldMetadata {
+    fn game_mode(&self) -> Option<String> {
+        if self.hardcore.is_some_and(|hardcore| hardcore != 0) {
+            return Some("Hardcore".to_owned());
+        }
+        Some(
+            match self.game_type? {
+                0 => "Survival",
+                1 => "Creative",
+                2 => "Adventure",
+                3 => "Spectator",
+                _ => return None,
+            }
+            .to_owned(),
+        )
+    }
+
+    fn difficulty(&self) -> Option<&'static str> {
+        Some(match self.difficulty? {
+            0 => "Peaceful",
+            1 => "Easy",
+            2 => "Normal",
+            3 => "Hard",
+            _ => return None,
+        })
+    }
+}
+
+fn read_world_metadata(world_dir: &Path) -> Option<WorldMetadata> {
+    let path = world_dir.join("level.dat");
+    let file = File::open(&path).ok()?;
+    match fastnbt::from_reader::<_, LevelDat>(GzDecoder::new(file)) {
+        Ok(level) => Some(level.data),
+        Err(error) => {
+            tracing::debug!(
+                "Could not read world metadata from {}: {error}",
+                path.display()
+            );
+            None
+        }
+    }
+}
+
+fn world_description(world_dir: &Path, metadata: Option<&WorldMetadata>) -> String {
     let level_dat = world_dir.join("level.dat");
 
     let created = world_dir
@@ -76,31 +160,64 @@ fn world_description(world_dir: &Path) -> String {
         .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
         .map(|d| d.as_secs());
 
-    let modified = level_dat
-        .metadata()
-        .ok()
-        .and_then(|m| m.modified().ok())
-        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-        .map(|d| d.as_secs());
+    let modified = metadata
+        .and_then(|metadata| metadata.last_played)
+        .filter(|millis| *millis > 0)
+        .map(|millis| millis / 1000)
+        .or_else(|| {
+            level_dat
+                .metadata()
+                .ok()
+                .and_then(|m| m.modified().ok())
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_secs() as i64)
+        });
 
     let dir_size = dir_size_approx(world_dir);
 
     let mut lines = Vec::new();
 
+    if let Some(secs) = modified
+        && let Some(dt) = chrono::DateTime::from_timestamp(secs, 0)
+    {
+        lines.push(format!("Last played:  {}", dt.format("%Y-%m-%d %H:%M")));
+    }
+
+    if let Some(metadata) = metadata {
+        let mut settings = Vec::new();
+        if let Some(difficulty) = metadata.difficulty() {
+            settings.push(format!("Difficulty: {difficulty}"));
+        }
+        if let Some(allow_commands) = metadata.allow_commands {
+            settings.push(format!(
+                "Cheats: {}",
+                if allow_commands == 0 { "Off" } else { "On" }
+            ));
+        }
+        if !settings.is_empty() {
+            lines.push(settings.join("  •  "));
+        }
+
+        if let Some(version) = metadata
+            .version
+            .as_ref()
+            .and_then(|version| version.name.as_deref())
+            .filter(|version| !version.trim().is_empty())
+        {
+            lines.push(format!("Minecraft:    {version}"));
+        } else if let Some(data_version) = metadata.data_version {
+            lines.push(format!("Data version: {data_version}"));
+        }
+    }
+
     if let Some(secs) = created
         && let Some(dt) = chrono::DateTime::from_timestamp(secs as i64, 0)
     {
-        lines.push(format!("Created:  {}", dt.format("%Y-%m-%d %H:%M")));
-    }
-
-    if let Some(secs) = modified
-        && let Some(dt) = chrono::DateTime::from_timestamp(secs as i64, 0)
-    {
-        lines.push(format!("Played:   {}", dt.format("%Y-%m-%d %H:%M")));
+        lines.push(format!("Created:      {}", dt.format("%Y-%m-%d %H:%M")));
     }
 
     if dir_size > 0 {
-        lines.push(format!("Size:     {}", format_size(dir_size)));
+        lines.push(format!("Approx. size: {}", format_size(dir_size)));
     }
 
     lines.join("\n")
@@ -142,3 +259,7 @@ fn format_size(bytes: u64) -> String {
         format!("{:.2} GB", bytes as f64 / (1024.0 * 1024.0 * 1024.0))
     }
 }
+
+#[cfg(test)]
+#[path = "../tests/content/worlds.rs"]
+mod tests;

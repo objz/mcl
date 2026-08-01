@@ -366,6 +366,21 @@ impl App {
                     return Ok(());
                 }
             } else if self.content_tab == widgets::content::ContentTab::Worlds {
+                if key_event.code == KeyCode::Char('q') && !self.worlds_state.search.active {
+                    if self.selected_instance_supports_quick_play() {
+                        let instance = self.instances_state.selected_instance().cloned();
+                        let world = self
+                            .worlds_state
+                            .selected_entry()
+                            .and_then(|entry| entry.path.file_name())
+                            .and_then(|name| name.to_str())
+                            .map(str::to_owned);
+                        if let (Some(instance), Some(world)) = (instance, world) {
+                            self.spawn_launch(instance, Some(world));
+                        }
+                    }
+                    return Ok(());
+                }
                 if key_event.code == KeyCode::Char('d') && !self.worlds_state.search.active {
                     if let Some(pending) = self.worlds_state.pending_delete() {
                         self.confirm_content_delete(pending);
@@ -631,15 +646,7 @@ impl App {
                             && !self.instances_state.search.active =>
                     {
                         if let Some(instance) = self.instances_state.selected_instance().cloned() {
-                            let can_launch = matches!(
-                                crate::instance::runtime::get(&instance.name),
-                                None | Some(crate::instance::runtime::RunState::Crashed(_))
-                            );
-                            if can_launch {
-                                crate::instance::runtime::remove(&instance.name);
-                                crate::instance::logs::live::clear(&instance.name);
-                                self.spawn_launch(instance);
-                            }
+                            self.spawn_launch(instance, None);
                         }
                     }
                     KeyCode::Char('r')

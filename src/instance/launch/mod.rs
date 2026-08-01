@@ -11,8 +11,8 @@ use thiserror::Error;
 
 use crate::auth::AccountType;
 use crate::instance::models::{InstanceConfig, ModLoader};
-use crate::launch_profile::model::LaunchProfile;
-use crate::launch_profile::rules::{self, FeatureSet, RuleContext};
+use crate::launch_profile::model::{Argument, LaunchProfile};
+use crate::launch_profile::rules::{self, FeatureSet, RuleAction, RuleContext};
 use crate::launch_profile::templates::TemplateContext;
 use crate::launch_profile::{render, resolve, system};
 
@@ -306,6 +306,46 @@ pub struct LaunchInvocation {
     pub working_dir: PathBuf,
 }
 
+pub fn supports_quick_play(meta_dir: &Path, game_version: &str) -> bool {
+    let path = crate::storage::MetadataPaths::new(meta_dir)
+        .versions()
+        .join(game_version)
+        .join("meta.json");
+    std::fs::read(path)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<LaunchProfile>(&bytes).ok())
+        .is_some_and(|profile| profile_supports_quick_play(&profile))
+}
+
+fn profile_supports_quick_play(profile: &LaunchProfile) -> bool {
+    profile.arguments.as_ref().is_some_and(|arguments| {
+        arguments.game.iter().any(|argument| {
+            let Argument::Conditional { rules, .. } = argument else {
+                return false;
+            };
+            rules.iter().any(|rule| {
+                rule.action == RuleAction::Allow
+                    && rule
+                        .features
+                        .as_ref()
+                        .is_some_and(|features| features.is_quick_play_singleplayer == Some(true))
+            })
+        })
+    })
+}
+
+fn validate_quick_play_world(minecraft_dir: &Path, world: &str) -> Result<(), LaunchError> {
+    let mut components = Path::new(world).components();
+    let is_single_name = matches!(components.next(), Some(std::path::Component::Normal(_)))
+        && components.next().is_none();
+    if !is_single_name || !minecraft_dir.join("saves").join(world).is_dir() {
+        return Err(LaunchError::Parse(
+            "Selected Quick Play world is not a valid save".to_owned(),
+        ));
+    }
+    Ok(())
+}
+
 // builds a fully-resolved java invocation for the given instance. reads
 // meta.json and the loader profile from disk, migrates legacy formats if
 // needed (may hit Mojang to refetch), resolves inheritsFrom, applies
@@ -316,6 +356,7 @@ pub async fn build_launch_invocation(
     instances_dir: &Path,
     meta_dir: &Path,
     auth: &LaunchAuth<'_>,
+    quick_play_world: Option<&str>,
 ) -> Result<LaunchInvocation, LaunchError> {
     let instance_dir = instances_dir.join(&config.name);
     let minecraft_dir = instance_dir.join(crate::storage::MINECRAFT_DIR_NAME);
@@ -334,7 +375,14 @@ pub async fn build_launch_invocation(
         None => meta,
     };
 
-    let current_features = FeatureSet::default();
+    if let Some(world) = quick_play_world {
+        validate_quick_play_world(&minecraft_dir, world)?;
+    }
+
+    let current_features = FeatureSet {
+        is_quick_play_singleplayer: quick_play_world.map(|_| true),
+        ..Default::default()
+    };
     let host_os_version = system::mojang_os_version();
     let rule_ctx = RuleContext {
         os_name: system::mojang_os_name(),
@@ -403,6 +451,10 @@ pub async fn build_launch_invocation(
         .main_class
         .clone()
         .ok_or_else(|| LaunchError::Parse("merged profile missing mainClass".into()))?;
+
+    if quick_play_world.is_some() && !profile_supports_quick_play(&merged_profile) {
+        return Err(LaunchError::NotSupported("Quick Play".to_owned()));
+    }
 
     // rebuild the classpath from the merged profile. vanilla-style libraries
     // have `downloads.artifact.path` set and live in meta_dir/libraries/.
@@ -524,6 +576,7 @@ pub async fn build_launch_invocation(
         launcher_name: "rmcl",
         launcher_version: env!("CARGO_PKG_VERSION"),
         clientid: "0",
+        quick_play_singleplayer: quick_play_world,
     };
 
     let (upstream_jvm_args, game_args) =
@@ -557,6 +610,7 @@ pub async fn launch(
     config: &InstanceConfig,
     instances_dir: &Path,
     meta_dir: &Path,
+    quick_play_world: Option<&str>,
 ) -> Result<(), LaunchError> {
     let name = config.name.clone();
 
@@ -614,7 +668,8 @@ pub async fn launch(
         user_type,
     };
 
-    let invocation = build_launch_invocation(config, instances_dir, meta_dir, &auth).await?;
+    let invocation =
+        build_launch_invocation(config, instances_dir, meta_dir, &auth, quick_play_world).await?;
     tracing::debug!(
         "[{}] Prepared launch invocation: working_dir={} classpath_entries={} jvm_args={} extra_args={} game_args={} main_class={}",
         name,

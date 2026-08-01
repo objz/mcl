@@ -165,6 +165,7 @@ pub fn render(
     logs_state: &mut crate::tui::widgets::logs_viewer::LogsState,
     instances_dir: &std::path::Path,
     picker: &ratatui_image::picker::Picker,
+    world_quick_play_supported: bool,
 ) {
     let theme = THEME.as_ref();
     let is_focused = focused == FocusedArea::Content;
@@ -313,6 +314,15 @@ pub fn render(
             | (ContentMode::Installed, ContentTab::Shaders) => &[
                 ("j/k", " navigate"),
                 ("⏎", " toggle"),
+                ("d", " delete"),
+                ("Shift+⏎", " open dir"),
+                ("h/l", " tabs"),
+                ("/", " search"),
+                ("Tab", " discover"),
+            ],
+            (ContentMode::Installed, ContentTab::Worlds) if world_quick_play_supported => &[
+                ("j/k", " navigate"),
+                ("q", " quick launch"),
                 ("d", " delete"),
                 ("Shift+⏎", " open dir"),
                 ("h/l", " tabs"),
@@ -473,6 +483,7 @@ pub fn render(
                     "No worlds saved.",
                     picker,
                     false,
+                    true,
                 );
             } else {
                 frame.render_widget(
@@ -533,6 +544,7 @@ fn render_downloadable(
             tab.loading_text,
             tab.empty_text,
             picker,
+            false,
             false,
         );
     }
@@ -611,6 +623,7 @@ fn render_discovery_body(
             &empty_text,
             picker,
             paginate,
+            false,
         );
     }
     if state.version_popup.is_some() {

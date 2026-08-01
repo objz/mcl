@@ -27,11 +27,9 @@ pub struct OsCondition {
 pub struct FeatureSet {
     pub is_demo_user: Option<bool>,
     pub has_custom_resolution: Option<bool>,
-    // quick-play feature flags (1.20+). rmcl never sets these, so any rule
-    // gated on them is filtered out by features_match. listing them
-    // explicitly is what makes that filter work: without the fields,
-    // serde would silently drop them during deserialization, leaving a
-    // FeatureSet::default that matches everything.
+    // quick-play feature flags (1.20+). normal launches leave these unset;
+    // world quick launch enables only the singleplayer flag. listing every
+    // flag explicitly keeps unrelated conditional arguments filtered out.
     pub has_quick_plays_support: Option<bool>,
     pub is_quick_play_singleplayer: Option<bool>,
     pub is_quick_play_multiplayer: Option<bool>,
