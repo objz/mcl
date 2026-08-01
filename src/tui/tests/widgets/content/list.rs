@@ -17,7 +17,7 @@ use super::{
     ContentListState, WatcherEventHandling, available_description_width, description_text_width,
     diff_directory, diff_event_paths, ellipsize, load_provider_metadata, read_dir_stems,
     right_aligned_footer_spans, square_icon_columns, title_suffix_spans, watcher_event_handling,
-    world_game_mode_color, world_summary_spans,
+    world_game_mode_color,
 };
 
 fn entry(name: &str) -> ContentEntry {
@@ -211,20 +211,6 @@ fn world_modes_use_distinct_theme_roles() {
         world_game_mode_color(WorldGameMode::Hardcore),
         theme.error()
     );
-}
-
-#[test]
-fn mismatched_world_version_uses_the_error_color() {
-    let details = WorldDetails {
-        game_mode: None,
-        last_played: None,
-        minecraft_version: Some("1.20.1".to_owned()),
-        size: None,
-    };
-    let summary = "Minecraft 1.20.1";
-    let spans = world_summary_spans(&details, Some("1.21.1"), summary, summary, Style::default());
-
-    assert_eq!(spans[1].style.fg, Some(crate::config::theme::THEME.error()));
 }
 
 #[test]
@@ -473,10 +459,7 @@ fn multiline_rendering_uses_the_space_beside_large_icons() {
         size: Some("2.0 MB".to_owned()),
     });
     world.icon_lines = Some(crate::instance::content::fallback_icon_large());
-    let mut state = ContentListState {
-        expected_game_version: Some("1.21.1".to_owned()),
-        ..Default::default()
-    };
+    let mut state = ContentListState::default();
     state.entries.push(world);
     state.rebuild_display_metadata();
     let picker = ratatui_image::picker::Picker::halfblocks();

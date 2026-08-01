@@ -3,7 +3,7 @@ source: src/tui/tests/widgets/content/list.rs
 expression: terminal.backend().to_string()
 ---
 "▌▄▄▄▄▄▄▄▄▄▄▄▄ World   Survival                                        "
-"▌▄▄▄▄▄▄▄▄▄▄▄▄ Minecraft 1.21.1  •  2.0 MB                Never played "
+"▌▄▄▄▄▄▄▄▄▄▄▄▄ 1.21.1  •  2.0 MB                          Never played "
 "▌▄▄▄▄▄▄▄▄▄▄▄▄                                                         "
 "▌▄▄▄▄▄▄▄▄▄▄▄▄                                                         "
 "▌▄▄▄▄▄▄▄▄▄▄▄▄                                                         "
