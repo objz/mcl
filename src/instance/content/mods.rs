@@ -90,6 +90,7 @@ pub fn scan_one_mod(path: &Path, file_stem: &str, enabled: bool) -> ContentEntry
         source_slug: None,
         installed_path: None,
         provider_project: None,
+        world_details: None,
         title_suffix: None,
         footer_label: None,
         description,

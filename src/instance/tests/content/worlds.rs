@@ -31,19 +31,25 @@ fn world_scan_uses_level_dat_metadata_and_falls_back_cleanly() {
 
     let entry = scan_one_world(&world, "world-folder", true);
     assert_eq!(entry.name, "Display World");
-    assert_eq!(entry.title_suffix.as_deref(), Some("Hardcore"));
-    assert!(entry.description.contains("Last played:  2023-11-14 22:13"));
-    assert!(
-        entry
-            .description
-            .contains("Difficulty: Hard  •  Cheats: Off")
+    let details = entry.world_details.as_ref().unwrap();
+    assert_eq!(details.game_mode, Some(WorldGameMode::Hardcore));
+    assert_eq!(
+        details.last_played,
+        chrono::DateTime::from_timestamp(1_700_000_000, 0)
     );
-    assert!(entry.description.contains("Minecraft:    1.21.1"));
-    assert!(entry.description.contains("Approx. size:"));
+    assert_eq!(details.minecraft_version.as_deref(), Some("1.21.1"));
+    assert_eq!(details.size.as_deref(), Some("2.2 KB"));
+    assert!(entry.description.is_empty());
 
     std::fs::write(world.join("level.dat"), b"not nbt").unwrap();
     let fallback = scan_one_world(&world, "world-folder", true);
     assert_eq!(fallback.name, "world-folder");
     assert_eq!(fallback.title_suffix, None);
-    assert!(fallback.description.contains("Approx. size:"));
+    assert_eq!(
+        fallback
+            .world_details
+            .as_ref()
+            .and_then(|details| details.size.as_deref()),
+        Some("2.0 KB")
+    );
 }

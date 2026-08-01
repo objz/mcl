@@ -1182,6 +1182,7 @@ pub(crate) fn provider_project_entry(
             project_id: project.id.clone(),
             version_id: String::new(),
         }),
+        world_details: None,
         title_suffix: installed_path.is_some().then(|| "Installed".to_owned()),
         footer_label: Some(format!("{} downloads", format_downloads(project.downloads))),
         description: project.description,

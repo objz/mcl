@@ -7,7 +7,7 @@ use std::{fs::File, path::Path};
 use flate2::read::GzDecoder;
 use serde::Deserialize;
 
-use super::entry::ContentEntry;
+use super::entry::{ContentEntry, WorldDetails, WorldGameMode};
 use super::{fallback_icon_large, make_icon_pixels};
 
 pub fn scan_one_world(path: &Path, file_stem: &str, enabled: bool) -> ContentEntry {
@@ -18,7 +18,19 @@ pub fn scan_one_world(path: &Path, file_stem: &str, enabled: bool) -> ContentEnt
         .or_else(|| Some(fallback_icon_large()));
 
     let metadata = read_world_metadata(path);
-    let description = world_description(path, metadata.as_ref());
+    let last_played = world_last_played(path, metadata.as_ref());
+    let size = dir_size_approx(path);
+    let world_details = WorldDetails {
+        game_mode: metadata.as_ref().and_then(WorldMetadata::game_mode),
+        last_played,
+        minecraft_version: metadata
+            .as_ref()
+            .and_then(|metadata| metadata.version.as_ref())
+            .and_then(|version| version.name.as_deref())
+            .filter(|version| !version.trim().is_empty())
+            .map(str::to_owned),
+        size: (size > 0).then(|| format_size(size)),
+    };
 
     ContentEntry {
         name: metadata
@@ -31,9 +43,10 @@ pub fn scan_one_world(path: &Path, file_stem: &str, enabled: bool) -> ContentEnt
         source_slug: None,
         installed_path: None,
         provider_project: None,
-        title_suffix: metadata.as_ref().and_then(WorldMetadata::game_mode),
+        world_details: Some(world_details),
+        title_suffix: None,
         footer_label: None,
-        description,
+        description: String::new(),
         enabled,
         icon_bytes,
         provider_icon: false,
@@ -89,16 +102,10 @@ struct WorldMetadata {
     game_type: Option<i32>,
     #[serde(rename = "hardcore")]
     hardcore: Option<i8>,
-    #[serde(rename = "Difficulty")]
-    difficulty: Option<i8>,
-    #[serde(rename = "allowCommands")]
-    allow_commands: Option<i8>,
     #[serde(rename = "LastPlayed")]
     last_played: Option<i64>,
     #[serde(rename = "Version")]
     version: Option<WorldVersion>,
-    #[serde(rename = "DataVersion")]
-    data_version: Option<i32>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -108,28 +115,15 @@ struct WorldVersion {
 }
 
 impl WorldMetadata {
-    fn game_mode(&self) -> Option<String> {
+    fn game_mode(&self) -> Option<WorldGameMode> {
         if self.hardcore.is_some_and(|hardcore| hardcore != 0) {
-            return Some("Hardcore".to_owned());
+            return Some(WorldGameMode::Hardcore);
         }
-        Some(
-            match self.game_type? {
-                0 => "Survival",
-                1 => "Creative",
-                2 => "Adventure",
-                3 => "Spectator",
-                _ => return None,
-            }
-            .to_owned(),
-        )
-    }
-
-    fn difficulty(&self) -> Option<&'static str> {
-        Some(match self.difficulty? {
-            0 => "Peaceful",
-            1 => "Easy",
-            2 => "Normal",
-            3 => "Hard",
+        Some(match self.game_type? {
+            0 => WorldGameMode::Survival,
+            1 => WorldGameMode::Creative,
+            2 => WorldGameMode::Adventure,
+            3 => WorldGameMode::Spectator,
             _ => return None,
         })
     }
@@ -150,17 +144,12 @@ fn read_world_metadata(world_dir: &Path) -> Option<WorldMetadata> {
     }
 }
 
-fn world_description(world_dir: &Path, metadata: Option<&WorldMetadata>) -> String {
+fn world_last_played(
+    world_dir: &Path,
+    metadata: Option<&WorldMetadata>,
+) -> Option<chrono::DateTime<chrono::Utc>> {
     let level_dat = world_dir.join("level.dat");
-
-    let created = world_dir
-        .metadata()
-        .ok()
-        .and_then(|m| m.created().ok().or_else(|| m.modified().ok()))
-        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-        .map(|d| d.as_secs());
-
-    let modified = metadata
+    metadata
         .and_then(|metadata| metadata.last_played)
         .filter(|millis| *millis > 0)
         .map(|millis| millis / 1000)
@@ -171,56 +160,8 @@ fn world_description(world_dir: &Path, metadata: Option<&WorldMetadata>) -> Stri
                 .and_then(|m| m.modified().ok())
                 .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
                 .map(|d| d.as_secs() as i64)
-        });
-
-    let dir_size = dir_size_approx(world_dir);
-
-    let mut lines = Vec::new();
-
-    if let Some(secs) = modified
-        && let Some(dt) = chrono::DateTime::from_timestamp(secs, 0)
-    {
-        lines.push(format!("Last played:  {}", dt.format("%Y-%m-%d %H:%M")));
-    }
-
-    if let Some(metadata) = metadata {
-        let mut settings = Vec::new();
-        if let Some(difficulty) = metadata.difficulty() {
-            settings.push(format!("Difficulty: {difficulty}"));
-        }
-        if let Some(allow_commands) = metadata.allow_commands {
-            settings.push(format!(
-                "Cheats: {}",
-                if allow_commands == 0 { "Off" } else { "On" }
-            ));
-        }
-        if !settings.is_empty() {
-            lines.push(settings.join("  •  "));
-        }
-
-        if let Some(version) = metadata
-            .version
-            .as_ref()
-            .and_then(|version| version.name.as_deref())
-            .filter(|version| !version.trim().is_empty())
-        {
-            lines.push(format!("Minecraft:    {version}"));
-        } else if let Some(data_version) = metadata.data_version {
-            lines.push(format!("Data version: {data_version}"));
-        }
-    }
-
-    if let Some(secs) = created
-        && let Some(dt) = chrono::DateTime::from_timestamp(secs as i64, 0)
-    {
-        lines.push(format!("Created:      {}", dt.format("%Y-%m-%d %H:%M")));
-    }
-
-    if dir_size > 0 {
-        lines.push(format!("Approx. size: {}", format_size(dir_size)));
-    }
-
-    lines.join("\n")
+        })
+        .and_then(|seconds| chrono::DateTime::from_timestamp(seconds, 0))
 }
 
 // only counts top-level files + region/ contents, not a full recursive walk.

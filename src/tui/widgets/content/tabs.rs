@@ -461,6 +461,7 @@ pub fn render(
         }
         ContentTab::Worlds => {
             if let Some(instance) = instance {
+                worlds_state.expected_game_version = Some(instance.game_version.clone());
                 if worlds_state.loaded_for.as_deref() != Some(instance.name.as_str()) {
                     let content_dir = instances_dir
                         .join(&instance.name)

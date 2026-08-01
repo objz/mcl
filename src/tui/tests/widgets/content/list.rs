@@ -4,7 +4,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use crate::instance::content::entry::ContentEntry;
+use crate::instance::content::entry::{ContentEntry, WorldDetails, WorldGameMode};
 use ratatui::{
     buffer::Buffer,
     layout::Rect,
@@ -17,6 +17,7 @@ use super::{
     ContentListState, WatcherEventHandling, available_description_width, description_text_width,
     diff_directory, diff_event_paths, ellipsize, load_provider_metadata, read_dir_stems,
     right_aligned_footer_spans, square_icon_columns, title_suffix_spans, watcher_event_handling,
+    world_game_mode_color, world_summary_spans,
 };
 
 fn entry(name: &str) -> ContentEntry {
@@ -26,6 +27,7 @@ fn entry(name: &str) -> ContentEntry {
         source_slug: None,
         installed_path: None,
         provider_project: None,
+        world_details: None,
         title_suffix: None,
         footer_label: None,
         description: String::new(),
@@ -187,6 +189,42 @@ fn title_suffix_keeps_label_style_after_the_row_background_is_applied() {
     assert_eq!(label_cell.fg, Color::Black);
     assert_eq!(label_cell.bg, Color::Cyan);
     assert!(label_cell.modifier.contains(Modifier::BOLD));
+}
+
+#[test]
+fn world_modes_use_distinct_theme_roles() {
+    let theme = crate::config::theme::THEME.as_ref();
+    assert_eq!(
+        world_game_mode_color(WorldGameMode::Survival),
+        theme.success()
+    );
+    assert_eq!(world_game_mode_color(WorldGameMode::Creative), theme.info());
+    assert_eq!(
+        world_game_mode_color(WorldGameMode::Adventure),
+        theme.warning()
+    );
+    assert_eq!(
+        world_game_mode_color(WorldGameMode::Spectator),
+        theme.text_dim()
+    );
+    assert_eq!(
+        world_game_mode_color(WorldGameMode::Hardcore),
+        theme.error()
+    );
+}
+
+#[test]
+fn mismatched_world_version_uses_the_error_color() {
+    let details = WorldDetails {
+        game_mode: None,
+        last_played: None,
+        minecraft_version: Some("1.20.1".to_owned()),
+        size: None,
+    };
+    let summary = "Minecraft 1.20.1";
+    let spans = world_summary_spans(&details, Some("1.21.1"), summary, summary, Style::default());
+
+    assert_eq!(spans[1].style.fg, Some(crate::config::theme::THEME.error()));
 }
 
 #[test]
@@ -428,14 +466,21 @@ fn rendering_visible_entries_restores_the_first_selection() {
 #[test]
 fn multiline_rendering_uses_the_space_beside_large_icons() {
     let mut world = entry("World");
-    world.description =
-        "Last played\nDifficulty: Normal\nMinecraft: 1.21.1\nCreated\nApprox. size".to_owned();
+    world.world_details = Some(WorldDetails {
+        game_mode: Some(WorldGameMode::Survival),
+        last_played: None,
+        minecraft_version: Some("1.21.1".to_owned()),
+        size: Some("2.0 MB".to_owned()),
+    });
     world.icon_lines = Some(crate::instance::content::fallback_icon_large());
-    let mut state = ContentListState::default();
+    let mut state = ContentListState {
+        expected_game_version: Some("1.21.1".to_owned()),
+        ..Default::default()
+    };
     state.entries.push(world);
     state.rebuild_display_metadata();
     let picker = ratatui_image::picker::Picker::halfblocks();
-    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(50, 6)).unwrap();
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(70, 6)).unwrap();
 
     terminal
         .draw(|frame| {
