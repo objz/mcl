@@ -15,6 +15,8 @@ use serde::de::DeserializeOwned;
 use std::path::Path;
 use thiserror::Error;
 
+pub const MAX_PROVIDER_ASSET_BYTES: usize = 16 * 1024 * 1024;
+
 #[derive(Debug, Error)]
 pub enum NetError {
     #[error("HTTP request failed: {0}")]

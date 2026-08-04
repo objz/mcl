@@ -181,7 +181,9 @@ impl ContentProvider for ModrinthProvider {
     }
 
     async fn icon(&self, url: &str) -> Result<Vec<u8>, crate::net::NetError> {
-        self.client.get_bytes(url).await
+        self.client
+            .get_bytes_limited(url, crate::net::MAX_PROVIDER_ASSET_BYTES)
+            .await
     }
 
     async fn download_version(
@@ -338,7 +340,9 @@ impl ContentProvider for CurseForgeProvider {
     }
 
     async fn icon(&self, url: &str) -> Result<Vec<u8>, crate::net::NetError> {
-        self.client.get_bytes(url).await
+        self.client
+            .get_bytes_limited(url, crate::net::MAX_PROVIDER_ASSET_BYTES)
+            .await
     }
 
     async fn download_version(

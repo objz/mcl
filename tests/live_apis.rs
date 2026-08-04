@@ -154,7 +154,10 @@ async fn modrinth_discovery_returns_unique_compatible_mods() {
         .iter()
         .find_map(|project| project.icon_url.as_deref())
         .expect("expected at least one project icon");
-    let icon = client.get_bytes(icon_url).await.unwrap();
+    let icon = client
+        .get_bytes_limited(icon_url, net::MAX_PROVIDER_ASSET_BYTES)
+        .await
+        .unwrap();
     assert!(image::load_from_memory(&icon).is_ok());
 
     let mut seen = result
@@ -182,4 +185,26 @@ async fn modrinth_discovery_returns_unique_compatible_mods() {
             "duplicate project at offset {offset}"
         );
     }
+}
+
+#[tokio::test]
+#[ignore = "hits live CurseForge API"]
+async fn curseforge_discovery_returns_compatible_mods() {
+    let api_key = net::curseforge::api_key().expect("build has no CurseForge API key");
+    let result = net::curseforge::search_discovery(
+        &HttpClient::new(),
+        api_key,
+        ContentKind::Mod,
+        "sodium",
+        "1.21.1",
+        ModLoader::Fabric,
+        0,
+        20,
+    )
+    .await
+    .unwrap();
+
+    assert!(!result.projects.is_empty());
+    assert!(result.total_hits >= result.projects.len());
+    assert!(result.projects.iter().all(|project| !project.id.is_empty()));
 }

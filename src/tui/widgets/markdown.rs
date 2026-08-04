@@ -30,7 +30,6 @@ use crate::instance::content::{
 };
 
 const MAX_DOCUMENT_WIDTH: u16 = 110;
-pub(crate) const MAX_PROJECT_IMAGE_BYTES: usize = 16 * 1024 * 1024;
 const MAX_PROJECT_IMAGE_DIMENSION: u32 = 8192;
 const MAX_PROJECT_IMAGE_ALLOCATION: u64 = 64 * 1024 * 1024;
 

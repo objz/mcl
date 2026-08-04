@@ -80,13 +80,15 @@ pub struct DiscoveryRequest {
     pub known_projects: std::collections::HashMap<String, (String, String)>,
 }
 
+pub(crate) struct ContentDiscoveryTarget {
+    pub instance: InstanceConfig,
+    pub kind: ContentKind,
+    pub manifest: Option<crate::instance::ContentManifest>,
+    pub minecraft_dir: PathBuf,
+}
+
 pub(crate) enum DiscoveryTarget {
-    Content {
-        instance: InstanceConfig,
-        kind: ContentKind,
-        manifest: Option<crate::instance::ContentManifest>,
-        minecraft_dir: PathBuf,
-    },
+    Content(Box<ContentDiscoveryTarget>),
     Modpacks,
 }
 
@@ -100,8 +102,10 @@ async fn search_provider(
 ) -> Option<Result<DiscoveryResults, crate::net::NetError>> {
     let provider = provider.filter(|_| enabled)?;
     Some(match target {
-        DiscoveryTarget::Content { instance, kind, .. } => {
-            provider.search(*kind, query, instance, offset, limit).await
+        DiscoveryTarget::Content(content) => {
+            provider
+                .search(content.kind, query, &content.instance, offset, limit)
+                .await
         }
         DiscoveryTarget::Modpacks => provider.search_modpacks(query, offset, limit).await,
     })
@@ -182,20 +186,16 @@ pub(crate) fn spawn_provider_search(
                 returned.insert(stem.clone());
                 let project_id = project.id.clone();
                 let installed_path = match &target {
-                    DiscoveryTarget::Content {
-                        manifest,
-                        minecraft_dir,
-                        ..
-                    } => merged
+                    DiscoveryTarget::Content(content) => merged
                         .sources
                         .iter()
                         .filter(|(source_stem, _)| source_stem == &stem)
                         .find_map(|(_, source)| {
-                            manifest.as_ref().and_then(|manifest| {
+                            content.manifest.as_ref().and_then(|manifest| {
                                 manifest.resolved_project_path(
                                     &source.provider,
                                     &source.project_id,
-                                    minecraft_dir,
+                                    &content.minecraft_dir,
                                 )
                             })
                         }),
@@ -227,10 +227,7 @@ pub(crate) fn spawn_provider_search(
                             return;
                         };
                         match client
-                            .get_bytes_limited(
-                                &url,
-                                crate::tui::widgets::markdown::MAX_PROJECT_IMAGE_BYTES,
-                            )
+                            .get_bytes_limited(&url, crate::net::MAX_PROVIDER_ASSET_BYTES)
                             .await
                         {
                             Ok(bytes) if !bytes.is_empty() => {
@@ -332,10 +329,7 @@ pub(crate) fn spawn_project_page(request: ProjectPageRequest) {
                         .await
                         .map_err(|error| error.to_string())?;
                     let bytes = client
-                        .get_bytes_limited(
-                            &url,
-                            crate::tui::widgets::markdown::MAX_PROJECT_IMAGE_BYTES,
-                        )
+                        .get_bytes_limited(&url, crate::net::MAX_PROVIDER_ASSET_BYTES)
                         .await
                         .map_err(|error| error.to_string())?;
                     tokio::task::spawn_blocking(move || {
