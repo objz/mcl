@@ -389,6 +389,8 @@ pub async fn download_version_file(
     destination: &std::path::Path,
 ) -> Result<DownloadOutcome, crate::net::NetError> {
     let file = select_primary_file(version)?;
+    validate_path_component(&file.filename, "provider filename")?;
+    validate_path_component(&version.id, "provider version id")?;
     let path = destination.join(&file.filename);
     if path.exists() {
         if verify_version_file(&path, file)? {
@@ -428,6 +430,8 @@ pub async fn download_version_file_for_update(
     installed_path: &std::path::Path,
 ) -> Result<DownloadOutcome, crate::net::NetError> {
     let file = select_primary_file(version)?;
+    validate_path_component(&file.filename, "provider filename")?;
+    validate_path_component(&version.id, "provider version id")?;
     let target = destination.join(&file.filename);
     if target != installed_path {
         return download_version_file(client, version, destination).await;
@@ -462,6 +466,18 @@ pub async fn download_version_file_for_update(
     replace_installed_file(&temporary, &target, installed_path, &backup).await?;
     progress.finish();
     Ok(DownloadOutcome::Downloaded(target))
+}
+
+fn validate_path_component(value: &str, label: &str) -> Result<(), crate::net::NetError> {
+    let mut components = std::path::Path::new(value).components();
+    if !matches!(components.next(), Some(std::path::Component::Normal(_)))
+        || components.next().is_some()
+    {
+        return Err(crate::net::NetError::Parse(format!(
+            "Invalid {label} '{value}'"
+        )));
+    }
+    Ok(())
 }
 
 fn verify_version_file(

@@ -2,7 +2,7 @@
 // and extract config/resource overrides from the zip
 
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 
@@ -223,31 +223,39 @@ async fn download_mod_files(
     for _ in 0..max_concurrent {
         if let Some(file) = file_iter.next() {
             let client = client.clone();
-            let dest = minecraft_dir.join(&file.path);
-            let url = file.downloads.first().cloned().unwrap_or_default();
-            if url.is_empty() {
-                tracing::warn!(".mrpack file '{}' has no download URL", file.path);
-            }
+            let relative = safe_mrpack_path(&file.path)?;
+            let dest = minecraft_dir.join(relative);
+            let url = file.downloads.first().cloned().ok_or_else(|| {
+                crate::net::NetError::Parse(format!(
+                    ".mrpack file '{}' has no download URL",
+                    file.path
+                ))
+            })?;
             let filename = file
                 .path
                 .rsplit('/')
                 .next()
                 .unwrap_or(&file.path)
                 .to_string();
+            let hashes = file.hashes.clone();
+            let file_size = file.file_size;
             let completed = completed.clone();
             tasks.spawn(async move {
                 if let Some(parent) = dest.parent()
-                    && let Err(e) = tokio::fs::create_dir_all(parent).await
+                    && let Err(error) = tokio::fs::create_dir_all(parent).await
                 {
-                    tracing::warn!(
-                        "Failed to create mod download directory {}: {}",
-                        parent.display(),
-                        e
-                    );
+                    return Err(crate::net::NetError::from(error));
                 }
                 progress::set_sub_action(filename);
                 tracing::trace!("Downloading .mrpack file to {}", dest.display());
                 crate::net::download_file(&client, &url, &dest, |_, _| {}).await?;
+                if !verify_mrpack_file(&dest, file_size, &hashes)? {
+                    let _ = tokio::fs::remove_file(&dest).await;
+                    return Err(crate::net::NetError::Parse(format!(
+                        "Downloaded .mrpack file '{}' failed its size or hash verification",
+                        dest.display()
+                    )));
+                }
                 let done = completed.fetch_add(1, Ordering::Relaxed) + 1;
                 progress::set_action(format!("Downloading mods... {done}/{total}"));
                 Ok::<(), crate::net::NetError>(())
@@ -262,31 +270,36 @@ async fn download_mod_files(
                 .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> { Box::new(e) })?;
         }
         let client = client.clone();
-        let dest = minecraft_dir.join(&file.path);
-        let url = file.downloads.first().cloned().unwrap_or_default();
-        if url.is_empty() {
-            tracing::warn!(".mrpack file '{}' has no download URL", file.path);
-        }
+        let relative = safe_mrpack_path(&file.path)?;
+        let dest = minecraft_dir.join(relative);
+        let url = file.downloads.first().cloned().ok_or_else(|| {
+            crate::net::NetError::Parse(format!(".mrpack file '{}' has no download URL", file.path))
+        })?;
         let filename = file
             .path
             .rsplit('/')
             .next()
             .unwrap_or(&file.path)
             .to_string();
+        let hashes = file.hashes.clone();
+        let file_size = file.file_size;
         let completed = completed.clone();
         tasks.spawn(async move {
             if let Some(parent) = dest.parent()
-                && let Err(e) = tokio::fs::create_dir_all(parent).await
+                && let Err(error) = tokio::fs::create_dir_all(parent).await
             {
-                tracing::warn!(
-                    "Failed to create mod download directory {}: {}",
-                    parent.display(),
-                    e
-                );
+                return Err(crate::net::NetError::from(error));
             }
             progress::set_sub_action(filename);
             tracing::trace!("Downloading .mrpack file to {}", dest.display());
             crate::net::download_file(&client, &url, &dest, |_, _| {}).await?;
+            if !verify_mrpack_file(&dest, file_size, &hashes)? {
+                let _ = tokio::fs::remove_file(&dest).await;
+                return Err(crate::net::NetError::Parse(format!(
+                    "Downloaded .mrpack file '{}' failed its size or hash verification",
+                    dest.display()
+                )));
+            }
             let done = completed.fetch_add(1, Ordering::Relaxed) + 1;
             progress::set_action(format!("Downloading mods... {done}/{total}"));
             Ok::<(), crate::net::NetError>(())
@@ -300,6 +313,39 @@ async fn download_mod_files(
     }
 
     Ok(())
+}
+
+fn safe_mrpack_path(path: &str) -> Result<PathBuf, crate::net::NetError> {
+    let path = Path::new(path);
+    if path.as_os_str().is_empty()
+        || path
+            .components()
+            .any(|component| !matches!(component, std::path::Component::Normal(_)))
+    {
+        return Err(crate::net::NetError::Parse(format!(
+            "Unsafe .mrpack file path '{}'",
+            path.display()
+        )));
+    }
+    Ok(path.to_owned())
+}
+
+fn verify_mrpack_file(
+    path: &Path,
+    expected_size: u64,
+    expected_hashes: &HashMap<String, String>,
+) -> Result<bool, crate::net::NetError> {
+    let fingerprint = fingerprint(path)?;
+    if fingerprint.size != expected_size {
+        return Ok(false);
+    }
+    Ok(["sha512", "sha1"].into_iter().all(|algorithm| {
+        expected_hashes.get(algorithm).is_none_or(|expected| {
+            fingerprint
+                .hash(algorithm)
+                .is_some_and(|actual| actual.eq_ignore_ascii_case(expected))
+        })
+    }))
 }
 
 fn seed_content_manifest(

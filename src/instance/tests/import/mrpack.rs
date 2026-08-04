@@ -218,6 +218,72 @@ fn mod_file_without_a_download_url_fails_without_creating_a_file() {
 }
 
 #[test]
+fn mod_file_rejects_paths_outside_the_instance() {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    runtime.block_on(async {
+        let index = MrpackIndex {
+            format_version: 1,
+            game: "minecraft".to_owned(),
+            version_id: "1".to_owned(),
+            name: "Unsafe path".to_owned(),
+            dependencies: Default::default(),
+            files: vec![MrpackFile {
+                path: "../escape.jar".to_owned(),
+                hashes: Default::default(),
+                downloads: vec!["https://example.invalid/escape.jar".to_owned()],
+                file_size: 1,
+            }],
+        };
+        let tmp = tempfile::tempdir().unwrap();
+
+        let error = download_mod_files(&index, tmp.path()).await.unwrap_err();
+
+        assert!(error.to_string().contains("Unsafe .mrpack file path"));
+        assert!(!tmp.path().parent().unwrap().join("escape.jar").exists());
+    });
+}
+
+#[test]
+fn mod_file_removes_downloads_with_invalid_metadata() {
+    let _guard = crate::tests::TEST_LOCK
+        .lock()
+        .unwrap_or_else(|error| error.into_inner());
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    runtime.block_on(async {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/corrupt.jar"))
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(b"corrupt".to_vec()))
+            .mount(&server)
+            .await;
+        let index = MrpackIndex {
+            format_version: 1,
+            game: "minecraft".to_owned(),
+            version_id: "1".to_owned(),
+            name: "Corrupt download".to_owned(),
+            dependencies: Default::default(),
+            files: vec![MrpackFile {
+                path: "mods/corrupt.jar".to_owned(),
+                hashes: Default::default(),
+                downloads: vec![format!("{}/corrupt.jar", server.uri())],
+                file_size: 1,
+            }],
+        };
+        let tmp = tempfile::tempdir().unwrap();
+
+        assert!(download_mod_files(&index, tmp.path()).await.is_err());
+        assert!(!tmp.path().join("mods/corrupt.jar").exists());
+        crate::feedback::progress::clear();
+    });
+}
+
+#[test]
 fn import_seeds_exact_modrinth_content_identity() {
     let tmp = tempfile::tempdir().unwrap();
     let paths = crate::storage::InstancePaths::new(tmp.path());
