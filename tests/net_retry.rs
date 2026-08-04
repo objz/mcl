@@ -103,6 +103,24 @@ async fn get_json_gives_up_after_max_retries() {
     );
 }
 
+#[tokio::test]
+async fn get_bytes_limited_rejects_oversized_responses() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/large.bin"))
+        .respond_with(ResponseTemplate::new(200).set_body_bytes(vec![0; 9]))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let url = format!("{}/large.bin", server.uri());
+    let error = client_without_timeout()
+        .get_bytes_limited(&url, 8)
+        .await
+        .unwrap_err();
+    assert!(error.to_string().contains("8-byte limit"));
+}
+
 // ---------- download_file ----------
 
 #[tokio::test(start_paused = true)]

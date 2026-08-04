@@ -1,7 +1,6 @@
 // curseforge modpack archives: manifest.json references provider file ids,
 // while the overrides directory contains configs and other bundled files.
 
-use std::io::Read;
 use std::path::Path;
 
 use serde::Deserialize;
@@ -236,9 +235,8 @@ fn extract_overrides(
         if let Some(parent) = destination.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        let mut bytes = Vec::new();
-        entry.read_to_end(&mut bytes)?;
-        std::fs::write(destination, bytes)?;
+        let mut destination = std::fs::File::create(destination)?;
+        std::io::copy(&mut entry, &mut destination)?;
     }
     Ok(())
 }

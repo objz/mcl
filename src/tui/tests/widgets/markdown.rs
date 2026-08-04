@@ -556,6 +556,14 @@ fn gif_images_decode_their_first_frame() {
 }
 
 #[test]
+fn oversized_images_are_rejected_before_decoding() {
+    let image = image::DynamicImage::new_rgba8(super::MAX_PROJECT_IMAGE_DIMENSION + 1, 1);
+    let mut bytes = std::io::Cursor::new(Vec::new());
+    image.write_to(&mut bytes, image::ImageFormat::Png).unwrap();
+    assert!(super::decode_image(bytes.get_ref()).is_err());
+}
+
+#[test]
 fn image_rows_align_fitted_images_to_the_bottom() {
     let picker = ratatui_image::picker::Picker::halfblocks();
     let image = image::DynamicImage::ImageRgba8(image::RgbaImage::from_pixel(
