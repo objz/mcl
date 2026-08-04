@@ -368,6 +368,16 @@ pub struct ProviderRegistry {
     providers: Vec<Box<dyn ContentProvider>>,
 }
 
+pub(crate) fn has_newer_compatible_version(
+    versions: &[VersionInfo],
+    installed_version_id: &str,
+) -> bool {
+    versions
+        .iter()
+        .position(|version| version.id == installed_version_id)
+        .is_some_and(|position| position > 0)
+}
+
 impl ProviderRegistry {
     pub(crate) fn new(providers: Vec<Box<dyn ContentProvider>>) -> Self {
         Self { providers }

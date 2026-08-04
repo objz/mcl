@@ -55,6 +55,7 @@ fn make_config_with(
         jvm_args: Vec::new(),
         resolution: None,
         config_sync_profile: None,
+        modpack_source: None,
     }
 }
 

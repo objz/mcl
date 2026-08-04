@@ -49,6 +49,8 @@ pub struct InstanceConfig {
     pub resolution: Option<(u32, u32)>,
     #[serde(default)]
     pub config_sync_profile: Option<String>,
+    #[serde(default)]
+    pub modpack_source: Option<crate::instance::ProviderProject>,
 }
 
 pub fn normalize_memory_value(raw: &str) -> Option<String> {

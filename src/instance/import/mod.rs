@@ -71,6 +71,7 @@ pub struct ImportSummary {
     pub override_count: usize,
     pub format: PackFormat,
     pub archive_path: PathBuf,
+    pub source: Option<crate::instance::ProviderProject>,
 }
 
 // peeks inside a zip to figure out what format it is.
@@ -175,11 +176,16 @@ pub async fn execute_import(
         summary.name,
         summary.archive_path.display()
     );
-    match summary.format {
+    let mut config = match summary.format {
         PackFormat::CurseForge => curseforge::execute_import(summary, manager).await,
         PackFormat::Mrpack => mrpack::execute_import(summary, manager).await,
         PackFormat::Mmc => mmc::execute_import(summary, manager).await,
+    }?;
+    if summary.source.is_some() {
+        config.modpack_source = summary.source.clone();
+        manager.save(&config)?;
     }
+    Ok(config)
 }
 
 fn cleanup_failed_import(manager: &InstanceManager, name: &str) {

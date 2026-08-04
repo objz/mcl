@@ -272,6 +272,7 @@ impl InstanceManager {
             jvm_args: vec![],
             resolution: None,
             config_sync_profile: None,
+            modpack_source: None,
         };
 
         self.save(&config)?;

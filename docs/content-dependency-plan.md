@@ -77,3 +77,4 @@ shaders remain unchanged.
 - [x] Provider project pages and version selection
 - [x] Managed mod dependencies
 - [x] Datapack discovery
+- [x] Compatible update checks for managed content and discovered modpacks

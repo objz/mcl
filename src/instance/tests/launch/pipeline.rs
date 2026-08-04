@@ -179,6 +179,7 @@ async fn migrate_legacy_loader_profile_skips_modern_with_inherits_from() {
         jvm_args: Vec::new(),
         resolution: None,
         config_sync_profile: None,
+        modpack_source: None,
     };
 
     let result =
@@ -227,6 +228,7 @@ async fn migrate_legacy_loader_profile_skips_fabric() {
         jvm_args: Vec::new(),
         resolution: None,
         config_sync_profile: None,
+        modpack_source: None,
     };
 
     let result = migrate_legacy_loader_profile_if_needed(

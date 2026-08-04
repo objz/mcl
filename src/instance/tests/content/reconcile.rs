@@ -23,6 +23,7 @@ fn job(name: &str) -> ReconcileJob {
             jvm_args: Vec::new(),
             resolution: None,
             config_sync_profile: None,
+            modpack_source: None,
         },
         instances_dir: PathBuf::new(),
         client: crate::net::HttpClient::new(),

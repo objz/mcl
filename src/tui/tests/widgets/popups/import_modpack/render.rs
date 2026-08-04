@@ -154,6 +154,7 @@ fn import_modpack_renders_confirm_step() {
             override_count: 3,
             format: PackFormat::Mrpack,
             archive_path: PathBuf::from("/tmp/synthetic.mrpack"),
+            source: None,
         });
     }
 
@@ -197,6 +198,7 @@ fn import_modpack_renders_confirm_step_without_loader_version() {
             override_count: 12,
             format: PackFormat::Mmc,
             archive_path: PathBuf::from("/tmp/vanilla.zip"),
+            source: None,
         });
     }
 

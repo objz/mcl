@@ -11,6 +11,8 @@ use ratatui::{
     text::{Line, Span, Text},
     widgets::{Block, Borders, Scrollbar, ScrollbarOrientation, ScrollbarState},
 };
+use std::collections::HashSet;
+use std::sync::{Arc, LazyLock, Mutex};
 use tui_widget_list::{ListBuilder, ListState as TuiListState, ListView};
 
 use crate::instance::models::InstanceConfig;
@@ -19,6 +21,55 @@ use crate::time::format_relative_time;
 use crate::tui::app::FocusedArea;
 
 use super::{WidgetKey, search::SearchState, styled_title};
+
+static PENDING_MODPACK_UPDATES: LazyLock<
+    Mutex<Vec<(String, crate::instance::ProviderProject, bool)>>,
+> = LazyLock::new(|| Mutex::new(Vec::new()));
+static MODPACK_UPDATE_SLOTS: LazyLock<Arc<tokio::sync::Semaphore>> =
+    LazyLock::new(|| Arc::new(tokio::sync::Semaphore::new(4)));
+
+pub fn spawn_modpack_update_checks(instances: &[InstanceConfig]) {
+    for instance in instances {
+        spawn_modpack_update_check(instance);
+    }
+}
+
+pub fn spawn_modpack_update_check(instance: &InstanceConfig) {
+    let Some(source) = instance.modpack_source.clone() else {
+        return;
+    };
+    let instance = instance.clone();
+    tokio::spawn(async move {
+        let Ok(_permit) = MODPACK_UPDATE_SLOTS.clone().acquire_owned().await else {
+            return;
+        };
+        let registry = crate::instance::content::provider::ProviderRegistry::configured(
+            crate::net::HttpClient::new(),
+        );
+        let Some(provider) = registry.get(&source.provider) else {
+            return;
+        };
+        let Ok(versions) = provider
+            .compatible_versions(
+                &source.project_id,
+                crate::instance::ContentKind::Mod,
+                &instance.game_version,
+                instance.loader,
+            )
+            .await
+        else {
+            return;
+        };
+        let update = crate::instance::content::provider::has_newer_compatible_version(
+            &versions,
+            &source.version_id,
+        );
+        if let Ok(mut pending) = PENDING_MODPACK_UPDATES.lock() {
+            pending.push((instance.name, source, update));
+            crate::feedback::request_redraw();
+        }
+    });
+}
 
 #[derive(Debug, Default)]
 pub struct State {
@@ -29,6 +80,7 @@ pub struct State {
     pub show_import_popup: bool,
     pub search: SearchState,
     pub renaming: Option<String>,
+    pub(crate) modpack_updates: HashSet<String>,
 }
 
 impl State {
@@ -42,6 +94,7 @@ impl State {
             show_import_popup: false,
             search: SearchState::default(),
             renaming: None,
+            modpack_updates: HashSet::new(),
         };
         if count > 0 {
             s.list_state.selected = Some(0);
@@ -122,7 +175,30 @@ impl State {
         self.instances.retain(|i| i.name != name);
         let after = self.instances.len();
         if after < before {
+            self.modpack_updates.remove(name);
             self.update_scrollbar();
+        }
+    }
+
+    pub fn drain_modpack_updates(&mut self) {
+        let Ok(mut pending) = PENDING_MODPACK_UPDATES.lock() else {
+            return;
+        };
+        for (name, source, available) in pending.drain(..) {
+            if self
+                .instances
+                .iter()
+                .find(|instance| instance.name == name)
+                .and_then(|instance| instance.modpack_source.as_ref())
+                != Some(&source)
+            {
+                continue;
+            }
+            if available {
+                self.modpack_updates.insert(name);
+            } else {
+                self.modpack_updates.remove(&name);
+            }
         }
     }
 
@@ -275,6 +351,18 @@ pub fn render(frame: &mut Frame, area: Rect, focused: FocusedArea, state: &mut S
         } else {
             let mut spans = vec![selector.clone()];
             spans.extend(state.search.highlight_spans(&instance.name, name_style));
+            if state.modpack_updates.contains(&instance.name) {
+                spans.extend([
+                    Span::raw(" "),
+                    Span::styled(
+                        "Update",
+                        Style::default()
+                            .fg(theme.background())
+                            .bg(theme.warning())
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                ]);
+            }
             Line::from(spans)
         };
 

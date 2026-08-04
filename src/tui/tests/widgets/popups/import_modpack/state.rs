@@ -24,6 +24,7 @@ fn summary() -> ImportSummary {
         override_count: 1,
         format: PackFormat::Mrpack,
         archive_path: PathBuf::from("test.mrpack"),
+        source: None,
     }
 }
 

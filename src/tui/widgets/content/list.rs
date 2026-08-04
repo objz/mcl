@@ -1399,7 +1399,10 @@ async fn load_provider_metadata(
             )
             .await
         {
-            Ok(versions) => has_newer_compatible_version(&versions, &installed.version_id),
+            Ok(versions) => crate::instance::content::provider::has_newer_compatible_version(
+                &versions,
+                &installed.version_id,
+            ),
             Err(error) => {
                 tracing::debug!("Could not check updates for project '{project_id}': {error}");
                 false
@@ -1426,16 +1429,6 @@ async fn load_provider_metadata(
         (None, None) => Vec::new(),
     };
     Ok((bytes, project.description, update_available))
-}
-
-fn has_newer_compatible_version(
-    versions: &[crate::net::modrinth::VersionInfo],
-    installed_version_id: &str,
-) -> bool {
-    versions
-        .iter()
-        .position(|version| version.id == installed_version_id)
-        .is_some_and(|position| position > 0)
 }
 
 pub fn handle_key_no_toggle(key_event: &KeyEvent, state: &mut ContentListState) -> bool {

@@ -46,6 +46,7 @@ fn synthetic_instance(name: &str) -> InstanceConfig {
         jvm_args: vec![],
         resolution: None,
         config_sync_profile: None,
+        modpack_source: None,
     }
 }
 
@@ -77,4 +78,25 @@ fn instances_list_renders_empty() {
         .unwrap();
 
     insta::assert_snapshot!(terminal.backend());
+}
+
+#[test]
+fn managed_modpack_update_is_badged_in_the_instance_list() {
+    let mut state = State::with_instances(vec![synthetic_instance("Managed Pack")]);
+    state.modpack_updates.insert("Managed Pack".to_owned());
+    let backend = TestBackend::new(40, 5);
+    let mut terminal = Terminal::new(backend).unwrap();
+
+    terminal
+        .draw(|frame| render(frame, frame.area(), FocusedArea::Instances, &mut state))
+        .unwrap();
+
+    let text = terminal
+        .backend()
+        .buffer()
+        .content()
+        .iter()
+        .map(|cell| cell.symbol())
+        .collect::<String>();
+    assert!(text.contains("Managed Pack Update"));
 }
