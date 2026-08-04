@@ -83,7 +83,21 @@ fn instances_list_renders_empty() {
 #[test]
 fn managed_modpack_update_is_badged_in_the_instance_list() {
     let mut state = State::with_instances(vec![synthetic_instance("Managed Pack")]);
-    state.modpack_updates.insert("Managed Pack".to_owned());
+    state.modpack_updates.insert(
+        "Managed Pack".to_owned(),
+        crate::net::modrinth::VersionInfo {
+            id: "new".to_owned(),
+            project_id: "pack".to_owned(),
+            name: "New".to_owned(),
+            version_number: "2.0".to_owned(),
+            game_versions: Vec::new(),
+            loaders: Vec::new(),
+            version_type: crate::net::modrinth::VersionType::Release,
+            dependencies: Vec::new(),
+            date_published: String::new(),
+            files: Vec::new(),
+        },
+    );
     let backend = TestBackend::new(40, 5);
     let mut terminal = Terminal::new(backend).unwrap();
 

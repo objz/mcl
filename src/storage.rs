@@ -42,6 +42,10 @@ impl InstancePaths {
         self.content().join("updates.json")
     }
 
+    pub fn modpack_state(&self) -> PathBuf {
+        self.state().join("modpack.json")
+    }
+
     pub fn local_config(&self) -> PathBuf {
         self.content().join("config")
     }

@@ -405,6 +405,7 @@ pub fn render(
             ("Esc", " kill"),
             ("a", " add"),
             ("m", " modpacks"),
+            ("u", " update"),
             ("d", " delete"),
             ("r", " rename"),
             ("/", " search"),

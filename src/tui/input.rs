@@ -64,6 +64,10 @@ impl App {
             self.handle_content_update_key(key_event);
             return Ok(());
         }
+        if self.modpack_update_popup.is_some() {
+            self.handle_modpack_update_key(key_event);
+            return Ok(());
+        }
         if let Some(conflict) = self.provider_conflict.as_mut() {
             match key_event.code {
                 KeyCode::Char('j') | KeyCode::Down => {
@@ -755,6 +759,12 @@ impl App {
                             self.spawn_launch(instance, None);
                         }
                     }
+                    KeyCode::Char('u')
+                        if self.focused == FocusedArea::Instances
+                            && !self.instances_state.search.active =>
+                    {
+                        self.spawn_modpack_update();
+                    }
                     KeyCode::Char('r')
                         if self.focused == FocusedArea::Instances
                             && !self.instances_state.search.active =>
@@ -797,6 +807,110 @@ impl App {
         }
 
         Ok(())
+    }
+
+    fn spawn_modpack_update(&mut self) {
+        let Some(instance) = self.instances_state.selected_instance().cloned() else {
+            return;
+        };
+        let Some(target) = self.instances_state.selected_modpack_update() else {
+            return;
+        };
+        let state = widgets::popups::modpack_update::State::preparing();
+        let pending = state.pending.clone();
+        self.modpack_update_popup = Some(state);
+        let instances_dir = self.instance_manager.instances_dir.clone();
+        let meta_dir = self.instance_manager.meta_dir.clone();
+        tokio::spawn(async move {
+            let progress = crate::feedback::progress::ProgressTask::start(format!(
+                "Preparing modpack update for {}",
+                instance.name
+            ));
+            let manager = crate::instance::InstanceManager::new(instances_dir, meta_dir);
+            let result =
+                crate::instance::import::refresh::prepare(&manager, &instance, target).await;
+            if let Err(error) = &result {
+                progress.fail(error);
+            } else {
+                progress.finish();
+            }
+            if let Ok(mut pending) = pending.lock() {
+                pending.push(widgets::popups::modpack_update::PendingResult::Prepared(
+                    Box::new(result),
+                ));
+                crate::feedback::request_redraw();
+            }
+        });
+    }
+
+    fn handle_modpack_update_key(&mut self, key_event: KeyEvent) {
+        let Some(state) = self.modpack_update_popup.as_mut() else {
+            return;
+        };
+        match (state.phase, key_event.code) {
+            (widgets::popups::modpack_update::Phase::Preparing, KeyCode::Esc)
+            | (widgets::popups::modpack_update::Phase::Conflicts, KeyCode::Esc)
+            | (widgets::popups::modpack_update::Phase::Review, KeyCode::Esc) => {
+                self.modpack_update_popup = None;
+            }
+            (
+                widgets::popups::modpack_update::Phase::Conflicts,
+                KeyCode::Char('j') | KeyCode::Down,
+            ) => {
+                let count = state.plan.as_ref().map_or(0, |plan| plan.conflicts.len());
+                state.selected = (state.selected + 1).min(count.saturating_sub(1));
+            }
+            (
+                widgets::popups::modpack_update::Phase::Conflicts,
+                KeyCode::Char('k') | KeyCode::Up,
+            ) => state.selected = state.selected.saturating_sub(1),
+            (widgets::popups::modpack_update::Phase::Conflicts, KeyCode::Char(' ')) => {
+                if let Some(replace) = state.replace.get_mut(state.selected) {
+                    *replace = !*replace;
+                }
+            }
+            (widgets::popups::modpack_update::Phase::Conflicts, KeyCode::Enter) => {
+                state.phase = widgets::popups::modpack_update::Phase::Review;
+            }
+            (widgets::popups::modpack_update::Phase::Review, KeyCode::Enter)
+                if state.plan.is_some() =>
+            {
+                self.spawn_modpack_update_apply();
+            }
+            _ => {}
+        }
+    }
+
+    fn spawn_modpack_update_apply(&mut self) {
+        let Some(state) = self.modpack_update_popup.as_mut() else {
+            return;
+        };
+        let replacements = state.replacements();
+        let Some(plan) = state.plan.take() else {
+            return;
+        };
+        state.phase = widgets::popups::modpack_update::Phase::Applying;
+        let pending = state.pending.clone();
+        tokio::spawn(async move {
+            let progress = crate::feedback::progress::ProgressTask::start("Updating modpack");
+            let result = tokio::task::spawn_blocking(move || {
+                crate::instance::import::refresh::apply(plan, &replacements)
+            })
+            .await
+            .map_err(|error| error.to_string())
+            .and_then(|result| result);
+            if let Err(error) = &result {
+                progress.fail(error);
+            } else {
+                progress.finish();
+            }
+            if let Ok(mut pending) = pending.lock() {
+                pending.push(widgets::popups::modpack_update::PendingResult::Applied(
+                    Box::new(result),
+                ));
+                crate::feedback::request_redraw();
+            }
+        });
     }
 
     pub(super) fn ensure_active_discovery_loaded(&mut self) {
