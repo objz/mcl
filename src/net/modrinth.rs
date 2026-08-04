@@ -171,7 +171,6 @@ pub async fn search_discovery(
     offset: usize,
     limit: usize,
 ) -> Result<DiscoveryResults, crate::net::NetError> {
-    let progress = crate::feedback::progress::ProgressTask::start("Fetching Modrinth");
     let facets = discovery_facets(kind, game_version, loader);
     let query = query.trim();
     let index = if query.is_empty() {
@@ -184,14 +183,7 @@ pub async fn search_discovery(
         url_encode(query),
         url_encode(&facets),
     );
-    let results: DiscoverySearchResponse = match client.get_json(&url).await {
-        Ok(results) => results,
-        Err(error) => {
-            progress.fail(&error);
-            return Err(error);
-        }
-    };
-    progress.finish();
+    let results: DiscoverySearchResponse = client.get_json(&url).await?;
 
     Ok(DiscoveryResults {
         total_hits: results.total_hits.max(0) as usize,
@@ -332,7 +324,6 @@ pub async fn fetch_content_versions(
     game_version: &str,
     loader: ModLoader,
 ) -> Result<Vec<VersionInfo>, crate::net::NetError> {
-    let progress = crate::feedback::progress::ProgressTask::start("Fetching Modrinth versions");
     let url = content_versions_url(API_BASE, project_id, kind, game_version, loader);
     tracing::debug!(
         "Fetching compatible Modrinth versions for '{}' ({}, {})",
@@ -340,16 +331,7 @@ pub async fn fetch_content_versions(
         game_version,
         loader
     );
-    match client.get_json(&url).await {
-        Ok(versions) => {
-            progress.finish();
-            Ok(versions)
-        }
-        Err(error) => {
-            progress.fail(&error);
-            Err(error)
-        }
-    }
+    client.get_json(&url).await
 }
 
 fn content_versions_url(

@@ -45,6 +45,24 @@ fn content_provider_settings_are_normalized() {
     assert!(!content.discovery_provider_enabled_with_curseforge("curseforge", false));
     assert!(!content.discovery_provider_enabled_with_curseforge("modrinth", true));
     assert!(content.discovery_provider_enabled_with_curseforge("curseforge", true));
+    assert_eq!(
+        content.discovery_provider_label_with_curseforge(false),
+        "Modrinth"
+    );
+    assert_eq!(
+        content.discovery_provider_label_with_curseforge(true),
+        "CurseForge"
+    );
+
+    let merged = Content::default();
+    assert_eq!(
+        merged.discovery_provider_label_with_curseforge(false),
+        "Modrinth"
+    );
+    assert_eq!(
+        merged.discovery_provider_label_with_curseforge(true),
+        "providers"
+    );
 }
 
 #[test]

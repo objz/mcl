@@ -72,6 +72,10 @@ impl Content {
         )
     }
 
+    pub fn discovery_provider_label(&self) -> &'static str {
+        self.discovery_provider_label_with_curseforge(crate::net::curseforge::api_key().is_some())
+    }
+
     fn preferred_provider_with_curseforge(&self, curseforge_available: bool) -> &'static str {
         if self.preferred_provider.eq_ignore_ascii_case("curseforge") && curseforge_available {
             "curseforge"
@@ -85,8 +89,30 @@ impl Content {
         provider: &str,
         curseforge_available: bool,
     ) -> bool {
-        !self.preferred_provider_only
-            || provider == self.preferred_provider_with_curseforge(curseforge_available)
+        match provider {
+            "modrinth" => {
+                !self.preferred_provider_only
+                    || self.preferred_provider_with_curseforge(curseforge_available) == "modrinth"
+            }
+            "curseforge" => {
+                curseforge_available
+                    && (!self.preferred_provider_only
+                        || self.preferred_provider_with_curseforge(curseforge_available)
+                            == "curseforge")
+            }
+            _ => false,
+        }
+    }
+
+    fn discovery_provider_label_with_curseforge(&self, curseforge_available: bool) -> &'static str {
+        match (
+            self.discovery_provider_enabled_with_curseforge("modrinth", curseforge_available),
+            self.discovery_provider_enabled_with_curseforge("curseforge", curseforge_available),
+        ) {
+            (true, true) => "providers",
+            (false, true) => "CurseForge",
+            _ => "Modrinth",
+        }
     }
 }
 
