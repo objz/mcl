@@ -1283,6 +1283,7 @@ impl App {
             stream,
             reconcile,
             loaded_icon_stems,
+            known_projects,
         } = request;
 
         tokio::spawn(async move {
@@ -1339,8 +1340,11 @@ impl App {
                     if let Some(Ok(results)) = curseforge_result {
                         pages.push(("curseforge", results));
                     }
-                    let merged =
-                        widgets::content::discovery::merge_provider_results(pages, preferred);
+                    let merged = widgets::content::discovery::merge_provider_results(
+                        pages,
+                        preferred,
+                        known_projects,
+                    );
                     let mut returned_stems =
                         std::collections::HashSet::with_capacity(merged.projects.len());
                     let icon_slots = std::sync::Arc::new(tokio::sync::Semaphore::new(8));

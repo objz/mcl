@@ -2,6 +2,7 @@ use super::*;
 use crate::tests::TEST_LOCK;
 use chrono::Utc;
 use crossterm::event::KeyModifiers;
+use std::collections::HashMap;
 
 #[test]
 fn bracket_keys_change_pages() {
@@ -83,16 +84,28 @@ fn duplicate_provider_titles_share_one_identity() {
     modrinth.title = "Sodium".to_owned();
     let mut curseforge = project("sodium-reforged");
     curseforge.title = "SODIUM!".to_owned();
+    curseforge.slug = "sodium".to_owned();
     assert_eq!(project_identity(&modrinth), project_identity(&curseforge));
+}
+
+#[test]
+fn matching_titles_with_different_slugs_remain_distinct() {
+    let mut original = project("sodium");
+    original.title = "Sodium".to_owned();
+    let mut fork = project("sodium-reforged");
+    fork.title = "Sodium".to_owned();
+    assert_ne!(project_identity(&original), project_identity(&fork));
 }
 
 #[test]
 fn provider_merge_preserves_ranking_and_appends_fallbacks() {
     let mut modrinth_first = project("mr-first");
     modrinth_first.title = "Shared".to_owned();
+    modrinth_first.slug = "shared".to_owned();
     let modrinth_second = project("mr-second");
     let mut curseforge_duplicate = project("cf-duplicate");
     curseforge_duplicate.title = "Shared".to_owned();
+    curseforge_duplicate.slug = "shared".to_owned();
     let curseforge_fallback = project("cf-fallback");
 
     let merged = merge_provider_results(
@@ -113,6 +126,7 @@ fn provider_merge_preserves_ranking_and_appends_fallbacks() {
             ),
         ],
         "modrinth",
+        HashMap::new(),
     );
 
     assert_eq!(
@@ -143,10 +157,61 @@ fn provider_merge_keeps_same_provider_title_collisions() {
             },
         )],
         "modrinth",
+        HashMap::new(),
     );
 
     assert_eq!(merged.projects.len(), 2);
     assert_ne!(merged.projects[0].stem, merged.projects[1].stem);
+}
+
+#[test]
+fn provider_merge_keeps_the_preferred_project_across_pages() {
+    let mut fallback = project("shared");
+    fallback.title = "Shared".to_owned();
+    let identity = project_identity(&fallback);
+    let known = HashMap::from([(identity, ("shared".to_owned(), "modrinth".to_owned()))]);
+
+    let merged = merge_provider_results(
+        vec![(
+            "curseforge",
+            DiscoveryResults {
+                projects: vec![fallback],
+                total_hits: 200,
+            },
+        )],
+        "modrinth",
+        known,
+    );
+
+    assert!(merged.projects.is_empty());
+    assert_eq!(merged.sources[0].0, "shared");
+    assert_eq!(merged.total_hits, 200);
+}
+
+#[test]
+fn provider_merge_uses_the_longest_provider_result_range() {
+    let merged = merge_provider_results(
+        vec![
+            (
+                "modrinth",
+                DiscoveryResults {
+                    projects: vec![],
+                    total_hits: 20,
+                },
+            ),
+            (
+                "curseforge",
+                DiscoveryResults {
+                    projects: vec![],
+                    total_hits: 200,
+                },
+            ),
+        ],
+        "modrinth",
+        HashMap::new(),
+    );
+
+    assert_eq!(merged.total_hits, 200);
 }
 
 #[test]

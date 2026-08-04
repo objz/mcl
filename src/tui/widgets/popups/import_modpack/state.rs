@@ -620,6 +620,7 @@ fn spawn_discovery_request_with_query(
         stream,
         reconcile,
         loaded_icon_stems,
+        known_projects,
     } = request;
     tokio::spawn(async move {
         let client = crate::net::HttpClient::new();
@@ -672,8 +673,11 @@ fn spawn_discovery_request_with_query(
             if let Some(Ok(results)) = curseforge_result {
                 pages.push(("curseforge", results));
             }
-            let merged =
-                crate::tui::widgets::content::discovery::merge_provider_results(pages, preferred);
+            let merged = crate::tui::widgets::content::discovery::merge_provider_results(
+                pages,
+                preferred,
+                known_projects,
+            );
             let mut returned = std::collections::HashSet::new();
             let icon_slots = Arc::new(tokio::sync::Semaphore::new(8));
             for merged_project in merged.projects {

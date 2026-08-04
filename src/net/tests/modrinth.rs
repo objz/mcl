@@ -183,6 +183,14 @@ fn primary_file_selection_falls_back_to_first_file() {
     );
 }
 
+#[test]
+fn modpack_versions_are_not_limited_to_hardcoded_loaders() {
+    assert_eq!(
+        versions_url("https://example.test/v2", "vanilla pack"),
+        "https://example.test/v2/project/vanilla%20pack/version"
+    );
+}
+
 #[tokio::test]
 async fn content_download_skips_an_existing_filename() {
     let directory = tempfile::tempdir().unwrap();
