@@ -61,6 +61,16 @@ pub async fn prepare(
         .modpack_source
         .clone()
         .ok_or_else(|| "This instance is not linked to a modpack provider".to_owned())?;
+    let registry = crate::instance::content::provider::ProviderRegistry::configured(
+        crate::net::HttpClient::new(),
+    );
+    let provider = registry
+        .get(&source.provider)
+        .ok_or_else(|| format!("{} content provider is unavailable", source.provider))?;
+    let current = provider
+        .version(&source.version_id)
+        .await
+        .map_err(|error| error.to_string())?;
     let live = manager.instances_dir.join(&instance.name);
     let needed = directory_size(&live)
         .saturating_add(target.files.iter().map(|file| file.size).sum::<u64>())
@@ -88,7 +98,7 @@ pub async fn prepare(
             .filter(|state| state.source == source)
         {
             Some(state) => state.files.into_iter().collect(),
-            None => reconstruct_owned_files(&source, &archives.join("current")).await?,
+            None => reconstruct_owned_files(&source, &current, &archives.join("current")).await?,
         };
 
         let staging_manager = InstanceManager::new(&stage_root, &manager.meta_dir);
@@ -123,7 +133,7 @@ pub async fn prepare(
         )?;
         Ok::<_, String>(RefreshPlan {
             instance: config,
-            current_version: source.version_id.clone(),
+            current_version: current.version_number,
             target_version: target.version_number.clone(),
             summary,
             conflicts,
@@ -180,22 +190,44 @@ pub fn apply(
 
 async fn reconstruct_owned_files(
     source: &ProviderProject,
+    version: &VersionInfo,
     temporary_dir: &Path,
 ) -> Result<HashSet<PathBuf>, String> {
-    let registry = crate::instance::content::provider::ProviderRegistry::configured(
-        crate::net::HttpClient::new(),
-    );
-    let provider = registry
-        .get(&source.provider)
-        .ok_or_else(|| format!("{} content provider is unavailable", source.provider))?;
-    let version = provider
-        .version(&source.version_id)
-        .await
-        .map_err(|error| error.to_string())?;
-    let summary = super::download_provider_summary(source, &version, temporary_dir)
+    let summary = super::download_provider_summary(source, version, temporary_dir)
         .await
         .map_err(|error| error.to_string())?;
     Ok(super::owned_files(&summary).await?.into_iter().collect())
+}
+
+pub fn recover_interrupted(instances_dir: &Path) {
+    let Ok(entries) = std::fs::read_dir(instances_dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Some(name) = entry.file_name().to_str().map(str::to_owned) else {
+            continue;
+        };
+        if name.starts_with(".rmcl-refresh-") {
+            let _ = std::fs::remove_dir_all(path);
+            continue;
+        }
+        let Some(instance_name) = name
+            .strip_prefix('.')
+            .and_then(|name| name.strip_suffix(".rmcl-backup"))
+        else {
+            continue;
+        };
+        let live = instances_dir.join(instance_name);
+        if live.join("instance.json").is_file() {
+            let _ = std::fs::remove_dir_all(path);
+        } else if let Err(error) = std::fs::rename(&path, &live) {
+            tracing::warn!(
+                "Could not restore interrupted modpack update backup '{}': {error}",
+                path.display()
+            );
+        }
+    }
 }
 
 fn user_file_collisions(
@@ -341,5 +373,21 @@ mod tests {
             std::fs::read_to_string(new.join("mods/user.jar")).unwrap(),
             "pack collision"
         );
+    }
+
+    #[test]
+    fn interrupted_swap_restores_the_backup_and_removes_staging() {
+        let temp = tempfile::tempdir().unwrap();
+        let backup = temp.path().join(".Pack.rmcl-backup");
+        let staging = temp.path().join(".rmcl-refresh-1");
+        std::fs::create_dir_all(&backup).unwrap();
+        std::fs::write(backup.join("instance.json"), "{}").unwrap();
+        std::fs::create_dir_all(&staging).unwrap();
+
+        recover_interrupted(temp.path());
+
+        assert!(temp.path().join("Pack/instance.json").is_file());
+        assert!(!backup.exists());
+        assert!(!staging.exists());
     }
 }

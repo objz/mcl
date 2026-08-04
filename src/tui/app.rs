@@ -116,6 +116,7 @@ impl App {
 
         let _ = std::fs::create_dir_all(&instances_dir);
         let _ = std::fs::create_dir_all(&meta_dir);
+        crate::instance::import::refresh::recover_interrupted(&instances_dir);
 
         let manager = InstanceManager::new(instances_dir, meta_dir);
         let instances = manager.load_all();
