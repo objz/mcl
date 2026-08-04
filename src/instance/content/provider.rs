@@ -32,6 +32,13 @@ pub trait ContentProvider: Send + Sync {
         limit: usize,
     ) -> Result<DiscoveryResults, crate::net::NetError>;
 
+    async fn search_modpacks(
+        &self,
+        query: &str,
+        offset: usize,
+        limit: usize,
+    ) -> Result<DiscoveryResults, crate::net::NetError>;
+
     async fn resolve_files(
         &self,
         files: &[FingerprintQuery],
@@ -97,6 +104,15 @@ impl ContentProvider for ModrinthProvider {
             limit,
         )
         .await
+    }
+
+    async fn search_modpacks(
+        &self,
+        query: &str,
+        offset: usize,
+        limit: usize,
+    ) -> Result<DiscoveryResults, crate::net::NetError> {
+        crate::net::modrinth::search_modpacks(&self.client, query, offset, limit).await
     }
 
     async fn resolve_files(
@@ -228,6 +244,16 @@ impl ContentProvider for CurseForgeProvider {
             limit,
         )
         .await
+    }
+
+    async fn search_modpacks(
+        &self,
+        query: &str,
+        offset: usize,
+        limit: usize,
+    ) -> Result<DiscoveryResults, crate::net::NetError> {
+        crate::net::curseforge::search_modpacks(&self.client, &self.api_key, query, offset, limit)
+            .await
     }
 
     async fn resolve_files(

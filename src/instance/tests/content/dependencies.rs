@@ -51,6 +51,15 @@ impl ContentProvider for FakeProvider {
         unreachable!()
     }
 
+    async fn search_modpacks(
+        &self,
+        _query: &str,
+        _offset: usize,
+        _limit: usize,
+    ) -> Result<DiscoveryResults, NetError> {
+        unreachable!()
+    }
+
     async fn resolve_files(
         &self,
         files: &[FingerprintQuery],
