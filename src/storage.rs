@@ -38,6 +38,10 @@ impl InstancePaths {
         self.content().join("manifest.json")
     }
 
+    pub fn content_updates(&self) -> PathBuf {
+        self.content().join("updates.json")
+    }
+
     pub fn local_config(&self) -> PathBuf {
         self.content().join("config")
     }

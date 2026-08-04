@@ -12,6 +12,7 @@ pub mod provider;
 pub mod reconcile;
 pub mod resource_packs;
 pub mod shaders;
+pub mod updates;
 pub mod worlds;
 
 pub use datapacks::scan_one_datapack;

@@ -60,6 +60,10 @@ impl App {
     }
 
     pub(super) fn handle_key_event(&mut self, key_event: KeyEvent) -> color_eyre::Result<()> {
+        if self.content_update_popup.is_some() {
+            self.handle_content_update_key(key_event);
+            return Ok(());
+        }
         if let Some(conflict) = self.provider_conflict.as_mut() {
             match key_event.code {
                 KeyCode::Char('j') | KeyCode::Down => {
@@ -404,6 +408,12 @@ impl App {
                 }
             } else if self.content_tab == widgets::content::ContentTab::Worlds {
                 if self.open_world_datapacks.is_some() {
+                    if key_event.code == KeyCode::Char('u')
+                        && !self.world_datapacks_state.search.active
+                    {
+                        self.spawn_bulk_content_updates();
+                        return Ok(());
+                    }
                     if key_event.code == KeyCode::Char('v')
                         && !self.world_datapacks_state.search.active
                     {
@@ -474,6 +484,10 @@ impl App {
                     _ => None,
                 };
                 if let Some(state) = state {
+                    if key_event.code == KeyCode::Char('u') && !state.search.active {
+                        self.spawn_bulk_content_updates();
+                        return Ok(());
+                    }
                     if key_event.code == KeyCode::Char('v') && !state.search.active {
                         self.spawn_installed_versions();
                         return Ok(());
@@ -838,6 +852,191 @@ impl App {
             }
             _ => None,
         }
+    }
+
+    fn spawn_bulk_content_updates(&mut self) {
+        let Some(instance) = self.instances_state.selected_instance().cloned() else {
+            return;
+        };
+        let (kind, target_world) = match self.content_tab {
+            widgets::content::ContentTab::Mods => (crate::instance::ContentKind::Mod, None),
+            widgets::content::ContentTab::ResourcePacks => {
+                (crate::instance::ContentKind::ResourcePack, None)
+            }
+            widgets::content::ContentTab::Shaders => (crate::instance::ContentKind::Shader, None),
+            widgets::content::ContentTab::Worlds => (
+                crate::instance::ContentKind::DataPack,
+                self.open_world_datapacks.clone(),
+            ),
+            _ => return,
+        };
+        if kind == crate::instance::ContentKind::DataPack && target_world.is_none() {
+            return;
+        }
+        let Some((_, manifest)) = self
+            .content_manifest
+            .as_ref()
+            .filter(|(name, _)| name == &instance.name)
+            .cloned()
+        else {
+            return;
+        };
+        let paths = crate::storage::InstancePaths::new(
+            self.instance_manager.instances_dir.join(&instance.name),
+        );
+        let state = widgets::content::update::State::checking(kind, target_world.clone());
+        let pending = state.pending.clone();
+        self.content_update_popup = Some(state);
+        tokio::spawn(async move {
+            let snapshot = crate::instance::content::updates::scan(&instance, &manifest).await;
+            if let Ok(bytes) = serde_json::to_vec_pretty(&snapshot) {
+                let _ = crate::storage::write_atomic(&paths.content_updates(), &bytes);
+            }
+            let target_directory = target_world
+                .as_ref()
+                .map(|(_, world)| world.join("datapacks"));
+            let mut requests = Vec::new();
+            let mut conflicts = Vec::new();
+            for record in manifest.files.iter().filter(|record| {
+                record.kind == kind
+                    && target_directory.as_ref().is_none_or(|directory| {
+                        paths
+                            .minecraft()
+                            .join(&record.relative_path)
+                            .starts_with(directory)
+                    })
+            }) {
+                let Some(installed) = record.resolved_project() else {
+                    continue;
+                };
+                let installed_path = paths.minecraft().join(&record.relative_path);
+                let title = record
+                    .relative_path
+                    .file_stem()
+                    .and_then(|name| name.to_str())
+                    .unwrap_or("content")
+                    .to_owned();
+                if let Some(update) = snapshot.update_for(installed) {
+                    requests.push(crate::instance::content::updates::UpdateRequest {
+                        title,
+                        installed_path,
+                        target_world: target_world.as_ref().map(|(_, path)| path.clone()),
+                        update: update.clone(),
+                    });
+                } else if let Some(failure) = snapshot
+                    .failures
+                    .iter()
+                    .find(|failure| failure.installed == *installed && failure.kind == kind)
+                {
+                    conflicts.push(crate::instance::content::updates::UpdateConflict {
+                        title,
+                        installed_path,
+                        reason: failure.reason.clone(),
+                    });
+                }
+            }
+            let plan = crate::instance::content::updates::plan_bulk(
+                &instance,
+                &manifest,
+                &paths.minecraft(),
+                requests,
+                conflicts,
+            )
+            .await;
+            if let Ok(mut pending) = pending.lock() {
+                pending.push(widgets::content::update::PendingResult::Prepared(
+                    snapshot, plan,
+                ));
+                crate::feedback::request_redraw();
+            }
+        });
+    }
+
+    fn handle_content_update_key(&mut self, key_event: KeyEvent) {
+        let Some(state) = self.content_update_popup.as_mut() else {
+            return;
+        };
+        match (state.phase, key_event.code) {
+            (widgets::content::update::Phase::Checking, KeyCode::Esc)
+            | (widgets::content::update::Phase::Review, KeyCode::Esc)
+            | (widgets::content::update::Phase::Conflicts, KeyCode::Esc) => {
+                self.content_update_popup = None;
+            }
+            (widgets::content::update::Phase::Conflicts, KeyCode::Char('j') | KeyCode::Down) => {
+                let count = state.plan.as_ref().map_or(0, |plan| plan.conflicts.len());
+                state.selected = (state.selected + 1).min(count.saturating_sub(1));
+            }
+            (widgets::content::update::Phase::Conflicts, KeyCode::Char('k') | KeyCode::Up) => {
+                state.selected = state.selected.saturating_sub(1);
+            }
+            (widgets::content::update::Phase::Conflicts, KeyCode::Char(' ')) => {
+                if let Some(retry) = state.retry_conflicts.get_mut(state.selected) {
+                    *retry = !*retry;
+                }
+            }
+            (widgets::content::update::Phase::Conflicts, KeyCode::Enter) => {
+                if state.has_retry() {
+                    self.spawn_bulk_content_updates();
+                } else {
+                    state.phase = widgets::content::update::Phase::Review;
+                    state.selected = 0;
+                }
+            }
+            (widgets::content::update::Phase::Review, KeyCode::Enter) => {
+                self.spawn_bulk_content_install();
+            }
+            _ => {}
+        }
+    }
+
+    fn spawn_bulk_content_install(&mut self) {
+        let Some(instance) = self.instances_state.selected_instance().cloned() else {
+            return;
+        };
+        let Some(state) = self.content_update_popup.as_mut() else {
+            return;
+        };
+        let Some(plan) = state.plan.as_ref().map(|plan| plan.dependency_plan.clone()) else {
+            return;
+        };
+        if plan.items.is_empty() {
+            self.content_update_popup = None;
+            return;
+        }
+        state.phase = widgets::content::update::Phase::Applying;
+        state.error = None;
+        let pending = state.pending.clone();
+        let instances_dir = self.instance_manager.instances_dir.clone();
+        let paths = crate::storage::InstancePaths::new(instances_dir.join(&instance.name));
+        tokio::spawn(async move {
+            let progress = crate::feedback::progress::ProgressTask::start("Updating content");
+            let registry = crate::instance::content::provider::ProviderRegistry::configured(
+                crate::net::HttpClient::new(),
+            );
+            let result = crate::instance::content::dependencies::install(
+                &registry,
+                &paths.content_manifest(),
+                &paths.minecraft(),
+                &plan,
+            )
+            .await
+            .map(|_| ())
+            .map_err(|error| error.to_string());
+            if let Err(error) = &result {
+                progress.fail(error);
+            } else {
+                progress.finish();
+                crate::instance::content::reconcile::spawn_after_change(
+                    instance,
+                    instances_dir,
+                    crate::net::HttpClient::new(),
+                );
+            }
+            if let Ok(mut pending) = pending.lock() {
+                pending.push(widgets::content::update::PendingResult::Applied(result));
+                crate::feedback::request_redraw();
+            }
+        });
     }
 
     fn spawn_installed_versions(&mut self) {

@@ -58,6 +58,7 @@ impl PlannedInstall {
 #[derive(Debug, Clone)]
 pub struct DependencyPlan {
     pub items: Vec<PlannedInstall>,
+    pub root_count: usize,
     pub optional_dependencies: usize,
 }
 
@@ -72,12 +73,15 @@ impl DependencyPlan {
     pub fn dependency_installs(&self) -> impl Iterator<Item = &PlannedInstall> {
         self.items
             .iter()
-            .skip(1)
+            .skip(self.root_count)
             .filter(|item| item.installed_path.is_none())
     }
 
     pub fn dependency_replacements(&self) -> impl Iterator<Item = &PlannedInstall> {
-        self.items.iter().skip(1).filter(|item| item.replacement)
+        self.items
+            .iter()
+            .skip(self.root_count)
+            .filter(|item| item.replacement)
     }
 }
 
@@ -582,6 +586,48 @@ pub async fn resolve(
         .collect();
     Ok(DependencyPlan {
         items,
+        root_count: 1,
+        optional_dependencies,
+    })
+}
+
+pub fn merge(plans: Vec<DependencyPlan>) -> Result<DependencyPlan, NetError> {
+    let optional_dependencies = plans.iter().map(|plan| plan.optional_dependencies).sum();
+    let mut merged: Vec<(PlannedInstall, bool)> = Vec::new();
+    for plan in plans {
+        for (index, item) in plan.items.into_iter().enumerate() {
+            let root = index < plan.root_count;
+            if let Some((existing, existing_root)) = merged.iter_mut().find(|(existing, _)| {
+                existing.provider == item.provider
+                    && existing.project_id == item.project_id
+                    && existing.destination == item.destination
+            }) {
+                if existing.version.id != item.version.id {
+                    return Err(NetError::Parse(format!(
+                        "Conflicting selected versions for '{}': '{}' and '{}'",
+                        item.title, existing.version.version_number, item.version.version_number
+                    )));
+                }
+                for dependency in item.required_dependencies {
+                    if !existing.required_dependencies.contains(&dependency) {
+                        existing.required_dependencies.push(dependency);
+                    }
+                }
+                if root && !*existing_root {
+                    existing.automatic_dependency = false;
+                    existing.cleanup_eligible = false;
+                    *existing_root = true;
+                }
+                continue;
+            }
+            merged.push((item, root));
+        }
+    }
+    merged.sort_by_key(|(_, root)| !*root);
+    let root_count = merged.iter().take_while(|(_, root)| *root).count();
+    Ok(DependencyPlan {
+        items: merged.into_iter().map(|(item, _)| item).collect(),
+        root_count,
         optional_dependencies,
     })
 }
