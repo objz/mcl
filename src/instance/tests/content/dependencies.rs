@@ -11,6 +11,12 @@ use crate::net::modrinth::{
     DependencyType, DiscoveryResults, ProjectInfo, VersionDependency, VersionType,
 };
 
+#[test]
+fn concurrent_installs_use_distinct_staging_directories() {
+    let minecraft = Path::new("/instance/minecraft");
+    assert_ne!(staging_directory(minecraft), staging_directory(minecraft));
+}
+
 struct FakeProvider {
     versions: HashMap<String, VersionInfo>,
     compatible: HashMap<String, Vec<String>>,
@@ -299,7 +305,7 @@ async fn datapack_dependencies_are_routed_to_the_world_or_instance_by_kind() {
     assert_eq!(plan.items[1].kind, ContentKind::Mod);
     assert_eq!(plan.items[1].destination, minecraft.join("mods"));
 
-    install(&registry, &manifest_path, &minecraft, &plan, 7)
+    install(&registry, &manifest_path, &minecraft, &plan)
         .await
         .unwrap();
     let manifest = ContentManifest::load(&manifest_path).unwrap();
@@ -936,7 +942,7 @@ async fn dependency_install_commits_files_and_manifest_together() {
     .await
     .unwrap();
 
-    let installed = install(&registry, &manifest_path, &minecraft, &plan, 1)
+    let installed = install(&registry, &manifest_path, &minecraft, &plan)
         .await
         .unwrap();
 
@@ -1000,7 +1006,7 @@ async fn failed_dependency_download_leaves_no_partial_install() {
     .unwrap();
 
     assert!(
-        install(&registry, &manifest_path, &minecraft, &plan, 2)
+        install(&registry, &manifest_path, &minecraft, &plan)
             .await
             .is_err()
     );

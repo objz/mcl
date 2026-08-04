@@ -9,6 +9,7 @@ use crate::tui::widgets::instances;
 use crate::tui::widgets::search::SearchState;
 use crossterm::event::{KeyCode, KeyEvent};
 use std::sync::LazyLock;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use tracing::Level;
@@ -19,6 +20,7 @@ pub(super) static IMPORT_RESULT: LazyLock<Arc<Mutex<Option<ImportResult>>>> =
     LazyLock::new(|| Arc::new(Mutex::new(None)));
 pub(super) static DISCOVERY_STATE: LazyLock<Mutex<crate::tui::widgets::content::DiscoveryState>> =
     LazyLock::new(|| Mutex::new(crate::tui::widgets::content::DiscoveryState::new_modpacks()));
+static NEXT_IMPORT_REQUEST_ID: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Debug, Clone)]
 pub struct ImportResult {
@@ -45,6 +47,7 @@ pub struct ImportWizardState {
     pub version_search: SearchState,
     pub summary: Option<ImportSummary>,
     pub from_discovery: bool,
+    request_id: u64,
 }
 
 impl Default for ImportWizardState {
@@ -58,6 +61,7 @@ impl Default for ImportWizardState {
             version_search: SearchState::default(),
             summary: None,
             from_discovery: false,
+            request_id: 0,
         }
     }
 }
@@ -365,11 +369,35 @@ fn handle_confirm_key(
 }
 
 // pushes an error toast and rewinds the wizard to a previous step
-fn set_error_and_back(state_arc: &Arc<Mutex<ImportWizardState>>, msg: String, step: ImportStep) {
-    push_import_error(msg);
-    if let Ok(mut s) = state_arc.lock() {
-        s.step = step;
+fn update_current_request(
+    state_arc: &Arc<Mutex<ImportWizardState>>,
+    request_id: u64,
+    update: impl FnOnce(&mut ImportWizardState),
+) -> bool {
+    if let Ok(mut state) = state_arc.lock()
+        && state.request_id == request_id
+    {
+        update(&mut state);
+        return true;
     }
+    false
+}
+
+fn set_error_and_back(
+    state_arc: &Arc<Mutex<ImportWizardState>>,
+    request_id: u64,
+    msg: String,
+    step: ImportStep,
+) {
+    if update_current_request(state_arc, request_id, |state| state.step = step) {
+        push_import_error(msg);
+    }
+}
+
+fn begin_import_request(state: &mut ImportWizardState) -> u64 {
+    let request_id = NEXT_IMPORT_REQUEST_ID.fetch_add(1, Ordering::Relaxed);
+    state.request_id = request_id;
+    request_id
 }
 
 // parses user input to figure out what they gave us, then dispatches
@@ -383,6 +411,7 @@ fn start_resolve(state: &mut ImportWizardState) {
     state.version_idx = 0;
     state.version_search.deactivate();
     state.summary = None;
+    let request_id = begin_import_request(state);
 
     let state_arc = IMPORT_STATE.clone();
 
@@ -392,16 +421,16 @@ fn start_resolve(state: &mut ImportWizardState) {
 
         match parsed {
             ImportInput::ProjectSlug(slug) => {
-                resolve_project_slug(state_arc, &client, &slug).await;
+                resolve_project_slug(state_arc, request_id, &client, &slug).await;
             }
             ImportInput::VersionId {
                 slug: _,
                 version_id,
             } => {
-                resolve_version_id(state_arc, &client, &version_id).await;
+                resolve_version_id(state_arc, request_id, &client, &version_id).await;
             }
             ImportInput::LocalFile(path) => {
-                resolve_local_file(state_arc, &path);
+                resolve_local_file(state_arc, request_id, &path);
             }
         }
     });
@@ -409,28 +438,31 @@ fn start_resolve(state: &mut ImportWizardState) {
 
 async fn resolve_project_slug(
     state_arc: Arc<Mutex<ImportWizardState>>,
+    request_id: u64,
     client: &crate::net::HttpClient,
     slug: &str,
 ) {
     match modrinth::fetch_project(client, slug).await {
         Ok(project) => match modrinth::fetch_versions(client, slug).await {
             Ok(versions) => {
-                if let Ok(mut s) = state_arc.lock() {
-                    s.project_title = Some(project.title);
-                    s.versions = LoadState::Loaded(versions);
-                    s.version_idx = 0;
-                    s.version_search.deactivate();
-                    s.step = ImportStep::Version;
-                }
+                update_current_request(&state_arc, request_id, |state| {
+                    state.project_title = Some(project.title);
+                    state.versions = LoadState::Loaded(versions);
+                    state.version_idx = 0;
+                    state.version_search.deactivate();
+                    state.step = ImportStep::Version;
+                });
             }
             Err(e) => set_error_and_back(
                 &state_arc,
+                request_id,
                 format!("Failed to fetch versions: {}", e),
                 ImportStep::Input,
             ),
         },
         Err(e) => set_error_and_back(
             &state_arc,
+            request_id,
             format!("Failed to fetch project: {}", e),
             ImportStep::Input,
         ),
@@ -439,6 +471,7 @@ async fn resolve_project_slug(
 
 async fn resolve_version_id(
     state_arc: Arc<Mutex<ImportWizardState>>,
+    request_id: u64,
     client: &crate::net::HttpClient,
     version_id: &str,
 ) {
@@ -449,6 +482,7 @@ async fn resolve_version_id(
             if let Err(e) = tokio::fs::create_dir_all(&tmp_dir).await {
                 set_error_and_back(
                     &state_arc,
+                    request_id,
                     format!("Failed to create tmp dir: {}", e),
                     ImportStep::Input,
                 );
@@ -458,19 +492,21 @@ async fn resolve_version_id(
             match modrinth::download_mrpack(client, &version, &tmp_dir).await {
                 Ok(mrpack_path) => match crate::instance::import::build_summary(&mrpack_path) {
                     Ok(summary) => {
-                        if let Ok(mut s) = state_arc.lock() {
-                            s.summary = Some(summary);
-                            s.step = ImportStep::Confirm;
-                        }
+                        update_current_request(&state_arc, request_id, |state| {
+                            state.summary = Some(summary);
+                            state.step = ImportStep::Confirm;
+                        });
                     }
                     Err(e) => set_error_and_back(
                         &state_arc,
+                        request_id,
                         format!("Failed to build summary: {}", e),
                         ImportStep::Input,
                     ),
                 },
                 Err(e) => set_error_and_back(
                     &state_arc,
+                    request_id,
                     format!("Failed to download mrpack: {}", e),
                     ImportStep::Input,
                 ),
@@ -478,24 +514,26 @@ async fn resolve_version_id(
         }
         Err(e) => set_error_and_back(
             &state_arc,
+            request_id,
             format!("Failed to fetch version: {}", e),
             ImportStep::Input,
         ),
     }
 }
 
-fn resolve_local_file(state_arc: Arc<Mutex<ImportWizardState>>, path: &str) {
+fn resolve_local_file(state_arc: Arc<Mutex<ImportWizardState>>, request_id: u64, path: &str) {
     let resolved = crate::config::settings::resolve_path(path);
 
     match crate::instance::import::build_summary(&resolved) {
         Ok(summary) => {
-            if let Ok(mut s) = state_arc.lock() {
-                s.summary = Some(summary);
-                s.step = ImportStep::Confirm;
-            }
+            update_current_request(&state_arc, request_id, |state| {
+                state.summary = Some(summary);
+                state.step = ImportStep::Confirm;
+            });
         }
         Err(e) => set_error_and_back(
             &state_arc,
+            request_id,
             format!("Failed to parse pack: {}", e),
             ImportStep::Input,
         ),
@@ -511,6 +549,7 @@ fn start_version_download(state: &mut ImportWizardState) {
     };
 
     state.step = ImportStep::Fetching;
+    let request_id = begin_import_request(state);
 
     let state_arc = IMPORT_STATE.clone();
 
@@ -521,6 +560,7 @@ fn start_version_download(state: &mut ImportWizardState) {
         if let Err(e) = tokio::fs::create_dir_all(&tmp_dir).await {
             set_error_and_back(
                 &state_arc,
+                request_id,
                 format!("Failed to create tmp dir: {}", e),
                 ImportStep::Version,
             );
@@ -530,19 +570,21 @@ fn start_version_download(state: &mut ImportWizardState) {
         match modrinth::download_mrpack(&client, &version, &tmp_dir).await {
             Ok(mrpack_path) => match crate::instance::import::build_summary(&mrpack_path) {
                 Ok(summary) => {
-                    if let Ok(mut s) = state_arc.lock() {
-                        s.summary = Some(summary);
-                        s.step = ImportStep::Confirm;
-                    }
+                    update_current_request(&state_arc, request_id, |state| {
+                        state.summary = Some(summary);
+                        state.step = ImportStep::Confirm;
+                    });
                 }
                 Err(e) => set_error_and_back(
                     &state_arc,
+                    request_id,
                     format!("Failed to build summary: {}", e),
                     ImportStep::Version,
                 ),
             },
             Err(e) => set_error_and_back(
                 &state_arc,
+                request_id,
                 format!("Failed to download mrpack: {}", e),
                 ImportStep::Version,
             ),
@@ -831,10 +873,13 @@ fn spawn_project_page(request: crate::tui::widgets::content::discovery::ProjectP
 }
 
 fn start_discovered_download(request: crate::tui::widgets::content::discovery::InstallRequest) {
-    if let Ok(mut state) = IMPORT_STATE.lock() {
+    let request_id = if let Ok(mut state) = IMPORT_STATE.lock() {
         state.step = ImportStep::Fetching;
         state.from_discovery = true;
-    }
+        begin_import_request(&mut state)
+    } else {
+        return;
+    };
     tokio::spawn(async move {
         let client = crate::net::HttpClient::new();
         let registry = crate::instance::content::provider::ProviderRegistry::configured(client);
@@ -861,15 +906,16 @@ fn start_discovered_download(request: crate::tui::widgets::content::discovery::I
         .await;
         match result {
             Ok(summary) => {
-                if let Ok(mut state) = IMPORT_STATE.lock() {
+                update_current_request(&IMPORT_STATE, request_id, |state| {
                     state.summary = Some(summary);
                     state.step = ImportStep::Confirm;
-                }
+                });
             }
             Err(error) => {
-                push_import_error(format!("Failed to prepare modpack: {error}"));
-                if let Ok(mut state) = IMPORT_STATE.lock() {
+                if update_current_request(&IMPORT_STATE, request_id, |state| {
                     state.step = ImportStep::Discover;
+                }) {
+                    push_import_error(format!("Failed to prepare modpack: {error}"));
                 }
             }
         }
