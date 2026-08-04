@@ -377,10 +377,7 @@ fn reconcile_inventory(
                 providers: Vec::new(),
             };
         }
-        let curseforge_unchecked = crate::config::SETTINGS
-            .content
-            .curseforge_api_key()
-            .is_some()
+        let curseforge_unchecked = crate::net::curseforge::api_key().is_some()
             && provider_was_not_checked(&record.resolution, "curseforge");
         if !is_directory && !oversized && curseforge_unchecked {
             if record.fingerprint.hash("curseforge").is_none() {

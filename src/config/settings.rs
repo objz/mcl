@@ -25,7 +25,7 @@ pub struct Content {
     #[serde(default = "default_provider")]
     pub preferred_provider: String,
     #[serde(default)]
-    pub curseforge_api_key: Option<String>,
+    pub preferred_provider_only: bool,
     #[serde(default = "default_unmatched_retry_hours")]
     pub unmatched_retry_hours: u64,
     #[serde(default = "default_max_fingerprint_size_mib")]
@@ -53,7 +53,7 @@ impl Default for Content {
         Self {
             ask_on_provider_conflict: true,
             preferred_provider: default_provider(),
-            curseforge_api_key: None,
+            preferred_provider_only: false,
             unmatched_retry_hours: default_unmatched_retry_hours(),
             max_fingerprint_size_mib: default_max_fingerprint_size_mib(),
         }
@@ -61,21 +61,32 @@ impl Default for Content {
 }
 
 impl Content {
-    pub fn curseforge_api_key(&self) -> Option<&str> {
-        self.curseforge_api_key
-            .as_deref()
-            .map(str::trim)
-            .filter(|key| !key.is_empty())
+    pub fn preferred_provider(&self) -> &str {
+        self.preferred_provider_with_curseforge(crate::net::curseforge::api_key().is_some())
     }
 
-    pub fn preferred_provider(&self) -> &str {
-        if self.preferred_provider.eq_ignore_ascii_case("curseforge")
-            && self.curseforge_api_key().is_some()
-        {
+    pub fn discovery_provider_enabled(&self, provider: &str) -> bool {
+        self.discovery_provider_enabled_with_curseforge(
+            provider,
+            crate::net::curseforge::api_key().is_some(),
+        )
+    }
+
+    fn preferred_provider_with_curseforge(&self, curseforge_available: bool) -> &'static str {
+        if self.preferred_provider.eq_ignore_ascii_case("curseforge") && curseforge_available {
             "curseforge"
         } else {
             "modrinth"
         }
+    }
+
+    fn discovery_provider_enabled_with_curseforge(
+        &self,
+        provider: &str,
+        curseforge_available: bool,
+    ) -> bool {
+        !self.preferred_provider_only
+            || provider == self.preferred_provider_with_curseforge(curseforge_available)
     }
 }
 

@@ -71,9 +71,9 @@ shaders remain unchanged.
 ## Discovery roadmap
 
 - [x] Managed mods, resource packs, and shaders
-- [x] Modrinth and configured CurseForge discovery
+- [x] Modrinth and built-in CurseForge discovery
 - [x] Modpack browsing and import
 - [x] Search, endless scrolling, and page jumping
 - [x] Provider project pages and version selection
 - [x] Managed mod dependencies
-- [ ] Datapack discovery
+- [x] Datapack discovery

@@ -28,21 +28,23 @@ fn effective_java_path_some_when_set() {
 }
 
 #[test]
-fn blank_curseforge_key_keeps_provider_disabled() {
-    let content: Content = toml::from_str("curseforge_api_key = \"  \"").unwrap();
-    assert_eq!(content.curseforge_api_key(), None);
-    assert_eq!(content.preferred_provider(), "modrinth");
-}
-
-#[test]
-fn curseforge_preference_requires_its_api_key() {
-    let without_key: Content = toml::from_str("preferred_provider = \"curseforge\"").unwrap();
-    assert_eq!(without_key.preferred_provider(), "modrinth");
-
-    let configured: Content =
-        toml::from_str("preferred_provider = \"curseforge\"\ncurseforge_api_key = \"secret\"")
+fn content_provider_settings_are_normalized() {
+    let content: Content =
+        toml::from_str("preferred_provider = \"curseforge\"\npreferred_provider_only = true")
             .unwrap();
-    assert_eq!(configured.preferred_provider(), "curseforge");
+    assert_eq!(
+        content.preferred_provider_with_curseforge(false),
+        "modrinth"
+    );
+    assert_eq!(
+        content.preferred_provider_with_curseforge(true),
+        "curseforge"
+    );
+    assert!(content.preferred_provider_only);
+    assert!(content.discovery_provider_enabled_with_curseforge("modrinth", false));
+    assert!(!content.discovery_provider_enabled_with_curseforge("curseforge", false));
+    assert!(!content.discovery_provider_enabled_with_curseforge("modrinth", true));
+    assert!(content.discovery_provider_enabled_with_curseforge("curseforge", true));
 }
 
 #[test]
