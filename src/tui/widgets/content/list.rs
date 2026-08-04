@@ -135,6 +135,14 @@ struct PendingProviderIcon {
     project_id: String,
     bytes: Vec<u8>,
     description: String,
+    update_available: bool,
+}
+
+#[derive(Clone, PartialEq, Eq)]
+struct ProviderUpdateContext {
+    game_version: String,
+    loader: crate::instance::ModLoader,
+    kind: crate::instance::ContentKind,
 }
 
 struct DisplayMetadata {
@@ -181,6 +189,7 @@ pub struct ContentListState {
     requested_provider_icons: HashSet<(String, String)>,
     provider_icon_meta_dir: Option<std::path::PathBuf>,
     provider_icon_client: Option<crate::net::HttpClient>,
+    provider_update_context: Option<ProviderUpdateContext>,
     images_dirty: bool,
     display_metadata: HashMap<String, DisplayMetadata>,
     pub search: crate::tui::widgets::search::SearchState,
@@ -222,6 +231,7 @@ impl Default for ContentListState {
             requested_provider_icons: HashSet::new(),
             provider_icon_meta_dir: None,
             provider_icon_client: None,
+            provider_update_context: None,
             images_dirty: true,
             display_metadata: HashMap::new(),
             search: crate::tui::widgets::search::SearchState::default(),
@@ -257,6 +267,9 @@ impl ContentListState {
                 .filter(|record| record.kind == kind)
             else {
                 if entry.provider_project.take().is_some() {
+                    if entry.title_suffix.as_deref() == Some("Update") {
+                        entry.title_suffix = None;
+                    }
                     if entry.provider_icon {
                         entry.icon_bytes = None;
                         entry.icon_lines = Some(crate::instance::content::fallback_icon());
@@ -276,6 +289,13 @@ impl ContentListState {
                 _ => None,
             };
             if entry.provider_project != project {
+                if let Some(previous) = &entry.provider_project {
+                    self.requested_provider_icons
+                        .remove(&(previous.provider.clone(), previous.project_id.clone()));
+                }
+                if entry.title_suffix.as_deref() == Some("Update") {
+                    entry.title_suffix = None;
+                }
                 if entry.provider_icon {
                     entry.icon_bytes = None;
                     entry.icon_lines = Some(crate::instance::content::fallback_icon());
@@ -310,6 +330,27 @@ impl ContentListState {
         self.provider_icon_client = Some(client);
     }
 
+    pub fn set_provider_update_context(
+        &mut self,
+        instance: &crate::instance::InstanceConfig,
+        kind: crate::instance::ContentKind,
+    ) {
+        let context = ProviderUpdateContext {
+            game_version: instance.game_version.clone(),
+            loader: instance.loader,
+            kind,
+        };
+        if self.provider_update_context.as_ref() != Some(&context) {
+            self.provider_update_context = Some(context);
+            self.requested_provider_icons.clear();
+            for entry in &mut self.entries {
+                if entry.title_suffix.as_deref() == Some("Update") {
+                    entry.title_suffix = None;
+                }
+            }
+        }
+    }
+
     pub fn drain_provider_icons(&mut self) -> bool {
         let pending = match self.pending_provider_icons.lock() {
             Ok(mut pending) => pending.drain(..).collect::<Vec<_>>(),
@@ -335,6 +376,11 @@ impl ContentListState {
                     entry.provider_description = true;
                     self.display_metadata
                         .insert(entry.file_stem.clone(), display_metadata(entry));
+                    changed = true;
+                }
+                let suffix = metadata.update_available.then(|| "Update".to_owned());
+                if entry.title_suffix != suffix {
+                    entry.title_suffix = suffix;
                     changed = true;
                 }
             }
@@ -363,32 +409,26 @@ impl ContentListState {
             let slots = PROVIDER_ICON_SLOTS.clone();
             let meta_dir = meta_dir.clone();
             let client = client.clone();
+            let update_context = self.provider_update_context.clone();
             tokio::spawn(async move {
                 let Ok(_permit) = slots.acquire_owned().await else {
                     return;
                 };
-                match load_provider_metadata(
-                    &client,
-                    &meta_dir,
-                    &project.provider,
-                    &project.project_id,
-                )
-                .await
+                match load_provider_metadata(&client, &meta_dir, &project, update_context.as_ref())
+                    .await
                 {
-                    Ok((bytes, description))
-                        if !bytes.is_empty() || !description.trim().is_empty() =>
-                    {
+                    Ok((bytes, description, update_available)) => {
                         if let Ok(mut pending) = pending.lock() {
                             pending.push(PendingProviderIcon {
                                 provider: project.provider,
                                 project_id: project.project_id,
                                 bytes,
                                 description,
+                                update_available,
                             });
                             crate::feedback::request_redraw();
                         }
                     }
-                    Ok(_) => {}
                     Err(error) => tracing::debug!(
                         "Could not load provider metadata for {} project {}: {}",
                         project.provider,
@@ -423,7 +463,9 @@ impl ContentListState {
             if visible_height == 0 {
                 continue;
             }
-            if (entry.icon_bytes.is_none() || entry.description.trim().is_empty())
+            if (entry.icon_bytes.is_none()
+                || entry.description.trim().is_empty()
+                || self.provider_update_context.is_some())
                 && let Some(project) = entry.provider_project.clone()
             {
                 projects.push(project);
@@ -1303,9 +1345,11 @@ fn handle_search_keys(key_event: &KeyEvent, state: &mut ContentListState) -> boo
 async fn load_provider_metadata(
     client: &crate::net::HttpClient,
     meta_dir: &Path,
-    provider_id: &str,
-    project_id: &str,
-) -> Result<(Vec<u8>, String), crate::net::NetError> {
+    installed: &crate::instance::ProviderProject,
+    update_context: Option<&ProviderUpdateContext>,
+) -> Result<(Vec<u8>, String, bool), crate::net::NetError> {
+    let provider_id = &installed.provider;
+    let project_id = &installed.project_id;
     let metadata = crate::storage::MetadataPaths::new(meta_dir);
     let icon_path = metadata
         .provider_icons(provider_id)
@@ -1332,7 +1376,9 @@ async fn load_provider_metadata(
             let project = match provider.project(project_id).await {
                 Ok(project) => project,
                 Err(error) => {
-                    return cached_icon.map(|bytes| (bytes, String::new())).ok_or(error);
+                    return cached_icon
+                        .map(|bytes| (bytes, String::new(), false))
+                        .ok_or(error);
                 }
             };
             crate::storage::write_atomic(
@@ -1343,25 +1389,53 @@ async fn load_provider_metadata(
             project
         }
     };
-    if let Some(bytes) = cached_icon {
-        return Ok((bytes, project.description));
-    }
-    let Some(url) = project.icon_url.as_deref() else {
-        return Ok((Vec::new(), project.description));
+    let update_available = match update_context {
+        Some(context) => match provider
+            .compatible_versions(
+                project_id,
+                context.kind,
+                &context.game_version,
+                context.loader,
+            )
+            .await
+        {
+            Ok(versions) => has_newer_compatible_version(&versions, &installed.version_id),
+            Err(error) => {
+                tracing::debug!("Could not check updates for project '{project_id}': {error}");
+                false
+            }
+        },
+        None => false,
     };
-    let bytes = match provider.icon(url).await {
-        Ok(bytes) => bytes,
-        Err(error) => {
-            tracing::debug!("Could not fetch icon for project '{project_id}': {error}");
-            return Ok((Vec::new(), project.description));
-        }
+    let bytes = match (cached_icon, project.icon_url.as_deref()) {
+        (Some(bytes), _) => bytes,
+        (None, Some(url)) => match provider.icon(url).await {
+            Ok(bytes) if !bytes.is_empty() && image::load_from_memory(&bytes).is_ok() => {
+                crate::storage::write_atomic(&icon_path, &bytes)?;
+                bytes
+            }
+            Ok(_) => {
+                tracing::debug!("Provider returned an invalid icon for project '{project_id}'");
+                Vec::new()
+            }
+            Err(error) => {
+                tracing::debug!("Could not fetch icon for project '{project_id}': {error}");
+                Vec::new()
+            }
+        },
+        (None, None) => Vec::new(),
     };
-    if bytes.is_empty() || image::load_from_memory(&bytes).is_err() {
-        tracing::debug!("Provider returned an invalid icon for project '{project_id}'");
-        return Ok((Vec::new(), project.description));
-    }
-    crate::storage::write_atomic(&icon_path, &bytes)?;
-    Ok((bytes, project.description))
+    Ok((bytes, project.description, update_available))
+}
+
+fn has_newer_compatible_version(
+    versions: &[crate::net::modrinth::VersionInfo],
+    installed_version_id: &str,
+) -> bool {
+    versions
+        .iter()
+        .position(|version| version.id == installed_version_id)
+        .is_some_and(|position| position > 0)
 }
 
 pub fn handle_key_no_toggle(key_event: &KeyEvent, state: &mut ContentListState) -> bool {
@@ -1546,7 +1620,13 @@ pub fn render(
         let title_suffix_color = world_details
             .and_then(|details| details.game_mode)
             .map(world_game_mode_color)
-            .unwrap_or_else(|| theme.success());
+            .unwrap_or_else(|| {
+                if title_suffix == Some("Update") {
+                    theme.warning()
+                } else {
+                    theme.success()
+                }
+            });
         let title_suffix_style = Style::default()
             .fg(theme.background())
             .bg(title_suffix_color)

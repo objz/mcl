@@ -15,9 +15,9 @@ use ratatui::{
 
 use super::{
     ContentListState, WatcherEventHandling, available_description_width, description_text_width,
-    diff_directory, diff_event_paths, ellipsize, load_provider_metadata, read_dir_stems,
-    right_aligned_footer_spans, square_icon_columns, title_suffix_spans, watcher_event_handling,
-    world_descriptions, world_game_mode_color,
+    diff_directory, diff_event_paths, ellipsize, has_newer_compatible_version,
+    load_provider_metadata, read_dir_stems, right_aligned_footer_spans, square_icon_columns,
+    title_suffix_spans, watcher_event_handling, world_descriptions, world_game_mode_color,
 };
 
 fn entry(name: &str) -> ContentEntry {
@@ -633,11 +633,13 @@ fn provider_metadata_fills_a_missing_installed_description() {
             project_id: "shader-project".to_owned(),
             bytes: Vec::new(),
             description: "A cached shader description".to_owned(),
+            update_available: true,
         });
 
     assert!(state.drain_provider_icons());
     assert_eq!(state.entries[0].description, "A cached shader description");
     assert!(state.entries[0].provider_description);
+    assert_eq!(state.entries[0].title_suffix.as_deref(), Some("Update"));
 }
 
 #[tokio::test]
@@ -675,15 +677,42 @@ async fn provider_metadata_loads_from_cache_without_network() {
     )
     .unwrap();
 
-    let (bytes, description) = load_provider_metadata(
+    let installed = crate::instance::ProviderProject {
+        provider: "modrinth".to_owned(),
+        project_id: "cached-project".to_owned(),
+        version_id: "cached-version".to_owned(),
+    };
+    let (bytes, description, update_available) = load_provider_metadata(
         &crate::net::HttpClient::new(),
         temp.path(),
-        "modrinth",
-        "cached-project",
+        &installed,
+        None,
     )
     .await
     .unwrap();
 
     assert_eq!(bytes, png);
     assert_eq!(description, "Cached description");
+    assert!(!update_available);
+}
+
+#[test]
+fn update_check_requires_the_installed_version_behind_a_newer_result() {
+    let version = |id: &str| crate::net::modrinth::VersionInfo {
+        id: id.to_owned(),
+        project_id: "project".to_owned(),
+        name: id.to_owned(),
+        version_number: id.to_owned(),
+        game_versions: vec!["1.21.1".to_owned()],
+        loaders: vec!["fabric".to_owned()],
+        version_type: crate::net::modrinth::VersionType::Release,
+        dependencies: Vec::new(),
+        date_published: String::new(),
+        files: Vec::new(),
+    };
+    let versions = vec![version("new"), version("installed")];
+
+    assert!(has_newer_compatible_version(&versions, "installed"));
+    assert!(!has_newer_compatible_version(&versions, "new"));
+    assert!(!has_newer_compatible_version(&versions, "missing"));
 }
