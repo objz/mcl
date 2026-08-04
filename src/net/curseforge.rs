@@ -18,6 +18,12 @@ const SHADERS_CLASS_ID: u32 = 6552;
 const DATA_PACKS_CLASS_ID: u32 = 6945;
 pub const MODPACKS_CLASS_ID: u32 = 4471;
 
+pub fn api_key() -> Option<&'static str> {
+    option_env!("CURSEFORGE_API_KEY")
+        .map(str::trim)
+        .filter(|key| !key.is_empty())
+}
+
 #[derive(Debug, Deserialize)]
 struct ApiResponse<T> {
     data: T,

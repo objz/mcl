@@ -1302,33 +1302,56 @@ impl App {
             let registry =
                 crate::instance::content::provider::ProviderRegistry::configured(client.clone());
             let modrinth = registry.get("modrinth").expect("Modrinth provider");
-            let modrinth_search = modrinth.search(kind, &query, &instance, offset, limit);
-            let (modrinth_result, curseforge_result) = if let Some(curseforge) =
-                registry.get("curseforge")
-            {
-                let curseforge_search = curseforge.search(kind, &query, &instance, offset, limit);
-                let (modrinth, curseforge) = tokio::join!(modrinth_search, curseforge_search);
-                (modrinth, Some(curseforge))
-            } else {
-                (modrinth_search.await, None)
-            };
+            let curseforge = registry.get("curseforge");
+            let preferred = crate::config::SETTINGS.content.preferred_provider();
+            let use_modrinth = crate::config::SETTINGS
+                .content
+                .discovery_provider_enabled("modrinth");
+            let use_curseforge = curseforge.is_some()
+                && crate::config::SETTINGS
+                    .content
+                    .discovery_provider_enabled("curseforge");
+            let (modrinth_result, curseforge_result) = tokio::join!(
+                async {
+                    if use_modrinth {
+                        Some(
+                            modrinth
+                                .search(kind, &query, &instance, offset, limit)
+                                .await,
+                        )
+                    } else {
+                        None
+                    }
+                },
+                async {
+                    match curseforge {
+                        Some(curseforge) if use_curseforge => Some(
+                            curseforge
+                                .search(kind, &query, &instance, offset, limit)
+                                .await,
+                        ),
+                        _ => None,
+                    }
+                }
+            );
             let result = match (&modrinth_result, &curseforge_result) {
-                (Err(error), Some(Err(_))) | (Err(error), None) => {
+                (Some(Err(error)), Some(Err(_))) | (Some(Err(error)), None) => {
                     Err((error.to_string(), error.is_retryable()))
                 }
+                (None, Some(Err(error))) => Err((error.to_string(), error.is_retryable())),
+                (None, None) => Err(("No discovery provider is available".to_owned(), false)),
                 _ => Ok(()),
             };
             let mut merged_sources = Vec::new();
             let result = match result {
                 Ok(()) => {
                     let mut pages = Vec::new();
-                    if let Ok(results) = modrinth_result {
+                    if let Some(Ok(results)) = modrinth_result {
                         pages.push(("modrinth", results));
                     }
                     if let Some(Ok(results)) = curseforge_result {
                         pages.push(("curseforge", results));
                     }
-                    let preferred = crate::config::SETTINGS.content.preferred_provider();
                     let merged =
                         widgets::content::discovery::merge_provider_results(pages, preferred);
                     let mut returned_stems =

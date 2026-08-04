@@ -40,7 +40,7 @@ it does everything you'd expect from a launcher.
 
 ### modpacks and accounts
 
-Browse Modrinth modpacks or import Modrinth, CurseForge, MultiMC, Prism, and GTNH packs directly. Direct imports accept a file, Modrinth URL, or project slug. CurseForge browsing and imports require an API key in the config. Able to use multiple Microsoft accounts and offline accounts aswell.
+Browse Modrinth and CurseForge modpacks or import Modrinth, CurseForge, MultiMC, Prism, and GTNH packs directly. Direct imports accept a file, Modrinth URL, or project slug. Source builds enable CurseForge when `CURSEFORGE_API_KEY` is set at compile time. Able to use multiple Microsoft accounts and offline accounts aswell.
 
 ---
 

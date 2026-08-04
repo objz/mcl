@@ -581,23 +581,43 @@ fn spawn_discovery_request_with_query(
     } = request;
     tokio::spawn(async move {
         let client = crate::net::HttpClient::new();
-        let modrinth = crate::net::modrinth::search_modpacks(&client, &query, offset, limit);
-        let curseforge_key = crate::config::SETTINGS
+        let preferred = crate::config::SETTINGS.content.preferred_provider();
+        let curseforge_key = crate::net::curseforge::api_key();
+        let use_modrinth = crate::config::SETTINGS
             .content
-            .curseforge_api_key()
-            .map(str::to_owned);
-        let (modrinth_result, curseforge_result) = if let Some(api_key) = curseforge_key {
-            let curseforge =
-                crate::net::curseforge::search_modpacks(&client, &api_key, &query, offset, limit);
-            let (modrinth, curseforge) = tokio::join!(modrinth, curseforge);
-            (modrinth, Some(curseforge))
-        } else {
-            (modrinth.await, None)
-        };
+            .discovery_provider_enabled("modrinth");
+        let use_curseforge = curseforge_key.is_some()
+            && crate::config::SETTINGS
+                .content
+                .discovery_provider_enabled("curseforge");
+        let (modrinth_result, curseforge_result) = tokio::join!(
+            async {
+                if use_modrinth {
+                    Some(
+                        crate::net::modrinth::search_modpacks(&client, &query, offset, limit).await,
+                    )
+                } else {
+                    None
+                }
+            },
+            async {
+                match curseforge_key {
+                    Some(api_key) if use_curseforge => Some(
+                        crate::net::curseforge::search_modpacks(
+                            &client, api_key, &query, offset, limit,
+                        )
+                        .await,
+                    ),
+                    _ => None,
+                }
+            }
+        );
         let failed = match (&modrinth_result, &curseforge_result) {
-            (Err(error), Some(Err(_))) | (Err(error), None) => {
+            (Some(Err(error)), Some(Err(_))) | (Some(Err(error)), None) => {
                 Some((error.to_string(), error.is_retryable()))
             }
+            (None, Some(Err(error))) => Some((error.to_string(), error.is_retryable())),
+            (None, None) => Some(("No discovery provider is available".to_owned(), false)),
             _ => None,
         };
         let mut merged_sources = Vec::new();
@@ -605,13 +625,12 @@ fn spawn_discovery_request_with_query(
             Err(crate::tui::widgets::content::discovery::DiscoveryPageError { message, retryable })
         } else {
             let mut pages = Vec::new();
-            if let Ok(results) = modrinth_result {
+            if let Some(Ok(results)) = modrinth_result {
                 pages.push(("modrinth", results));
             }
             if let Some(Ok(results)) = curseforge_result {
                 pages.push(("curseforge", results));
             }
-            let preferred = crate::config::SETTINGS.content.preferred_provider();
             let merged =
                 crate::tui::widgets::content::discovery::merge_provider_results(pages, preferred);
             let mut returned = std::collections::HashSet::new();
@@ -692,7 +711,7 @@ fn spawn_versions(request: crate::tui::widgets::content::discovery::VersionsRequ
     tokio::spawn(async move {
         let client = crate::net::HttpClient::new();
         let result = match request.provider.as_str() {
-            "curseforge" => match crate::config::SETTINGS.content.curseforge_api_key() {
+            "curseforge" => match crate::net::curseforge::api_key() {
                 Some(api_key) => {
                     crate::net::curseforge::fetch_versions(
                         &client,

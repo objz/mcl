@@ -354,7 +354,7 @@ impl ProviderRegistry {
     pub fn configured(client: crate::net::HttpClient) -> Self {
         let mut providers: Vec<Box<dyn ContentProvider>> =
             vec![Box::new(ModrinthProvider::new(client.clone()))];
-        if let Some(api_key) = crate::config::SETTINGS.content.curseforge_api_key() {
+        if let Some(api_key) = crate::net::curseforge::api_key() {
             providers.push(Box::new(CurseForgeProvider::new(client, api_key)));
         }
         Self::new(providers)

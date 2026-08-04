@@ -147,10 +147,8 @@ async fn download_files(
     manifest: &Manifest,
     minecraft_dir: &Path,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let api_key = crate::config::SETTINGS
-        .content
-        .curseforge_api_key()
-        .ok_or("CurseForge API key is not configured")?;
+    let api_key =
+        crate::net::curseforge::api_key().ok_or("CurseForge API key is not configured")?;
     let client = crate::net::HttpClient::new();
     let ids = manifest
         .files
