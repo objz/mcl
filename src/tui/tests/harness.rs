@@ -94,6 +94,7 @@ impl UiHarness {
             content_manifest: None,
             content_update_snapshot: None,
             content_update_popup: None,
+            modpack_update_popup: None,
             provider_conflict: None,
             dismissed_provider_conflicts: HashSet::new(),
         };

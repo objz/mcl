@@ -193,6 +193,41 @@ async fn download_files(
     Ok(())
 }
 
+pub(super) async fn owned_files(path: &Path) -> Result<Vec<std::path::PathBuf>, String> {
+    let manifest = parse(path)?;
+    let api_key = crate::net::curseforge::api_key()
+        .ok_or_else(|| "CurseForge API key is not configured".to_owned())?;
+    let ids = manifest
+        .files
+        .iter()
+        .filter(|file| file.required)
+        .map(|file| file.file_id)
+        .collect::<Vec<_>>();
+    let versions =
+        crate::net::curseforge::fetch_file_versions(&crate::net::HttpClient::new(), api_key, &ids)
+            .await
+            .map_err(|error| error.to_string())?;
+    if versions.len() != ids.len() {
+        return Err(format!(
+            "CurseForge returned {} of {} required pack files",
+            versions.len(),
+            ids.len()
+        ));
+    }
+    versions
+        .into_iter()
+        .map(|version| {
+            version
+                .files
+                .iter()
+                .find(|file| file.primary)
+                .or_else(|| version.files.first())
+                .map(|file| std::path::PathBuf::from("mods").join(&file.filename))
+                .ok_or_else(|| format!("CurseForge file '{}' has no artifact", version.id))
+        })
+        .collect()
+}
+
 fn count_overrides(path: &Path, root: &str) -> Result<usize, String> {
     let root = root.trim_matches('/');
     if root.is_empty() {

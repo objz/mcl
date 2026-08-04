@@ -11,7 +11,7 @@ use ratatui::{
     text::{Line, Span, Text},
     widgets::{Block, Borders, Scrollbar, ScrollbarOrientation, ScrollbarState},
 };
-use std::collections::HashSet;
+use std::collections::HashMap;
 use std::sync::{Arc, LazyLock, Mutex};
 use tui_widget_list::{ListBuilder, ListState as TuiListState, ListView};
 
@@ -22,9 +22,13 @@ use crate::tui::app::FocusedArea;
 
 use super::{WidgetKey, search::SearchState, styled_title};
 
-static PENDING_MODPACK_UPDATES: LazyLock<
-    Mutex<Vec<(String, crate::instance::ProviderProject, bool)>>,
-> = LazyLock::new(|| Mutex::new(Vec::new()));
+type PendingModpackUpdate = (
+    String,
+    crate::instance::ProviderProject,
+    Option<crate::net::modrinth::VersionInfo>,
+);
+static PENDING_MODPACK_UPDATES: LazyLock<Mutex<Vec<PendingModpackUpdate>>> =
+    LazyLock::new(|| Mutex::new(Vec::new()));
 static MODPACK_UPDATE_SLOTS: LazyLock<Arc<tokio::sync::Semaphore>> =
     LazyLock::new(|| Arc::new(tokio::sync::Semaphore::new(4)));
 
@@ -43,27 +47,15 @@ pub fn spawn_modpack_update_check(instance: &InstanceConfig) {
         let Ok(_permit) = MODPACK_UPDATE_SLOTS.clone().acquire_owned().await else {
             return;
         };
-        let registry = crate::instance::content::provider::ProviderRegistry::configured(
-            crate::net::HttpClient::new(),
-        );
-        let Some(provider) = registry.get(&source.provider) else {
+        let Ok(versions) = crate::instance::import::provider_versions(&source).await else {
             return;
         };
-        let Ok(versions) = provider
-            .compatible_versions(
-                &source.project_id,
-                crate::instance::ContentKind::Mod,
-                &instance.game_version,
-                instance.loader,
+        let update = versions.first().cloned().filter(|_| {
+            crate::instance::content::provider::has_newer_compatible_version(
+                &versions,
+                &source.version_id,
             )
-            .await
-        else {
-            return;
-        };
-        let update = crate::instance::content::provider::has_newer_compatible_version(
-            &versions,
-            &source.version_id,
-        );
+        });
         if let Ok(mut pending) = PENDING_MODPACK_UPDATES.lock() {
             pending.push((instance.name, source, update));
             crate::feedback::request_redraw();
@@ -80,7 +72,7 @@ pub struct State {
     pub show_import_popup: bool,
     pub search: SearchState,
     pub renaming: Option<String>,
-    pub(crate) modpack_updates: HashSet<String>,
+    pub(crate) modpack_updates: HashMap<String, crate::net::modrinth::VersionInfo>,
 }
 
 impl State {
@@ -94,7 +86,7 @@ impl State {
             show_import_popup: false,
             search: SearchState::default(),
             renaming: None,
-            modpack_updates: HashSet::new(),
+            modpack_updates: HashMap::new(),
         };
         if count > 0 {
             s.list_state.selected = Some(0);
@@ -184,7 +176,7 @@ impl State {
         let Ok(mut pending) = PENDING_MODPACK_UPDATES.lock() else {
             return;
         };
-        for (name, source, available) in pending.drain(..) {
+        for (name, source, update) in pending.drain(..) {
             if self
                 .instances
                 .iter()
@@ -194,8 +186,8 @@ impl State {
             {
                 continue;
             }
-            if available {
-                self.modpack_updates.insert(name);
+            if let Some(update) = update {
+                self.modpack_updates.insert(name, update);
             } else {
                 self.modpack_updates.remove(&name);
             }
@@ -206,6 +198,12 @@ impl State {
         self.instances.push(instance);
         self.list_state.selected = self.filtered_indices().len().checked_sub(1);
         self.update_scrollbar();
+    }
+
+    pub fn selected_modpack_update(&self) -> Option<crate::net::modrinth::VersionInfo> {
+        self.selected_instance()
+            .and_then(|instance| self.modpack_updates.get(&instance.name))
+            .cloned()
     }
 
     pub fn replace_instance(&mut self, old_name: &str, instance: InstanceConfig) {
@@ -351,7 +349,7 @@ pub fn render(frame: &mut Frame, area: Rect, focused: FocusedArea, state: &mut S
         } else {
             let mut spans = vec![selector.clone()];
             spans.extend(state.search.highlight_spans(&instance.name, name_style));
-            if state.modpack_updates.contains(&instance.name) {
+            if state.modpack_updates.contains_key(&instance.name) {
                 spans.extend([
                     Span::raw(" "),
                     Span::styled(

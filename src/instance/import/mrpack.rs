@@ -331,6 +331,14 @@ fn safe_mrpack_path(path: &str) -> Result<PathBuf, crate::net::NetError> {
     Ok(path.to_owned())
 }
 
+pub(super) fn owned_files(path: &Path) -> Result<Vec<PathBuf>, String> {
+    parse_mrpack(path)?
+        .files
+        .into_iter()
+        .map(|file| safe_mrpack_path(&file.path).map_err(|error| error.to_string()))
+        .collect()
+}
+
 fn verify_mrpack_file(
     path: &Path,
     expected_size: u64,

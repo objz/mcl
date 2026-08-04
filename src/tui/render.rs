@@ -182,6 +182,10 @@ impl App {
         if let Some(update) = &self.content_update_popup {
             widgets::content::update::render(frame, update);
         }
+
+        if let Some(update) = &self.modpack_update_popup {
+            widgets::popups::modpack_update::render(frame, update);
+        }
     }
 
     // full-screen log viewer with search highlighting and auto-scroll.

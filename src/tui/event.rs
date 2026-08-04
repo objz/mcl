@@ -48,6 +48,21 @@ impl App {
                     self.content_update_popup = None;
                 }
             }
+            let completed_modpack = self.modpack_update_popup.as_mut().and_then(|update| {
+                update.drain();
+                update.completed.take()
+            });
+            if let Some(instance) = completed_modpack {
+                let name = instance.name.clone();
+                self.instances_state
+                    .replace_instance(&name, instance.clone());
+                self.instances_state.modpack_updates.remove(&name);
+                widgets::instances::spawn_modpack_update_check(&instance);
+                self.modpack_update_popup = None;
+                self.reconciliation_for = None;
+                self.content_manifest = None;
+                self.content_update_snapshot = None;
+            }
             let mut local_streamed = false;
             let mut content_changed = false;
             let mut toggles = Vec::new();
@@ -183,6 +198,7 @@ impl App {
             + usize::from(self.focused == super::app::FocusedArea::ConfirmDelete)
             + usize::from(self.provider_conflict.is_some())
             + usize::from(self.content_update_popup.is_some())
+            + usize::from(self.modpack_update_popup.is_some())
             + usize::from(!matches!(
                 &self.account_state.add_mode,
                 widgets::account::AddMode::None

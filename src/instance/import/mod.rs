@@ -4,6 +4,7 @@
 pub mod curseforge;
 pub mod mmc;
 pub mod mrpack;
+pub mod refresh;
 
 use std::path::{Path, PathBuf};
 
@@ -184,8 +185,82 @@ pub async fn execute_import(
     if summary.source.is_some() {
         config.modpack_source = summary.source.clone();
         manager.save(&config)?;
+        let state = match owned_files(summary).await {
+            Ok(files) => refresh::PackState {
+                source: summary.source.clone().expect("source checked above"),
+                files,
+            },
+            Err(error) => {
+                cleanup_failed_import(manager, &config.name);
+                return Err(error.into());
+            }
+        };
+        if let Err(error) = state.save(&crate::storage::InstancePaths::new(
+            manager.instances_dir.join(&config.name),
+        )) {
+            cleanup_failed_import(manager, &config.name);
+            return Err(error.into());
+        }
     }
     Ok(config)
+}
+
+pub async fn provider_versions(
+    source: &crate::instance::ProviderProject,
+) -> Result<Vec<crate::net::modrinth::VersionInfo>, crate::net::NetError> {
+    let client = crate::net::HttpClient::new();
+    match source.provider.as_str() {
+        "curseforge" => {
+            let api_key = crate::net::curseforge::api_key().ok_or_else(|| {
+                crate::net::NetError::Parse("CurseForge API key is not configured".to_owned())
+            })?;
+            crate::net::curseforge::fetch_versions(&client, api_key, &source.project_id, "", None)
+                .await
+        }
+        "modrinth" => crate::net::modrinth::fetch_versions(&client, &source.project_id).await,
+        provider => Err(crate::net::NetError::Parse(format!(
+            "Unsupported modpack provider '{provider}'"
+        ))),
+    }
+}
+
+pub async fn download_provider_summary(
+    source: &crate::instance::ProviderProject,
+    version: &crate::net::modrinth::VersionInfo,
+    temporary_dir: &Path,
+) -> Result<ImportSummary, crate::net::NetError> {
+    tokio::fs::create_dir_all(temporary_dir).await?;
+    let registry = crate::instance::content::provider::ProviderRegistry::configured(
+        crate::net::HttpClient::new(),
+    );
+    let provider = registry.get(&source.provider).ok_or_else(|| {
+        crate::net::NetError::Parse(format!(
+            "{} content provider is unavailable",
+            source.provider
+        ))
+    })?;
+    let archive = match provider
+        .download_version(version, temporary_dir, None)
+        .await?
+    {
+        crate::net::modrinth::DownloadOutcome::Downloaded(path)
+        | crate::net::modrinth::DownloadOutcome::SkippedExisting(path) => path,
+    };
+    let mut summary = build_summary(&archive).map_err(crate::net::NetError::Parse)?;
+    summary.source = Some(crate::instance::ProviderProject {
+        provider: source.provider.clone(),
+        project_id: source.project_id.clone(),
+        version_id: version.id.clone(),
+    });
+    Ok(summary)
+}
+
+async fn owned_files(summary: &ImportSummary) -> Result<Vec<PathBuf>, String> {
+    match summary.format {
+        PackFormat::Mrpack => mrpack::owned_files(&summary.archive_path),
+        PackFormat::CurseForge => curseforge::owned_files(&summary.archive_path).await,
+        PackFormat::Mmc => Err("Managed updates are unavailable for MultiMC packs".to_owned()),
+    }
 }
 
 fn cleanup_failed_import(manager: &InstanceManager, name: &str) {
