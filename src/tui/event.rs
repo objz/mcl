@@ -313,6 +313,14 @@ impl App {
             self.instance_manager.instances_dir.join(&selected.name),
         )
         .minecraft();
+        self.mods_state
+            .set_provider_update_context(selected, crate::instance::ContentKind::Mod);
+        self.resource_packs_state
+            .set_provider_update_context(selected, crate::instance::ContentKind::ResourcePack);
+        self.shaders_state
+            .set_provider_update_context(selected, crate::instance::ContentKind::Shader);
+        self.world_datapacks_state
+            .set_provider_update_context(selected, crate::instance::ContentKind::DataPack);
         self.mods_state.apply_manifest(
             &result.manifest,
             &minecraft_dir,
@@ -364,6 +372,17 @@ impl App {
             self.instance_manager.instances_dir.join(instance_name),
         )
         .minecraft();
+        let Some(instance) = self.instances_state.selected_instance() else {
+            return;
+        };
+        self.mods_state
+            .set_provider_update_context(instance, crate::instance::ContentKind::Mod);
+        self.resource_packs_state
+            .set_provider_update_context(instance, crate::instance::ContentKind::ResourcePack);
+        self.shaders_state
+            .set_provider_update_context(instance, crate::instance::ContentKind::Shader);
+        self.world_datapacks_state
+            .set_provider_update_context(instance, crate::instance::ContentKind::DataPack);
         self.mods_state
             .apply_manifest(manifest, &minecraft_dir, crate::instance::ContentKind::Mod);
         self.resource_packs_state.apply_manifest(
