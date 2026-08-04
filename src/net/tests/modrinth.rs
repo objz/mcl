@@ -208,6 +208,32 @@ async fn content_download_skips_an_existing_filename() {
 }
 
 #[tokio::test]
+async fn content_download_rejects_provider_path_components() {
+    let directory = tempfile::tempdir().unwrap();
+    let version = version_with_files(vec![VersionFile {
+        url: "https://example.test/escape.jar".to_owned(),
+        filename: "../escape.jar".to_owned(),
+        size: 1,
+        primary: true,
+        hashes: HashMap::new(),
+    }]);
+
+    let error = download_version_file(&crate::net::HttpClient::new(), &version, directory.path())
+        .await
+        .unwrap_err();
+
+    assert!(error.to_string().contains("Invalid provider filename"));
+    assert!(
+        !directory
+            .path()
+            .parent()
+            .unwrap()
+            .join("escape.jar")
+            .exists()
+    );
+}
+
+#[tokio::test]
 async fn staged_update_replaces_the_old_file_and_cleans_its_backup() {
     let directory = tempfile::tempdir().unwrap();
     let installed = directory.path().join("example.jar");
