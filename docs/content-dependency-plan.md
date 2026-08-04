@@ -78,3 +78,7 @@ shaders remain unchanged.
 - [x] Managed mod dependencies
 - [x] Datapack discovery
 - [x] Compatible update checks for managed content and discovered modpacks
+- [x] Atomic bulk updates for mods, resource packs, shaders, and per-world datapacks
+- [x] Rollback-safe managed modpack updates that preserve user files
+- [ ] Reinstall and arbitrary modpack version controls using the shared refresh engine
+- [ ] Settings tab rework
