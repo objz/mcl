@@ -28,6 +28,24 @@ fn summary() -> ImportSummary {
 }
 
 #[test]
+fn stale_import_results_cannot_replace_the_current_request() {
+    let state = Arc::new(Mutex::new(ImportWizardState {
+        step: ImportStep::Fetching,
+        request_id: 2,
+        ..ImportWizardState::default()
+    }));
+
+    assert!(!update_current_request(&state, 1, |state| {
+        state.step = ImportStep::Confirm;
+    }));
+    assert_eq!(state.lock().unwrap().step, ImportStep::Fetching);
+    assert!(update_current_request(&state, 2, |state| {
+        state.step = ImportStep::Confirm;
+    }));
+    assert_eq!(state.lock().unwrap().step, ImportStep::Confirm);
+}
+
+#[test]
 fn empty_input_is_ignored_and_escape_returns_to_discovery() {
     let _guard = TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
     *DISCOVERY_STATE.lock().unwrap() = crate::tui::widgets::content::DiscoveryState::new_modpacks();

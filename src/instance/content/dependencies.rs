@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::instance::content::provider::{ContentProvider, FingerprintQuery, ProviderRegistry};
 use crate::instance::{
@@ -9,6 +10,8 @@ use crate::net::NetError;
 use crate::net::modrinth::{
     DependencyType, ProjectInfo, VersionDependency, VersionInfo, VersionType,
 };
+
+static NEXT_INSTALL_ID: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Debug, Clone)]
 pub struct InstallRoot {
@@ -82,7 +85,6 @@ pub async fn install(
     manifest_path: &Path,
     minecraft_dir: &Path,
     plan: &DependencyPlan,
-    transaction_id: u64,
 ) -> Result<InstallResult, NetError> {
     let root = plan
         .items
@@ -91,10 +93,7 @@ pub async fn install(
     for item in &plan.items {
         tokio::fs::create_dir_all(&item.destination).await?;
     }
-    let staging = minecraft_dir.join(format!(".rmcl-install-{transaction_id}"));
-    if staging.exists() {
-        tokio::fs::remove_dir_all(&staging).await?;
-    }
+    let staging = staging_directory(minecraft_dir);
     tokio::fs::create_dir(&staging).await?;
 
     let result = install_staged(registry, manifest_path, minecraft_dir, &staging, plan).await;
@@ -112,6 +111,13 @@ pub async fn install(
         skipped: !plan.items.iter().any(PlannedInstall::needs_download),
         orphaned_dependencies,
     })
+}
+
+fn staging_directory(minecraft_dir: &Path) -> PathBuf {
+    minecraft_dir.join(format!(
+        ".rmcl-install-{}",
+        NEXT_INSTALL_ID.fetch_add(1, Ordering::Relaxed)
+    ))
 }
 
 struct StagedFile {

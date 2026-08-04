@@ -1089,7 +1089,6 @@ impl App {
                         &manifest_path,
                         &minecraft_dir,
                         plan,
-                        request.request_id,
                     )
                     .await?;
                     return Ok::<_, crate::net::NetError>(
