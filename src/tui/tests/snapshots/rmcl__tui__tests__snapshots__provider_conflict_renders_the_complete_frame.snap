@@ -26,7 +26,7 @@ expression: ui.screen()
 "│                  ││                                                                              │"
 "│                  ││                                                                              │"
 "│                  ││[l] launch  [⏎] content  [Shift+⏎] open dir  [Esc] kill  [a] add  [m] modpacks│"
-"│                  │╰────────────────────────────────────────────[d] delete  [r] rename  [/] search╯"
+"│                  │╰────────────────────────────────[u] update  [d] delete  [r] rename  [/] search╯"
 "│                  │╭Accounts─────────╮╭Settings───────────────────────────╮╭Overview──────────────╮"
 "│                  ││No accounts.     ││▸ instance default                 ││Ready                 │"
 "│                  ││                 ││                                   ││                      │"
