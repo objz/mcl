@@ -30,6 +30,9 @@ use crate::instance::content::{
 };
 
 const MAX_DOCUMENT_WIDTH: u16 = 110;
+pub(crate) const MAX_PROJECT_IMAGE_BYTES: usize = 16 * 1024 * 1024;
+const MAX_PROJECT_IMAGE_DIMENSION: u32 = 8192;
+const MAX_PROJECT_IMAGE_ALLOCATION: u64 = 64 * 1024 * 1024;
 
 struct TextBlock {
     source: String,
@@ -225,13 +228,31 @@ pub fn image_urls(title: &str, body: &str) -> Vec<String> {
 }
 
 pub fn decode_image(bytes: &[u8]) -> Result<DynamicImage, String> {
-    if let Ok(image) = image::load_from_memory(bytes) {
+    let mut reader = image::ImageReader::new(std::io::Cursor::new(bytes))
+        .with_guessed_format()
+        .map_err(|error| error.to_string())?;
+    let mut limits = image::Limits::default();
+    limits.max_image_width = Some(MAX_PROJECT_IMAGE_DIMENSION);
+    limits.max_image_height = Some(MAX_PROJECT_IMAGE_DIMENSION);
+    limits.max_alloc = Some(MAX_PROJECT_IMAGE_ALLOCATION);
+    reader.limits(limits);
+    if let Ok(image) = reader.decode() {
         return Ok(image);
     }
     let mut options = resvg::usvg::Options::default();
     options.fontdb_mut().load_system_fonts();
     let tree = resvg::usvg::Tree::from_data(bytes, &options).map_err(|error| error.to_string())?;
     let size = tree.size().to_int_size();
+    let allocation = u64::from(size.width())
+        .checked_mul(u64::from(size.height()))
+        .and_then(|pixels| pixels.checked_mul(4))
+        .ok_or_else(|| "SVG image dimensions are too large".to_owned())?;
+    if size.width() > MAX_PROJECT_IMAGE_DIMENSION
+        || size.height() > MAX_PROJECT_IMAGE_DIMENSION
+        || allocation > MAX_PROJECT_IMAGE_ALLOCATION
+    {
+        return Err("SVG image dimensions are too large".to_owned());
+    }
     let mut pixmap = resvg::tiny_skia::Pixmap::new(size.width(), size.height())
         .ok_or_else(|| "SVG image dimensions are too large".to_owned())?;
     resvg::render(

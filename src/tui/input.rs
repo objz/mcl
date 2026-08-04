@@ -1006,7 +1006,10 @@ impl App {
                             .await
                             .map_err(|error| error.to_string())?;
                         let bytes = client
-                            .get_bytes(&url)
+                            .get_bytes_limited(
+                                &url,
+                                crate::tui::widgets::markdown::MAX_PROJECT_IMAGE_BYTES,
+                            )
                             .await
                             .map_err(|error| error.to_string())?;
                         tokio::task::spawn_blocking(move || {

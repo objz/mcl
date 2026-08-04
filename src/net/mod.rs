@@ -105,6 +105,30 @@ impl HttpClient {
         .await
     }
 
+    pub async fn get_bytes_limited(&self, url: &str, limit: usize) -> Result<Vec<u8>, NetError> {
+        get_with_retry(self, url, move |mut response| async move {
+            if response
+                .content_length()
+                .is_some_and(|length| length > limit as u64)
+            {
+                return Err(NetError::Parse(format!(
+                    "Response exceeds the {limit}-byte limit"
+                )));
+            }
+            let mut bytes = Vec::new();
+            while let Some(chunk) = response.chunk().await? {
+                if bytes.len().saturating_add(chunk.len()) > limit {
+                    return Err(NetError::Parse(format!(
+                        "Response exceeds the {limit}-byte limit"
+                    )));
+                }
+                bytes.extend_from_slice(&chunk);
+            }
+            Ok(bytes)
+        })
+        .await
+    }
+
     pub async fn post_json<B, T>(&self, url: &str, body: &B) -> Result<T, NetError>
     where
         B: Serialize + ?Sized,
