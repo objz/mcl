@@ -393,8 +393,10 @@ pub struct VersionPopupState {
 impl VersionPopupState {
     pub fn title(&self) -> String {
         if self.installed_path.is_some()
-            && self.current_version_id.as_deref()
-                == self.selected_version().map(|version| version.id.as_str())
+            && self.current_version_id.as_deref().is_some_and(|current| {
+                self.selected_version()
+                    .is_some_and(|version| version.id == current)
+            })
         {
             format!("Reinstall {}", self.project_title)
         } else if self.installed_path.is_some() {
