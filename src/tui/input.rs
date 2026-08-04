@@ -940,8 +940,8 @@ impl App {
         tokio::spawn(async move {
             let client = crate::net::HttpClient::new();
             let mut image_urls = request.image_urls;
-            let project = match request.cached_project {
-                Some(project) => project,
+            match request.cached_project {
+                Some(_) => {}
                 None => {
                     let progress = crate::feedback::progress::ProgressTask::start(format!(
                         "Loading {} from {}",
@@ -972,7 +972,6 @@ impl App {
                                 },
                             );
                             progress.finish();
-                            project
                         }
                         Err(error) => {
                             progress.fail(&error);
@@ -988,18 +987,13 @@ impl App {
                         }
                     }
                 }
-            };
+            }
 
             if image_urls.is_empty() {
                 return;
             }
             image_urls.sort();
             image_urls.dedup();
-            let progress = crate::feedback::progress::ProgressTask::start(format!(
-                "Loading images for {}",
-                project.title
-            ));
-            progress.set_progress(0, image_urls.len() as u64);
             let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(4));
             let mut tasks = tokio::task::JoinSet::new();
             for url in image_urls {
@@ -1026,15 +1020,11 @@ impl App {
                 });
             }
 
-            let total = tasks.len() as u64;
-            let mut completed = 0;
             while let Some(result) = tasks.join_next().await {
-                completed += 1;
-                progress.set_progress(completed, total);
                 let (url, result) = match result {
                     Ok(result) => result,
                     Err(error) => {
-                        tracing::debug!("Modrinth project image task failed: {error}");
+                        tracing::debug!("Discovery project image task failed: {error}");
                         continue;
                     }
                 };
@@ -1048,7 +1038,6 @@ impl App {
                     },
                 );
             }
-            progress.finish();
         });
     }
 
@@ -1307,10 +1296,9 @@ impl App {
             let use_modrinth = crate::config::SETTINGS
                 .content
                 .discovery_provider_enabled("modrinth");
-            let use_curseforge = curseforge.is_some()
-                && crate::config::SETTINGS
-                    .content
-                    .discovery_provider_enabled("curseforge");
+            let use_curseforge = crate::config::SETTINGS
+                .content
+                .discovery_provider_enabled("curseforge");
             let (modrinth_result, curseforge_result) = tokio::join!(
                 async {
                     if use_modrinth {

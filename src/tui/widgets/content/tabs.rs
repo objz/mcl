@@ -458,13 +458,17 @@ pub fn render(
                 );
                 worlds_state.watch_dir(saves);
             }
+            let loading_text = format!(
+                "Searching {}...",
+                crate::config::SETTINGS.content.discovery_provider_label()
+            );
             render_discovery(
                 frame,
                 content_area,
                 datapacks_discovery_state,
                 instance,
                 is_focused,
-                "Searching datapacks...",
+                &loading_text,
                 picker,
             );
         } else {
@@ -613,13 +617,17 @@ fn render_downloadable(
         state.watch_dir(content_dir);
     }
     if mode == ContentMode::Discover {
+        let loading_text = format!(
+            "Searching {}...",
+            crate::config::SETTINGS.content.discovery_provider_label()
+        );
         render_discovery(
             frame,
             area,
             discovery_state,
             instance,
             is_focused,
-            "Searching Modrinth...",
+            &loading_text,
             picker,
         );
     } else {

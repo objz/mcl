@@ -586,10 +586,9 @@ fn spawn_discovery_request_with_query(
         let use_modrinth = crate::config::SETTINGS
             .content
             .discovery_provider_enabled("modrinth");
-        let use_curseforge = curseforge_key.is_some()
-            && crate::config::SETTINGS
-                .content
-                .discovery_provider_enabled("curseforge");
+        let use_curseforge = crate::config::SETTINGS
+            .content
+            .discovery_provider_enabled("curseforge");
         let (modrinth_result, curseforge_result) = tokio::join!(
             async {
                 if use_modrinth {
