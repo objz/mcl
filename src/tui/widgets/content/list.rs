@@ -2114,10 +2114,10 @@ fn world_descriptions(details: &WorldDetails) -> Vec<String> {
             .datapacks
             .iter()
             .take(3)
-            .map(|name| format!("• {name}")),
+            .map(|name| format!("  • {name}")),
     );
     if details.datapacks.len() > 3 {
-        lines.push(format!("+{} more", details.datapacks.len() - 3));
+        lines.push(format!("  +{} more", details.datapacks.len() - 3));
     }
     lines
 }

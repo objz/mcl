@@ -53,7 +53,10 @@ fn world_cards_preview_up_to_three_datapacks() {
             .collect(),
     });
 
-    assert_eq!(lines, ["1.21.1  •  4.0 MB", "• A", "• B", "• C", "+1 more"]);
+    assert_eq!(
+        lines,
+        ["1.21.1  •  4.0 MB", "  • A", "  • B", "  • C", "  +1 more"]
+    );
 }
 
 #[test]
