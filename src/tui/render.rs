@@ -178,6 +178,10 @@ impl App {
         if let Some(conflict) = &self.provider_conflict {
             render_provider_conflict(frame, conflict);
         }
+
+        if let Some(update) = &self.content_update_popup {
+            widgets::content::update::render(frame, update);
+        }
     }
 
     // full-screen log viewer with search highlighting and auto-scroll.

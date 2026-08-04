@@ -92,6 +92,8 @@ impl UiHarness {
             pending_editor: None,
             reconciliation_for: None,
             content_manifest: None,
+            content_update_snapshot: None,
+            content_update_popup: None,
             provider_conflict: None,
             dismissed_provider_conflicts: HashSet::new(),
         };

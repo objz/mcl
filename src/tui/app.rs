@@ -51,6 +51,9 @@ pub struct App {
     pub(super) pending_editor: Option<std::path::PathBuf>,
     pub(super) reconciliation_for: Option<String>,
     pub(super) content_manifest: Option<(String, crate::instance::ContentManifest)>,
+    pub(super) content_update_snapshot:
+        Option<(String, crate::instance::content::updates::UpdateSnapshot)>,
+    pub(super) content_update_popup: Option<widgets::content::update::State>,
     pub(super) provider_conflict: Option<ProviderConflictState>,
     pub(super) dismissed_provider_conflicts: HashSet<PathBuf>,
 }
@@ -179,6 +182,8 @@ impl App {
             pending_editor: None,
             reconciliation_for: None,
             content_manifest: None,
+            content_update_snapshot: None,
+            content_update_popup: None,
             provider_conflict: None,
             dismissed_provider_conflicts: HashSet::new(),
         }

@@ -42,6 +42,12 @@ impl App {
             self.drain_pending_instances();
             self.instances_state.drain_modpack_updates();
             self.drain_pending_last_played();
+            if let Some(update) = self.content_update_popup.as_mut() {
+                update.drain();
+                if update.completed {
+                    self.content_update_popup = None;
+                }
+            }
             let mut local_streamed = false;
             let mut content_changed = false;
             let mut toggles = Vec::new();
@@ -118,6 +124,7 @@ impl App {
                 results.retain(|result| result.instance_name != instance.name);
             }
             self.drain_content_reconciliation();
+            self.drain_content_update_snapshots();
             self.ensure_content_reconciliation(content_changed);
             if local_streamed {
                 self.apply_cached_content_manifest();
@@ -175,6 +182,7 @@ impl App {
             + usize::from(self.focused == super::app::FocusedArea::OverviewExpanded)
             + usize::from(self.focused == super::app::FocusedArea::ConfirmDelete)
             + usize::from(self.provider_conflict.is_some())
+            + usize::from(self.content_update_popup.is_some())
             + usize::from(!matches!(
                 &self.account_state.add_mode,
                 widgets::account::AddMode::None
@@ -257,6 +265,7 @@ impl App {
             self.provider_conflict = None;
             self.dismissed_provider_conflicts.clear();
             self.content_manifest = None;
+            self.content_update_snapshot = None;
             for discovery in [
                 &mut self.mods_discovery_state,
                 &mut self.resource_packs_discovery_state,
@@ -289,7 +298,7 @@ impl App {
     }
 
     fn drain_content_reconciliation(&mut self) {
-        let Some(selected) = self.instances_state.selected_instance() else {
+        let Some(selected) = self.instances_state.selected_instance().cloned() else {
             return;
         };
         let result = match crate::instance::content::reconcile::PENDING_RECONCILIATIONS.lock() {
@@ -314,14 +323,6 @@ impl App {
             self.instance_manager.instances_dir.join(&selected.name),
         )
         .minecraft();
-        self.mods_state
-            .set_provider_update_context(selected, crate::instance::ContentKind::Mod);
-        self.resource_packs_state
-            .set_provider_update_context(selected, crate::instance::ContentKind::ResourcePack);
-        self.shaders_state
-            .set_provider_update_context(selected, crate::instance::ContentKind::Shader);
-        self.world_datapacks_state
-            .set_provider_update_context(selected, crate::instance::ContentKind::DataPack);
         self.mods_state.apply_manifest(
             &result.manifest,
             &minecraft_dir,
@@ -355,7 +356,22 @@ impl App {
                 details.datapacks = crate::instance::content::worlds::datapack_names(&world.path);
             }
         }
-        self.content_manifest = Some((result.instance_name, result.manifest));
+        let paths = crate::storage::InstancePaths::new(
+            self.instance_manager
+                .instances_dir
+                .join(&result.instance_name),
+        );
+        self.content_update_snapshot =
+            crate::instance::content::updates::UpdateSnapshot::load(&paths.content_updates())
+                .filter(|snapshot| snapshot.applies_to(&selected))
+                .map(|snapshot| (result.instance_name.clone(), snapshot));
+        self.content_manifest = Some((result.instance_name.clone(), result.manifest.clone()));
+        self.apply_content_update_snapshot();
+        crate::instance::content::updates::spawn(
+            selected,
+            result.manifest,
+            paths.content_updates(),
+        );
     }
 
     fn apply_cached_content_manifest(&mut self) {
@@ -373,17 +389,6 @@ impl App {
             self.instance_manager.instances_dir.join(instance_name),
         )
         .minecraft();
-        let Some(instance) = self.instances_state.selected_instance() else {
-            return;
-        };
-        self.mods_state
-            .set_provider_update_context(instance, crate::instance::ContentKind::Mod);
-        self.resource_packs_state
-            .set_provider_update_context(instance, crate::instance::ContentKind::ResourcePack);
-        self.shaders_state
-            .set_provider_update_context(instance, crate::instance::ContentKind::Shader);
-        self.world_datapacks_state
-            .set_provider_update_context(instance, crate::instance::ContentKind::DataPack);
         self.mods_state
             .apply_manifest(manifest, &minecraft_dir, crate::instance::ContentKind::Mod);
         self.resource_packs_state.apply_manifest(
@@ -401,6 +406,41 @@ impl App {
             &minecraft_dir,
             crate::instance::ContentKind::DataPack,
         );
+        self.apply_content_update_snapshot();
+    }
+
+    fn drain_content_update_snapshots(&mut self) {
+        let Some(selected) = self.instances_state.selected_instance() else {
+            return;
+        };
+        let snapshot = match crate::instance::content::updates::PENDING_UPDATE_SNAPSHOTS.lock() {
+            Ok(mut pending) => pending
+                .iter()
+                .rposition(|pending| pending.instance_name == selected.name)
+                .map(|index| pending.remove(index)),
+            Err(_) => return,
+        };
+        let Some(snapshot) = snapshot else {
+            return;
+        };
+        self.content_update_snapshot = Some((snapshot.instance_name, snapshot.snapshot));
+        self.apply_content_update_snapshot();
+    }
+
+    fn apply_content_update_snapshot(&mut self) {
+        let snapshot = self
+            .content_update_snapshot
+            .as_ref()
+            .and_then(|(name, snapshot)| {
+                self.instances_state
+                    .selected_instance()
+                    .filter(|instance| instance.name == *name && snapshot.applies_to(instance))
+                    .map(|_| snapshot)
+            });
+        self.mods_state.apply_update_snapshot(snapshot);
+        self.resource_packs_state.apply_update_snapshot(snapshot);
+        self.shaders_state.apply_update_snapshot(snapshot);
+        self.world_datapacks_state.apply_update_snapshot(snapshot);
     }
 
     fn ensure_provider_conflict_popup(&mut self) {

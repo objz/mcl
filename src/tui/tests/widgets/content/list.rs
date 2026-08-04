@@ -633,13 +633,12 @@ fn provider_metadata_fills_a_missing_installed_description() {
             project_id: "shader-project".to_owned(),
             bytes: Vec::new(),
             description: "A cached shader description".to_owned(),
-            update_available: true,
         });
 
     assert!(state.drain_provider_icons());
     assert_eq!(state.entries[0].description, "A cached shader description");
     assert!(state.entries[0].provider_description);
-    assert_eq!(state.entries[0].title_suffix.as_deref(), Some("Update"));
+    assert_eq!(state.entries[0].title_suffix, None);
 }
 
 #[tokio::test]
@@ -682,16 +681,11 @@ async fn provider_metadata_loads_from_cache_without_network() {
         project_id: "cached-project".to_owned(),
         version_id: "cached-version".to_owned(),
     };
-    let (bytes, description, update_available) = load_provider_metadata(
-        &crate::net::HttpClient::new(),
-        temp.path(),
-        &installed,
-        None,
-    )
-    .await
-    .unwrap();
+    let (bytes, description) =
+        load_provider_metadata(&crate::net::HttpClient::new(), temp.path(), &installed)
+            .await
+            .unwrap();
 
     assert_eq!(bytes, png);
     assert_eq!(description, "Cached description");
-    assert!(!update_available);
 }

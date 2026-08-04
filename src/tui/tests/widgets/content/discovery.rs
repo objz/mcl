@@ -735,6 +735,7 @@ fn dependency_resolution_opens_the_existing_confirmation() {
                     cleanup_eligible: false,
                     replacement: false,
                 }],
+                root_count: 1,
                 optional_dependencies: 0,
             }),
         },

@@ -3,6 +3,7 @@
 pub mod discovery;
 pub mod list;
 pub mod tabs;
+pub mod update;
 
 pub use discovery::{ContentMode, DiscoveryState};
 pub use list::{ContentListState, handle_key, handle_key_no_toggle};

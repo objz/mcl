@@ -135,14 +135,6 @@ struct PendingProviderIcon {
     project_id: String,
     bytes: Vec<u8>,
     description: String,
-    update_available: bool,
-}
-
-#[derive(Clone, PartialEq, Eq)]
-struct ProviderUpdateContext {
-    game_version: String,
-    loader: crate::instance::ModLoader,
-    kind: crate::instance::ContentKind,
 }
 
 struct DisplayMetadata {
@@ -189,7 +181,6 @@ pub struct ContentListState {
     requested_provider_icons: HashSet<(String, String)>,
     provider_icon_meta_dir: Option<std::path::PathBuf>,
     provider_icon_client: Option<crate::net::HttpClient>,
-    provider_update_context: Option<ProviderUpdateContext>,
     images_dirty: bool,
     display_metadata: HashMap<String, DisplayMetadata>,
     pub search: crate::tui::widgets::search::SearchState,
@@ -231,7 +222,6 @@ impl Default for ContentListState {
             requested_provider_icons: HashSet::new(),
             provider_icon_meta_dir: None,
             provider_icon_client: None,
-            provider_update_context: None,
             images_dirty: true,
             display_metadata: HashMap::new(),
             search: crate::tui::widgets::search::SearchState::default(),
@@ -330,25 +320,27 @@ impl ContentListState {
         self.provider_icon_client = Some(client);
     }
 
-    pub fn set_provider_update_context(
+    pub fn apply_update_snapshot(
         &mut self,
-        instance: &crate::instance::InstanceConfig,
-        kind: crate::instance::ContentKind,
-    ) {
-        let context = ProviderUpdateContext {
-            game_version: instance.game_version.clone(),
-            loader: instance.loader,
-            kind,
-        };
-        if self.provider_update_context.as_ref() != Some(&context) {
-            self.provider_update_context = Some(context);
-            self.requested_provider_icons.clear();
-            for entry in &mut self.entries {
-                if entry.title_suffix.as_deref() == Some("Update") {
-                    entry.title_suffix = None;
-                }
+        snapshot: Option<&crate::instance::content::updates::UpdateSnapshot>,
+    ) -> bool {
+        let mut changed = false;
+        for entry in &mut self.entries {
+            let update = entry.provider_project.as_ref().is_some_and(|installed| {
+                snapshot
+                    .and_then(|snapshot| snapshot.update_for(installed))
+                    .is_some()
+            });
+            let suffix = update.then(|| "Update".to_owned());
+            if entry.title_suffix != suffix {
+                entry.title_suffix = suffix;
+                changed = true;
             }
         }
+        if changed {
+            crate::feedback::request_redraw();
+        }
+        changed
     }
 
     pub fn drain_provider_icons(&mut self) -> bool {
@@ -378,11 +370,6 @@ impl ContentListState {
                         .insert(entry.file_stem.clone(), display_metadata(entry));
                     changed = true;
                 }
-                let suffix = metadata.update_available.then(|| "Update".to_owned());
-                if entry.title_suffix != suffix {
-                    entry.title_suffix = suffix;
-                    changed = true;
-                }
             }
         }
         if changed {
@@ -409,22 +396,18 @@ impl ContentListState {
             let slots = PROVIDER_ICON_SLOTS.clone();
             let meta_dir = meta_dir.clone();
             let client = client.clone();
-            let update_context = self.provider_update_context.clone();
             tokio::spawn(async move {
                 let Ok(_permit) = slots.acquire_owned().await else {
                     return;
                 };
-                match load_provider_metadata(&client, &meta_dir, &project, update_context.as_ref())
-                    .await
-                {
-                    Ok((bytes, description, update_available)) => {
+                match load_provider_metadata(&client, &meta_dir, &project).await {
+                    Ok((bytes, description)) => {
                         if let Ok(mut pending) = pending.lock() {
                             pending.push(PendingProviderIcon {
                                 provider: project.provider,
                                 project_id: project.project_id,
                                 bytes,
                                 description,
-                                update_available,
                             });
                             crate::feedback::request_redraw();
                         }
@@ -463,9 +446,7 @@ impl ContentListState {
             if visible_height == 0 {
                 continue;
             }
-            if (entry.icon_bytes.is_none()
-                || entry.description.trim().is_empty()
-                || self.provider_update_context.is_some())
+            if (entry.icon_bytes.is_none() || entry.description.trim().is_empty())
                 && let Some(project) = entry.provider_project.clone()
             {
                 projects.push(project);
@@ -1346,8 +1327,7 @@ async fn load_provider_metadata(
     client: &crate::net::HttpClient,
     meta_dir: &Path,
     installed: &crate::instance::ProviderProject,
-    update_context: Option<&ProviderUpdateContext>,
-) -> Result<(Vec<u8>, String, bool), crate::net::NetError> {
+) -> Result<(Vec<u8>, String), crate::net::NetError> {
     let provider_id = &installed.provider;
     let project_id = &installed.project_id;
     let metadata = crate::storage::MetadataPaths::new(meta_dir);
@@ -1376,9 +1356,7 @@ async fn load_provider_metadata(
             let project = match provider.project(project_id).await {
                 Ok(project) => project,
                 Err(error) => {
-                    return cached_icon
-                        .map(|bytes| (bytes, String::new(), false))
-                        .ok_or(error);
+                    return cached_icon.map(|bytes| (bytes, String::new())).ok_or(error);
                 }
             };
             crate::storage::write_atomic(
@@ -1388,27 +1366,6 @@ async fn load_provider_metadata(
             )?;
             project
         }
-    };
-    let update_available = match update_context {
-        Some(context) => match provider
-            .compatible_versions(
-                project_id,
-                context.kind,
-                &context.game_version,
-                context.loader,
-            )
-            .await
-        {
-            Ok(versions) => crate::instance::content::provider::has_newer_compatible_version(
-                &versions,
-                &installed.version_id,
-            ),
-            Err(error) => {
-                tracing::debug!("Could not check updates for project '{project_id}': {error}");
-                false
-            }
-        },
-        None => false,
     };
     let bytes = match (cached_icon, project.icon_url.as_deref()) {
         (Some(bytes), _) => bytes,
@@ -1428,7 +1385,7 @@ async fn load_provider_metadata(
         },
         (None, None) => Vec::new(),
     };
-    Ok((bytes, project.description, update_available))
+    Ok((bytes, project.description))
 }
 
 pub fn handle_key_no_toggle(key_event: &KeyEvent, state: &mut ContentListState) -> bool {
