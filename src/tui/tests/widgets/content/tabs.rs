@@ -106,3 +106,10 @@ fn confirmation_metadata_is_human_readable() {
     );
     assert_eq!(confirmation_values(&[]), "Unknown");
 }
+
+#[test]
+fn empty_world_picker_only_offers_exit_actions() {
+    let keybinds = world_picker_keybinds(false);
+    assert!(!keybinds.iter().any(|(key, _)| *key == "Enter"));
+    assert!(!keybinds.iter().any(|(key, _)| *key == "j/k"));
+}

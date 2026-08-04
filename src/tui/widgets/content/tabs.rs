@@ -924,16 +924,12 @@ fn render_world_picker(
     let theme = THEME.as_ref();
     let title = popup.title();
     let provider_label = popup.provider_label().to_owned();
+    let keybinds = world_picker_keybinds(!popup.worlds.entries.is_empty());
     let frame_widget = crate::tui::widgets::popups::base::PopupFrame {
         title: styled_title(&title, false),
         border_color: theme.accent(),
         bg: Some(theme.surface()),
-        keybinds: Some(crate::tui::widgets::popups::keybind_line(&[
-            ("j/k", " navigate"),
-            ("Enter", " continue"),
-            ("h", " back"),
-            ("Esc", " close"),
-        ])),
+        keybinds: Some(crate::tui::widgets::popups::keybind_line(keybinds)),
         search_line: Some(
             Line::from(Span::styled(
                 format!(" {provider_label} "),
@@ -957,6 +953,19 @@ fn render_world_picker(
         false,
         false,
     );
+}
+
+fn world_picker_keybinds(has_worlds: bool) -> &'static [(&'static str, &'static str)] {
+    if has_worlds {
+        &[
+            ("j/k", " navigate"),
+            ("Enter", " continue"),
+            ("h", " back"),
+            ("Esc", " close"),
+        ]
+    } else {
+        &[("h", " back"), ("Esc", " close")]
+    }
 }
 
 fn version_popup_height(
