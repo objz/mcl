@@ -104,6 +104,7 @@ pub fn build_summary(path: &Path) -> Result<ImportSummary, String> {
         override_count,
         format: PackFormat::CurseForge,
         archive_path: path.to_owned(),
+        source: None,
     })
 }
 

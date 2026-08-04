@@ -40,6 +40,7 @@ impl App {
             // every content type has its own pending queue because they each
             // get scanned/loaded on separate tokio tasks
             self.drain_pending_instances();
+            self.instances_state.drain_modpack_updates();
             self.drain_pending_last_played();
             let mut local_streamed = false;
             let mut content_changed = false;
@@ -686,6 +687,7 @@ impl App {
     fn drain_pending_instances(&mut self) {
         if let Ok(mut pending) = PENDING_INSTANCES.lock() {
             for config in pending.drain(..) {
+                widgets::instances::spawn_modpack_update_check(&config);
                 self.instances_state.add_instance(config);
             }
         }

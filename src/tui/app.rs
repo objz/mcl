@@ -115,6 +115,7 @@ impl App {
 
         let manager = InstanceManager::new(instances_dir, meta_dir);
         let instances = manager.load_all();
+        instances::spawn_modpack_update_checks(&instances);
         let instances_state = instances::State::with_instances(instances);
 
         let mut mods_state = widgets::content::list::ContentListState::default();

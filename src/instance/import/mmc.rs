@@ -87,6 +87,7 @@ pub fn build_summary(path: &Path) -> Result<ImportSummary, String> {
         override_count,
         format: PackFormat::Mmc,
         archive_path: path.to_path_buf(),
+        source: None,
     })
 }
 

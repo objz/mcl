@@ -667,7 +667,12 @@ fn start_discovered_download(request: crate::tui::widgets::content::discovery::I
         let tmp_dir =
             crate::storage::MetadataPaths::new(crate::config::SETTINGS.paths.resolve_meta_dir())
                 .temporary();
-        let result = async {
+        let result: Result<crate::instance::import::ImportSummary, crate::net::NetError> = async {
+            let source = crate::instance::ProviderProject {
+                provider: request.provider.clone(),
+                project_id: request.project_id.clone(),
+                version_id: request.version.id.clone(),
+            };
             tokio::fs::create_dir_all(&tmp_dir).await?;
             let provider = registry.get(&request.provider).ok_or_else(|| {
                 crate::net::NetError::Parse(format!(
@@ -682,7 +687,10 @@ fn start_discovered_download(request: crate::tui::widgets::content::discovery::I
                 crate::net::modrinth::DownloadOutcome::Downloaded(path)
                 | crate::net::modrinth::DownloadOutcome::SkippedExisting(path) => path,
             };
-            crate::instance::import::build_summary(&path).map_err(crate::net::NetError::Parse)
+            let mut summary = crate::instance::import::build_summary(&path)
+                .map_err(crate::net::NetError::Parse)?;
+            summary.source = Some(source);
+            Ok(summary)
         }
         .await;
         match result {

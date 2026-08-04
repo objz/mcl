@@ -15,6 +15,11 @@ fn instance_config_roundtrips_through_json() {
         jvm_args: vec![],
         resolution: Some((1920, 1080)),
         config_sync_profile: None,
+        modpack_source: Some(crate::instance::ProviderProject {
+            provider: "modrinth".to_owned(),
+            project_id: "pack".to_owned(),
+            version_id: "version".to_owned(),
+        }),
     };
     let json = serde_json::to_string_pretty(&config).expect("serialize");
     let parsed: InstanceConfig = serde_json::from_str(&json).expect("deserialize");
@@ -22,6 +27,7 @@ fn instance_config_roundtrips_through_json() {
     assert_eq!(parsed.game_version, config.game_version);
     assert_eq!(parsed.loader, config.loader);
     assert_eq!(parsed.resolution, config.resolution);
+    assert_eq!(parsed.modpack_source, config.modpack_source);
 }
 
 #[test]

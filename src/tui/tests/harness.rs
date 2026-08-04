@@ -122,6 +122,7 @@ impl UiHarness {
             jvm_args: Vec::new(),
             resolution: None,
             config_sync_profile: None,
+            modpack_source: None,
         };
         std::fs::create_dir_all(self.instance_path(name)).expect("instance directory");
         self.app

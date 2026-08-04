@@ -26,6 +26,7 @@ fn dummy_config(name: &str) -> InstanceConfig {
         jvm_args: vec![],
         resolution: None,
         config_sync_profile: None,
+        modpack_source: None,
     }
 }
 
