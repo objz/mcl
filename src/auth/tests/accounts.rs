@@ -25,9 +25,12 @@ fn offline_uuid_has_valid_v3_shape() {
 }
 
 #[test]
-fn offline_uuid_deterministic() {
-    assert_eq!(offline_uuid("Steve"), offline_uuid("Steve"));
-    assert_eq!(offline_uuid("Alex"), offline_uuid("Alex"));
+fn offline_uuid_is_pinned_for_known_names() {
+    assert_eq!(
+        offline_uuid("Steve"),
+        "7e0a3689-ed7c-347c-87cc-3689ed7c47cc"
+    );
+    assert_eq!(offline_uuid("Alex"), "a13d42a3-454f-3e39-a392-42a3454fe392");
 }
 
 #[test]

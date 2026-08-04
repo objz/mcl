@@ -1176,12 +1176,14 @@ impl App {
     ) {
         widgets::content::discovery::spawn_provider_search(
             query,
-            widgets::content::discovery::DiscoveryTarget::Content {
-                instance,
-                kind,
-                manifest,
-                minecraft_dir,
-            },
+            widgets::content::discovery::DiscoveryTarget::Content(Box::new(
+                widgets::content::discovery::ContentDiscoveryTarget {
+                    instance,
+                    kind,
+                    manifest,
+                    minecraft_dir,
+                },
+            )),
             meta_dir,
             request,
         );
