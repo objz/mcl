@@ -396,6 +396,68 @@ fn install_and_change_version_popups_only_differ_in_title() {
 }
 
 #[test]
+fn installed_version_popup_tracks_current_version_and_reinstalls_it() {
+    let mut state = DiscoveryState::new(ContentKind::Mod);
+    let entry = crate::instance::content::entry::ContentEntry {
+        file_stem: "project".to_owned(),
+        name: "Project".to_owned(),
+        source_slug: None,
+        installed_path: None,
+        provider_project: None,
+        world_details: None,
+        title_suffix: None,
+        footer_label: None,
+        description: String::new(),
+        enabled: true,
+        icon_bytes: None,
+        provider_icon: false,
+        provider_description: false,
+        path: PathBuf::from("mods/project.jar"),
+        icon_lines: None,
+    };
+    let record = crate::instance::ContentFileRecord {
+        relative_path: entry.path.clone(),
+        kind: ContentKind::Mod,
+        enabled: true,
+        fingerprint: crate::instance::FileFingerprint {
+            size: 1,
+            modified_ns: 1,
+            hashes: Default::default(),
+        },
+        resolution: crate::instance::Resolution::Resolved {
+            project: crate::instance::ProviderProject {
+                provider: "modrinth".to_owned(),
+                project_id: "project".to_owned(),
+                version_id: "current".to_owned(),
+            },
+        },
+        provider_aliases: vec![crate::instance::ProviderProject {
+            provider: "curseforge".to_owned(),
+            project_id: "42".to_owned(),
+            version_id: "84".to_owned(),
+        }],
+        required_dependencies: Vec::new(),
+        automatic_dependency: false,
+        cleanup_eligible: false,
+    };
+
+    let request = state
+        .begin_installed_versions(&entry, &record, None)
+        .unwrap();
+    assert_eq!(request.current_version_id.as_deref(), Some("current"));
+    assert_eq!(state.version_popup.as_ref().unwrap().sources.len(), 2);
+    state.version_popup.as_mut().unwrap().loading = false;
+    state.version_popup.as_mut().unwrap().versions = vec![version("current")];
+    assert_eq!(
+        state.version_popup.as_ref().unwrap().title(),
+        "Reinstall Project"
+    );
+
+    let request = state.begin_dependency_resolution().unwrap();
+    assert!(request.root.force_reinstall);
+}
+
+#[test]
 fn compatible_versions_populate_the_open_popup() {
     let project = DiscoveryProject {
         id: "project".to_owned(),

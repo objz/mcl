@@ -329,6 +329,8 @@ pub fn render(
             | (ContentMode::Installed, ContentTab::Shaders) => &[
                 ("j/k", " navigate"),
                 ("⏎", " toggle"),
+                ("v", " versions"),
+                ("u", " update all"),
                 ("d", " delete"),
                 ("Shift+⏎", " open dir"),
                 ("h/l", " tabs"),
@@ -337,6 +339,8 @@ pub fn render(
             ],
             (ContentMode::Installed, ContentTab::Worlds) if open_world_datapacks.is_some() => &[
                 ("j/k", " navigate"),
+                ("v", " versions"),
+                ("u", " update all"),
                 ("d", " delete"),
                 ("Shift+Enter", " open dir"),
                 ("h/Esc", " back"),
@@ -550,6 +554,14 @@ pub fn render(
                         false,
                         false,
                     );
+                    if datapacks_discovery_state.version_popup.is_some() {
+                        render_version_popup(
+                            frame,
+                            content_area,
+                            datapacks_discovery_state,
+                            picker,
+                        );
+                    }
                     return;
                 }
                 if worlds_state.loaded_for.as_deref() != Some(instance.name.as_str()) {
@@ -642,6 +654,9 @@ fn render_downloadable(
             false,
             false,
         );
+        if discovery_state.version_popup.is_some() {
+            render_version_popup(frame, area, discovery_state, picker);
+        }
     }
 }
 
@@ -776,6 +791,8 @@ fn render_version_popup(
         .map(|version| confirmation_release_date(&version.date_published))
         .unwrap_or_else(|| "Unknown".to_owned());
     let replacing = popup.installed_path.is_some();
+    let reinstalling = popup.current_version_id.as_deref()
+        == popup.selected_version().map(|version| version.id.as_str());
     let provider_label = popup.provider_label().to_owned();
     let target_world = popup.target_world.as_ref().map(|(name, _)| name.clone());
     let dependency_installs = popup
@@ -804,6 +821,7 @@ fn render_version_popup(
         .map(|plan| plan.optional_dependencies)
         .unwrap_or_default();
     let can_switch_provider = popup.sources.len() > 1;
+    let current_version_id = popup.current_version_id.clone();
     let items = if selecting_minecraft_version {
         popup
             .minecraft_versions
@@ -814,15 +832,30 @@ fn render_version_popup(
         popup
             .visible_versions()
             .map(|version| {
-                ListItem::new(discovery_version_label(version))
-                    .style(Style::default().fg(theme.text()))
+                let style = if current_version_id.as_deref() == Some(version.id.as_str()) {
+                    Style::default()
+                        .fg(theme.text())
+                        .add_modifier(Modifier::ITALIC)
+                } else {
+                    Style::default().fg(theme.text())
+                };
+                ListItem::new(discovery_version_label(version)).style(style)
             })
             .collect::<Vec<_>>()
     };
     let keybinds = if confirming {
         crate::tui::widgets::popups::keybind_line(&[
             ("h", " back"),
-            ("Enter", if replacing { " change" } else { " install" }),
+            (
+                "Enter",
+                if reinstalling {
+                    " reinstall"
+                } else if replacing {
+                    " change"
+                } else {
+                    " install"
+                },
+            ),
         ])
     } else {
         let mut keybinds = vec![("j/k", " navigate")];
