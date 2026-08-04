@@ -22,6 +22,7 @@ pub struct InstallRoot {
     pub installed_path: Option<PathBuf>,
     pub kind: ContentKind,
     pub target_world: Option<PathBuf>,
+    pub force_reinstall: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -574,6 +575,7 @@ pub async fn resolve(
                     &nodes,
                     minecraft_dir,
                     root.target_world.as_deref(),
+                    root.force_reinstall && key == &root_key,
                 )
             })
         })
@@ -1042,14 +1044,17 @@ fn planned_install(
     nodes: &HashMap<ProjectKey, Node>,
     minecraft_dir: &Path,
     target_world: Option<&Path>,
+    force_reinstall: bool,
 ) -> PlannedInstall {
     let installed_path = node
         .installed
         .as_ref()
         .map(|installed| minecraft_dir.join(&installed.relative_path));
-    let replacement = node.installed.as_ref().is_some_and(|installed| {
-        installed.identity.version_id.is_empty() || installed.identity.version_id != node.version.id
-    });
+    let replacement = force_reinstall
+        || node.installed.as_ref().is_some_and(|installed| {
+            installed.identity.version_id.is_empty()
+                || installed.identity.version_id != node.version.id
+        });
     PlannedInstall {
         provider: key.provider.clone(),
         project_id: key.project_id.clone(),

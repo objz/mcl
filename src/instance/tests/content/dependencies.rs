@@ -213,6 +213,7 @@ fn root(version: VersionInfo) -> InstallRoot {
         installed_path: None,
         kind: ContentKind::Mod,
         target_world: None,
+        force_reinstall: false,
     }
 }
 

@@ -261,8 +261,12 @@ impl App {
 
         // content area delegates to whichever tab is active.
         // worlds use the same list navigation without the toggle
+        let discovery_popup_open = self
+            .active_discovery_state()
+            .is_some_and(|state| state.version_popup.is_some() || state.project_page_open());
         if self.focused == FocusedArea::Content
-            && self.content_mode == widgets::content::ContentMode::Discover
+            && (self.content_mode == widgets::content::ContentMode::Discover
+                || discovery_popup_open)
         {
             let (search_active, popup_open, project_page_open) = self
                 .active_discovery_state_mut()
@@ -343,7 +347,13 @@ impl App {
                         if let Some(state) = self.active_discovery_state_mut() {
                             state.begin_world_selection(worlds);
                         }
-                    } else if kind == Some(crate::instance::ContentKind::Mod) {
+                    } else if matches!(
+                        kind,
+                        Some(
+                            crate::instance::ContentKind::Mod
+                                | crate::instance::ContentKind::DataPack
+                        )
+                    ) {
                         self.spawn_active_discovery_dependencies();
                     } else if let Some(state) = self.active_discovery_state_mut() {
                         state.begin_confirmation();
@@ -394,6 +404,12 @@ impl App {
                 }
             } else if self.content_tab == widgets::content::ContentTab::Worlds {
                 if self.open_world_datapacks.is_some() {
+                    if key_event.code == KeyCode::Char('v')
+                        && !self.world_datapacks_state.search.active
+                    {
+                        self.spawn_installed_versions();
+                        return Ok(());
+                    }
                     if matches!(key_event.code, KeyCode::Esc | KeyCode::Char('h'))
                         && !self.world_datapacks_state.search.active
                     {
@@ -458,6 +474,10 @@ impl App {
                     _ => None,
                 };
                 if let Some(state) = state {
+                    if key_event.code == KeyCode::Char('v') && !state.search.active {
+                        self.spawn_installed_versions();
+                        return Ok(());
+                    }
                     if key_event.code == KeyCode::Char('d') && !state.search.active {
                         if let Some(pending) = state.pending_delete() {
                             self.confirm_content_delete(pending);
@@ -798,8 +818,80 @@ impl App {
             }
             widgets::content::ContentTab::Shaders => Some(&mut self.shaders_discovery_state),
             widgets::content::ContentTab::DataPacks => Some(&mut self.datapacks_discovery_state),
+            widgets::content::ContentTab::Worlds if self.open_world_datapacks.is_some() => {
+                Some(&mut self.datapacks_discovery_state)
+            }
             _ => None,
         }
+    }
+
+    fn active_discovery_state(&self) -> Option<&widgets::content::discovery::DiscoveryState> {
+        match self.content_tab {
+            widgets::content::ContentTab::Mods => Some(&self.mods_discovery_state),
+            widgets::content::ContentTab::ResourcePacks => {
+                Some(&self.resource_packs_discovery_state)
+            }
+            widgets::content::ContentTab::Shaders => Some(&self.shaders_discovery_state),
+            widgets::content::ContentTab::DataPacks => Some(&self.datapacks_discovery_state),
+            widgets::content::ContentTab::Worlds if self.open_world_datapacks.is_some() => {
+                Some(&self.datapacks_discovery_state)
+            }
+            _ => None,
+        }
+    }
+
+    fn spawn_installed_versions(&mut self) {
+        let Some(instance) = self.instances_state.selected_instance().cloned() else {
+            return;
+        };
+        let (entry, kind, target_world) = match self.content_tab {
+            widgets::content::ContentTab::Mods => (
+                self.mods_state.selected_entry().cloned(),
+                crate::instance::ContentKind::Mod,
+                None,
+            ),
+            widgets::content::ContentTab::ResourcePacks => (
+                self.resource_packs_state.selected_entry().cloned(),
+                crate::instance::ContentKind::ResourcePack,
+                None,
+            ),
+            widgets::content::ContentTab::Shaders => (
+                self.shaders_state.selected_entry().cloned(),
+                crate::instance::ContentKind::Shader,
+                None,
+            ),
+            widgets::content::ContentTab::Worlds => (
+                self.world_datapacks_state.selected_entry().cloned(),
+                crate::instance::ContentKind::DataPack,
+                self.open_world_datapacks.clone(),
+            ),
+            _ => return,
+        };
+        let Some(entry) = entry else {
+            return;
+        };
+        let paths = crate::storage::InstancePaths::new(
+            self.instance_manager.instances_dir.join(&instance.name),
+        );
+        let Ok(relative_path) = entry.path.strip_prefix(paths.minecraft()) else {
+            return;
+        };
+        let Some(record) = self
+            .content_manifest
+            .as_ref()
+            .filter(|(name, _)| name == &instance.name)
+            .and_then(|(_, manifest)| manifest.record(relative_path))
+            .cloned()
+        else {
+            return;
+        };
+        let Some(state) = self.active_discovery_state_mut() else {
+            return;
+        };
+        let Some(request) = state.begin_installed_versions(&entry, &record, target_world) else {
+            return;
+        };
+        self.spawn_discovery_versions_request(instance, kind, request);
     }
 
     fn spawn_active_discovery_versions(&mut self) {
@@ -900,7 +992,13 @@ impl App {
                     )
                     .await
                 {
-                    Ok(versions) => {
+                    Ok(mut versions) => {
+                        if let Some(current) = request.current_version_id.as_deref()
+                            && !versions.iter().any(|version| version.id == current)
+                            && let Ok(version) = provider.version(current).await
+                        {
+                            versions.push(version);
+                        }
                         if let Ok(bytes) = serde_json::to_vec_pretty(&versions) {
                             let _ = crate::storage::write_atomic(&version_cache, &bytes);
                         }

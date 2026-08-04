@@ -373,6 +373,7 @@ pub struct VersionPopupState {
     pub sources: Vec<crate::instance::ProviderProject>,
     pub source_index: usize,
     pub installed_path: Option<PathBuf>,
+    pub current_version_id: Option<String>,
     pub minecraft_versions: Vec<String>,
     pub selected_minecraft_version: Option<String>,
     pub selecting_minecraft_version: bool,
@@ -391,7 +392,12 @@ pub struct VersionPopupState {
 
 impl VersionPopupState {
     pub fn title(&self) -> String {
-        if self.installed_path.is_some() {
+        if self.installed_path.is_some()
+            && self.current_version_id.as_deref()
+                == self.selected_version().map(|version| version.id.as_str())
+        {
+            format!("Reinstall {}", self.project_title)
+        } else if self.installed_path.is_some() {
             format!("Change {} version", self.project_title)
         } else {
             format!("Install {}", self.project_title)
@@ -437,6 +443,7 @@ pub struct VersionsRequest {
     pub request_id: u64,
     pub project_id: String,
     pub provider: String,
+    pub current_version_id: Option<String>,
     pub pending: PendingActions,
 }
 
@@ -740,6 +747,7 @@ impl DiscoveryState {
             sources,
             source_index: 0,
             installed_path,
+            current_version_id: None,
             minecraft_versions: Vec::new(),
             selected_minecraft_version: None,
             selecting_minecraft_version: self.modpacks,
@@ -759,6 +767,57 @@ impl DiscoveryState {
             request_id,
             project_id,
             provider: source.provider,
+            current_version_id: None,
+            pending: self.pending_actions.clone(),
+        })
+    }
+
+    pub fn begin_installed_versions(
+        &mut self,
+        entry: &ContentEntry,
+        record: &crate::instance::ContentFileRecord,
+        target_world: Option<(String, PathBuf)>,
+    ) -> Option<VersionsRequest> {
+        let current = record.resolved_project()?.clone();
+        let mut sources = vec![current.clone()];
+        for alias in &record.provider_aliases {
+            if !sources.iter().any(|source| {
+                source.provider == alias.provider && source.project_id == alias.project_id
+            }) {
+                sources.push(alias.clone());
+            }
+        }
+        self.next_action_request_id = self.next_action_request_id.wrapping_add(1);
+        let request_id = self.next_action_request_id;
+        self.version_popup = Some(VersionPopupState {
+            request_id,
+            project_id: current.project_id.clone(),
+            provider: current.provider.clone(),
+            project_title: entry.name.clone(),
+            sources,
+            source_index: 0,
+            installed_path: Some(entry.path.clone()),
+            current_version_id: Some(current.version_id.clone()),
+            minecraft_versions: Vec::new(),
+            selected_minecraft_version: None,
+            selecting_minecraft_version: false,
+            selecting_world: false,
+            worlds: ContentListState::default(),
+            target_world,
+            versions: Vec::new(),
+            selected: 0,
+            loading: true,
+            resolving_dependencies: false,
+            confirming: false,
+            installing: false,
+            dependency_plan: None,
+            error: None,
+        });
+        Some(VersionsRequest {
+            request_id,
+            project_id: current.project_id,
+            provider: current.provider,
+            current_version_id: Some(current.version_id),
             pending: self.pending_actions.clone(),
         })
     }
@@ -780,7 +839,11 @@ impl DiscoveryState {
         popup.selecting_minecraft_version = selecting_minecraft_version;
         popup.selecting_world = false;
         popup.worlds = ContentListState::default();
-        popup.target_world = None;
+        if self.kind != ContentKind::DataPack || popup.current_version_id.is_none() {
+            popup.target_world = None;
+        }
+        popup.current_version_id =
+            (!source.version_id.is_empty()).then(|| source.version_id.clone());
         popup.versions.clear();
         popup.selected = 0;
         popup.loading = true;
@@ -792,6 +855,7 @@ impl DiscoveryState {
             request_id: popup.request_id,
             project_id: source.project_id,
             provider: source.provider,
+            current_version_id: popup.current_version_id.clone(),
             pending: self.pending_actions.clone(),
         })
     }
@@ -1052,6 +1116,7 @@ impl DiscoveryState {
             return None;
         }
         let version = popup.selected_version()?.clone();
+        let force_reinstall = popup.current_version_id.as_deref() == Some(version.id.as_str());
         popup.loading = true;
         popup.resolving_dependencies = true;
         popup.error = None;
@@ -1066,6 +1131,7 @@ impl DiscoveryState {
                 installed_path: popup.installed_path.clone(),
                 kind,
                 target_world: popup.target_world.as_ref().map(|(_, path)| path.clone()),
+                force_reinstall,
             },
             pending: self.pending_actions.clone(),
         })
@@ -1407,7 +1473,7 @@ pub fn handle_key(key_event: &KeyEvent, state: &mut DiscoveryState) -> bool {
             && !popup.installing
         {
             popup.confirming = false;
-            if popup.target_world.is_some() {
+            if popup.target_world.is_some() && popup.current_version_id.is_none() {
                 popup.selecting_world = true;
             }
             popup.error = None;
