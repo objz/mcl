@@ -231,6 +231,14 @@ fn datapack_versions_select_a_world_before_dependency_resolution() {
 
     let world = crate::instance::scan_one_world(&world_path, "world-folder", true);
     assert!(state.begin_world_selection(vec![world]));
+    assert_eq!(
+        state.version_popup.as_ref().unwrap().worlds.entries[0]
+            .icon_lines
+            .as_ref()
+            .unwrap()
+            .len(),
+        3
+    );
     let mut manifest = crate::instance::ContentManifest::default();
     manifest.upsert(crate::instance::ContentFileRecord {
         relative_path: PathBuf::from("saves/world-folder/datapacks/project.zip"),

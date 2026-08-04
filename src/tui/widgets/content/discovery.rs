@@ -677,7 +677,7 @@ impl DiscoveryState {
         true
     }
 
-    pub fn begin_world_selection(&mut self, worlds: Vec<ContentEntry>) -> bool {
+    pub fn begin_world_selection(&mut self, mut worlds: Vec<ContentEntry>) -> bool {
         let Some(popup) = self.version_popup.as_mut() else {
             return false;
         };
@@ -688,6 +688,13 @@ impl DiscoveryState {
             || popup.selected_version().is_none()
         {
             return false;
+        }
+        for world in &mut worlds {
+            world.icon_lines = world
+                .icon_bytes
+                .as_ref()
+                .and_then(|bytes| crate::instance::content::make_icon_pixels(bytes, 6, 3))
+                .or_else(|| Some(crate::instance::content::fallback_icon()));
         }
         popup.worlds = ContentListState::default();
         popup.worlds.entries = worlds;
