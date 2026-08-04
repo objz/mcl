@@ -77,6 +77,7 @@ pub struct DiscoveryRequest {
     pub stream: ContentStream,
     pub reconcile: bool,
     pub loaded_icon_stems: std::collections::HashSet<String>,
+    pub known_projects: std::collections::HashMap<String, (String, String)>,
 }
 
 pub(crate) type PendingDiscovery = Arc<Mutex<Vec<PendingDiscoveryResult>>>;
@@ -371,6 +372,7 @@ impl DiscoveryState {
             stream,
             reconcile,
             loaded_icon_stems,
+            known_projects: std::collections::HashMap::new(),
         }
     }
 
@@ -387,6 +389,19 @@ impl DiscoveryState {
             .filter(|entry| entry.icon_bytes.is_some())
             .map(|entry| entry.file_stem.clone())
             .collect();
+        let known_projects = self
+            .list
+            .entries
+            .iter()
+            .filter_map(|entry| {
+                let source = entry.provider_project.as_ref()?;
+                let slug = entry.source_slug.as_deref()?;
+                Some((
+                    project_identity_parts(&entry.name, slug),
+                    (entry.file_stem.clone(), source.provider.clone()),
+                ))
+            })
+            .collect();
         Some(DiscoveryRequest {
             generation: self.generation,
             offset: self.next_offset,
@@ -395,6 +410,7 @@ impl DiscoveryState {
             stream: self.stream.clone()?,
             reconcile: false,
             loaded_icon_stems,
+            known_projects,
         })
     }
 
@@ -1309,24 +1325,26 @@ pub(crate) fn project_entry(
 }
 
 pub(crate) fn project_identity(project: &DiscoveryProject) -> String {
-    // ponytail: provider APIs expose no shared project id; replace this exact
-    // title match if either service adds an official cross-provider mapping.
-    let title = project
-        .title
-        .chars()
-        .filter(|character| character.is_alphanumeric())
-        .flat_map(char::to_lowercase)
-        .collect::<String>();
-    if title.is_empty() {
-        project.slug.to_ascii_lowercase()
-    } else {
-        title
-    }
+    project_identity_parts(&project.title, &project.slug)
+}
+
+fn project_identity_parts(title: &str, slug: &str) -> String {
+    // ponytail: provider APIs expose no shared project id; title plus slug avoids
+    // hiding unrelated projects while still matching normal cross-provider copies.
+    let normalize = |value: &str| {
+        value
+            .chars()
+            .filter(|character| character.is_alphanumeric())
+            .flat_map(char::to_lowercase)
+            .collect::<String>()
+    };
+    format!("{}:{}", normalize(title), normalize(slug))
 }
 
 pub(crate) fn merge_provider_results(
     mut pages: Vec<(&str, DiscoveryResults)>,
     preferred: &str,
+    known_projects: std::collections::HashMap<String, (String, String)>,
 ) -> MergedDiscoveryResults {
     pages.sort_by_key(|(provider, _)| *provider != preferred);
     let received = pages
@@ -1334,20 +1352,39 @@ pub(crate) fn merge_provider_results(
         .map(|(_, page)| page.projects.len())
         .max()
         .unwrap_or(0);
-    let total_hits = pages.iter().map(|(_, page)| page.total_hits).sum();
+    let total_hits = pages
+        .iter()
+        .map(|(_, page)| page.total_hits)
+        .max()
+        .unwrap_or(0);
     let mut projects = Vec::new();
     let mut sources = Vec::new();
-    let mut primary_stems = std::collections::HashMap::<String, (String, String)>::new();
-    let mut used_stems = std::collections::HashSet::new();
+    let mut primary_stems = known_projects;
+    let mut used_stems = primary_stems
+        .values()
+        .map(|(stem, _)| stem.clone())
+        .collect::<std::collections::HashSet<_>>();
 
     for (provider, page) in pages {
         for project in page.projects {
             let identity = project_identity(&project);
             let project_id = project.id.clone();
-            let duplicate_stem = primary_stems
-                .get(&identity)
-                .filter(|(existing_provider, _)| existing_provider != provider)
-                .map(|(_, stem)| stem.clone());
+            let existing = primary_stems.get(&identity).cloned();
+            let duplicate_stem = existing
+                .as_ref()
+                .filter(|(_, existing_provider)| existing_provider != provider)
+                .map(|(stem, _)| stem.clone());
+            if let Some((stem, existing_provider)) = existing
+                && provider == preferred
+                && existing_provider != preferred
+            {
+                projects.push(MergedDiscoveryProject {
+                    stem: stem.clone(),
+                    provider: provider.to_owned(),
+                    project: project.clone(),
+                });
+                primary_stems.insert(identity.clone(), (stem, provider.to_owned()));
+            }
             let stem = duplicate_stem.unwrap_or_else(|| {
                 let mut stem = identity.clone();
                 if !used_stems.insert(stem.clone()) {
@@ -1356,7 +1393,7 @@ pub(crate) fn merge_provider_results(
                 }
                 primary_stems
                     .entry(identity)
-                    .or_insert_with(|| (provider.to_owned(), stem.clone()));
+                    .or_insert_with(|| (stem.clone(), provider.to_owned()));
                 projects.push(MergedDiscoveryProject {
                     stem: stem.clone(),
                     provider: provider.to_owned(),

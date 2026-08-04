@@ -302,11 +302,7 @@ pub async fn fetch_versions(
     client: &crate::net::HttpClient,
     slug_or_id: &str,
 ) -> Result<Vec<VersionInfo>, crate::net::NetError> {
-    let url = format!(
-        "{}/project/{}/version?loaders=[\"fabric\",\"forge\",\"neoforge\",\"quilt\"]",
-        API_BASE,
-        url_encode(slug_or_id)
-    );
+    let url = versions_url(API_BASE, slug_or_id);
     tracing::debug!("Fetching Modrinth versions for project '{}'", slug_or_id);
     let versions: Vec<VersionInfo> = client.get_json(&url).await?;
     tracing::debug!(
@@ -315,6 +311,10 @@ pub async fn fetch_versions(
         slug_or_id
     );
     Ok(versions)
+}
+
+fn versions_url(api_base: &str, slug_or_id: &str) -> String {
+    format!("{api_base}/project/{}/version", url_encode(slug_or_id))
 }
 
 pub async fn fetch_content_versions(
