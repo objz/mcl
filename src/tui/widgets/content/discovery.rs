@@ -80,6 +80,295 @@ pub struct DiscoveryRequest {
     pub known_projects: std::collections::HashMap<String, (String, String)>,
 }
 
+pub(crate) enum DiscoveryTarget {
+    Content {
+        instance: InstanceConfig,
+        kind: ContentKind,
+        manifest: Option<crate::instance::ContentManifest>,
+        minecraft_dir: PathBuf,
+    },
+    Modpacks,
+}
+
+async fn search_provider(
+    provider: Option<&dyn crate::instance::content::provider::ContentProvider>,
+    enabled: bool,
+    target: &DiscoveryTarget,
+    query: &str,
+    offset: usize,
+    limit: usize,
+) -> Option<Result<DiscoveryResults, crate::net::NetError>> {
+    let provider = provider.filter(|_| enabled)?;
+    Some(match target {
+        DiscoveryTarget::Content { instance, kind, .. } => {
+            provider.search(*kind, query, instance, offset, limit).await
+        }
+        DiscoveryTarget::Modpacks => provider.search_modpacks(query, offset, limit).await,
+    })
+}
+
+pub(crate) fn spawn_provider_search(
+    query: String,
+    target: DiscoveryTarget,
+    meta_dir: PathBuf,
+    request: DiscoveryRequest,
+) {
+    let DiscoveryRequest {
+        generation,
+        offset,
+        limit,
+        pending,
+        stream,
+        reconcile,
+        loaded_icon_stems,
+        known_projects,
+    } = request;
+    tokio::spawn(async move {
+        let client = crate::net::HttpClient::new();
+        let registry =
+            crate::instance::content::provider::ProviderRegistry::configured(client.clone());
+        let (modrinth_result, curseforge_result) = tokio::join!(
+            search_provider(
+                registry.get("modrinth"),
+                crate::config::SETTINGS
+                    .content
+                    .discovery_provider_enabled("modrinth"),
+                &target,
+                &query,
+                offset,
+                limit,
+            ),
+            search_provider(
+                registry.get("curseforge"),
+                crate::config::SETTINGS
+                    .content
+                    .discovery_provider_enabled("curseforge"),
+                &target,
+                &query,
+                offset,
+                limit,
+            )
+        );
+        let failure = match (&modrinth_result, &curseforge_result) {
+            (Some(Err(error)), Some(Err(_))) | (Some(Err(error)), None) => {
+                Some((error.to_string(), error.is_retryable()))
+            }
+            (None, Some(Err(error))) => Some((error.to_string(), error.is_retryable())),
+            (None, None) => Some(("No discovery provider is available".to_owned(), false)),
+            _ => None,
+        };
+        let mut merged_sources = Vec::new();
+        let result = if let Some((message, retryable)) = failure {
+            Err(DiscoveryPageError { message, retryable })
+        } else {
+            let mut pages = Vec::new();
+            if let Some(Ok(results)) = modrinth_result {
+                pages.push(("modrinth", results));
+            }
+            if let Some(Ok(results)) = curseforge_result {
+                pages.push(("curseforge", results));
+            }
+            let merged = merge_provider_results(
+                pages,
+                crate::config::SETTINGS.content.preferred_provider(),
+                known_projects,
+            );
+            let mut returned = std::collections::HashSet::new();
+            let icon_slots = Arc::new(tokio::sync::Semaphore::new(8));
+            for merged_project in merged.projects {
+                let stem = merged_project.stem;
+                let provider = merged_project.provider;
+                let mut project = merged_project.project;
+                returned.insert(stem.clone());
+                let project_id = project.id.clone();
+                let installed_path = match &target {
+                    DiscoveryTarget::Content {
+                        manifest,
+                        minecraft_dir,
+                        ..
+                    } => merged
+                        .sources
+                        .iter()
+                        .filter(|(source_stem, _)| source_stem == &stem)
+                        .find_map(|(_, source)| {
+                            manifest.as_ref().and_then(|manifest| {
+                                manifest.resolved_project_path(
+                                    &source.provider,
+                                    &source.project_id,
+                                    minecraft_dir,
+                                )
+                            })
+                        }),
+                    DiscoveryTarget::Modpacks => None,
+                };
+                let cached_icon = crate::storage::MetadataPaths::new(&meta_dir)
+                    .provider_icons(&provider)
+                    .join(format!("{project_id}.img"));
+                if !loaded_icon_stems.contains(&stem)
+                    && let Ok(bytes) = tokio::fs::read(&cached_icon).await
+                    && !bytes.is_empty()
+                {
+                    project.icon_bytes = Some(bytes);
+                }
+                let icon_url = (!loaded_icon_stems.contains(&stem) && project.icon_bytes.is_none())
+                    .then(|| project.icon_url.clone())
+                    .flatten();
+                let entry = provider_project_entry(project, &provider, stem, installed_path);
+                let icon = icon_url.map(|url| (url, entry.file_stem.clone(), entry.path.clone()));
+                if !stream.upsert(entry) {
+                    break;
+                }
+                if let Some((url, file_stem, path)) = icon {
+                    let client = client.clone();
+                    let stream = stream.clone();
+                    let icon_slots = icon_slots.clone();
+                    tokio::spawn(async move {
+                        let Ok(_permit) = icon_slots.acquire_owned().await else {
+                            return;
+                        };
+                        match client
+                            .get_bytes_limited(
+                                &url,
+                                crate::tui::widgets::markdown::MAX_PROJECT_IMAGE_BYTES,
+                            )
+                            .await
+                        {
+                            Ok(bytes) if !bytes.is_empty() => {
+                                if let Some(parent) = cached_icon.parent() {
+                                    let _ = tokio::fs::create_dir_all(parent).await;
+                                }
+                                let _ = tokio::fs::write(cached_icon, &bytes).await;
+                                stream.send_icon(file_stem, path, bytes);
+                            }
+                            _ => {
+                                stream.send_icon_unavailable(file_stem, path);
+                            }
+                        }
+                    });
+                }
+            }
+            if reconcile {
+                stream.retain(returned);
+            }
+            let received = merged.received;
+            let total_hits = merged.total_hits;
+            merged_sources = merged.sources;
+            Ok(DiscoveryPageResult {
+                received,
+                total_hits,
+            })
+        };
+        DiscoveryState::push_provider_result(&pending, generation, offset, result, merged_sources);
+    });
+}
+
+pub(crate) fn spawn_project_page(request: ProjectPageRequest) {
+    tokio::spawn(async move {
+        let client = crate::net::HttpClient::new();
+        let mut image_urls = request.image_urls;
+        if request.cached_project.is_none() {
+            let progress = crate::feedback::progress::ProgressTask::start(format!(
+                "Loading {} from {}",
+                request.project_title, request.provider
+            ));
+            let registry =
+                crate::instance::content::provider::ProviderRegistry::configured(client.clone());
+            match registry.get(&request.provider) {
+                Some(provider) => match provider.project(&request.project_id).await {
+                    Ok(project) => {
+                        image_urls = crate::tui::widgets::markdown::image_urls(
+                            &project.title,
+                            &project.body,
+                        );
+                        DiscoveryState::push_action_result(
+                            &request.pending,
+                            DiscoveryActionResult::ProjectPage {
+                                request_id: request.request_id,
+                                project_id: request.project_id.clone(),
+                                result: Ok(project),
+                            },
+                        );
+                        progress.finish();
+                    }
+                    Err(error) => {
+                        progress.fail(&error);
+                        DiscoveryState::push_action_result(
+                            &request.pending,
+                            DiscoveryActionResult::ProjectPage {
+                                request_id: request.request_id,
+                                project_id: request.project_id,
+                                result: Err(error.to_string()),
+                            },
+                        );
+                        return;
+                    }
+                },
+                None => {
+                    let error = format!("{} content provider is unavailable", request.provider);
+                    progress.fail(&error);
+                    DiscoveryState::push_action_result(
+                        &request.pending,
+                        DiscoveryActionResult::ProjectPage {
+                            request_id: request.request_id,
+                            project_id: request.project_id,
+                            result: Err(error),
+                        },
+                    );
+                    return;
+                }
+            }
+        }
+        image_urls.sort();
+        image_urls.dedup();
+        let semaphore = Arc::new(tokio::sync::Semaphore::new(4));
+        let mut tasks = tokio::task::JoinSet::new();
+        for url in image_urls {
+            let client = client.clone();
+            let semaphore = semaphore.clone();
+            tasks.spawn(async move {
+                let result = async {
+                    let _permit = semaphore
+                        .acquire_owned()
+                        .await
+                        .map_err(|error| error.to_string())?;
+                    let bytes = client
+                        .get_bytes_limited(
+                            &url,
+                            crate::tui::widgets::markdown::MAX_PROJECT_IMAGE_BYTES,
+                        )
+                        .await
+                        .map_err(|error| error.to_string())?;
+                    tokio::task::spawn_blocking(move || {
+                        crate::tui::widgets::markdown::decode_image(&bytes)
+                    })
+                    .await
+                    .map_err(|error| error.to_string())?
+                }
+                .await;
+                (url, result)
+            });
+        }
+        while let Some(task) = tasks.join_next().await {
+            let (url, result) = match task {
+                Ok(result) => result,
+                Err(error) => {
+                    tracing::debug!("Project image task failed: {error}");
+                    continue;
+                }
+            };
+            DiscoveryState::push_action_result(
+                &request.pending,
+                DiscoveryActionResult::ProjectImage {
+                    request_id: request.request_id,
+                    project_id: request.project_id.clone(),
+                    url,
+                    result,
+                },
+            );
+        }
+    });
+}
+
 pub(crate) type PendingDiscovery = Arc<Mutex<Vec<PendingDiscoveryResult>>>;
 
 pub struct VersionPopupState {
