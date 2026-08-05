@@ -42,10 +42,17 @@ impl App {
             self.drain_pending_instances();
             self.instances_state.drain_modpack_updates();
             self.drain_pending_last_played();
-            if let Some(update) = self.content_update_popup.as_mut() {
+            let content_update_completed = self.content_update_popup.as_mut().and_then(|update| {
                 update.drain();
-                if update.completed {
-                    self.content_update_popup = None;
+                update.list.request_image_loads(&self.picker);
+                update.list.drain_image_loads(&self.picker);
+                update.completed.then_some(update.applied)
+            });
+            if let Some(applied) = content_update_completed {
+                self.content_update_popup = None;
+                if applied {
+                    self.content_update_snapshot = None;
+                    self.apply_content_update_snapshot();
                 }
             }
             let completed_modpack = self.modpack_update_popup.as_mut().and_then(|update| {
@@ -197,7 +204,11 @@ impl App {
             + usize::from(self.focused == super::app::FocusedArea::OverviewExpanded)
             + usize::from(self.focused == super::app::FocusedArea::ConfirmDelete)
             + usize::from(self.provider_conflict.is_some())
-            + usize::from(self.content_update_popup.is_some())
+            + usize::from(
+                self.content_update_popup
+                    .as_ref()
+                    .is_some_and(widgets::content::update::State::visible),
+            )
             + usize::from(self.modpack_update_popup.is_some())
             + usize::from(!matches!(
                 &self.account_state.add_mode,
@@ -379,7 +390,9 @@ impl App {
         );
         self.content_update_snapshot =
             crate::instance::content::updates::UpdateSnapshot::load(&paths.content_updates())
-                .filter(|snapshot| snapshot.applies_to(&selected))
+                .filter(|snapshot| {
+                    snapshot.applies_to(&selected) && snapshot.matches_manifest(&result.manifest)
+                })
                 .map(|snapshot| (result.instance_name.clone(), snapshot));
         self.content_manifest = Some((result.instance_name.clone(), result.manifest.clone()));
         self.apply_content_update_snapshot();
@@ -439,6 +452,14 @@ impl App {
         let Some(snapshot) = snapshot else {
             return;
         };
+        let current_manifest = self
+            .content_manifest
+            .as_ref()
+            .filter(|(name, _)| name == &snapshot.instance_name)
+            .map(|(_, manifest)| manifest);
+        if current_manifest.is_none_or(|manifest| !snapshot.snapshot.matches_manifest(manifest)) {
+            return;
+        }
         self.content_update_snapshot = Some((snapshot.instance_name, snapshot.snapshot));
         self.apply_content_update_snapshot();
     }
@@ -451,7 +472,14 @@ impl App {
                 self.instances_state
                     .selected_instance()
                     .filter(|instance| instance.name == *name && snapshot.applies_to(instance))
-                    .map(|_| snapshot)
+                    .and_then(|_| {
+                        self.content_manifest
+                            .as_ref()
+                            .filter(|(manifest_name, manifest)| {
+                                manifest_name == name && snapshot.matches_manifest(manifest)
+                            })
+                            .map(|_| snapshot)
+                    })
             });
         self.mods_state.apply_update_snapshot(snapshot);
         self.resource_packs_state.apply_update_snapshot(snapshot);

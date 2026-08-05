@@ -148,6 +148,8 @@ struct PaginationState {
     hits: Vec<(Rect, usize)>,
 }
 
+const REMOVAL_GRACE: std::time::Duration = std::time::Duration::from_millis(500);
+
 // result from the notify-triggered background diff
 struct WatcherDiff {
     toggled: Vec<(String, bool, std::path::PathBuf)>,
@@ -198,6 +200,7 @@ pub struct ContentListState {
     scan_one_fn: Option<ScanOneFn>,
     content_ext: Option<&'static str>,
     pagination: Option<PaginationState>,
+    pending_removals: HashMap<String, std::time::Instant>,
 }
 
 #[derive(Clone, Debug)]
@@ -235,11 +238,25 @@ impl Default for ContentListState {
             scan_one_fn: None,
             content_ext: None,
             pagination: None,
+            pending_removals: HashMap::new(),
         }
     }
 }
 
 impl ContentListState {
+    pub(crate) fn set_entries(&mut self, entries: Vec<ContentEntry>) {
+        self.entries = entries;
+        self.list_state = TuiListState::default();
+        self.list_state.selected = (!self.entries.is_empty()).then_some(0);
+        self.image_protocols.clear();
+        self.requested_images.clear();
+        self.pending_entry_images.clear();
+        self.pending_removals.clear();
+        self.images_dirty = true;
+        self.rebuild_display_metadata();
+        self.update_scrollbar();
+    }
+
     pub fn apply_manifest(
         &mut self,
         manifest: &crate::instance::ContentManifest,
@@ -500,6 +517,7 @@ impl ContentListState {
         self.image_protocols.clear();
         self.requested_images.clear();
         self.pending_entry_images.clear();
+        self.pending_removals.clear();
         self.requested_provider_icons.clear();
         self.entries.clear();
         self.display_metadata.clear();
@@ -788,16 +806,21 @@ impl ContentListState {
             return ContentWatcherUpdate::default();
         }
 
+        let expired_removals = self.expire_pending_removals();
+
         let diff = match self.watcher_diff.lock() {
             Ok(mut slot) => slot.take(),
             _ => None,
         };
 
         let Some(diff) = diff else {
-            return ContentWatcherUpdate::default();
+            return ContentWatcherUpdate {
+                requires_reconcile: expired_removals,
+                ..ContentWatcherUpdate::default()
+            };
         };
         let mut update = ContentWatcherUpdate {
-            requires_reconcile: !diff.removed.is_empty() || !diff.added.is_empty(),
+            requires_reconcile: expired_removals || !diff.added.is_empty(),
             ..ContentWatcherUpdate::default()
         };
         self.images_dirty |= update.requires_reconcile;
@@ -811,6 +834,7 @@ impl ContentListState {
             diff.added.len()
         );
         for (stem, enabled, path) in &diff.toggled {
+            self.pending_removals.remove(stem);
             if let Some(entry) = self.entries.iter_mut().find(|e| &e.file_stem == stem) {
                 let old_path = if entry.path == *path {
                     opposite_toggle_path(path, *enabled)
@@ -829,17 +853,46 @@ impl ContentListState {
             }
         }
 
-        // apply removals
-        if !diff.removed.is_empty() {
-            self.entries
-                .retain(|e| !diff.removed.contains(&e.file_stem));
-            for stem in &diff.removed {
-                self.display_metadata.remove(stem);
-            }
+        // A version change is reported by the filesystem as a removal followed
+        // by an addition. Keep the old row briefly so the replacement can take
+        // its place without flashing out of the list.
+        for stem in diff.removed {
+            self.pending_removals
+                .entry(stem)
+                .or_insert_with(std::time::Instant::now);
         }
 
         // insert new entries in sorted position
-        for entry in diff.added {
+        for mut entry in diff.added {
+            let replacement = self.entries.iter().position(|existing| {
+                self.pending_removals.contains_key(&existing.file_stem)
+                    && existing.name.eq_ignore_ascii_case(&entry.name)
+            });
+            if let Some(index) = replacement {
+                let old_stem = self.entries[index].file_stem.clone();
+                self.pending_removals.remove(&old_stem);
+                preserve_visual_metadata(&mut entry, &mut self.entries[index]);
+                self.display_metadata.remove(&old_stem);
+                let protocol = self.image_protocols.remove(&old_stem);
+                let image_requested = self.requested_images.remove(&old_stem);
+                let image_pending = self.pending_entry_images.remove(&old_stem);
+                self.entries[index] = entry;
+                let entry = &self.entries[index];
+                if let Some(protocol) = protocol {
+                    self.image_protocols
+                        .insert(entry.file_stem.clone(), protocol);
+                }
+                if image_requested {
+                    self.requested_images.insert(entry.file_stem.clone());
+                }
+                if image_pending {
+                    self.pending_entry_images.insert(entry.file_stem.clone());
+                }
+                self.display_metadata
+                    .insert(entry.file_stem.clone(), display_metadata(entry));
+                self.images_dirty = true;
+                continue;
+            }
             if entry.icon_bytes.is_some() {
                 self.pending_entry_images.insert(entry.file_stem.clone());
             }
@@ -863,6 +916,39 @@ impl ContentListState {
 
         self.update_scrollbar();
         update
+    }
+
+    fn expire_pending_removals(&mut self) -> bool {
+        let expired = self
+            .pending_removals
+            .iter()
+            .filter(|(_, since)| since.elapsed() >= REMOVAL_GRACE)
+            .map(|(stem, _)| stem.clone())
+            .collect::<Vec<_>>();
+        let mut removed = false;
+        for stem in expired {
+            self.pending_removals.remove(&stem);
+            let restored = self
+                .entries
+                .iter()
+                .find(|entry| entry.file_stem == stem)
+                .is_some_and(|entry| entry.path.exists());
+            if restored {
+                continue;
+            }
+            let before = self.entries.len();
+            self.entries.retain(|entry| entry.file_stem != stem);
+            removed |= self.entries.len() != before;
+            self.display_metadata.remove(&stem);
+            self.image_protocols.remove(&stem);
+            self.requested_images.remove(&stem);
+            self.pending_entry_images.remove(&stem);
+        }
+        if removed {
+            self.images_dirty = true;
+            self.update_scrollbar();
+        }
+        removed
     }
 
     // starts a notify file watcher on the given directory. changes trigger
@@ -1081,6 +1167,7 @@ impl ContentListState {
         self.image_protocols.clear();
         self.requested_images.clear();
         self.pending_entry_images.clear();
+        self.pending_removals.clear();
 
         // save current entries to cache
         if let Some(prev) = self.loaded_for.take()
@@ -1571,7 +1658,7 @@ pub fn render(
             .and_then(|details| details.game_mode)
             .map(world_game_mode_color)
             .unwrap_or_else(|| {
-                if title_suffix == Some("Update") {
+                if matches!(title_suffix, Some("Update" | "Skipped")) {
                     theme.warning()
                 } else {
                     theme.success()
@@ -1586,6 +1673,16 @@ pub fn render(
         } else {
             theme.text()
         });
+        let footer_spans = entry.footer_change.as_ref().map_or_else(
+            || {
+                footer_label.map_or_else(Vec::new, |label| {
+                    vec![Span::styled(label.to_owned(), footer_label_style)]
+                })
+            },
+            |(from, to)| version_change_spans(from, to),
+        );
+        let footer_width = footer_spans.iter().map(Span::width).sum();
+        let has_footer = !footer_spans.is_empty();
 
         let world_descriptions = world_details.map(world_descriptions);
         let has_icon = icon_pixels.is_some();
@@ -1627,7 +1724,7 @@ pub fn render(
                 ellipsize(
                     description,
                     if index == 0 {
-                        description_text_width(description_width, footer_label, has_description)
+                        description_text_width(description_width, footer_width, has_description)
                     } else {
                         description_width
                     },
@@ -1635,7 +1732,7 @@ pub fn render(
             })
             .collect::<Vec<_>>();
         let visible_description = visible_descriptions.first().map_or("", String::as_str);
-        let compact = !has_icon && !has_description && footer_label.is_none();
+        let compact = !has_icon && !has_description && !has_footer;
 
         let selector = if show_selected {
             Span::styled("\u{258c}", Style::default().fg(theme.accent()))
@@ -1657,9 +1754,7 @@ pub fn render(
             (item, 1)
         } else if has_icon {
             let icon_row_count = icon_pixels.as_ref().map(|r| r.len()).unwrap_or(0);
-            let text_rows = 1 + visible_descriptions
-                .len()
-                .max(usize::from(footer_label.is_some()));
+            let text_rows = 1 + visible_descriptions.len().max(usize::from(has_footer));
             let height = icon_row_count.max(text_rows) as u16;
 
             let pad = if show_selected {
@@ -1697,15 +1792,12 @@ pub fn render(
                 if let Some(description) = visible_descriptions.get(r - 1) {
                     row.extend(search.highlight_spans(description, description_style));
                 }
-                if r == 1
-                    && let Some(footer_label) = footer_label
-                {
+                if r == 1 && has_footer {
                     row.extend(right_aligned_footer_spans(
                         description_width,
                         visible_description,
                         has_description,
-                        footer_label,
-                        footer_label_style,
+                        footer_spans.clone(),
                     ));
                 }
                 lines.push(Line::from(row));
@@ -1736,7 +1828,7 @@ pub fn render(
 
             let mut lines = vec![Line::from(line_0)];
 
-            if has_description || footer_label.is_some() {
+            if has_description || has_footer {
                 let pad = if show_selected {
                     Span::styled("\u{258c}", Style::default().fg(theme.accent()))
                 } else {
@@ -1747,13 +1839,12 @@ pub fn render(
                     description
                         .extend(search.highlight_spans(visible_description, description_style));
                 }
-                if let Some(footer_label) = footer_label {
+                if has_footer {
                     description.extend(right_aligned_footer_spans(
                         description_width,
                         visible_description,
                         has_description,
-                        footer_label,
-                        footer_label_style,
+                        footer_spans.clone(),
                     ));
                 }
                 lines.push(Line::from(description));
@@ -2083,6 +2174,21 @@ fn display_metadata(entry: &ContentEntry) -> DisplayMetadata {
     }
 }
 
+fn preserve_visual_metadata(entry: &mut ContentEntry, previous: &mut ContentEntry) {
+    if entry.icon_bytes.is_none() {
+        entry.icon_bytes = previous.icon_bytes.take();
+        entry.icon_lines = previous.icon_lines.take();
+        entry.provider_icon = previous.provider_icon;
+    }
+    if entry.description.trim().is_empty() && previous.provider_description {
+        entry.description = std::mem::take(&mut previous.description);
+        entry.provider_description = true;
+    }
+    if entry.provider_project.is_none() {
+        entry.provider_project = previous.provider_project.clone();
+    }
+}
+
 // renders one row of a mod icon using half-block characters (U+2584).
 // each cell packs two vertical pixels via fg/bg colors, giving
 // double the vertical resolution out of the terminal
@@ -2181,32 +2287,49 @@ fn available_description_width(
 
 fn description_text_width(
     available_width: usize,
-    footer_label: Option<&str>,
+    footer_width: usize,
     has_description: bool,
 ) -> usize {
-    let footer_width = footer_label.map_or(0, |footer_label| {
-        Span::raw(footer_label).width() + usize::from(has_description)
-    });
-    available_width.saturating_sub(footer_width)
+    available_width.saturating_sub(footer_width + usize::from(has_description && footer_width > 0))
 }
 
 fn right_aligned_footer_spans(
     available_width: usize,
     description: &str,
     has_description: bool,
-    footer_label: &str,
-    footer_style: Style,
+    footer: Vec<Span<'static>>,
 ) -> Vec<Span<'static>> {
     let description_width = if has_description {
         Span::raw(description).width()
     } else {
         0
     };
-    let footer_width = Span::raw(footer_label).width();
+    let footer_width = footer.iter().map(Span::width).sum::<usize>();
     let padding = available_width.saturating_sub(description_width + footer_width);
+    let mut spans = vec![Span::raw(" ".repeat(padding))];
+    spans.extend(footer);
+    spans
+}
+
+fn version_change_spans(from: &str, to: &str) -> Vec<Span<'static>> {
+    let theme = THEME.as_ref();
+    let old = Style::default()
+        .fg(theme.background())
+        .bg(theme.text_dim())
+        .add_modifier(Modifier::BOLD);
+    let new = Style::default()
+        .fg(theme.background())
+        .bg(theme.success())
+        .add_modifier(Modifier::BOLD);
     vec![
-        Span::raw(" ".repeat(padding)),
-        Span::styled(footer_label.to_owned(), footer_style),
+        Span::styled(format!(" {from} "), old),
+        Span::styled(
+            "  ➜  ",
+            Style::default()
+                .fg(theme.accent())
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(format!(" {to} "), new),
     ]
 }
 

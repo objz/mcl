@@ -12,6 +12,7 @@ fn entry(file_stem: &str) -> ContentEntry {
         world_details: None,
         title_suffix: None,
         footer_label: None,
+        footer_change: None,
         description: String::new(),
         enabled: true,
         icon_bytes: None,

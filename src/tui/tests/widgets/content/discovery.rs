@@ -407,6 +407,7 @@ fn installed_version_popup_tracks_current_version_and_reinstalls_it() {
         world_details: None,
         title_suffix: None,
         footer_label: None,
+        footer_change: None,
         description: String::new(),
         enabled: true,
         icon_bytes: None,

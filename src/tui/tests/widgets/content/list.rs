@@ -16,8 +16,8 @@ use ratatui::{
 use super::{
     ContentListState, WatcherEventHandling, available_description_width, description_text_width,
     diff_directory, diff_event_paths, ellipsize, load_provider_metadata, read_dir_stems,
-    right_aligned_footer_spans, square_icon_columns, title_suffix_spans, watcher_event_handling,
-    world_descriptions, world_game_mode_color,
+    right_aligned_footer_spans, square_icon_columns, title_suffix_spans, version_change_spans,
+    watcher_event_handling, world_descriptions, world_game_mode_color,
 };
 
 fn entry(name: &str) -> ContentEntry {
@@ -30,6 +30,7 @@ fn entry(name: &str) -> ContentEntry {
         world_details: None,
         title_suffix: None,
         footer_label: None,
+        footer_change: None,
         description: String::new(),
         enabled: true,
         icon_bytes: None,
@@ -150,6 +151,60 @@ fn pure_toggle_does_not_request_reconciliation() {
 }
 
 #[test]
+fn content_watcher_replaces_a_version_without_removing_its_row() {
+    let mut state = ContentListState::default();
+    let mut installed = entry("Example Mod");
+    installed.file_stem = "example-1.0".to_owned();
+    installed.path = PathBuf::from("mods/example-1.0.jar");
+    installed.description = "Cached description".to_owned();
+    installed.provider_description = true;
+    installed.icon_bytes = Some(vec![1, 2, 3]);
+    state.entries.push(installed);
+    *state.watcher_diff.lock().unwrap() = Some(super::WatcherDiff {
+        toggled: Vec::new(),
+        removed: vec!["example-1.0".to_owned()],
+        added: Vec::new(),
+    });
+
+    state.drain_watcher();
+    assert_eq!(state.entries.len(), 1);
+
+    let mut replacement = entry("Example Mod");
+    replacement.file_stem = "example-2.0".to_owned();
+    replacement.path = PathBuf::from("mods/example-2.0.jar");
+    *state.watcher_diff.lock().unwrap() = Some(super::WatcherDiff {
+        toggled: Vec::new(),
+        removed: Vec::new(),
+        added: vec![replacement],
+    });
+
+    state.drain_watcher();
+
+    assert_eq!(state.entries.len(), 1);
+    assert_eq!(state.entries[0].path, PathBuf::from("mods/example-2.0.jar"));
+    assert_eq!(state.entries[0].description, "Cached description");
+    assert_eq!(state.entries[0].icon_bytes, Some(vec![1, 2, 3]));
+}
+
+#[test]
+fn content_watcher_removes_a_file_after_the_replacement_grace_period() {
+    let mut state = ContentListState::default();
+    let mut installed = entry("Removed Mod");
+    installed.file_stem = "removed".to_owned();
+    installed.path = PathBuf::from("mods/removed.jar");
+    state.entries.push(installed);
+    state.pending_removals.insert(
+        "removed".to_owned(),
+        std::time::Instant::now() - super::REMOVAL_GRACE,
+    );
+
+    let update = state.drain_watcher();
+
+    assert!(state.entries.is_empty());
+    assert!(update.requires_reconcile);
+}
+
+#[test]
 fn irrelevant_watcher_paths_do_not_emit_an_empty_diff() {
     let temp = tempfile::tempdir().unwrap();
     let known = Arc::new(Mutex::new(HashMap::new()));
@@ -250,9 +305,9 @@ fn description_width_reserves_the_row_chrome() {
 
 #[test]
 fn description_width_reserves_the_download_metadata() {
-    assert_eq!(description_text_width(40, Some("1.2K downloads"), true), 25);
-    assert_eq!(description_text_width(10, Some("1.2K downloads"), true), 0);
-    assert_eq!(description_text_width(40, None, true), 40);
+    assert_eq!(description_text_width(40, 14, true), 25);
+    assert_eq!(description_text_width(10, 14, true), 0);
+    assert_eq!(description_text_width(40, 0, true), 40);
 }
 
 #[test]
@@ -262,13 +317,19 @@ fn footer_metadata_is_right_aligned_without_a_separator() {
         30,
         "Description",
         true,
-        "1.2K downloads",
-        Style::default(),
+        vec![Span::raw("1.2K downloads")],
     ));
     let line = Line::from(spans);
 
     assert_eq!(line.width(), 30);
     assert_eq!(line.to_string(), "Description     1.2K downloads");
+}
+
+#[test]
+fn version_changes_render_as_two_labels_with_a_directional_arrow() {
+    let spans = version_change_spans("1.0", "2.0");
+
+    assert_eq!(Line::from(spans).to_string(), " 1.0   ➜   2.0 ");
 }
 
 #[test]

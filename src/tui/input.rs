@@ -60,7 +60,11 @@ impl App {
     }
 
     pub(super) fn handle_key_event(&mut self, key_event: KeyEvent) -> color_eyre::Result<()> {
-        if self.content_update_popup.is_some() {
+        if self
+            .content_update_popup
+            .as_ref()
+            .is_some_and(widgets::content::update::State::visible)
+        {
             self.handle_content_update_key(key_event);
             return Ok(());
         }
@@ -969,6 +973,9 @@ impl App {
     }
 
     fn spawn_bulk_content_updates(&mut self) {
+        if self.content_update_popup.is_some() {
+            return;
+        }
         let Some(instance) = self.instances_state.selected_instance().cloned() else {
             return;
         };
@@ -998,14 +1005,37 @@ impl App {
         let paths = crate::storage::InstancePaths::new(
             self.instance_manager.instances_dir.join(&instance.name),
         );
-        let state = widgets::content::update::State::checking(kind, target_world.clone());
+        let source_entries = match self.content_tab {
+            widgets::content::ContentTab::Mods => self.mods_state.entries.clone(),
+            widgets::content::ContentTab::ResourcePacks => {
+                self.resource_packs_state.entries.clone()
+            }
+            widgets::content::ContentTab::Shaders => self.shaders_state.entries.clone(),
+            widgets::content::ContentTab::Worlds => self.world_datapacks_state.entries.clone(),
+            _ => return,
+        };
+        let cached_snapshot = self
+            .content_update_snapshot
+            .as_ref()
+            .filter(|(name, snapshot)| {
+                name == &instance.name
+                    && snapshot.applies_to(&instance)
+                    && snapshot.matches_manifest(&manifest)
+            })
+            .map(|(_, snapshot)| snapshot.clone());
+        if cached_snapshot
+            .as_ref()
+            .is_none_or(|snapshot| !snapshot.updates.iter().any(|update| update.kind == kind))
+        {
+            return;
+        }
+        let state =
+            widgets::content::update::State::checking(kind, target_world.clone(), source_entries);
         let pending = state.pending.clone();
         self.content_update_popup = Some(state);
         tokio::spawn(async move {
-            let snapshot = crate::instance::content::updates::scan(&instance, &manifest).await;
-            if let Ok(bytes) = serde_json::to_vec_pretty(&snapshot) {
-                let _ = crate::storage::write_atomic(&paths.content_updates(), &bytes);
-            }
+            let progress = crate::feedback::progress::ProgressTask::start("Preparing updates");
+            let snapshot = cached_snapshot.expect("checked above");
             let target_directory = target_world
                 .as_ref()
                 .map(|(_, world)| world.join("datapacks"));
@@ -1057,6 +1087,7 @@ impl App {
                 conflicts,
             )
             .await;
+            progress.finish();
             if let Ok(mut pending) = pending.lock() {
                 pending.push(widgets::content::update::PendingResult::Prepared(
                     snapshot, plan,
@@ -1076,28 +1107,22 @@ impl App {
             | (widgets::content::update::Phase::Conflicts, KeyCode::Esc) => {
                 self.content_update_popup = None;
             }
-            (widgets::content::update::Phase::Conflicts, KeyCode::Char('j') | KeyCode::Down) => {
-                let count = state.plan.as_ref().map_or(0, |plan| plan.conflicts.len());
-                state.selected = (state.selected + 1).min(count.saturating_sub(1));
-            }
-            (widgets::content::update::Phase::Conflicts, KeyCode::Char('k') | KeyCode::Up) => {
-                state.selected = state.selected.saturating_sub(1);
-            }
-            (widgets::content::update::Phase::Conflicts, KeyCode::Char(' ')) => {
-                if let Some(retry) = state.retry_conflicts.get_mut(state.selected) {
-                    *retry = !*retry;
-                }
+            (widgets::content::update::Phase::Conflicts, KeyCode::Char('h')) => {
+                self.content_update_popup = None;
             }
             (widgets::content::update::Phase::Conflicts, KeyCode::Enter) => {
-                if state.has_retry() {
-                    self.spawn_bulk_content_updates();
-                } else {
-                    state.phase = widgets::content::update::Phase::Review;
-                    state.selected = 0;
+                if state.has_updates() {
+                    state.show_review();
                 }
+            }
+            (widgets::content::update::Phase::Review, KeyCode::Char('h')) => {
+                state.show_conflicts();
             }
             (widgets::content::update::Phase::Review, KeyCode::Enter) => {
                 self.spawn_bulk_content_install();
+            }
+            (_, KeyCode::Char('j') | KeyCode::Down | KeyCode::Char('k') | KeyCode::Up) => {
+                widgets::content::list::handle_key_no_toggle(&key_event, &mut state.list);
             }
             _ => {}
         }
@@ -1118,7 +1143,6 @@ impl App {
             return;
         }
         state.phase = widgets::content::update::Phase::Applying;
-        state.error = None;
         let pending = state.pending.clone();
         let instances_dir = self.instance_manager.instances_dir.clone();
         let paths = crate::storage::InstancePaths::new(instances_dir.join(&instance.name));

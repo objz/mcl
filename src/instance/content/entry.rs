@@ -42,6 +42,7 @@ pub struct ContentEntry {
     pub world_details: Option<WorldDetails>,
     pub title_suffix: Option<String>,
     pub footer_label: Option<String>,
+    pub footer_change: Option<(String, String)>,
     pub description: String,
     pub enabled: bool,
     pub icon_bytes: Option<Vec<u8>>,

@@ -291,6 +291,16 @@ pub fn render(
                 .is_some(),
             _ => false,
         });
+    let has_updates = match tab {
+        ContentTab::Mods => mods_state.entries.iter(),
+        ContentTab::ResourcePacks => resource_packs_state.entries.iter(),
+        ContentTab::Shaders => shaders_state.entries.iter(),
+        ContentTab::Worlds if open_world_datapacks.is_some() => {
+            world_datapacks_state.entries.iter()
+        }
+        _ => worlds_state.entries.iter(),
+    }
+    .any(|entry| entry.title_suffix.as_deref() == Some("Update"));
 
     // keybinds change depending on which tab is active and whether
     // the content panel or instances panel has focus
@@ -414,9 +424,12 @@ pub fn render(
         None
     };
 
-    let keybind_lines = kb.map_or_else(Vec::new, |keybinds| {
-        crate::tui::widgets::popups::keybind_lines_wrapped(keybinds, area.width.saturating_sub(2))
-    });
+    let mut keybinds = kb.map_or_else(Vec::new, <[_]>::to_vec);
+    if is_focused && mode == ContentMode::Installed && !has_updates {
+        keybinds.retain(|(key, _)| *key != "u");
+    }
+    let keybind_lines =
+        crate::tui::widgets::popups::keybind_lines_wrapped(&keybinds, area.width.saturating_sub(2));
     if let Some(line) = keybind_lines.last() {
         block = block.title_bottom(line.clone());
     }
@@ -833,14 +846,23 @@ fn render_version_popup(
         popup
             .visible_versions()
             .map(|version| {
-                let style = if current_version_id.as_deref() == Some(version.id.as_str()) {
-                    Style::default()
-                        .fg(theme.text())
-                        .add_modifier(Modifier::ITALIC)
-                } else {
-                    Style::default().fg(theme.text())
-                };
-                ListItem::new(discovery_version_label(version)).style(style)
+                let mut spans = vec![Span::styled(
+                    discovery_version_label(version),
+                    Style::default().fg(theme.text()),
+                )];
+                if current_version_id.as_deref() == Some(version.id.as_str()) {
+                    spans.extend([
+                        Span::raw("  "),
+                        Span::styled(
+                            " Installed ",
+                            Style::default()
+                                .fg(theme.background())
+                                .bg(theme.success())
+                                .add_modifier(Modifier::BOLD),
+                        ),
+                    ]);
+                }
+                ListItem::new(Line::from(spans))
             })
             .collect::<Vec<_>>()
     };
