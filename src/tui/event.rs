@@ -284,10 +284,11 @@ impl App {
             self.content_manifest = None;
             return;
         };
-        if !changed && self.reconciliation_for.as_deref() == Some(instance.name.as_str()) {
+        let instance_id = (instance.name.clone(), instance.created);
+        if !changed && self.reconciliation_for.as_ref() == Some(&instance_id) {
             return;
         }
-        let instance_changed = self.reconciliation_for.as_deref() != Some(instance.name.as_str());
+        let instance_changed = self.reconciliation_for.as_ref() != Some(&instance_id);
         if instance_changed {
             self.provider_conflict = None;
             self.dismissed_provider_conflicts.clear();
@@ -308,7 +309,7 @@ impl App {
                 );
             }
         }
-        self.reconciliation_for = Some(instance.name.clone());
+        self.reconciliation_for = Some(instance_id);
         if changed {
             crate::instance::content::reconcile::spawn_after_change(
                 instance,
@@ -329,16 +330,25 @@ impl App {
             return;
         };
         let result = match crate::instance::content::reconcile::PENDING_RECONCILIATIONS.lock() {
-            Ok(mut results) => results
-                .iter()
-                .position(|result| result.instance_name == selected.name)
-                .map(|index| results.remove(index)),
+            Ok(mut results) => {
+                results.retain(|result| {
+                    result.instance_name != selected.name
+                        || result.instance_created == selected.created
+                });
+                results
+                    .iter()
+                    .position(|result| {
+                        result.instance_name == selected.name
+                            && result.instance_created == selected.created
+                    })
+                    .map(|index| results.remove(index))
+            }
             Err(_) => return,
         };
         let Some(result) = result else {
             return;
         };
-        self.reconciliation_for = Some(result.instance_name.clone());
+        self.reconciliation_for = Some((result.instance_name.clone(), result.instance_created));
         if let Some(error) = result.error {
             tracing::warn!(
                 "Content reconciliation for {} was incomplete: {}",
@@ -443,10 +453,19 @@ impl App {
             return;
         };
         let snapshot = match crate::instance::content::updates::PENDING_UPDATE_SNAPSHOTS.lock() {
-            Ok(mut pending) => pending
-                .iter()
-                .rposition(|pending| pending.instance_name == selected.name)
-                .map(|index| pending.remove(index)),
+            Ok(mut pending) => {
+                pending.retain(|pending| {
+                    pending.instance_name != selected.name
+                        || pending.instance_created == selected.created
+                });
+                pending
+                    .iter()
+                    .rposition(|pending| {
+                        pending.instance_name == selected.name
+                            && pending.instance_created == selected.created
+                    })
+                    .map(|index| pending.remove(index))
+            }
             Err(_) => return,
         };
         let Some(snapshot) = snapshot else {
@@ -771,10 +790,36 @@ impl App {
     fn drain_pending_instances(&mut self) {
         if let Ok(mut pending) = PENDING_INSTANCES.lock() {
             for config in pending.drain(..) {
+                self.forget_instance_content(&config.name);
                 widgets::instances::spawn_modpack_update_check(&config);
                 self.instances_state.add_instance(config);
             }
         }
+    }
+
+    pub(super) fn forget_instance_content(&mut self, instance_name: &str) {
+        for state in [
+            &mut self.mods_state,
+            &mut self.resource_packs_state,
+            &mut self.shaders_state,
+            &mut self.worlds_state,
+            &mut self.world_datapacks_state,
+        ] {
+            state.forget_instance(instance_name);
+        }
+        if self.logs_state.loaded_for.as_deref() == Some(instance_name) {
+            self.logs_state.loaded_for = None;
+        }
+        if self.screenshots_state.loaded_for.as_deref() == Some(instance_name) {
+            self.screenshots_state.loaded_for = None;
+        }
+        self.reconciliation_for = None;
+        self.content_manifest = None;
+        self.content_update_snapshot = None;
+        self.content_update_popup = None;
+        self.provider_conflict = None;
+        self.dismissed_provider_conflicts.clear();
+        self.apply_content_update_snapshot();
     }
 
     fn drain_pending_last_played(&mut self) {

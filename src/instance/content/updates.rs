@@ -35,6 +35,7 @@ pub struct UpdateCheckFailure {
 
 pub struct PendingUpdateSnapshot {
     pub instance_name: String,
+    pub instance_created: chrono::DateTime<chrono::Utc>,
     pub snapshot: UpdateSnapshot,
 }
 
@@ -106,6 +107,7 @@ pub fn spawn(instance: InstanceConfig, manifest: ContentManifest, path: std::pat
         if let Ok(mut pending) = PENDING_UPDATE_SNAPSHOTS.lock() {
             pending.push(PendingUpdateSnapshot {
                 instance_name: instance.name,
+                instance_created: instance.created,
                 snapshot,
             });
             crate::feedback::request_redraw();
@@ -419,6 +421,7 @@ mod tests {
             },
             resolution: crate::instance::Resolution::Resolved { project },
             provider_aliases: Vec::new(),
+            provider_checks: vec!["modrinth".to_owned()],
             required_dependencies: Vec::new(),
             automatic_dependency: false,
             cleanup_eligible: false,
@@ -454,6 +457,7 @@ mod tests {
                 project: installed.clone(),
             },
             provider_aliases: Vec::new(),
+            provider_checks: vec!["modrinth".to_owned()],
             required_dependencies: Vec::new(),
             automatic_dependency: true,
             cleanup_eligible: true,

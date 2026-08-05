@@ -90,6 +90,8 @@ pub struct ContentFileRecord {
     #[serde(default)]
     pub provider_aliases: Vec<ProviderProject>,
     #[serde(default)]
+    pub provider_checks: Vec<String>,
+    #[serde(default)]
     pub required_dependencies: Vec<ProviderProject>,
     #[serde(default)]
     pub automatic_dependency: bool,

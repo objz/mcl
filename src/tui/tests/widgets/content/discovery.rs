@@ -323,6 +323,7 @@ fn datapack_versions_select_a_world_before_dependency_resolution() {
             },
         },
         provider_aliases: Vec::new(),
+        provider_checks: Vec::new(),
         required_dependencies: Vec::new(),
         automatic_dependency: false,
         cleanup_eligible: false,
@@ -437,6 +438,7 @@ fn installed_version_popup_tracks_current_version_and_reinstalls_it() {
             project_id: "42".to_owned(),
             version_id: "84".to_owned(),
         }],
+        provider_checks: vec!["modrinth".to_owned(), "curseforge".to_owned()],
         required_dependencies: Vec::new(),
         automatic_dependency: false,
         cleanup_eligible: false,
@@ -445,15 +447,22 @@ fn installed_version_popup_tracks_current_version_and_reinstalls_it() {
     let request = state
         .begin_installed_versions(&entry, &record, None)
         .unwrap();
-    assert_eq!(request.current_version_id.as_deref(), Some("current"));
+    let first_provider = request.provider.clone();
+    let first_version = request.current_version_id.clone().unwrap();
     assert_eq!(state.version_popup.as_ref().unwrap().sources.len(), 2);
     state.version_popup.as_mut().unwrap().loading = false;
-    state.version_popup.as_mut().unwrap().versions = vec![version("current")];
+    state.version_popup.as_mut().unwrap().versions = vec![version(&first_version)];
     assert_eq!(
         state.version_popup.as_ref().unwrap().title(),
         "Reinstall Project"
     );
 
+    let switched = state.switch_version_source().unwrap();
+    assert_ne!(switched.provider, first_provider);
+    let switched_version = switched.current_version_id.clone().unwrap();
+
+    state.version_popup.as_mut().unwrap().loading = false;
+    state.version_popup.as_mut().unwrap().versions = vec![version(&switched_version)];
     let request = state.begin_dependency_resolution().unwrap();
     assert!(request.root.force_reinstall);
 }
@@ -882,10 +891,30 @@ fn installed_labels_follow_exact_manifest_projects() {
             },
         },
         provider_aliases: Vec::new(),
+        provider_checks: Vec::new(),
         required_dependencies: Vec::new(),
         automatic_dependency: false,
         cleanup_eligible: false,
     });
+    let mut sources = vec![(
+        "example-project".to_owned(),
+        crate::instance::ProviderProject {
+            provider: "modrinth".to_owned(),
+            project_id: "project-id".to_owned(),
+            version_id: String::new(),
+        },
+    )];
+    refresh_source_installed_versions(
+        &mut sources,
+        &DiscoveryTarget::Content(Box::new(ContentDiscoveryTarget {
+            instance: instance("test", "1.21.1"),
+            kind: ContentKind::Mod,
+            manifest: Some(manifest.clone()),
+            minecraft_dir: PathBuf::from("first"),
+        })),
+    );
+    assert_eq!(sources[0].1.version_id, "version");
+
     state.refresh_installed_manifest(&manifest, std::path::Path::new("first"));
     assert_eq!(
         state.list.entries[0].title_suffix.as_deref(),

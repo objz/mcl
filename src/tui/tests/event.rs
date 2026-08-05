@@ -28,7 +28,14 @@ fn completed_background_instance_is_drained_into_the_ui() {
     let mut ui = UiHarness::new();
     ui.add_instance("Existing");
     ui.add_instance("Pending");
-    let config = ui.app.instances_state.instances.pop().unwrap();
+    let mut config = ui.app.instances_state.instances.pop().unwrap();
+    ui.app.mods_state.loaded_for = Some("Pending".to_owned());
+    ui.app.reconciliation_for = Some(("Pending".to_owned(), config.created));
+    ui.app.content_manifest = Some((
+        "Pending".to_owned(),
+        crate::instance::ContentManifest::default(),
+    ));
+    config.created += chrono::TimeDelta::seconds(1);
     ui.app.instances_state.list_state.selected = Some(0);
     PENDING_INSTANCES.lock().unwrap().push(config);
 
@@ -39,6 +46,9 @@ fn completed_background_instance_is_drained_into_the_ui() {
         "Pending"
     );
     assert!(PENDING_INSTANCES.lock().unwrap().is_empty());
+    assert!(ui.app.reconciliation_for.is_none());
+    assert!(ui.app.content_manifest.is_none());
+    assert!(ui.app.mods_state.loaded_for.is_none());
 
     ui.draw();
     assert_eq!(ui.app.mods_state.loaded_for.as_deref(), Some("Pending"));
