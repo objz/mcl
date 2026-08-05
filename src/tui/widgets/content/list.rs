@@ -1125,6 +1125,11 @@ impl ContentListState {
         self.entries.get(*index)
     }
 
+    pub fn selected_has_provider_project(&self) -> bool {
+        self.selected_entry()
+            .is_some_and(|entry| entry.provider_project.is_some())
+    }
+
     fn restore_selected_file_stem(&mut self, file_stem: Option<&str>) {
         let filtered = self.filtered_indices();
         self.list_state.selected = file_stem

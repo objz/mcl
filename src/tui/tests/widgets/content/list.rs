@@ -42,6 +42,24 @@ fn entry(name: &str) -> ContentEntry {
 }
 
 #[test]
+fn selected_provider_project_tracks_the_filtered_selection() {
+    let mut state = ContentListState {
+        entries: vec![entry("Unmatched"), entry("Matched")],
+        ..Default::default()
+    };
+    state.entries[1].provider_project = Some(crate::instance::ProviderProject {
+        provider: "modrinth".to_owned(),
+        project_id: "matched".to_owned(),
+        version_id: "version".to_owned(),
+    });
+    state.list_state.selected = Some(0);
+
+    assert!(!state.selected_has_provider_project());
+    state.list_state.selected = Some(1);
+    assert!(state.selected_has_provider_project());
+}
+
+#[test]
 fn world_cards_preview_up_to_three_datapacks() {
     let lines = world_descriptions(&WorldDetails {
         game_mode: None,

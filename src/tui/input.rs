@@ -433,6 +433,7 @@ impl App {
                     }
                     if key_event.code == KeyCode::Char('v')
                         && !self.world_datapacks_state.search.active
+                        && self.world_datapacks_state.selected_has_provider_project()
                     {
                         self.spawn_installed_versions();
                         return Ok(());
@@ -505,7 +506,10 @@ impl App {
                         self.spawn_bulk_content_updates();
                         return Ok(());
                     }
-                    if key_event.code == KeyCode::Char('v') && !state.search.active {
+                    if key_event.code == KeyCode::Char('v')
+                        && !state.search.active
+                        && state.selected_has_provider_project()
+                    {
                         self.spawn_installed_versions();
                         return Ok(());
                     }
@@ -542,6 +546,11 @@ impl App {
         }
 
         if self.focused == FocusedArea::Settings {
+            let dismissed_input = key_event.code == KeyCode::Esc
+                && matches!(
+                    &self.settings_state.add_mode,
+                    widgets::settings::AddMode::ProfileName(_)
+                );
             match widgets::settings::handle_key(
                 &key_event,
                 &mut self.settings_state,
@@ -629,6 +638,9 @@ impl App {
                 }
                 widgets::settings::SettingsAction::None => {}
             }
+            if dismissed_input {
+                return Ok(());
+            }
         }
 
         match self.focused {
@@ -683,6 +695,17 @@ impl App {
                 // global keybindings (uppercase = area switch, lowercase = action)
                 match key_event.code {
                     KeyCode::Char('q') => self.exit = true,
+                    KeyCode::Esc
+                        if matches!(
+                            self.focused,
+                            FocusedArea::Content
+                                | FocusedArea::Account
+                                | FocusedArea::Settings
+                                | FocusedArea::Overview
+                        ) =>
+                    {
+                        self.focused = FocusedArea::Instances;
+                    }
                     KeyCode::Char('I') => self.focused = FocusedArea::Instances,
                     KeyCode::Char('C') => self.focused = FocusedArea::Content,
                     KeyCode::Char('A') => self.focused = FocusedArea::Account,

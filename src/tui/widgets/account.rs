@@ -222,7 +222,12 @@ pub fn render(frame: &mut Frame, area: Rect, focused: FocusedArea, state: &mut A
 
     let keybind_line = if focused == FocusedArea::Account {
         Some(super::popups::keybind_line_fitted(
-            &[("⏎", " select"), ("a", " add"), ("d", " del")],
+            &[
+                ("⏎", " select"),
+                ("a", " add"),
+                ("d", " del"),
+                ("Esc", " back"),
+            ],
             area.width.saturating_sub(2),
         ))
     } else {

@@ -33,6 +33,50 @@ fn global_navigation_returns_from_log_overlay() {
 }
 
 #[test]
+fn escape_returns_through_nested_sections() {
+    let mut ui = UiHarness::new();
+
+    for focused in [
+        FocusedArea::Content,
+        FocusedArea::Account,
+        FocusedArea::Settings,
+    ] {
+        ui.app.focused = focused;
+        ui.key(KeyCode::Esc);
+        assert_eq!(ui.app.focused, FocusedArea::Instances);
+    }
+
+    ui.app.focused = FocusedArea::Content;
+    ui.app.content_tab = ContentTab::Worlds;
+    ui.app.open_world_datapacks = Some(("World".to_owned(), PathBuf::from("World")));
+    ui.key(KeyCode::Esc);
+
+    assert_eq!(ui.app.focused, FocusedArea::Content);
+    assert!(ui.app.open_world_datapacks.is_none());
+}
+
+#[test]
+fn unmatched_installed_content_has_no_version_action() {
+    let mut ui = UiHarness::new();
+    ui.add_instance("Unmatched");
+    ui.app.focused = FocusedArea::Content;
+    ui.app.content_tab = ContentTab::Mods;
+    let path = ui
+        .instance_path("Unmatched")
+        .join("minecraft/mods/unknown.jar");
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(&path, []).unwrap();
+    ui.app.mods_state.entries = vec![content_entry("Unknown mod", path)];
+    ui.app.mods_state.list_state.selected = Some(0);
+
+    ui.draw();
+    assert!(!ui.screen().contains("[v] versions"));
+
+    ui.key(KeyCode::Char('v'));
+    assert!(ui.app.mods_discovery_state.version_popup.is_none());
+}
+
+#[test]
 fn worlds_reserves_q_for_available_quick_launch() {
     let mut ui = UiHarness::new();
     ui.add_instance("Test Instance");

@@ -301,6 +301,15 @@ pub fn render(
         _ => worlds_state.entries.iter(),
     }
     .any(|entry| entry.title_suffix.as_deref() == Some("Update"));
+    let can_change_version = match tab {
+        ContentTab::Mods => mods_state.selected_has_provider_project(),
+        ContentTab::ResourcePacks => resource_packs_state.selected_has_provider_project(),
+        ContentTab::Shaders => shaders_state.selected_has_provider_project(),
+        ContentTab::Worlds if open_world_datapacks.is_some() => {
+            world_datapacks_state.selected_has_provider_project()
+        }
+        _ => false,
+    };
 
     // keybinds change depending on which tab is active and whether
     // the content panel or instances panel has focus
@@ -427,6 +436,12 @@ pub fn render(
     let mut keybinds = kb.map_or_else(Vec::new, <[_]>::to_vec);
     if is_focused && mode == ContentMode::Installed && !has_updates {
         keybinds.retain(|(key, _)| *key != "u");
+    }
+    if is_focused && mode == ContentMode::Installed && !can_change_version {
+        keybinds.retain(|(key, _)| *key != "v");
+    }
+    if is_focused && !keybinds.iter().any(|(key, _)| key.contains("Esc")) {
+        keybinds.push(("Esc", " back"));
     }
     // The main panel footer stays on its border; lower-priority hints are omitted when narrow.
     block = block.title_bottom(crate::tui::widgets::popups::keybind_line_fitted(
