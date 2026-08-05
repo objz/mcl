@@ -15,7 +15,7 @@ fn job(name: &str) -> ReconcileJob {
             game_version: "1.21.1".to_owned(),
             loader: crate::instance::ModLoader::Fabric,
             loader_version: None,
-            created: chrono::Utc::now(),
+            created: chrono::DateTime::UNIX_EPOCH,
             last_played: None,
             java_path: None,
             memory_max: None,
@@ -33,15 +33,28 @@ fn job(name: &str) -> ReconcileJob {
 #[test]
 fn coordinator_queues_instances_once_and_preserves_order() {
     let mut coordinator = ReconcileCoordinator::default();
+    let one = ("one".to_owned(), chrono::DateTime::UNIX_EPOCH);
     assert!(coordinator.enqueue(job("one"), false));
     assert!(!coordinator.enqueue(job("two"), false));
     assert!(!coordinator.enqueue(job("one"), false));
-    assert!(!coordinator.rerun.contains("one"));
+    assert!(!coordinator.rerun.contains(&one));
     assert!(!coordinator.enqueue(job("one"), true));
     assert_eq!(coordinator.queue.len(), 2);
-    assert!(coordinator.rerun.contains("one"));
+    assert!(coordinator.rerun.contains(&one));
     assert_eq!(coordinator.queue.pop_front().unwrap().instance.name, "one");
     assert_eq!(coordinator.queue.pop_front().unwrap().instance.name, "two");
+}
+
+#[test]
+fn coordinator_does_not_merge_recreated_instances_with_the_same_name() {
+    let mut coordinator = ReconcileCoordinator::default();
+    let first = job("same");
+    let mut recreated = job("same");
+    recreated.instance.created += chrono::TimeDelta::seconds(1);
+
+    assert!(coordinator.enqueue(first, false));
+    assert!(!coordinator.enqueue(recreated, false));
+    assert_eq!(coordinator.queue.len(), 2);
 }
 
 #[test]
@@ -92,13 +105,33 @@ fn unchanged_saved_index_reuses_fingerprint_and_skips_provider_query() {
 
 #[test]
 fn newly_configured_provider_retries_an_unmatched_record() {
-    let resolution = Resolution::Unmatched {
-        checked_at: chrono::Utc::now().timestamp(),
-        providers: vec!["modrinth".to_owned()],
+    let mut record = ContentFileRecord {
+        relative_path: PathBuf::from("mods/example.jar"),
+        kind: ContentKind::Mod,
+        enabled: true,
+        fingerprint: FileFingerprint {
+            size: 1,
+            modified_ns: 1,
+            hashes: Default::default(),
+        },
+        resolution: Resolution::Resolved {
+            project: ProviderProject {
+                provider: "modrinth".to_owned(),
+                project_id: "example".to_owned(),
+                version_id: "1".to_owned(),
+            },
+        },
+        provider_aliases: Vec::new(),
+        provider_checks: Vec::new(),
+        required_dependencies: Vec::new(),
+        automatic_dependency: false,
+        cleanup_eligible: false,
     };
 
-    assert!(provider_was_not_checked(&resolution, "curseforge"));
-    assert!(!provider_was_not_checked(&resolution, "modrinth"));
+    assert!(provider_was_not_checked(&record, "curseforge"));
+    assert!(!provider_was_not_checked(&record, "modrinth"));
+    record.provider_checks.push("curseforge".to_owned());
+    assert!(!provider_was_not_checked(&record, "curseforge"));
 }
 
 #[test]

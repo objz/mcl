@@ -337,6 +337,7 @@ fn build_records(
                         project: item.identity(),
                     },
                     provider_aliases: item.provider_aliases.clone(),
+                    provider_checks: vec![item.provider.clone()],
                     required_dependencies: item.required_dependencies.clone(),
                     automatic_dependency: item.automatic_dependency,
                     cleanup_eligible: item.cleanup_eligible,

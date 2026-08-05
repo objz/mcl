@@ -172,11 +172,12 @@ pub(crate) fn spawn_provider_search(
             if let Some(Ok(results)) = curseforge_result {
                 pages.push(("curseforge", results));
             }
-            let merged = merge_provider_results(
+            let mut merged = merge_provider_results(
                 pages,
                 crate::config::SETTINGS.content.preferred_provider(),
                 known_projects,
             );
+            refresh_source_installed_versions(&mut merged.sources, &target);
             let mut returned = std::collections::HashSet::new();
             let icon_slots = Arc::new(tokio::sync::Semaphore::new(8));
             for merged_project in merged.projects {
@@ -726,53 +727,16 @@ impl DiscoveryState {
             .list_state
             .selected
             .and_then(|selected| filtered.get(selected))?;
-        let entry = self.list.entries.get(*index)?;
+        let entry = self.list.entries.get(*index)?.clone();
         let installed_path = (self.kind != ContentKind::DataPack)
             .then(|| entry.installed_path.clone())
             .flatten();
-        let mut sources = self
+        let sources = self
             .sources
             .get(&entry.file_stem)
             .cloned()
             .unwrap_or_else(|| entry.provider_project.clone().into_iter().collect());
-        let preferred = crate::config::SETTINGS.content.preferred_provider();
-        sources.sort_by_key(|source| source.provider != preferred);
-        let source = sources.first()?.clone();
-        let project_id = source.project_id.clone();
-        let current_version_id = (!source.version_id.is_empty()).then(|| source.version_id.clone());
-        self.next_action_request_id = self.next_action_request_id.wrapping_add(1);
-        let request_id = self.next_action_request_id;
-        self.version_popup = Some(VersionPopupState {
-            request_id,
-            project_id: project_id.clone(),
-            provider: source.provider.clone(),
-            project_title: entry.name.clone(),
-            sources,
-            source_index: 0,
-            installed_path,
-            current_version_id: current_version_id.clone(),
-            minecraft_versions: Vec::new(),
-            selected_minecraft_version: None,
-            selecting_minecraft_version: self.modpacks,
-            selecting_world: false,
-            worlds: ContentListState::default(),
-            target_world: None,
-            versions: Vec::new(),
-            selected: 0,
-            loading: true,
-            resolving_dependencies: false,
-            confirming: false,
-            installing: false,
-            dependency_plan: None,
-            error: None,
-        });
-        Some(VersionsRequest {
-            request_id,
-            project_id,
-            provider: source.provider,
-            current_version_id,
-            pending: self.pending_actions.clone(),
-        })
+        self.open_version_popup(&entry, sources, installed_path, None)
     }
 
     pub fn begin_installed_versions(
@@ -807,20 +771,34 @@ impl DiscoveryState {
                 }
             }
         }
+        self.open_version_popup(entry, sources, Some(entry.path.clone()), target_world)
+    }
+
+    fn open_version_popup(
+        &mut self,
+        entry: &ContentEntry,
+        mut sources: Vec<crate::instance::ProviderProject>,
+        installed_path: Option<PathBuf>,
+        target_world: Option<(String, PathBuf)>,
+    ) -> Option<VersionsRequest> {
+        let preferred = crate::config::SETTINGS.content.preferred_provider();
+        sources.sort_by_key(|source| source.provider != preferred);
+        let source = sources.first()?.clone();
         self.next_action_request_id = self.next_action_request_id.wrapping_add(1);
         let request_id = self.next_action_request_id;
+        let current_version_id = (!source.version_id.is_empty()).then(|| source.version_id.clone());
         self.version_popup = Some(VersionPopupState {
             request_id,
-            project_id: current.project_id.clone(),
-            provider: current.provider.clone(),
+            project_id: source.project_id.clone(),
+            provider: source.provider.clone(),
             project_title: entry.name.clone(),
             sources,
             source_index: 0,
-            installed_path: Some(entry.path.clone()),
-            current_version_id: Some(current.version_id.clone()),
+            installed_path,
+            current_version_id: current_version_id.clone(),
             minecraft_versions: Vec::new(),
             selected_minecraft_version: None,
-            selecting_minecraft_version: false,
+            selecting_minecraft_version: self.modpacks,
             selecting_world: false,
             worlds: ContentListState::default(),
             target_world,
@@ -835,9 +813,9 @@ impl DiscoveryState {
         });
         Some(VersionsRequest {
             request_id,
-            project_id: current.project_id,
-            provider: current.provider,
-            current_version_id: Some(current.version_id),
+            project_id: source.project_id,
+            provider: source.provider,
+            current_version_id,
             pending: self.pending_actions.clone(),
         })
     }
@@ -1806,6 +1784,26 @@ pub(crate) fn merge_provider_results(
         sources,
         received,
         total_hits,
+    }
+}
+
+fn refresh_source_installed_versions(
+    sources: &mut [(String, crate::instance::ProviderProject)],
+    target: &DiscoveryTarget,
+) {
+    let DiscoveryTarget::Content(content) = target else {
+        return;
+    };
+    let Some(manifest) = &content.manifest else {
+        return;
+    };
+    for (_, source) in sources {
+        source.version_id = manifest
+            .files
+            .iter()
+            .find_map(|record| record.project_for_provider(&source.provider, &source.project_id))
+            .map(|installed| installed.version_id.clone())
+            .unwrap_or_default();
     }
 }
 

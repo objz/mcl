@@ -222,6 +222,7 @@ fn managed_mod_record(
             },
         },
         provider_aliases: Vec::new(),
+        provider_checks: Vec::new(),
         required_dependencies,
         automatic_dependency,
         cleanup_eligible: automatic_dependency,
@@ -466,6 +467,7 @@ fn provider_conflict_selection_is_persisted() {
                 candidates: candidates.clone(),
             },
             provider_aliases: Vec::new(),
+            provider_checks: Vec::new(),
             required_dependencies: Vec::new(),
             automatic_dependency: false,
             cleanup_eligible: false,
@@ -491,4 +493,12 @@ fn provider_conflict_selection_is_persisted() {
         crate::instance::Resolution::Resolved { project }
             if project.provider == "curseforge" && project.project_id == "second"
     ));
+    assert_eq!(
+        saved.record(&relative_path).unwrap().provider_aliases,
+        vec![ProviderProject {
+            provider: "modrinth".to_owned(),
+            project_id: "first".to_owned(),
+            version_id: "1".to_owned(),
+        }]
+    );
 }

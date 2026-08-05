@@ -49,7 +49,7 @@ pub struct App {
     pub(super) throbber_tick: u8,
     pub(super) error_effects: HashMap<u64, ErrorEffectState>,
     pub(super) pending_editor: Option<std::path::PathBuf>,
-    pub(super) reconciliation_for: Option<String>,
+    pub(super) reconciliation_for: Option<(String, chrono::DateTime<chrono::Utc>)>,
     pub(super) content_manifest: Option<(String, crate::instance::ContentManifest)>,
     pub(super) content_update_snapshot:
         Option<(String, crate::instance::content::updates::UpdateSnapshot)>,

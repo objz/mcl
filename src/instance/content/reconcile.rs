@@ -15,6 +15,7 @@ use crate::storage::InstancePaths;
 #[derive(Debug)]
 pub struct ReconcileResult {
     pub instance_name: String,
+    pub instance_created: chrono::DateTime<chrono::Utc>,
     pub manifest: ContentManifest,
     pub error: Option<String>,
 }
@@ -32,17 +33,17 @@ struct ReconcileJob {
 #[derive(Default)]
 struct ReconcileCoordinator {
     queue: VecDeque<ReconcileJob>,
-    scheduled: HashSet<String>,
-    rerun: HashSet<String>,
+    scheduled: HashSet<(String, chrono::DateTime<chrono::Utc>)>,
+    rerun: HashSet<(String, chrono::DateTime<chrono::Utc>)>,
     worker_running: bool,
 }
 
 impl ReconcileCoordinator {
     fn enqueue(&mut self, job: ReconcileJob, rerun_if_scheduled: bool) -> bool {
-        let instance_name = job.instance.name.clone();
-        if !self.scheduled.insert(instance_name.clone()) {
+        let instance = (job.instance.name.clone(), job.instance.created);
+        if !self.scheduled.insert(instance.clone()) {
             if rerun_if_scheduled {
-                self.rerun.insert(instance_name);
+                self.rerun.insert(instance);
             }
             return false;
         }
@@ -112,18 +113,21 @@ async fn reconcile_worker() {
                 }
             }
         };
-        let instance_name = job.instance.name.clone();
+        let instance = (job.instance.name.clone(), job.instance.created);
         let rerun_job = job.clone();
         let result = reconcile(job, &task).await;
         if let Ok(mut results) = PENDING_RECONCILIATIONS.lock() {
-            results.retain(|pending| pending.instance_name != instance_name);
+            results.retain(|pending| {
+                (pending.instance_name.as_str(), pending.instance_created)
+                    != (instance.0.as_str(), instance.1)
+            });
             results.push(result);
         }
         if let Ok(mut coordinator) = RECONCILE_COORDINATOR.lock() {
-            if coordinator.rerun.remove(&instance_name) {
+            if coordinator.rerun.remove(&instance) {
                 coordinator.queue.push_back(rerun_job);
             } else {
-                coordinator.scheduled.remove(&instance_name);
+                coordinator.scheduled.remove(&instance);
             }
         }
         crate::feedback::request_redraw();
@@ -137,6 +141,7 @@ async fn reconcile(job: ReconcileJob, task: &ProgressTask) -> ReconcileResult {
         client,
     } = job;
     let instance_name = instance.name;
+    let instance_created = instance.created;
     task.set_action(format!("Checking content for {instance_name}"));
     task.set_sub_action("Reading saved content index");
     task.set_progress(0, 1);
@@ -183,11 +188,13 @@ async fn reconcile(job: ReconcileJob, task: &ProgressTask) -> ReconcileResult {
                 ) {
                     Ok(manifest) => ReconcileResult {
                         instance_name,
+                        instance_created,
                         manifest,
                         error: None,
                     },
                     Err(error) => ReconcileResult {
                         instance_name,
+                        instance_created,
                         manifest: ContentManifest::default(),
                         error: Some(error.to_string()),
                     },
@@ -200,6 +207,7 @@ async fn reconcile(job: ReconcileJob, task: &ProgressTask) -> ReconcileResult {
                     );
                     ReconcileResult {
                         instance_name,
+                        instance_created,
                         manifest: saved.unwrap_or_default(),
                         error: Some(error.to_string()),
                     }
@@ -208,11 +216,13 @@ async fn reconcile(job: ReconcileJob, task: &ProgressTask) -> ReconcileResult {
         }
         Ok(Err(error)) => ReconcileResult {
             instance_name,
+            instance_created,
             manifest: ContentManifest::default(),
             error: Some(error.to_string()),
         },
         Err(error) => ReconcileResult {
             instance_name,
+            instance_created,
             manifest: ContentManifest::default(),
             error: Some(error.to_string()),
         },
@@ -330,6 +340,7 @@ fn reconcile_inventory(
                     providers: Vec::new(),
                 },
                 provider_aliases: Vec::new(),
+                provider_checks: Vec::new(),
                 required_dependencies: Vec::new(),
                 automatic_dependency: false,
                 cleanup_eligible: false,
@@ -351,6 +362,7 @@ fn reconcile_inventory(
                     providers: Vec::new(),
                 },
                 provider_aliases: Vec::new(),
+                provider_checks: Vec::new(),
                 required_dependencies: Vec::new(),
                 automatic_dependency: false,
                 cleanup_eligible: false,
@@ -363,6 +375,7 @@ fn reconcile_inventory(
                 fingerprint: fingerprint(&path)?,
                 resolution: Resolution::Pending,
                 provider_aliases: Vec::new(),
+                provider_checks: Vec::new(),
                 required_dependencies: Vec::new(),
                 automatic_dependency: false,
                 cleanup_eligible: false,
@@ -377,9 +390,13 @@ fn reconcile_inventory(
                 providers: Vec::new(),
             };
         }
-        let curseforge_unchecked = crate::net::curseforge::api_key().is_some()
-            && provider_was_not_checked(&record.resolution, "curseforge");
-        if !is_directory && !oversized && curseforge_unchecked {
+        let provider_unchecked = ["modrinth", "curseforge"].into_iter().any(|provider| {
+            crate::config::SETTINGS
+                .content
+                .discovery_provider_enabled(provider)
+                && provider_was_not_checked(&record, provider)
+        });
+        if !is_directory && !oversized && provider_unchecked {
             if record.fingerprint.hash("curseforge").is_none() {
                 record.fingerprint = fingerprint(&path)?;
             }
@@ -408,12 +425,23 @@ fn reconcile_inventory(
     Ok(Inventory { manifest, queries })
 }
 
-fn provider_was_not_checked(resolution: &Resolution, provider: &str) -> bool {
-    matches!(
-        resolution,
+fn provider_was_not_checked(record: &ContentFileRecord, provider: &str) -> bool {
+    let identified = record
+        .resolved_project()
+        .into_iter()
+        .chain(record.provider_aliases.iter())
+        .any(|project| project.provider == provider);
+    let checked_as_unmatched = matches!(
+        &record.resolution,
         Resolution::Unmatched { providers, .. }
-            if !providers.iter().any(|checked| checked == provider)
-    )
+            if providers.iter().any(|checked| checked == provider)
+    );
+    !identified
+        && !checked_as_unmatched
+        && !record
+            .provider_checks
+            .iter()
+            .any(|checked| checked == provider)
 }
 
 async fn resolve_queries(
@@ -474,29 +502,45 @@ async fn resolve_queries(
             continue;
         }
         let candidates = matches.remove(key.as_ref()).unwrap_or_default();
-        record.resolution = match candidates.as_slice() {
-            [] => Resolution::Unmatched {
-                checked_at,
-                providers: checked.clone(),
-            },
-            [project] => Resolution::Resolved {
-                project: project.clone(),
-            },
+        let (resolution, aliases) = match candidates.as_slice() {
+            [] => (
+                Resolution::Unmatched {
+                    checked_at,
+                    providers: checked.clone(),
+                },
+                Vec::new(),
+            ),
+            [project] => (
+                Resolution::Resolved {
+                    project: project.clone(),
+                },
+                Vec::new(),
+            ),
             _ if !crate::config::SETTINGS.content.ask_on_provider_conflict => {
                 let preferred = crate::config::SETTINGS.content.preferred_provider();
                 if let Some(project) = candidates
                     .iter()
                     .find(|project| project.provider == preferred)
                 {
-                    Resolution::Resolved {
-                        project: project.clone(),
-                    }
+                    (
+                        Resolution::Resolved {
+                            project: project.clone(),
+                        },
+                        candidates
+                            .iter()
+                            .filter(|candidate| *candidate != project)
+                            .cloned()
+                            .collect(),
+                    )
                 } else {
-                    Resolution::Ambiguous { candidates }
+                    (Resolution::Ambiguous { candidates }, Vec::new())
                 }
             }
-            _ => Resolution::Ambiguous { candidates },
+            _ => (Resolution::Ambiguous { candidates }, Vec::new()),
         };
+        record.resolution = resolution;
+        record.provider_aliases = aliases;
+        record.provider_checks.clone_from(&checked);
     }
     Ok(())
 }

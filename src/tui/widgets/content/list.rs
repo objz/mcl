@@ -1151,6 +1151,19 @@ impl ContentListState {
 }
 
 impl ContentListState {
+    pub fn forget_instance(&mut self, instance_name: &str) {
+        let world_prefix = format!("{instance_name}:");
+        self.cache
+            .retain(|source, _| source != instance_name && !source.starts_with(&world_prefix));
+        if self
+            .loaded_for
+            .as_deref()
+            .is_some_and(|source| source == instance_name || source.starts_with(&world_prefix))
+        {
+            self.loaded_for = None;
+        }
+    }
+
     // saves current entries to cache before loading new ones, and restores
     // from cache if this instance was seen before (avoids re-scanning).
     // content_dir is the actual directory to scan (e.g. .minecraft/mods).

@@ -84,6 +84,13 @@ impl App {
                 KeyCode::Enter => {
                     let relative_path = conflict.relative_path.clone();
                     let project = conflict.candidates.get(conflict.selected).cloned();
+                    let aliases = conflict
+                        .candidates
+                        .iter()
+                        .enumerate()
+                        .filter(|(index, _)| *index != conflict.selected)
+                        .map(|(_, candidate)| candidate.clone())
+                        .collect::<Vec<_>>();
                     if let Some(project) = project
                         && let Some((instance_name, _)) = &self.content_manifest
                     {
@@ -100,6 +107,7 @@ impl App {
                                 {
                                     record.resolution =
                                         crate::instance::Resolution::Resolved { project };
+                                    record.provider_aliases = aliases;
                                 }
                                 Ok(manifest.clone())
                             })?;
@@ -180,6 +188,7 @@ impl App {
                             match self.instance_manager.delete(&name) {
                                 Ok(_) => {
                                     self.instances_state.remove_instance(&name);
+                                    self.forget_instance_content(&name);
                                 }
                                 Err(e) => {
                                     tracing::error!("Failed to delete instance '{}': {}", name, e);
@@ -1473,6 +1482,7 @@ impl App {
                         },
                     },
                     provider_aliases: Vec::new(),
+                    provider_checks: vec![request.provider.clone()],
                     required_dependencies: Vec::new(),
                     automatic_dependency: false,
                     cleanup_eligible: false,

@@ -403,6 +403,7 @@ fn seed_content_manifest(
                 },
             },
             provider_aliases: Vec::new(),
+            provider_checks: vec!["modrinth".to_owned()],
             required_dependencies: Vec::new(),
             automatic_dependency: false,
             cleanup_eligible: false,

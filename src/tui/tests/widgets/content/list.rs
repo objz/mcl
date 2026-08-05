@@ -665,6 +665,7 @@ fn manifest_metadata_keeps_an_embedded_icon_renderer() {
             },
         },
         provider_aliases: Vec::new(),
+        provider_checks: Vec::new(),
         required_dependencies: Vec::new(),
         automatic_dependency: false,
         cleanup_eligible: false,
