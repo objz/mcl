@@ -55,7 +55,7 @@ pub async fn prepare(
     if crate::instance::runtime::get(&instance.name)
         .is_some_and(|state| !matches!(state, crate::instance::runtime::RunState::Crashed(_)))
     {
-        return Err("Stop the instance before updating its modpack".to_owned());
+        return Err("Stop the instance before changing its modpack".to_owned());
     }
     let source = instance
         .modpack_source
@@ -78,7 +78,7 @@ pub async fn prepare(
     let available = fs2::available_space(&manager.instances_dir).map_err(|e| e.to_string())?;
     if available < needed {
         return Err(format!(
-            "Not enough free space to stage this update (need about {}, available {})",
+            "Not enough free space to stage this modpack change (need about {}, available {})",
             format_bytes(needed),
             format_bytes(available)
         ));

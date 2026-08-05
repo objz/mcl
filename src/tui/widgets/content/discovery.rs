@@ -393,14 +393,15 @@ pub struct VersionPopupState {
 
 impl VersionPopupState {
     pub fn title(&self) -> String {
-        if self.installed_path.is_some()
+        let installed = self.installed_path.is_some() || self.current_version_id.is_some();
+        if installed
             && self.current_version_id.as_deref().is_some_and(|current| {
                 self.selected_version()
                     .is_some_and(|version| version.id == current)
             })
         {
             format!("Reinstall {}", self.project_title)
-        } else if self.installed_path.is_some() {
+        } else if installed {
             format!("Change {} version", self.project_title)
         } else {
             format!("Install {}", self.project_title)
@@ -736,7 +737,7 @@ impl DiscoveryState {
             .get(&entry.file_stem)
             .cloned()
             .unwrap_or_else(|| entry.provider_project.clone().into_iter().collect());
-        self.open_version_popup(&entry, sources, installed_path, None)
+        self.open_version_popup(&entry.name, sources, installed_path, None)
     }
 
     pub fn begin_installed_versions(
@@ -771,12 +772,22 @@ impl DiscoveryState {
                 }
             }
         }
-        self.open_version_popup(entry, sources, Some(entry.path.clone()), target_world)
+        self.open_version_popup(&entry.name, sources, Some(entry.path.clone()), target_world)
+    }
+
+    pub fn begin_managed_modpack_versions(
+        &mut self,
+        project_title: &str,
+        source: crate::instance::ProviderProject,
+    ) -> Option<VersionsRequest> {
+        let request = self.open_version_popup(project_title, vec![source], None, None)?;
+        self.version_popup.as_mut()?.selecting_minecraft_version = false;
+        Some(request)
     }
 
     fn open_version_popup(
         &mut self,
-        entry: &ContentEntry,
+        project_title: &str,
         mut sources: Vec<crate::instance::ProviderProject>,
         installed_path: Option<PathBuf>,
         target_world: Option<(String, PathBuf)>,
@@ -791,7 +802,7 @@ impl DiscoveryState {
             request_id,
             project_id: source.project_id.clone(),
             provider: source.provider.clone(),
-            project_title: entry.name.clone(),
+            project_title: project_title.to_owned(),
             sources,
             source_index: 0,
             installed_path,

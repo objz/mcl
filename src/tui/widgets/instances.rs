@@ -349,18 +349,6 @@ pub fn render(frame: &mut Frame, area: Rect, focused: FocusedArea, state: &mut S
         } else {
             let mut spans = vec![selector.clone()];
             spans.extend(state.search.highlight_spans(&instance.name, name_style));
-            if state.modpack_updates.contains_key(&instance.name) {
-                spans.extend([
-                    Span::raw(" "),
-                    Span::styled(
-                        "Update",
-                        Style::default()
-                            .fg(theme.background())
-                            .bg(theme.warning())
-                            .add_modifier(Modifier::BOLD),
-                    ),
-                ]);
-            }
             Line::from(spans)
         };
 

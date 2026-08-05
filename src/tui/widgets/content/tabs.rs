@@ -157,6 +157,7 @@ pub fn render(
     tab: ContentTab,
     mode: ContentMode,
     instance: Option<&crate::instance::InstanceConfig>,
+    has_modpack_update: bool,
     mods_state: &mut super::list::ContentListState,
     mods_discovery_state: &mut DiscoveryState,
     resource_packs_state: &mut super::list::ContentListState,
@@ -420,6 +421,7 @@ pub fn render(
         Some(&[
             ("l", " launch"),
             ("⏎", " content"),
+            ("v", " versions"),
             ("Shift+⏎", " open dir"),
             ("Esc", " kill"),
             ("a", " add"),
@@ -439,6 +441,14 @@ pub fn render(
     }
     if is_focused && mode == ContentMode::Installed && !can_change_version {
         keybinds.retain(|(key, _)| *key != "v");
+    }
+    if focused == FocusedArea::Instances
+        && instance.is_none_or(|instance| instance.modpack_source.is_none())
+    {
+        keybinds.retain(|(key, _)| *key != "v");
+    }
+    if focused == FocusedArea::Instances && !has_modpack_update {
+        keybinds.retain(|(key, _)| *key != "u");
     }
     if is_focused && !keybinds.iter().any(|(key, _)| key.contains("Esc")) {
         keybinds.push(("Esc", " back"));
@@ -768,7 +778,7 @@ fn render_discovery_body(
     }
 }
 
-fn render_version_popup(
+pub(crate) fn render_version_popup(
     frame: &mut Frame,
     area: Rect,
     state: &mut DiscoveryState,
