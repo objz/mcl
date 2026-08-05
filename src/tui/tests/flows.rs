@@ -36,15 +36,26 @@ fn global_navigation_returns_from_log_overlay() {
 fn escape_returns_through_nested_sections() {
     let mut ui = UiHarness::new();
 
-    for focused in [
-        FocusedArea::Content,
-        FocusedArea::Account,
-        FocusedArea::Settings,
-    ] {
-        ui.app.focused = focused;
-        ui.key(KeyCode::Esc);
-        assert_eq!(ui.app.focused, FocusedArea::Instances);
-    }
+    ui.app.focused = FocusedArea::Content;
+    ui.app.mods_state.search.activate();
+    ui.key(KeyCode::Esc);
+    assert_eq!(ui.app.focused, FocusedArea::Content);
+    ui.key(KeyCode::Esc);
+    assert_eq!(ui.app.focused, FocusedArea::Instances);
+
+    ui.app.focused = FocusedArea::Account;
+    ui.key(KeyCode::Char('a'));
+    ui.key(KeyCode::Esc);
+    assert_eq!(ui.app.focused, FocusedArea::Account);
+    ui.key(KeyCode::Esc);
+    assert_eq!(ui.app.focused, FocusedArea::Instances);
+
+    ui.app.focused = FocusedArea::Settings;
+    ui.key(KeyCode::Char('a'));
+    ui.key(KeyCode::Esc);
+    assert_eq!(ui.app.focused, FocusedArea::Settings);
+    ui.key(KeyCode::Esc);
+    assert_eq!(ui.app.focused, FocusedArea::Instances);
 
     ui.app.focused = FocusedArea::Content;
     ui.app.content_tab = ContentTab::Worlds;
@@ -56,24 +67,94 @@ fn escape_returns_through_nested_sections() {
 }
 
 #[test]
-fn unmatched_installed_content_has_no_version_action() {
+fn installed_version_action_requires_selected_provider_match() {
     let mut ui = UiHarness::new();
     ui.add_instance("Unmatched");
     ui.app.focused = FocusedArea::Content;
     ui.app.content_tab = ContentTab::Mods;
     let path = ui
         .instance_path("Unmatched")
-        .join("minecraft/mods/unknown.jar");
-    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-    std::fs::write(&path, []).unwrap();
+        .join(crate::storage::MINECRAFT_DIR_NAME)
+        .join("mods/unknown.jar");
     ui.app.mods_state.entries = vec![content_entry("Unknown mod", path)];
+    ui.app.mods_state.list_state.selected = Some(0);
+    let record = managed_mod_record("mods/unknown.jar", "known", false, Vec::new());
+    let project = record.resolved_project().unwrap().clone();
+    ui.app.content_manifest = Some((
+        "Unmatched".to_owned(),
+        ContentManifest {
+            files: vec![record],
+            ..Default::default()
+        },
+    ));
+
+    ui.key(KeyCode::Char('v'));
+    assert!(ui.app.mods_discovery_state.version_popup.is_none());
+
+    ui.app.mods_state.entries[0].provider_project = Some(project);
+    ui.key(KeyCode::Char('v'));
+    assert!(ui.app.mods_discovery_state.version_popup.is_some());
+}
+
+#[test]
+fn installed_version_hint_requires_selected_provider_match() {
+    let mut ui = UiHarness::new();
+    ui.app.focused = FocusedArea::Content;
+    ui.app.content_tab = ContentTab::Mods;
+    ui.app.mods_state.entries = vec![content_entry(
+        "Unknown mod",
+        PathBuf::from("mods/unknown.jar"),
+    )];
     ui.app.mods_state.list_state.selected = Some(0);
 
     ui.draw();
     assert!(!ui.screen().contains("[v] versions"));
 
+    ui.app.mods_state.entries[0].provider_project = Some(ProviderProject {
+        provider: "modrinth".to_owned(),
+        project_id: "known".to_owned(),
+        version_id: "known-version".to_owned(),
+    });
+    ui.draw();
+    assert!(ui.screen().contains("[v] versions"));
+}
+
+#[test]
+fn world_datapack_version_action_requires_selected_provider_match() {
+    let mut ui = UiHarness::new();
+    ui.add_instance("Datapacks");
+    ui.app.focused = FocusedArea::Content;
+    ui.app.content_tab = ContentTab::Worlds;
+    let world = ui
+        .instance_path("Datapacks")
+        .join(crate::storage::MINECRAFT_DIR_NAME)
+        .join("saves/World");
+    let path = world.join("datapacks/unknown.zip");
+    ui.app.world_datapacks_state.entries = vec![content_entry("Unknown datapack", path)];
+    ui.app.world_datapacks_state.list_state.selected = Some(0);
+    ui.app.open_world_datapacks = Some(("World".to_owned(), world));
+    let mut record = managed_mod_record(
+        "saves/World/datapacks/unknown.zip",
+        "known",
+        false,
+        Vec::new(),
+    );
+    record.kind = ContentKind::DataPack;
+    let project = record.resolved_project().unwrap().clone();
+    ui.app.content_manifest = Some((
+        "Datapacks".to_owned(),
+        ContentManifest {
+            files: vec![record],
+            ..Default::default()
+        },
+    ));
+
     ui.key(KeyCode::Char('v'));
-    assert!(ui.app.mods_discovery_state.version_popup.is_none());
+    assert!(ui.app.datapacks_discovery_state.version_popup.is_none());
+
+    ui.app.world_datapacks_state.entries[0].provider_project = Some(project);
+    ui.key(KeyCode::Char('v'));
+    assert!(ui.app.datapacks_discovery_state.version_popup.is_some());
 }
 
 #[test]
@@ -412,12 +493,14 @@ fn settings_profile_can_be_created_from_key_events() {
     ui.app.focused = FocusedArea::Settings;
 
     ui.key(KeyCode::Char('a'));
-    for character in "shared".chars() {
+    for character in "qConfig".chars() {
         ui.key(KeyCode::Char(character));
     }
     ui.key(KeyCode::Enter);
 
-    assert_eq!(ui.app.settings_state.profiles, ["shared"]);
+    assert!(!ui.app.exit);
+    assert_eq!(ui.app.focused, FocusedArea::Settings);
+    assert_eq!(ui.app.settings_state.profiles, ["qConfig"]);
 }
 
 #[test]

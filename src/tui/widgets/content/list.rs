@@ -1125,7 +1125,7 @@ impl ContentListState {
         self.entries.get(*index)
     }
 
-    pub fn selected_has_provider_project(&self) -> bool {
+    pub(crate) fn selected_has_provider_project(&self) -> bool {
         self.selected_entry()
             .is_some_and(|entry| entry.provider_project.is_some())
     }
