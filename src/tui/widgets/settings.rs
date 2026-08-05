@@ -210,7 +210,7 @@ pub fn render(
         .border_type(BORDER_STYLE.to_border_type())
         .border_style(Style::default().fg(color));
 
-    let keybind_lines = if focused == FocusedArea::Settings {
+    let keybind_line = if focused == FocusedArea::Settings {
         let keybinds: &[(&str, &str)] = match state.pane {
             SettingsPane::Profile => &[
                 ("⏎", " select"),
@@ -226,17 +226,19 @@ pub fn render(
                 ("h/l", " tab"),
             ],
         };
-        super::popups::keybind_lines_wrapped(keybinds, area.width.saturating_sub(2))
+        Some(super::popups::keybind_line_fitted(
+            keybinds,
+            area.width.saturating_sub(2),
+        ))
     } else {
-        Vec::new()
+        None
     };
-    if let Some(line) = keybind_lines.last() {
-        block = block.title_bottom(line.clone());
+    if let Some(line) = keybind_line {
+        block = block.title_bottom(line);
     }
 
-    let mut inner = block.inner(area);
+    let inner = block.inner(area);
     frame.render_widget(block, area);
-    inner = super::popups::render_keybind_overflow(frame, inner, &keybind_lines);
 
     if inner.width >= 42 {
         let chunks = Layout::default()

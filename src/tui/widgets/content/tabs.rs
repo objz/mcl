@@ -345,7 +345,7 @@ pub fn render(
                 ("Shift+⏎", " open dir"),
                 ("h/l", " tabs"),
                 ("/", " search"),
-                ("Tab", " discover"),
+                ("Tab", " discovery"),
             ],
             (ContentMode::Installed, ContentTab::Worlds) if open_world_datapacks.is_some() => &[
                 ("j/k", " navigate"),
@@ -364,7 +364,7 @@ pub fn render(
                 ("Shift+⏎", " open dir"),
                 ("h/l", " tabs"),
                 ("/", " search"),
-                ("Tab", " discover"),
+                ("Tab", " discovery"),
             ],
             (ContentMode::Installed, ContentTab::Worlds) => &[
                 ("j/k", " navigate"),
@@ -373,7 +373,7 @@ pub fn render(
                 ("Shift+⏎", " open dir"),
                 ("h/l", " tabs"),
                 ("/", " search"),
-                ("Tab", " discover"),
+                ("Tab", " discovery"),
             ],
             (ContentMode::Installed, ContentTab::DataPacks) => &[],
             (ContentMode::Installed, ContentTab::Screenshots) => &[
@@ -383,7 +383,7 @@ pub fn render(
                 ("Shift+⏎", " open dir"),
                 ("h/l", " tabs"),
                 ("/", " search"),
-                ("Tab", " discover"),
+                ("Tab", " discovery"),
             ],
             (ContentMode::Installed, ContentTab::Logs) => {
                 if logs_state.viewer_focused {
@@ -393,7 +393,7 @@ pub fn render(
                         ("d", " delete"),
                         ("Esc", " back"),
                         ("/", " search"),
-                        ("Tab", " discover"),
+                        ("Tab", " discovery"),
                     ]
                 } else {
                     &[
@@ -402,7 +402,7 @@ pub fn render(
                         ("d", " delete"),
                         ("h/l", " tabs"),
                         ("/", " search"),
-                        ("Tab", " discover"),
+                        ("Tab", " discovery"),
                     ]
                 }
             }
@@ -428,16 +428,14 @@ pub fn render(
     if is_focused && mode == ContentMode::Installed && !has_updates {
         keybinds.retain(|(key, _)| *key != "u");
     }
-    let keybind_lines =
-        crate::tui::widgets::popups::keybind_lines_wrapped(&keybinds, area.width.saturating_sub(2));
-    if let Some(line) = keybind_lines.last() {
-        block = block.title_bottom(line.clone());
-    }
+    // The main panel footer stays on its border; lower-priority hints are omitted when narrow.
+    block = block.title_bottom(crate::tui::widgets::popups::keybind_line_fitted(
+        &keybinds,
+        area.width.saturating_sub(2),
+    ));
 
-    let mut content_area = block.inner(area);
+    let content_area = block.inner(area);
     frame.render_widget(block, area);
-    content_area =
-        crate::tui::widgets::popups::render_keybind_overflow(frame, content_area, &keybind_lines);
 
     let downloadable_state = match tab {
         ContentTab::Mods => Some((mods_state, mods_discovery_state)),
