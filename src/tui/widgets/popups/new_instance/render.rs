@@ -181,7 +181,8 @@ fn render_version_step(state: &WizardState, area: Rect, buf: &mut ratatui::buffe
         LoadState::Loaded(_) => {
             let items: Vec<ListItem> = visible_versions(state)
                 .into_iter()
-                .map(|version| {
+                .enumerate()
+                .map(|(index, version)| {
                     let suffix = if version.stable {
                         String::new()
                     } else {
@@ -189,7 +190,11 @@ fn render_version_step(state: &WizardState, area: Rect, buf: &mut ratatui::buffe
                     };
                     ListItem::new(state.version_search.highlight_line(
                         &format!("{}{}", version.id, suffix),
-                        Style::default().fg(theme.text()),
+                        Style::default().fg(if index == state.version_idx {
+                            theme.accent()
+                        } else {
+                            theme.text()
+                        }),
                     ))
                 })
                 .collect();
@@ -206,12 +211,13 @@ pub(crate) fn render_select_list(
     buffer: &mut ratatui::buffer::Buffer,
 ) {
     let list = List::new(items)
-        .highlight_style(
+        .highlight_style(Style::default().add_modifier(Modifier::BOLD))
+        .highlight_symbol(Span::styled(
+            "▶ ",
             Style::default()
                 .fg(THEME.as_ref().accent())
                 .add_modifier(Modifier::BOLD),
-        )
-        .highlight_symbol("▶ ");
+        ));
     let mut state = ListState::default().with_selected(Some(selected));
     StatefulWidget::render(list, area, buffer, &mut state);
 }

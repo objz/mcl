@@ -110,6 +110,6 @@ fn update_conflicts_explain_why_the_item_was_not_updated() {
     );
     assert_eq!(
         state.list.entries[0].description,
-        "Other updates need different Library versions (1.0 and 2.0). This mod was left unchanged; update it separately with v."
+        "Other selected updates require different versions of Library.\nThis mod was left unchanged; update it separately with v."
     );
 }

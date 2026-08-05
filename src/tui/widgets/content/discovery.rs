@@ -739,6 +739,7 @@ impl DiscoveryState {
         sources.sort_by_key(|source| source.provider != preferred);
         let source = sources.first()?.clone();
         let project_id = source.project_id.clone();
+        let current_version_id = (!source.version_id.is_empty()).then(|| source.version_id.clone());
         self.next_action_request_id = self.next_action_request_id.wrapping_add(1);
         let request_id = self.next_action_request_id;
         self.version_popup = Some(VersionPopupState {
@@ -749,7 +750,7 @@ impl DiscoveryState {
             sources,
             source_index: 0,
             installed_path,
-            current_version_id: None,
+            current_version_id: current_version_id.clone(),
             minecraft_versions: Vec::new(),
             selected_minecraft_version: None,
             selecting_minecraft_version: self.modpacks,
@@ -769,7 +770,7 @@ impl DiscoveryState {
             request_id,
             project_id,
             provider: source.provider,
-            current_version_id: None,
+            current_version_id,
             pending: self.pending_actions.clone(),
         })
     }
@@ -787,6 +788,23 @@ impl DiscoveryState {
                 source.provider == alias.provider && source.project_id == alias.project_id
             }) {
                 sources.push(alias.clone());
+            }
+        }
+        if let Some(discovered) = self.sources.values().find(|discovered| {
+            discovered.iter().any(|candidate| {
+                sources.iter().any(|installed| {
+                    candidate.provider == installed.provider
+                        && candidate.project_id == installed.project_id
+                })
+            })
+        }) {
+            for source in discovered {
+                if !sources.iter().any(|installed| {
+                    source.provider == installed.provider
+                        && source.project_id == installed.project_id
+                }) {
+                    sources.push(source.clone());
+                }
             }
         }
         self.next_action_request_id = self.next_action_request_id.wrapping_add(1);
@@ -935,8 +953,27 @@ impl DiscoveryState {
         manifest: &crate::instance::ContentManifest,
         minecraft_dir: &std::path::Path,
     ) {
+        let installed_identity = |source: &crate::instance::ProviderProject| {
+            manifest.files.iter().find_map(|record| {
+                record
+                    .project_for_provider(&source.provider, &source.project_id)
+                    .cloned()
+            })
+        };
+        for sources in self.sources.values_mut() {
+            for source in sources {
+                source.version_id = installed_identity(source)
+                    .map(|installed| installed.version_id)
+                    .unwrap_or_default();
+            }
+        }
         let mut changed = false;
         for entry in &mut self.list.entries {
+            if let Some(source) = entry.provider_project.as_mut() {
+                source.version_id = installed_identity(source)
+                    .map(|installed| installed.version_id)
+                    .unwrap_or_default();
+            }
             let installed_path = self
                 .sources
                 .get(&entry.file_stem)

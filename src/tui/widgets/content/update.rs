@@ -159,7 +159,6 @@ impl State {
                 .map(|root| {
                     let mut entry = self.entry_for(&root.installed_path, &root.title);
                     entry.title_suffix = Some("Update".to_owned());
-                    entry.description.clear();
                     entry.footer_label = None;
                     entry.footer_change = Some((
                         root.current_version.clone(),
@@ -270,21 +269,24 @@ pub fn render(frame: &mut Frame, state: &mut State, picker: &ratatui_image::pick
         "",
         picker,
         false,
-        false,
+        true,
     );
 }
 
 fn user_conflict_reason(reason: &str) -> String {
     let reason = reason.strip_prefix("Parse error: ").unwrap_or(reason);
-    if let Some(details) = reason
-        .strip_prefix("Conflicting selected versions for '")
-        .or_else(|| reason.strip_prefix("Conflicting required versions for '"))
-        && let Some((dependency, versions)) = details.split_once("': '")
-        && let Some((first, second)) = versions.split_once("' and '")
+    if let Some(details) = reason.strip_prefix("Conflicting selected versions for '")
+        && let Some((dependency, _)) = details.split_once("': '")
     {
         return format!(
-            "Other updates need different {dependency} versions ({first} and {}). This mod was left unchanged; update it separately with v.",
-            second.trim_end_matches('\'')
+            "Other selected updates require different versions of {dependency}.\nThis mod was left unchanged; update it separately with v."
+        );
+    }
+    if let Some(details) = reason.strip_prefix("Conflicting required versions for '")
+        && let Some((dependency, _)) = details.split_once("': '")
+    {
+        return format!(
+            "This update requires incompatible versions of {dependency}.\nThis mod was left unchanged; choose another version with v."
         );
     }
     format!(

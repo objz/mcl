@@ -845,10 +845,21 @@ fn render_version_popup(
     } else {
         popup
             .visible_versions()
-            .map(|version| {
+            .enumerate()
+            .map(|(index, version)| {
                 let mut spans = vec![Span::styled(
                     discovery_version_label(version),
-                    Style::default().fg(theme.text()),
+                    Style::default()
+                        .fg(if index == selected {
+                            theme.accent()
+                        } else {
+                            theme.text()
+                        })
+                        .add_modifier(if index == selected {
+                            Modifier::BOLD
+                        } else {
+                            Modifier::empty()
+                        }),
                 )];
                 if current_version_id.as_deref() == Some(version.id.as_str()) {
                     spans.extend([

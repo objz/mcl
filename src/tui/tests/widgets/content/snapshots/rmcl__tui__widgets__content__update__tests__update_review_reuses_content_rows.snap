@@ -14,7 +14,7 @@ expression: terminal.backend()
 "                                                                                                    "
 "                    ╭Update installed content──────────────────────────────────╮                    "
 "                    │▌▄▄▄▄▄▄ Example Mod   Update                              │                    "
-"                    │▌▄▄▄▄▄▄                                    1.0   ➜   2.0  │                    "
+"                    │▌▄▄▄▄▄▄ Existing project description       1.0   ➜   2.0  │                    "
 "                    │▌▄▄▄▄▄▄                                                   │                    "
 "                    ╰───────────[j/k] navigate  [Enter] update all  [Esc] close╯                    "
 "                                                                                                    "
