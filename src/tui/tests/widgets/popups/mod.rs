@@ -1,14 +1,14 @@
 use super::{
     confirm::{ConfirmTarget, confirm_popup_area},
-    keybind_lines_wrapped, word_wrap_size,
+    keybind_line_fitted, word_wrap_size,
 };
 
 #[test]
-fn keybind_wrapping_uses_terminal_width_for_unicode_keys() {
-    let lines = keybind_lines_wrapped(&[("⏎", " select"), ("a", " add")], 19);
+fn fitted_keybinds_use_terminal_width_and_omit_overflow() {
+    let line = keybind_line_fitted(&[("⏎", " select"), ("a", " add")], 10);
 
-    assert_eq!(lines.len(), 1);
-    assert_eq!(lines[0].width(), 19);
+    assert_eq!(line.width(), 10);
+    assert_eq!(line.to_string(), "[⏎] select");
 }
 
 #[test]
