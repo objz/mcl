@@ -17,6 +17,49 @@ fn concurrent_installs_use_distinct_staging_directories() {
     assert_ne!(staging_directory(minecraft), staging_directory(minecraft));
 }
 
+#[test]
+fn merge_keeps_replacement_when_a_dependency_is_also_an_update_root() {
+    let selected = version(
+        "library-new",
+        "library",
+        VersionType::Release,
+        "2026-02-01",
+        Vec::new(),
+    );
+    let item = |replacement: bool| PlannedInstall {
+        provider: "modrinth".to_owned(),
+        project_id: "library".to_owned(),
+        title: "Library".to_owned(),
+        version: selected.clone(),
+        installed_path: Some(PathBuf::from("/minecraft/mods/library.jar")),
+        kind: ContentKind::Mod,
+        destination: PathBuf::from("/minecraft/mods"),
+        provider_aliases: Vec::new(),
+        required_dependencies: Vec::new(),
+        automatic_dependency: !replacement,
+        cleanup_eligible: !replacement,
+        replacement,
+    };
+
+    let merged = merge(vec![
+        DependencyPlan {
+            items: vec![item(false)],
+            root_count: 0,
+            optional_dependencies: 0,
+        },
+        DependencyPlan {
+            items: vec![item(true)],
+            root_count: 1,
+            optional_dependencies: 0,
+        },
+    ])
+    .unwrap();
+
+    assert_eq!(merged.root_count, 1);
+    assert!(merged.items[0].replacement);
+    assert!(!merged.items[0].automatic_dependency);
+}
+
 struct FakeProvider {
     versions: HashMap<String, VersionInfo>,
     compatible: HashMap<String, Vec<String>>,

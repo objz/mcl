@@ -613,7 +613,17 @@ pub fn merge(plans: Vec<DependencyPlan>) -> Result<DependencyPlan, NetError> {
                         existing.required_dependencies.push(dependency);
                     }
                 }
+                for alias in item.provider_aliases {
+                    if !existing.provider_aliases.contains(&alias) {
+                        existing.provider_aliases.push(alias);
+                    }
+                }
                 if root && !*existing_root {
+                    existing.title = item.title;
+                    if item.installed_path.is_some() {
+                        existing.installed_path = item.installed_path;
+                    }
+                    existing.replacement |= item.replacement;
                     existing.automatic_dependency = false;
                     existing.cleanup_eligible = false;
                     *existing_root = true;

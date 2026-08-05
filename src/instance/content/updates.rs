@@ -239,6 +239,7 @@ pub async fn plan_bulk(
     let registry = crate::instance::content::provider::ProviderRegistry::configured(
         crate::net::HttpClient::new(),
     );
+    let projected_manifest = project_updates(manifest, minecraft_dir, &requests);
     let mut accepted = Vec::new();
     let mut roots = Vec::new();
     for request in requests {
@@ -252,20 +253,35 @@ pub async fn plan_bulk(
             target_world: request.target_world.clone(),
             force_reinstall: false,
         };
-        let plan =
-            match super::dependencies::resolve(&registry, manifest, minecraft_dir, instance, root)
-                .await
-            {
-                Ok(plan) => plan,
-                Err(error) => {
-                    conflicts.push(UpdateConflict {
-                        title: request.title,
-                        installed_path: request.installed_path,
-                        reason: error.to_string(),
-                    });
-                    continue;
-                }
-            };
+        let mut resolution_manifest = projected_manifest.clone();
+        if let Ok(relative_path) = request.installed_path.strip_prefix(minecraft_dir)
+            && let Some(current) = manifest.record(relative_path)
+            && let Some(projected) = resolution_manifest
+                .files
+                .iter_mut()
+                .find(|record| record.relative_path == relative_path)
+        {
+            projected.resolution = current.resolution.clone();
+        }
+        let plan = match super::dependencies::resolve(
+            &registry,
+            &resolution_manifest,
+            minecraft_dir,
+            instance,
+            root,
+        )
+        .await
+        {
+            Ok(plan) => plan,
+            Err(error) => {
+                conflicts.push(UpdateConflict {
+                    title: request.title,
+                    installed_path: request.installed_path,
+                    reason: error.to_string(),
+                });
+                continue;
+            }
+        };
         let mut proposed = accepted.clone();
         proposed.push(plan.clone());
         if let Err(error) = super::dependencies::merge(proposed) {
@@ -296,6 +312,34 @@ pub async fn plan_bulk(
         roots,
         conflicts,
     }
+}
+
+fn project_updates(
+    manifest: &ContentManifest,
+    minecraft_dir: &std::path::Path,
+    requests: &[UpdateRequest],
+) -> ContentManifest {
+    let mut projected = manifest.clone();
+    for request in requests {
+        let Ok(relative_path) = request.installed_path.strip_prefix(minecraft_dir) else {
+            continue;
+        };
+        let Some(record) = projected
+            .files
+            .iter_mut()
+            .find(|record| record.relative_path == relative_path)
+        else {
+            continue;
+        };
+        record.resolution = crate::instance::Resolution::Resolved {
+            project: ProviderProject {
+                provider: request.update.installed.provider.clone(),
+                project_id: request.update.installed.project_id.clone(),
+                version_id: request.update.target.id.clone(),
+            },
+        };
+    }
+    projected
 }
 
 #[cfg(test)]
@@ -386,5 +430,55 @@ mod tests {
             providers: Vec::new(),
         };
         assert!(!snapshot.matches_manifest(&manifest));
+    }
+
+    #[test]
+    fn bulk_planning_projects_other_selected_updates() {
+        let minecraft = std::path::Path::new("/instance/minecraft");
+        let installed = ProviderProject {
+            provider: "modrinth".to_owned(),
+            project_id: "library".to_owned(),
+            version_id: "old".to_owned(),
+        };
+        let mut manifest = ContentManifest::default();
+        manifest.files.push(crate::instance::ContentFileRecord {
+            relative_path: "mods/library.jar".into(),
+            kind: ContentKind::Mod,
+            enabled: true,
+            fingerprint: crate::instance::FileFingerprint {
+                size: 1,
+                modified_ns: 1,
+                hashes: Default::default(),
+            },
+            resolution: crate::instance::Resolution::Resolved {
+                project: installed.clone(),
+            },
+            provider_aliases: Vec::new(),
+            required_dependencies: Vec::new(),
+            automatic_dependency: true,
+            cleanup_eligible: true,
+        });
+        let requests = vec![UpdateRequest {
+            title: "Library".to_owned(),
+            installed_path: minecraft.join("mods/library.jar"),
+            target_world: None,
+            update: AvailableUpdate {
+                installed,
+                current: Some(version("old")),
+                target: version("new"),
+                kind: ContentKind::Mod,
+            },
+        }];
+
+        let projected = project_updates(&manifest, minecraft, &requests);
+
+        assert_eq!(
+            projected.files[0].resolved_project().unwrap().version_id,
+            "new"
+        );
+        assert_eq!(
+            manifest.files[0].resolved_project().unwrap().version_id,
+            "old"
+        );
     }
 }
