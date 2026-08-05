@@ -120,6 +120,89 @@ fn installed_version_hint_requires_selected_provider_match() {
 }
 
 #[test]
+fn managed_modpack_instance_exposes_direct_version_selector() {
+    let mut ui = UiHarness::new();
+    ui.add_instance("Managed Pack");
+
+    ui.draw();
+    assert!(!ui.screen().contains("[v] versions"));
+    ui.app.instances_state.instances[0].modpack_source = Some(ProviderProject {
+        provider: "unsupported".to_owned(),
+        project_id: "pack".to_owned(),
+        version_id: "current".to_owned(),
+    });
+
+    ui.draw();
+    assert!(ui.screen().contains("[v] versions"));
+    ui.key(KeyCode::Char('v'));
+    let popup = ui
+        .app
+        .modpack_versions_state
+        .as_ref()
+        .and_then(|state| state.version_popup.as_ref())
+        .unwrap();
+    assert!(!popup.selecting_minecraft_version);
+    assert_eq!(popup.current_version_id.as_deref(), Some("current"));
+
+    ui.key(KeyCode::Esc);
+    assert!(ui.app.modpack_versions_state.is_none());
+
+    ui.key(KeyCode::Char('v'));
+    let popup = ui
+        .app
+        .modpack_versions_state
+        .as_mut()
+        .and_then(|state| state.version_popup.as_mut())
+        .unwrap();
+    popup.loading = false;
+    popup.versions = vec![crate::net::modrinth::VersionInfo {
+        id: "current".to_owned(),
+        project_id: "pack".to_owned(),
+        name: "Current".to_owned(),
+        version_number: "1.0".to_owned(),
+        game_versions: vec!["1.21.1".to_owned()],
+        loaders: Vec::new(),
+        version_type: crate::net::modrinth::VersionType::Release,
+        dependencies: Vec::new(),
+        date_published: String::new(),
+        files: Vec::new(),
+    }];
+    ui.key(KeyCode::Enter);
+    assert!(ui.app.modpack_versions_state.is_none());
+    assert_eq!(
+        ui.app.modpack_update_popup.as_ref().unwrap().action,
+        crate::tui::widgets::popups::modpack_update::Action::Reinstall
+    );
+
+    ui.app.modpack_update_popup = None;
+    ui.key(KeyCode::Char('v'));
+    let popup = ui
+        .app
+        .modpack_versions_state
+        .as_mut()
+        .and_then(|state| state.version_popup.as_mut())
+        .unwrap();
+    popup.loading = false;
+    popup.versions = vec![crate::net::modrinth::VersionInfo {
+        id: "new".to_owned(),
+        project_id: "pack".to_owned(),
+        name: "New".to_owned(),
+        version_number: "2.0".to_owned(),
+        game_versions: vec!["1.21.1".to_owned()],
+        loaders: Vec::new(),
+        version_type: crate::net::modrinth::VersionType::Release,
+        dependencies: Vec::new(),
+        date_published: String::new(),
+        files: Vec::new(),
+    }];
+    ui.key(KeyCode::Enter);
+    assert_eq!(
+        ui.app.modpack_update_popup.as_ref().unwrap().action,
+        crate::tui::widgets::popups::modpack_update::Action::Change
+    );
+}
+
+#[test]
 fn world_datapack_version_action_requires_selected_provider_match() {
     let mut ui = UiHarness::new();
     ui.add_instance("Datapacks");

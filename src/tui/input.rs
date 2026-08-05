@@ -68,6 +68,10 @@ impl App {
             self.handle_content_update_key(key_event);
             return Ok(());
         }
+        if self.modpack_versions_state.is_some() {
+            self.handle_modpack_versions_key(key_event);
+            return Ok(());
+        }
         if self.modpack_update_popup.is_some() {
             self.handle_modpack_update_key(key_event);
             return Ok(());
@@ -800,6 +804,12 @@ impl App {
                     {
                         self.spawn_modpack_update();
                     }
+                    KeyCode::Char('v')
+                        if self.focused == FocusedArea::Instances
+                            && !self.instances_state.search.active =>
+                    {
+                        self.open_modpack_versions();
+                    }
                     KeyCode::Char('r')
                         if self.focused == FocusedArea::Instances
                             && !self.instances_state.search.active =>
@@ -845,20 +855,115 @@ impl App {
     }
 
     fn spawn_modpack_update(&mut self) {
-        let Some(instance) = self.instances_state.selected_instance().cloned() else {
-            return;
-        };
         let Some(target) = self.instances_state.selected_modpack_update() else {
             return;
         };
-        let state = widgets::popups::modpack_update::State::preparing();
+        self.spawn_modpack_refresh(target, widgets::popups::modpack_update::Action::Update);
+    }
+
+    fn open_modpack_versions(&mut self) {
+        let Some(instance) = self.instances_state.selected_instance() else {
+            return;
+        };
+        let Some(source) = instance.modpack_source.clone() else {
+            return;
+        };
+        let mut state = widgets::content::DiscoveryState::new_modpacks();
+        let Some(request) = state.begin_managed_modpack_versions(&instance.name, source) else {
+            return;
+        };
+        self.modpack_versions_state = Some(state);
+        self.spawn_modpack_versions_request(request);
+    }
+
+    fn spawn_modpack_versions_request(
+        &self,
+        request: widgets::content::discovery::VersionsRequest,
+    ) {
+        tokio::spawn(async move {
+            let source = crate::instance::ProviderProject {
+                provider: request.provider.clone(),
+                project_id: request.project_id.clone(),
+                version_id: request.current_version_id.clone().unwrap_or_default(),
+            };
+            let result = crate::instance::import::provider_versions(&source)
+                .await
+                .map_err(|error| error.to_string());
+            widgets::content::DiscoveryState::push_action_result(
+                &request.pending,
+                widgets::content::discovery::DiscoveryActionResult::Versions {
+                    request_id: request.request_id,
+                    project_id: request.project_id,
+                    result,
+                },
+            );
+        });
+    }
+
+    fn handle_modpack_versions_key(&mut self, key_event: KeyEvent) {
+        if key_event.code == KeyCode::Tab {
+            let request = self
+                .modpack_versions_state
+                .as_mut()
+                .and_then(widgets::content::DiscoveryState::switch_version_source);
+            if let Some(request) = request {
+                self.spawn_modpack_versions_request(request);
+            }
+            return;
+        }
+        if key_event.code == KeyCode::Enter {
+            let target = self
+                .modpack_versions_state
+                .as_ref()
+                .and_then(|state| state.version_popup.as_ref())
+                .filter(|popup| !popup.loading)
+                .and_then(|popup| popup.selected_version().cloned());
+            if let Some(target) = target {
+                let action = if self
+                    .instances_state
+                    .selected_instance()
+                    .and_then(|instance| instance.modpack_source.as_ref())
+                    .is_some_and(|source| source.version_id == target.id)
+                {
+                    widgets::popups::modpack_update::Action::Reinstall
+                } else {
+                    widgets::popups::modpack_update::Action::Change
+                };
+                self.modpack_versions_state = None;
+                self.spawn_modpack_refresh(target, action);
+            }
+            return;
+        }
+        let Some(state) = self.modpack_versions_state.as_mut() else {
+            return;
+        };
+        widgets::content::discovery::handle_key(&key_event, state);
+        if state.version_popup.is_none() {
+            self.modpack_versions_state = None;
+        }
+    }
+
+    fn spawn_modpack_refresh(
+        &mut self,
+        target: crate::net::modrinth::VersionInfo,
+        action: widgets::popups::modpack_update::Action,
+    ) {
+        let Some(instance) = self.instances_state.selected_instance().cloned() else {
+            return;
+        };
+        let state = widgets::popups::modpack_update::State::preparing(action);
         let pending = state.pending.clone();
         self.modpack_update_popup = Some(state);
         let instances_dir = self.instance_manager.instances_dir.clone();
         let meta_dir = self.instance_manager.meta_dir.clone();
         tokio::spawn(async move {
+            let action = match action {
+                widgets::popups::modpack_update::Action::Update => "update",
+                widgets::popups::modpack_update::Action::Change => "change",
+                widgets::popups::modpack_update::Action::Reinstall => "reinstall",
+            };
             let progress = crate::feedback::progress::ProgressTask::start(format!(
-                "Preparing modpack update for {}",
+                "Preparing modpack {action} for {}",
                 instance.name
             ));
             let manager = crate::instance::InstanceManager::new(instances_dir, meta_dir);
@@ -920,6 +1025,7 @@ impl App {
         let Some(state) = self.modpack_update_popup.as_mut() else {
             return;
         };
+        let action = state.action;
         let replacements = state.replacements();
         let Some(plan) = state.plan.take() else {
             return;
@@ -927,7 +1033,11 @@ impl App {
         state.phase = widgets::popups::modpack_update::Phase::Applying;
         let pending = state.pending.clone();
         tokio::spawn(async move {
-            let progress = crate::feedback::progress::ProgressTask::start("Updating modpack");
+            let progress = crate::feedback::progress::ProgressTask::start(match action {
+                widgets::popups::modpack_update::Action::Update => "Updating modpack",
+                widgets::popups::modpack_update::Action::Change => "Changing modpack",
+                widgets::popups::modpack_update::Action::Reinstall => "Reinstalling modpack",
+            });
             let result = tokio::task::spawn_blocking(move || {
                 crate::instance::import::refresh::apply(plan, &replacements)
             })

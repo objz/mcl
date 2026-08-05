@@ -42,6 +42,9 @@ impl App {
             self.drain_pending_instances();
             self.instances_state.drain_modpack_updates();
             self.drain_pending_last_played();
+            if let Some(state) = self.modpack_versions_state.as_mut() {
+                state.drain_pending();
+            }
             let content_update_completed = self.content_update_popup.as_mut().and_then(|update| {
                 update.drain();
                 update.list.request_image_loads(&self.picker);
@@ -210,6 +213,7 @@ impl App {
                     .is_some_and(widgets::content::update::State::visible),
             )
             + usize::from(self.modpack_update_popup.is_some())
+            + usize::from(self.modpack_versions_state.is_some())
             + usize::from(!matches!(
                 &self.account_state.add_mode,
                 widgets::account::AddMode::None

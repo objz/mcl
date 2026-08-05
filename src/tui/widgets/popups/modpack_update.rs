@@ -26,8 +26,16 @@ pub enum Phase {
     Applying,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Action {
+    Update,
+    Change,
+    Reinstall,
+}
+
 pub struct State {
     pub phase: Phase,
+    pub action: Action,
     pub plan: Option<RefreshPlan>,
     pub selected: usize,
     pub replace: Vec<bool>,
@@ -37,9 +45,10 @@ pub struct State {
 }
 
 impl State {
-    pub fn preparing() -> Self {
+    pub fn preparing(action: Action) -> Self {
         Self {
             phase: Phase::Preparing,
+            action,
             plan: None,
             selected: 0,
             replace: Vec::new(),
@@ -108,14 +117,31 @@ pub fn render(frame: &mut Frame, state: &State) {
         .flex(Flex::Center)
         .areas(area);
     frame.render_widget(Clear, area);
+    let action = match state.action {
+        Action::Update => "update",
+        Action::Change => "change",
+        Action::Reinstall => "reinstall",
+    };
     let (title, footer) = match state.phase {
-        Phase::Preparing => (" Prepare modpack update ", " [Esc] cancel "),
+        Phase::Preparing => match state.action {
+            Action::Update => (" Prepare modpack update ", " [Esc] cancel "),
+            Action::Change => (" Prepare modpack change ", " [Esc] cancel "),
+            Action::Reinstall => (" Prepare modpack reinstall ", " [Esc] cancel "),
+        },
         Phase::Conflicts => (
             " Resolve modpack conflicts ",
             " [j/k] select  [Space] keep/replace  [Enter] continue  [Esc] cancel ",
         ),
-        Phase::Review => (" Update modpack ", " [Enter] update  [Esc] cancel "),
-        Phase::Applying => (" Updating modpack ", " Please wait "),
+        Phase::Review => match state.action {
+            Action::Update => (" Update modpack ", " [Enter] update  [Esc] cancel "),
+            Action::Change => (" Change modpack ", " [Enter] change  [Esc] cancel "),
+            Action::Reinstall => (" Reinstall modpack ", " [Enter] reinstall  [Esc] cancel "),
+        },
+        Phase::Applying => match state.action {
+            Action::Update => (" Updating modpack ", " Please wait "),
+            Action::Change => (" Changing modpack ", " Please wait "),
+            Action::Reinstall => (" Reinstalling modpack ", " Please wait "),
+        },
     };
     let block = Block::default()
         .title(title)
@@ -126,7 +152,7 @@ pub fn render(frame: &mut Frame, state: &State) {
         .style(Style::default().fg(theme.text()).bg(theme.surface()));
     match state.phase {
         Phase::Preparing => frame.render_widget(
-            Paragraph::new("Downloading and validating the target pack…").block(block),
+            Paragraph::new(format!("Preparing the selected modpack {action}…")).block(block),
             area,
         ),
         Phase::Applying => frame.render_widget(

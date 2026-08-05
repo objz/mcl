@@ -54,6 +54,7 @@ pub struct App {
     pub(super) content_update_snapshot:
         Option<(String, crate::instance::content::updates::UpdateSnapshot)>,
     pub(super) content_update_popup: Option<widgets::content::update::State>,
+    pub(super) modpack_versions_state: Option<widgets::content::DiscoveryState>,
     pub(super) modpack_update_popup: Option<widgets::popups::modpack_update::State>,
     pub(super) provider_conflict: Option<ProviderConflictState>,
     pub(super) dismissed_provider_conflicts: HashSet<PathBuf>,
@@ -186,6 +187,7 @@ impl App {
             content_manifest: None,
             content_update_snapshot: None,
             content_update_popup: None,
+            modpack_versions_state: None,
             modpack_update_popup: None,
             provider_conflict: None,
             dismissed_provider_conflicts: HashSet::new(),

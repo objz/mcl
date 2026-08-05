@@ -538,6 +538,29 @@ fn modpacks_choose_minecraft_before_filtering_pack_versions() {
 }
 
 #[test]
+fn managed_modpack_versions_open_directly_and_mark_reinstall() {
+    let mut state = DiscoveryState::new_modpacks();
+    let source = crate::instance::ProviderProject {
+        provider: "modrinth".to_owned(),
+        project_id: "pack".to_owned(),
+        version_id: "current".to_owned(),
+    };
+
+    let request = state
+        .begin_managed_modpack_versions("Managed Pack", source)
+        .unwrap();
+    assert_eq!(request.current_version_id.as_deref(), Some("current"));
+    let popup = state.version_popup.as_mut().unwrap();
+    assert!(!popup.selecting_minecraft_version);
+    popup.loading = false;
+    popup.versions = vec![version("current"), version("older")];
+
+    assert_eq!(popup.title(), "Reinstall Managed Pack");
+    popup.selected = 1;
+    assert_eq!(popup.title(), "Change Managed Pack version");
+}
+
+#[test]
 fn project_page_loads_for_the_selected_discovery_entry() {
     let project = DiscoveryProject {
         id: "project".to_owned(),

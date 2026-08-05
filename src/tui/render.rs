@@ -79,6 +79,7 @@ impl App {
             }
         }
         if load_content {
+            let has_modpack_update = self.instances_state.selected_modpack_update().is_some();
             widgets::content::render(
                 frame,
                 main_chunks[1],
@@ -86,6 +87,7 @@ impl App {
                 self.content_tab,
                 self.content_mode,
                 self.instances_state.selected_instance(),
+                has_modpack_update,
                 &mut self.mods_state,
                 &mut self.mods_discovery_state,
                 &mut self.resource_packs_state,
@@ -181,6 +183,15 @@ impl App {
 
         if let Some(update) = self.content_update_popup.as_mut() {
             widgets::content::update::render(frame, update, &self.picker);
+        }
+
+        if let Some(state) = self.modpack_versions_state.as_mut() {
+            widgets::content::tabs::render_version_popup(
+                frame,
+                main_chunks[1],
+                state,
+                &self.picker,
+            );
         }
 
         if let Some(update) = &self.modpack_update_popup {
