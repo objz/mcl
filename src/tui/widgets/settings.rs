@@ -218,12 +218,14 @@ pub fn render(
                 ("d", " del"),
                 ("j/k", " move"),
                 ("h/l", " tab"),
+                ("Esc", " back"),
             ],
             SettingsPane::Info => &[
                 ("e", " inst"),
                 ("g", " global"),
                 ("d", " desk"),
                 ("h/l", " tab"),
+                ("Esc", " back"),
             ],
         };
         Some(super::popups::keybind_line_fitted(
