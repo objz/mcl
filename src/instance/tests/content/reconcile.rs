@@ -8,6 +8,31 @@ impl InventoryProgress for NoopProgress {
     fn set_progress(&self, _current: u64, _total: u64) {}
 }
 
+fn resolved_record() -> ContentFileRecord {
+    ContentFileRecord {
+        relative_path: PathBuf::from("mods/example.jar"),
+        kind: ContentKind::Mod,
+        enabled: true,
+        fingerprint: FileFingerprint {
+            size: 1,
+            modified_ns: 1,
+            hashes: Default::default(),
+        },
+        resolution: Resolution::Resolved {
+            project: ProviderProject {
+                provider: "modrinth".to_owned(),
+                project_id: "example".to_owned(),
+                version_id: "1".to_owned(),
+            },
+        },
+        provider_aliases: Vec::new(),
+        provider_checks: Vec::new(),
+        required_dependencies: Vec::new(),
+        automatic_dependency: false,
+        cleanup_eligible: false,
+    }
+}
+
 fn job(name: &str) -> ReconcileJob {
     ReconcileJob {
         instance: InstanceConfig {
@@ -105,33 +130,42 @@ fn unchanged_saved_index_reuses_fingerprint_and_skips_provider_query() {
 
 #[test]
 fn newly_configured_provider_retries_an_unmatched_record() {
-    let mut record = ContentFileRecord {
-        relative_path: PathBuf::from("mods/example.jar"),
-        kind: ContentKind::Mod,
-        enabled: true,
-        fingerprint: FileFingerprint {
-            size: 1,
-            modified_ns: 1,
-            hashes: Default::default(),
-        },
-        resolution: Resolution::Resolved {
-            project: ProviderProject {
-                provider: "modrinth".to_owned(),
-                project_id: "example".to_owned(),
-                version_id: "1".to_owned(),
-            },
-        },
-        provider_aliases: Vec::new(),
-        provider_checks: Vec::new(),
-        required_dependencies: Vec::new(),
-        automatic_dependency: false,
-        cleanup_eligible: false,
-    };
+    let mut record = resolved_record();
 
     assert!(provider_was_not_checked(&record, "curseforge"));
     assert!(!provider_was_not_checked(&record, "modrinth"));
     record.provider_checks.push("curseforge".to_owned());
     assert!(!provider_was_not_checked(&record, "curseforge"));
+}
+
+#[test]
+fn reconciliation_saves_provider_aliases_for_an_existing_resolution() {
+    let temp = tempfile::tempdir().unwrap();
+    let manifest_path = temp.path().join("manifest.json");
+    let current = ContentManifest {
+        version: 1,
+        files: vec![resolved_record()],
+    };
+    current.save(&manifest_path).unwrap();
+
+    let mut enriched = resolved_record();
+    enriched.provider_aliases.push(ProviderProject {
+        provider: "curseforge".to_owned(),
+        project_id: "42".to_owned(),
+        version_id: "84".to_owned(),
+    });
+    enriched.provider_checks = vec!["modrinth".to_owned(), "curseforge".to_owned()];
+    let saved = save_reconciled_manifest(
+        &manifest_path,
+        &temp.path().join("minecraft"),
+        ContentManifest {
+            version: 1,
+            files: vec![enriched.clone()],
+        },
+    )
+    .unwrap();
+
+    assert_eq!(saved.files, vec![enriched]);
 }
 
 #[test]

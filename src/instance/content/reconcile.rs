@@ -249,7 +249,12 @@ fn save_reconciled_manifest(
                 .record(&record.relative_path)
                 .is_some_and(|existing| {
                     existing.fingerprint == record.fingerprint
-                        && matches!(existing.resolution, Resolution::Resolved { .. })
+                        && existing.resolved_project().is_some_and(|current| {
+                            record.resolved_project().is_none_or(|resolved| {
+                                current.provider != resolved.provider
+                                    || current.project_id != resolved.project_id
+                            })
+                        })
                 });
             if !keep_resolved {
                 current.upsert(record);
@@ -396,23 +401,27 @@ fn reconcile_inventory(
                 .discovery_provider_enabled(provider)
                 && provider_was_not_checked(&record, provider)
         });
-        if !is_directory && !oversized && provider_unchecked {
-            if record.fingerprint.hash("curseforge").is_none() {
-                record.fingerprint = fingerprint(&path)?;
-            }
-            record.resolution = Resolution::Pending;
+        if !is_directory
+            && !oversized
+            && provider_unchecked
+            && record.fingerprint.hash("curseforge").is_none()
+        {
+            record.fingerprint = fingerprint(&path)?;
         }
         let should_query = !is_directory
             && !oversized
-            && match &record.resolution {
-                Resolution::Pending => true,
-                Resolution::Unmatched { checked_at, .. } => {
-                    now.saturating_sub(*checked_at) >= retry_seconds
-                }
-                Resolution::Resolved { .. } | Resolution::Ambiguous { .. } => false,
-            };
+            && (provider_unchecked
+                || match &record.resolution {
+                    Resolution::Pending => true,
+                    Resolution::Unmatched { checked_at, .. } => {
+                        now.saturating_sub(*checked_at) >= retry_seconds
+                    }
+                    Resolution::Resolved { .. } | Resolution::Ambiguous { .. } => false,
+                });
         if should_query {
-            record.resolution = Resolution::Pending;
+            if !matches!(&record.resolution, Resolution::Resolved { .. }) {
+                record.resolution = Resolution::Pending;
+            }
             queries.push(FingerprintQuery {
                 key: relative_path.to_string_lossy().into_owned(),
                 kind,
@@ -501,46 +510,73 @@ async fn resolve_queries(
         if !query_keys.contains(key.as_ref()) {
             continue;
         }
-        let candidates = matches.remove(key.as_ref()).unwrap_or_default();
-        let (resolution, aliases) = match candidates.as_slice() {
-            [] => (
-                Resolution::Unmatched {
-                    checked_at,
-                    providers: checked.clone(),
-                },
-                Vec::new(),
-            ),
-            [project] => (
-                Resolution::Resolved {
-                    project: project.clone(),
-                },
-                Vec::new(),
-            ),
-            _ if !crate::config::SETTINGS.content.ask_on_provider_conflict => {
-                let preferred = crate::config::SETTINGS.content.preferred_provider();
-                if let Some(project) = candidates
-                    .iter()
-                    .find(|project| project.provider == preferred)
-                {
-                    (
-                        Resolution::Resolved {
-                            project: project.clone(),
-                        },
-                        candidates
-                            .iter()
-                            .filter(|candidate| *candidate != project)
-                            .cloned()
-                            .collect(),
-                    )
-                } else {
-                    (Resolution::Ambiguous { candidates }, Vec::new())
-                }
+        let installed = record.resolved_project().cloned();
+        let mut candidates = matches.remove(key.as_ref()).unwrap_or_default();
+        for alias in &record.provider_aliases {
+            if !candidates.iter().any(|candidate| {
+                candidate.provider == alias.provider && candidate.project_id == alias.project_id
+            }) {
+                candidates.push(alias.clone());
             }
-            _ => (Resolution::Ambiguous { candidates }, Vec::new()),
+        }
+        let (resolution, aliases) = if let Some(installed) = installed {
+            let project = candidates
+                .iter()
+                .find(|candidate| {
+                    candidate.provider == installed.provider
+                        && candidate.project_id == installed.project_id
+                })
+                .cloned()
+                .unwrap_or(installed);
+            candidates.retain(|candidate| {
+                candidate.provider != project.provider || candidate.project_id != project.project_id
+            });
+            (Resolution::Resolved { project }, candidates)
+        } else {
+            match candidates.as_slice() {
+                [] => (
+                    Resolution::Unmatched {
+                        checked_at,
+                        providers: checked.clone(),
+                    },
+                    Vec::new(),
+                ),
+                [project] => (
+                    Resolution::Resolved {
+                        project: project.clone(),
+                    },
+                    Vec::new(),
+                ),
+                _ if !crate::config::SETTINGS.content.ask_on_provider_conflict => {
+                    let preferred = crate::config::SETTINGS.content.preferred_provider();
+                    if let Some(project) = candidates
+                        .iter()
+                        .find(|project| project.provider == preferred)
+                    {
+                        (
+                            Resolution::Resolved {
+                                project: project.clone(),
+                            },
+                            candidates
+                                .iter()
+                                .filter(|candidate| *candidate != project)
+                                .cloned()
+                                .collect(),
+                        )
+                    } else {
+                        (Resolution::Ambiguous { candidates }, Vec::new())
+                    }
+                }
+                _ => (Resolution::Ambiguous { candidates }, Vec::new()),
+            }
         };
         record.resolution = resolution;
         record.provider_aliases = aliases;
-        record.provider_checks.clone_from(&checked);
+        for provider in &checked {
+            if !record.provider_checks.contains(provider) {
+                record.provider_checks.push(provider.clone());
+            }
+        }
     }
     Ok(())
 }
