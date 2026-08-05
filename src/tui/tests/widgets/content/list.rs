@@ -44,7 +44,7 @@ fn entry(name: &str) -> ContentEntry {
 #[test]
 fn selected_provider_project_tracks_the_filtered_selection() {
     let mut state = ContentListState {
-        entries: vec![entry("Unmatched"), entry("Matched")],
+        entries: vec![entry("Local only"), entry("Provider match")],
         ..Default::default()
     };
     state.entries[1].provider_project = Some(crate::instance::ProviderProject {
@@ -52,10 +52,11 @@ fn selected_provider_project_tracks_the_filtered_selection() {
         project_id: "matched".to_owned(),
         version_id: "version".to_owned(),
     });
+    state.search.query = "local".to_owned();
     state.list_state.selected = Some(0);
 
     assert!(!state.selected_has_provider_project());
-    state.list_state.selected = Some(1);
+    state.search.query = "provider".to_owned();
     assert!(state.selected_has_provider_project());
 }
 

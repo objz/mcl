@@ -546,11 +546,10 @@ impl App {
         }
 
         if self.focused == FocusedArea::Settings {
-            let dismissed_input = key_event.code == KeyCode::Esc
-                && matches!(
-                    &self.settings_state.add_mode,
-                    widgets::settings::AddMode::ProfileName(_)
-                );
+            let editing_profile = matches!(
+                &self.settings_state.add_mode,
+                widgets::settings::AddMode::ProfileName(_)
+            );
             match widgets::settings::handle_key(
                 &key_event,
                 &mut self.settings_state,
@@ -638,7 +637,7 @@ impl App {
                 }
                 widgets::settings::SettingsAction::None => {}
             }
-            if dismissed_input {
+            if editing_profile {
                 return Ok(());
             }
         }
