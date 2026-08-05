@@ -895,6 +895,19 @@ fn installed_labels_follow_exact_manifest_projects() {
         state.list.entries[0].installed_path,
         Some(PathBuf::from("first/mods/example-project-1.0.0.jar"))
     );
+    state.list.list_state.selected = Some(0);
+    let request = state.begin_versions().unwrap();
+    assert_eq!(request.current_version_id.as_deref(), Some("version"));
+    assert_eq!(
+        state
+            .version_popup
+            .as_ref()
+            .unwrap()
+            .current_version_id
+            .as_deref(),
+        Some("version")
+    );
+    state.version_popup = None;
 
     state.refresh_installed_manifest(
         &crate::instance::ContentManifest::default(),

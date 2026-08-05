@@ -2319,14 +2319,14 @@ fn version_change_spans(from: &str, to: &str) -> Vec<Span<'static>> {
         .add_modifier(Modifier::BOLD);
     let new = Style::default()
         .fg(theme.background())
-        .bg(theme.success())
+        .bg(theme.accent())
         .add_modifier(Modifier::BOLD);
     vec![
         Span::styled(format!(" {from} "), old),
         Span::styled(
             "  ➜  ",
             Style::default()
-                .fg(theme.accent())
+                .fg(theme.text())
                 .add_modifier(Modifier::BOLD),
         ),
         Span::styled(format!(" {to} "), new),
