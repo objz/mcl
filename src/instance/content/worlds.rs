@@ -47,6 +47,7 @@ pub fn scan_one_world(path: &Path, file_stem: &str, enabled: bool) -> ContentEnt
         world_details: Some(world_details),
         title_suffix: None,
         footer_label: None,
+        footer_change: None,
         description: String::new(),
         enabled,
         icon_bytes,

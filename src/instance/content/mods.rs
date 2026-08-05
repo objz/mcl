@@ -19,6 +19,8 @@ struct FabricModJson {
     #[serde(default)]
     description: String,
     #[serde(default)]
+    version: String,
+    #[serde(default)]
     icon: serde_json::Value,
 }
 
@@ -52,6 +54,8 @@ struct QuiltModJson {
 #[derive(Deserialize, Default)]
 struct QuiltLoader {
     #[serde(default)]
+    version: String,
+    #[serde(default)]
     metadata: QuiltMetadata,
 }
 
@@ -72,7 +76,7 @@ impl QuiltMetadata {
 }
 
 pub fn scan_one_mod(path: &Path, file_stem: &str, enabled: bool) -> ContentEntry {
-    let (name, description, icon_bytes) = read_mod_metadata(path);
+    let (name, description, version, icon_bytes) = read_mod_metadata(path);
     let icon_lines = icon_bytes
         .as_ref()
         .and_then(|bytes| make_icon_pixels(bytes, 6, 3))
@@ -92,7 +96,8 @@ pub fn scan_one_mod(path: &Path, file_stem: &str, enabled: bool) -> ContentEntry
         provider_project: None,
         world_details: None,
         title_suffix: None,
-        footer_label: None,
+        footer_label: display_version(version),
+        footer_change: None,
         description,
         enabled,
         icon_bytes,
@@ -138,12 +143,12 @@ pub fn scan_mods(instances_dir: &Path, instance_name: &str) -> Vec<ContentEntry>
 // checks fabric.mod.json, quilt.mod.json, META-INF/mods.toml (forge),
 // META-INF/neoforge.mods.toml, and mcmod.info (legacy forge). if none of
 // those yield an icon, falls back to common root-level paths.
-fn read_mod_metadata(jar_path: &Path) -> (String, String, Option<Vec<u8>>) {
+fn read_mod_metadata(jar_path: &Path) -> (String, String, String, Option<Vec<u8>>) {
     let file = match std::fs::File::open(jar_path) {
         Ok(file) => file,
         Err(e) => {
             tracing::trace!("Failed to open mod JAR {}: {}", jar_path.display(), e);
-            return (String::new(), String::new(), None);
+            return (String::new(), String::new(), String::new(), None);
         }
     };
 
@@ -155,13 +160,14 @@ fn read_mod_metadata(jar_path: &Path) -> (String, String, Option<Vec<u8>>) {
                 jar_path.display(),
                 e
             );
-            return (String::new(), String::new(), None);
+            return (String::new(), String::new(), String::new(), None);
         }
     };
 
     // try each loader's metadata in order. if we get metadata but the
     // declared icon path is missing, fall back to common root-level icons.
-    type MetaReader = fn(&mut zip::ZipArchive<std::fs::File>) -> Option<(String, String, String)>;
+    type MetaReader =
+        fn(&mut zip::ZipArchive<std::fs::File>) -> Option<(String, String, String, String)>;
     let readers: [MetaReader; 4] = [
         read_fabric_meta,
         read_quilt_meta,
@@ -170,7 +176,7 @@ fn read_mod_metadata(jar_path: &Path) -> (String, String, Option<Vec<u8>>) {
     ];
 
     for reader in &readers {
-        if let Some((name, description, icon_path)) = reader(&mut archive) {
+        if let Some((name, description, version, icon_path)) = reader(&mut archive) {
             let icon_path = icon_path.trim_start_matches('/');
             let icon = if icon_path.is_empty() {
                 None
@@ -184,7 +190,7 @@ fn read_mod_metadata(jar_path: &Path) -> (String, String, Option<Vec<u8>>) {
                 name,
                 !icon_path.is_empty()
             );
-            return (name, description, icon);
+            return (name, description, version, icon);
         }
     }
 
@@ -195,7 +201,12 @@ fn read_mod_metadata(jar_path: &Path) -> (String, String, Option<Vec<u8>>) {
         jar_path.display(),
         icon_bytes.is_some()
     );
-    (String::new(), String::new(), icon_bytes)
+    (String::new(), String::new(), String::new(), icon_bytes)
+}
+
+fn display_version(version: String) -> Option<String> {
+    let version = version.trim();
+    (!version.is_empty() && !version.contains("${")).then(|| version.to_owned())
 }
 
 fn try_fallback_icons(archive: &mut zip::ZipArchive<std::fs::File>) -> Option<Vec<u8>> {
@@ -209,27 +220,28 @@ fn try_fallback_icons(archive: &mut zip::ZipArchive<std::fs::File>) -> Option<Ve
 
 fn read_fabric_meta(
     archive: &mut zip::ZipArchive<std::fs::File>,
-) -> Option<(String, String, String)> {
+) -> Option<(String, String, String, String)> {
     let mut entry = archive.by_name("fabric.mod.json").ok()?;
     let mut raw = String::new();
     entry.read_to_string(&mut raw).ok()?;
     let sanitized = sanitize_json_strings(&raw);
     let data: FabricModJson = serde_json::from_str(&sanitized).ok()?;
     let icon = data.icon_path();
-    Some((data.name, data.description, icon))
+    Some((data.name, data.description, data.version, icon))
 }
 
 fn read_quilt_meta(
     archive: &mut zip::ZipArchive<std::fs::File>,
-) -> Option<(String, String, String)> {
+) -> Option<(String, String, String, String)> {
     let mut entry = archive.by_name("quilt.mod.json").ok()?;
     let mut raw = String::new();
     entry.read_to_string(&mut raw).ok()?;
     let sanitized = sanitize_json_strings(&raw);
     let data: QuiltModJson = serde_json::from_str(&sanitized).ok()?;
+    let version = data.quilt_loader.version;
     let meta = data.quilt_loader.metadata;
     let icon = meta.icon_path();
-    Some((meta.name, meta.description, icon))
+    Some((meta.name, meta.description, version, icon))
 }
 
 // forge (META-INF/mods.toml) and neoforge (META-INF/neoforge.mods.toml)
@@ -239,7 +251,7 @@ fn read_quilt_meta(
 // but no [[mods]] section. we still want the icon in that case.
 fn read_forge_toml_meta(
     archive: &mut zip::ZipArchive<std::fs::File>,
-) -> Option<(String, String, String)> {
+) -> Option<(String, String, String, String)> {
     let raw = read_zip_string(archive, "META-INF/neoforge.mods.toml")
         .or_else(|| read_zip_string(archive, "META-INF/mods.toml"))?;
     let table: toml::Table = raw.parse().ok()?;
@@ -248,7 +260,7 @@ fn read_forge_toml_meta(
         .and_then(|v| v.as_str())
         .unwrap_or("")
         .to_owned();
-    let (name, description) = table
+    let (name, description, version) = table
         .get("mods")
         .and_then(|v| v.as_array())
         .and_then(|a| a.first())
@@ -265,17 +277,22 @@ fn read_forge_toml_meta(
                 .unwrap_or("")
                 .trim()
                 .to_owned();
-            (n, d)
+            let version = first
+                .get("version")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_owned();
+            (n, d, version)
         })
         .unwrap_or_default();
-    Some((name, description, logo))
+    Some((name, description, version, logo))
 }
 
 // legacy forge mcmod.info is either a bare json array of mod entries
 // or an object with a "modList" key wrapping the array
 fn read_mcmod_info(
     archive: &mut zip::ZipArchive<std::fs::File>,
-) -> Option<(String, String, String)> {
+) -> Option<(String, String, String, String)> {
     let mut entry = archive.by_name("mcmod.info").ok()?;
     let mut raw = String::new();
     entry.read_to_string(&mut raw).ok()?;
@@ -296,12 +313,17 @@ fn read_mcmod_info(
         .and_then(|v| v.as_str())
         .unwrap_or("")
         .to_owned();
+    let version = first
+        .get("version")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_owned();
     let logo = first
         .get("logoFile")
         .and_then(|v| v.as_str())
         .unwrap_or("")
         .to_owned();
-    Some((name, description, logo))
+    Some((name, description, version, logo))
 }
 
 fn read_zip_string(archive: &mut zip::ZipArchive<std::fs::File>, path: &str) -> Option<String> {

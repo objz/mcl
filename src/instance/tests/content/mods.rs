@@ -78,6 +78,7 @@ fn toggle_entry_enable() {
         world_details: None,
         title_suffix: None,
         footer_label: None,
+        footer_change: None,
         description: String::new(),
         enabled: false,
         icon_bytes: None,
@@ -111,7 +112,8 @@ fn make_jar(dir: &Path, name: &str, entries: &[(&str, &[u8])]) {
 fn scan_mods_reads_fabric_metadata() {
     let tmp = tempfile::tempdir().unwrap();
     let dir = setup_mods_dir(tmp.path(), "inst");
-    let meta = r#"{"name":"Fabric Mod","description":"A fabric mod","icon":"icon.png"}"#;
+    let meta =
+        r#"{"name":"Fabric Mod","description":"A fabric mod","version":"1.2.3","icon":"icon.png"}"#;
     make_jar(
         &dir,
         "fabric-mod.jar",
@@ -121,6 +123,7 @@ fn scan_mods_reads_fabric_metadata() {
     assert_eq!(mods.len(), 1);
     assert_eq!(mods[0].name, "Fabric Mod");
     assert_eq!(mods[0].description, "A fabric mod");
+    assert_eq!(mods[0].footer_label.as_deref(), Some("1.2.3"));
 }
 
 #[test]
@@ -355,6 +358,7 @@ fn toggle_entry_disable() {
         world_details: None,
         title_suffix: None,
         footer_label: None,
+        footer_change: None,
         description: String::new(),
         enabled: true,
         icon_bytes: None,

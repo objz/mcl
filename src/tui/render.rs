@@ -179,8 +179,8 @@ impl App {
             render_provider_conflict(frame, conflict);
         }
 
-        if let Some(update) = &self.content_update_popup {
-            widgets::content::update::render(frame, update);
+        if let Some(update) = self.content_update_popup.as_mut() {
+            widgets::content::update::render(frame, update, &self.picker);
         }
 
         if let Some(update) = &self.modpack_update_popup {

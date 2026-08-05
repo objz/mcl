@@ -1656,6 +1656,7 @@ pub(crate) fn provider_project_entry(
         world_details: None,
         title_suffix: installed_path.is_some().then(|| "Installed".to_owned()),
         footer_label: Some(format!("{} downloads", format_downloads(project.downloads))),
+        footer_change: None,
         description: project.description,
         enabled: true,
         icon_bytes: project.icon_bytes,

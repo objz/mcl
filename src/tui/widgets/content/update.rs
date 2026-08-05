@@ -1,16 +1,17 @@
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
 use ratatui::{
     Frame,
-    layout::{Constraint, Flex, Layout},
-    style::{Modifier, Style},
-    text::{Line, Span},
-    widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph},
+    layout::{Constraint, Margin},
 };
 
-use crate::config::theme::{BORDER_STYLE, THEME};
 use crate::instance::ContentKind;
+use crate::instance::content::entry::ContentEntry;
 use crate::instance::content::updates::{BulkUpdatePlan, UpdateSnapshot};
+use crate::tui::widgets::popups::base::PopupFrame;
 
 pub enum PendingResult {
     Prepared(UpdateSnapshot, BulkUpdatePlan),
@@ -29,28 +30,35 @@ pub struct State {
     pub phase: Phase,
     pub plan: Option<BulkUpdatePlan>,
     pub snapshot: Option<UpdateSnapshot>,
-    pub selected: usize,
-    pub retry_conflicts: Vec<bool>,
-    pub error: Option<String>,
     pub pending: Arc<Mutex<Vec<PendingResult>>>,
     pub kind: ContentKind,
-    pub target_world: Option<(String, std::path::PathBuf)>,
+    pub target_world: Option<(String, PathBuf)>,
     pub completed: bool,
+    pub applied: bool,
+    pub list: super::list::ContentListState,
+    source_entries: HashMap<PathBuf, ContentEntry>,
 }
 
 impl State {
-    pub fn checking(kind: ContentKind, target_world: Option<(String, std::path::PathBuf)>) -> Self {
+    pub fn checking(
+        kind: ContentKind,
+        target_world: Option<(String, PathBuf)>,
+        entries: Vec<ContentEntry>,
+    ) -> Self {
         Self {
             phase: Phase::Checking,
             plan: None,
             snapshot: None,
-            selected: 0,
-            retry_conflicts: Vec::new(),
-            error: None,
             pending: Arc::new(Mutex::new(Vec::new())),
             kind,
             target_world,
             completed: false,
+            applied: false,
+            list: super::list::ContentListState::default(),
+            source_entries: entries
+                .into_iter()
+                .map(|entry| (entry.path.clone(), entry))
+                .collect(),
         }
     }
 
@@ -64,21 +72,30 @@ impl State {
             changed = true;
             match result {
                 PendingResult::Prepared(snapshot, plan) => {
-                    self.retry_conflicts = vec![false; plan.conflicts.len()];
-                    self.phase = if plan.conflicts.is_empty() {
+                    self.phase = if !plan.conflicts.is_empty() {
+                        Phase::Conflicts
+                    } else if !plan.roots.is_empty() {
                         Phase::Review
                     } else {
-                        Phase::Conflicts
+                        self.completed = true;
+                        Phase::Review
                     };
-                    self.selected = 0;
                     self.snapshot = Some(snapshot);
                     self.plan = Some(plan);
-                    self.error = None;
+                    self.rebuild_list();
                 }
-                PendingResult::Applied(Ok(())) => self.completed = true,
+                PendingResult::Applied(Ok(())) => {
+                    self.completed = true;
+                    self.applied = true;
+                }
                 PendingResult::Applied(Err(error)) => {
-                    self.phase = Phase::Review;
-                    self.error = Some(error);
+                    crate::feedback::errors::push_error(crate::feedback::errors::ErrorEvent {
+                        id: 0,
+                        level: tracing::Level::ERROR,
+                        message: format!("Failed to update content: {error}"),
+                        pushed_at: Instant::now(),
+                    });
+                    self.completed = true;
                 }
             }
         }
@@ -92,111 +109,189 @@ impl State {
         }
     }
 
-    pub fn has_retry(&self) -> bool {
-        self.retry_conflicts.iter().any(|retry| *retry)
+    pub fn visible(&self) -> bool {
+        matches!(self.phase, Phase::Conflicts | Phase::Review) && !self.completed
     }
-}
 
-pub fn render(frame: &mut Frame, state: &State) {
-    let theme = THEME.as_ref();
-    let item_count = match state.phase {
-        Phase::Conflicts => state.plan.as_ref().map_or(0, |plan| plan.conflicts.len()),
-        Phase::Review => state.plan.as_ref().map_or(0, |plan| plan.roots.len()),
-        _ => 1,
-    };
-    let height = (item_count as u16 + 5).clamp(7, 20);
-    let [area] = Layout::vertical([Constraint::Length(height)])
-        .flex(Flex::Center)
-        .areas(frame.area());
-    let [area] = Layout::horizontal([Constraint::Percentage(62)])
-        .flex(Flex::Center)
-        .areas(area);
-    frame.render_widget(Clear, area);
+    pub fn has_updates(&self) -> bool {
+        self.plan
+            .as_ref()
+            .is_some_and(|plan| !plan.roots.is_empty())
+    }
 
-    let (title, footer) = match state.phase {
-        Phase::Checking => (" Check for updates ", " [Esc] close "),
-        Phase::Conflicts => (
-            " Resolve update conflicts ",
-            " [j/k] select  [Space] keep/retry  [Enter] continue  [Esc] close ",
-        ),
-        Phase::Review => (
-            " Update installed content ",
-            " [Enter] update all  [Esc] close ",
-        ),
-        Phase::Applying => (" Updating installed content ", " Please wait "),
-    };
-    let block = Block::default()
-        .title(title)
-        .title_bottom(Line::from(footer).centered())
-        .borders(Borders::ALL)
-        .border_type(BORDER_STYLE.to_border_type())
-        .border_style(Style::default().fg(theme.accent()))
-        .style(Style::default().fg(theme.text()).bg(theme.surface()));
+    pub fn show_review(&mut self) {
+        self.phase = Phase::Review;
+        self.rebuild_list();
+    }
 
-    match state.phase {
-        Phase::Checking | Phase::Applying => {
-            let message = if state.phase == Phase::Checking {
-                "Checking compatible versions and dependencies…"
-            } else {
-                "Installing the accepted update set…"
-            };
-            frame.render_widget(Paragraph::new(message).block(block), area);
+    pub fn show_conflicts(&mut self) {
+        if self
+            .plan
+            .as_ref()
+            .is_some_and(|plan| !plan.conflicts.is_empty())
+        {
+            self.phase = Phase::Conflicts;
+            self.rebuild_list();
         }
-        Phase::Conflicts => {
-            let items = state
+    }
+
+    fn rebuild_list(&mut self) {
+        let entries = match self.phase {
+            Phase::Conflicts => self
                 .plan
                 .as_ref()
                 .into_iter()
                 .flat_map(|plan| plan.conflicts.iter())
-                .enumerate()
-                .map(|(index, conflict)| {
-                    let action = if state.retry_conflicts.get(index) == Some(&true) {
-                        "Retry"
-                    } else {
-                        "Keep"
-                    };
-                    ListItem::new(vec![
-                        Line::from(vec![
-                            Span::styled(
-                                conflict.title.clone(),
-                                Style::default().add_modifier(Modifier::BOLD),
-                            ),
-                            Span::raw("  "),
-                            Span::styled(action, Style::default().fg(theme.accent())),
-                        ]),
-                        Line::from(conflict.reason.clone())
-                            .style(Style::default().fg(theme.text_dim())),
-                    ])
-                });
-            let mut selected = ListState::default().with_selected(Some(state.selected));
-            let list = List::new(items)
-                .block(block)
-                .highlight_symbol("▌")
-                .highlight_style(Style::default().bg(theme.stripe()));
-            frame.render_stateful_widget(list, area, &mut selected);
-        }
-        Phase::Review => {
-            let mut items = state
+                .map(|conflict| {
+                    let mut entry = self.entry_for(&conflict.installed_path, &conflict.title);
+                    entry.description = user_conflict_reason(&conflict.reason);
+                    entry.title_suffix = Some("Skipped".to_owned());
+                    entry.footer_label = None;
+                    entry.footer_change = None;
+                    entry
+                })
+                .collect(),
+            Phase::Review => self
                 .plan
                 .as_ref()
                 .into_iter()
                 .flat_map(|plan| plan.roots.iter())
                 .map(|root| {
-                    ListItem::new(Line::from(format!(
-                        "• {}  {} → {}",
-                        root.title, root.current_version, root.target.version_number
-                    )))
+                    let mut entry = self.entry_for(&root.installed_path, &root.title);
+                    entry.title_suffix = Some("Update".to_owned());
+                    entry.description.clear();
+                    entry.footer_label = None;
+                    entry.footer_change = Some((
+                        root.current_version.clone(),
+                        root.target.version_number.clone(),
+                    ));
+                    entry
                 })
-                .collect::<Vec<_>>();
-            if items.is_empty() {
-                items.push(ListItem::new("No compatible updates available."));
-            }
-            if let Some(error) = &state.error {
-                items.push(ListItem::new(
-                    Line::from(error.clone()).style(Style::default().fg(theme.error())),
-                ));
-            }
-            frame.render_widget(List::new(items).block(block), area);
-        }
+                .collect(),
+            Phase::Checking | Phase::Applying => Vec::new(),
+        };
+        self.list.set_entries(entries);
+    }
+
+    fn entry_for(&self, path: &Path, title: &str) -> ContentEntry {
+        self.source_entries
+            .get(path)
+            .cloned()
+            .unwrap_or_else(|| ContentEntry {
+                file_stem: path
+                    .file_stem()
+                    .and_then(|stem| stem.to_str())
+                    .unwrap_or(title)
+                    .to_owned(),
+                name: title.to_owned(),
+                source_slug: None,
+                installed_path: Some(path.to_owned()),
+                provider_project: None,
+                world_details: None,
+                title_suffix: None,
+                footer_label: None,
+                footer_change: None,
+                description: String::new(),
+                enabled: true,
+                icon_bytes: None,
+                provider_icon: false,
+                provider_description: false,
+                path: path.to_owned(),
+                icon_lines: Some(crate::instance::content::fallback_icon()),
+            })
     }
 }
+
+pub fn render(frame: &mut Frame, state: &mut State, picker: &ratatui_image::picker::Picker) {
+    if !state.visible() {
+        return;
+    }
+    let count = state.list.entries.len() as u16;
+    let height = count.saturating_mul(3).saturating_add(2).clamp(5, 20);
+    let area = frame.area().centered(
+        Constraint::Percentage(60),
+        Constraint::Length(height.min(frame.area().height.saturating_sub(4))),
+    );
+    let theme = crate::config::theme::THEME.as_ref();
+    let (title, keybinds) = match state.phase {
+        Phase::Conflicts => (
+            "Updates needing attention",
+            if state.has_updates() {
+                crate::tui::widgets::popups::keybind_line(&[
+                    ("j/k", " navigate"),
+                    ("Enter", " review updates"),
+                    ("h/Esc", " close"),
+                ])
+            } else {
+                crate::tui::widgets::popups::keybind_line(&[
+                    ("j/k", " navigate"),
+                    ("h/Esc", " close"),
+                ])
+            },
+        ),
+        Phase::Review => (
+            "Update installed content",
+            if state
+                .plan
+                .as_ref()
+                .is_some_and(|plan| !plan.conflicts.is_empty())
+            {
+                crate::tui::widgets::popups::keybind_line(&[
+                    ("j/k", " navigate"),
+                    ("h", " back"),
+                    ("Enter", " update all"),
+                    ("Esc", " close"),
+                ])
+            } else {
+                crate::tui::widgets::popups::keybind_line(&[
+                    ("j/k", " navigate"),
+                    ("Enter", " update all"),
+                    ("Esc", " close"),
+                ])
+            },
+        ),
+        Phase::Checking | Phase::Applying => return,
+    };
+    let popup = PopupFrame {
+        title: crate::tui::widgets::styled_title(title, false),
+        border_color: theme.accent(),
+        bg: Some(theme.surface()),
+        keybinds: Some(keybinds),
+        search_line: None,
+        content: Box::new(|_, _| {}),
+    };
+    frame.render_widget(popup, area);
+    super::list::render(
+        frame,
+        area.inner(Margin::new(1, 1)),
+        &mut state.list,
+        true,
+        "",
+        "",
+        picker,
+        false,
+        false,
+    );
+}
+
+fn user_conflict_reason(reason: &str) -> String {
+    let reason = reason.strip_prefix("Parse error: ").unwrap_or(reason);
+    if let Some(details) = reason
+        .strip_prefix("Conflicting selected versions for '")
+        .or_else(|| reason.strip_prefix("Conflicting required versions for '"))
+        && let Some((dependency, versions)) = details.split_once("': '")
+        && let Some((first, second)) = versions.split_once("' and '")
+    {
+        return format!(
+            "Other updates need different {dependency} versions ({first} and {}). This mod was left unchanged; update it separately with v.",
+            second.trim_end_matches('\'')
+        );
+    }
+    format!(
+        "This update could not be prepared: {reason}. The installed version was left unchanged; try updating it separately with v."
+    )
+}
+
+#[cfg(test)]
+#[path = "../../tests/widgets/content/update.rs"]
+mod tests;

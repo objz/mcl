@@ -20,6 +20,8 @@ pub struct AvailableUpdate {
 pub struct UpdateSnapshot {
     pub game_version: String,
     pub loader: ModLoader,
+    #[serde(default)]
+    pub inventory: Vec<ProviderProject>,
     pub updates: Vec<AvailableUpdate>,
     pub failures: Vec<UpdateCheckFailure>,
 }
@@ -47,6 +49,7 @@ pub struct UpdateRequest {
 #[derive(Debug, Clone)]
 pub struct PlannedRootUpdate {
     pub title: String,
+    pub installed_path: std::path::PathBuf,
     pub current_version: String,
     pub target: VersionInfo,
 }
@@ -77,6 +80,10 @@ impl UpdateSnapshot {
 
     pub fn applies_to(&self, instance: &InstanceConfig) -> bool {
         self.game_version == instance.game_version && self.loader == instance.loader
+    }
+
+    pub fn matches_manifest(&self, manifest: &ContentManifest) -> bool {
+        self.inventory == resolved_inventory(manifest)
     }
 
     pub fn update_for(&self, installed: &ProviderProject) -> Option<&AvailableUpdate> {
@@ -129,6 +136,10 @@ pub async fn scan(instance: &InstanceConfig, manifest: &ContentManifest) -> Upda
             && left.0.project_id == right.0.project_id
             && left.0.version_id == right.0.version_id
     });
+    let inventory = projects
+        .iter()
+        .map(|(project, _)| project.clone())
+        .collect();
 
     let slots = Arc::new(tokio::sync::Semaphore::new(8));
     let mut tasks = tokio::task::JoinSet::new();
@@ -195,9 +206,27 @@ pub async fn scan(instance: &InstanceConfig, manifest: &ContentManifest) -> Upda
     UpdateSnapshot {
         game_version: instance.game_version.clone(),
         loader: instance.loader,
+        inventory,
         updates,
         failures,
     }
+}
+
+fn resolved_inventory(manifest: &ContentManifest) -> Vec<ProviderProject> {
+    let mut inventory = manifest
+        .files
+        .iter()
+        .filter_map(|record| record.resolved_project().cloned())
+        .collect::<Vec<_>>();
+    inventory.sort_by(|left, right| {
+        (&left.provider, &left.project_id, &left.version_id).cmp(&(
+            &right.provider,
+            &right.project_id,
+            &right.version_id,
+        ))
+    });
+    inventory.dedup();
+    inventory
 }
 
 pub async fn plan_bulk(
@@ -249,6 +278,7 @@ pub async fn plan_bulk(
         }
         roots.push(PlannedRootUpdate {
             title: request.title,
+            installed_path: request.installed_path,
             current_version: request.update.current.as_ref().map_or_else(
                 || request.update.installed.version_id.clone(),
                 |version| version.version_number.clone(),
@@ -298,6 +328,7 @@ mod tests {
         let snapshot = UpdateSnapshot {
             game_version: "1.21.1".to_owned(),
             loader: ModLoader::Fabric,
+            inventory: vec![installed.clone()],
             updates: vec![AvailableUpdate {
                 installed: installed.clone(),
                 current: Some(version("old")),
@@ -316,5 +347,44 @@ mod tests {
                 })
                 .is_none()
         );
+    }
+
+    #[test]
+    fn cached_updates_require_the_same_content_inventory() {
+        let project = ProviderProject {
+            provider: "modrinth".to_owned(),
+            project_id: "project".to_owned(),
+            version_id: "old".to_owned(),
+        };
+        let snapshot = UpdateSnapshot {
+            game_version: "1.21.1".to_owned(),
+            loader: ModLoader::Fabric,
+            inventory: vec![project.clone()],
+            updates: Vec::new(),
+            failures: Vec::new(),
+        };
+        let mut manifest = ContentManifest::default();
+        manifest.files.push(crate::instance::ContentFileRecord {
+            relative_path: "mods/example.jar".into(),
+            kind: ContentKind::Mod,
+            enabled: true,
+            fingerprint: crate::instance::FileFingerprint {
+                size: 0,
+                modified_ns: 0,
+                hashes: Default::default(),
+            },
+            resolution: crate::instance::Resolution::Resolved { project },
+            provider_aliases: Vec::new(),
+            required_dependencies: Vec::new(),
+            automatic_dependency: false,
+            cleanup_eligible: false,
+        });
+
+        assert!(snapshot.matches_manifest(&manifest));
+        manifest.files[0].resolution = crate::instance::Resolution::Unmatched {
+            checked_at: 0,
+            providers: Vec::new(),
+        };
+        assert!(!snapshot.matches_manifest(&manifest));
     }
 }

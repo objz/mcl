@@ -62,6 +62,7 @@ pub(crate) fn scan_one_pack(path: &Path, file_stem: &str, enabled: bool) -> Cont
         world_details: None,
         title_suffix: None,
         footer_label: None,
+        footer_change: None,
         description,
         enabled,
         icon_bytes,
