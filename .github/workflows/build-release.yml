@@ -257,7 +257,7 @@ jobs:
         env:
           PRERELEASE_FLAG: "${{ fromJson(steps.host.outputs.manifest).announcement_is_prerelease && '--prerelease' || '' }}"
           ANNOUNCEMENT_TITLE: "${{ fromJson(steps.host.outputs.manifest).announcement_title }}"
-          RELEASE_COMMIT: "${{ inputs.tag }}"
+          RELEASE_COMMIT: "${{ github.sha }}"
           CHANGELOG: "${{ steps.changelog.outputs.content }}"
           RELEASE_TAG: "${{ needs.plan.outputs.tag }}"
           APP_VERSION: "${{ fromJson(steps.host.outputs.manifest).releases[0].app_version }}"
