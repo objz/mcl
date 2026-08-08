@@ -9,6 +9,9 @@ on:
       ref:
         type: string
         default: ""
+    secrets:
+      curseforge-api-key:
+        required: false
 
 permissions:
   contents: read
@@ -71,6 +74,8 @@ jobs:
   network-tests:
     if: inputs.network-tests
     runs-on: ubuntu-latest
+    env:
+      CURSEFORGE_API_KEY: ${{ secrets.curseforge-api-key }}
     steps:
       - uses: actions/checkout@v6
         with:

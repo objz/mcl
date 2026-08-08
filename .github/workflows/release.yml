@@ -16,6 +16,8 @@ jobs:
     with:
       network-tests: true
       ref: master
+    secrets:
+      curseforge-api-key: ${{ secrets.CURSEFORGE_API_KEY }}
 
   prepare:
     needs: checks
