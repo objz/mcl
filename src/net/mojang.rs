@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use tokio::task::JoinSet;
 
 use super::{HttpClient, NetError, download_file};
-use crate::tui::progress::{clear, set_action, set_progress, set_sub_action};
+use crate::feedback::progress::{clear, set_action, set_progress, set_sub_action};
 
 const MANIFEST_URL: &str = "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json";
 const ASSETS_BASE_URL: &str = "https://resources.download.minecraft.net";
@@ -152,8 +152,8 @@ pub async fn download_client_jar(
     meta: &VersionMeta,
     meta_dir: &Path,
 ) -> Result<(), NetError> {
-    let jar_path = meta_dir
-        .join("versions")
+    let jar_path = crate::storage::MetadataPaths::new(meta_dir)
+        .versions()
         .join(&meta.id)
         .join(format!("{}.jar", meta.id));
 
@@ -225,7 +225,9 @@ pub async fn download_libraries(
             }
         };
 
-        let destination = meta_dir.join("libraries").join(&artifact.path);
+        let destination = crate::storage::MetadataPaths::new(meta_dir)
+            .libraries()
+            .join(&artifact.path);
 
         if destination.exists() {
             tracing::trace!("Library already cached: {}", artifact.path);
@@ -264,26 +266,28 @@ pub async fn download_assets_from(
     assets_base: &str,
 ) -> Result<(), NetError> {
     set_action("Downloading assets...");
-    tracing::debug!(
-        "Fetching asset index {} from {}",
-        meta.asset_index.id,
-        meta.asset_index.url
-    );
-
-    let asset_index: AssetIndexContent = match client.get_json(&meta.asset_index.url).await {
-        Ok(index) => index,
-        Err(e) => {
-            clear();
-            return Err(e);
-        }
-    };
-
-    let index_path = meta_dir
-        .join("assets")
+    let index_path = crate::storage::MetadataPaths::new(meta_dir)
+        .assets()
         .join("indexes")
         .join(format!("{}.json", meta.asset_index.id));
-    if !index_path.exists() {
-        match serde_json::to_string(&asset_index) {
+    let asset_index: AssetIndexContent = if index_path.exists() {
+        let bytes = tokio::fs::read(&index_path).await?;
+        serde_json::from_slice(&bytes)
+            .map_err(|error| NetError::Parse(format!("Invalid cached asset index: {error}")))?
+    } else {
+        tracing::debug!(
+            "Fetching asset index {} from {}",
+            meta.asset_index.id,
+            meta.asset_index.url
+        );
+        let index = match client.get_json(&meta.asset_index.url).await {
+            Ok(index) => index,
+            Err(e) => {
+                clear();
+                return Err(e);
+            }
+        };
+        match serde_json::to_string(&index) {
             Ok(json) => {
                 if let Some(parent) = index_path.parent() {
                     match tokio::fs::create_dir_all(parent).await {
@@ -310,7 +314,8 @@ pub async fn download_assets_from(
                 tracing::debug!("Failed to serialize asset index: {}", e);
             }
         }
-    }
+        index
+    };
 
     // assets are stored by hash with the first 2 chars as a directory prefix,
     // e.g. "ab/ab1234..." - same layout mojang uses on their CDN
@@ -326,8 +331,8 @@ pub async fn download_assets_from(
 
         let prefix = &object.hash[..2];
         let url = format!("{}/{}/{}", assets_base, prefix, object.hash);
-        let destination = meta_dir
-            .join("assets")
+        let destination = crate::storage::MetadataPaths::new(meta_dir)
+            .assets()
             .join("objects")
             .join(prefix)
             .join(&object.hash);
@@ -441,23 +446,4 @@ fn spawn_download_task(
             label
         })
     });
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::net::HttpClient;
-
-    #[tokio::test]
-    #[ignore = "hits live Mojang API"]
-    async fn test_fetch_manifest_contains_1_20_1() {
-        let client = HttpClient::new();
-        match fetch_version_manifest(&client).await {
-            Ok(manifest) => {
-                let found = manifest.versions.iter().any(|v| v.id == "1.20.1");
-                assert!(found, "1.20.1 should be in the manifest");
-            }
-            Err(e) => panic!("fetch_version_manifest failed: {}", e),
-        }
-    }
 }

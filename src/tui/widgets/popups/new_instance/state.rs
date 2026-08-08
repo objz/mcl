@@ -12,6 +12,8 @@ use std::sync::LazyLock;
 use std::sync::{Arc, Mutex};
 use tui_prompts::{FocusState, State as PromptState, TextState};
 
+use super::super::LoadState;
+
 pub(crate) static WIZARD_STATE: LazyLock<Arc<Mutex<WizardState>>> =
     LazyLock::new(|| Arc::new(Mutex::new(WizardState::default())));
 // populated on confirm, consumed by the main event loop to actually create the instance
@@ -34,15 +36,6 @@ pub enum WizardStep {
     Loader,
     LoaderVersion,
     Confirm,
-}
-
-#[derive(Debug, Clone, Default)]
-pub enum LoadState<T> {
-    #[default]
-    Idle,
-    Loading,
-    Loaded(T),
-    Error(String),
 }
 
 #[derive(Debug, Clone)]
@@ -154,6 +147,18 @@ fn handle_name_key(
             }
             state.step = WizardStep::Loader;
         }
+        KeyCode::Backspace
+            if key_event
+                .modifiers
+                .contains(crossterm::event::KeyModifiers::CONTROL) =>
+        {
+            let position = state.name_state.position();
+            let position = crate::tui::widgets::search::delete_previous_word(
+                state.name_state.value_mut(),
+                position,
+            );
+            *state.name_state.position_mut() = position;
+        }
         _ => {
             state.name_state.handle_key_event(*key_event);
         }
@@ -174,7 +179,7 @@ fn handle_version_key(
                 return;
             }
             KeyCode::Backspace => {
-                state.version_search.pop();
+                state.version_search.backspace(key_event.modifiers);
                 clamp_version_index(state);
                 return;
             }
@@ -458,25 +463,10 @@ pub(crate) fn ensure_loader_versions_loaded(
     });
 }
 
-// quick and dirty semver compare. doesn't handle pre-release tags or anything
-// fancy, just splits on dots and compares numerically. good enough for mc versions.
-fn compare_semver(a: &str, b: &str) -> std::cmp::Ordering {
-    let parse_parts = |s: &str| -> Vec<u64> {
-        s.split('.')
-            .map(|p| p.parse::<u64>().unwrap_or(0))
-            .collect()
-    };
-    let a_parts = parse_parts(a);
-    let b_parts = parse_parts(b);
-    for (ap, bp) in a_parts.iter().zip(b_parts.iter()) {
-        match ap.cmp(bp) {
-            std::cmp::Ordering::Equal => continue,
-            other => return other,
-        }
-    }
-    a_parts.len().cmp(&b_parts.len())
+fn sort_versions_semver(versions: &mut [GameVersion]) {
+    versions.sort_by(|a, b| super::super::compare_game_versions(&b.id, &a.id));
 }
 
-fn sort_versions_semver(versions: &mut [GameVersion]) {
-    versions.sort_by(|a, b| compare_semver(&b.id, &a.id));
-}
+#[cfg(test)]
+#[path = "../../../tests/widgets/popups/new_instance/state.rs"]
+mod tests;

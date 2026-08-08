@@ -1,7 +1,7 @@
 // integration tests for the public mojang fetchers. wiremock stands in for
 // Mojang so tests are fast, deterministic, and don't depend on the live
 // endpoint. these are different from the #[ignore = "hits live Mojang API"]
-// tests in src/net/mojang.rs which verify the upstream schema hasn't drifted;
+// tests in tests/live_apis.rs which verify the upstream schema hasn't drifted;
 // these here verify our parsing + retry envelope on synthetic responses.
 
 use serde_json::json;
@@ -170,7 +170,7 @@ async fn download_libraries_writes_artifact_to_meta_dir() {
 
     let written = tmp
         .path()
-        .join("libraries/org/slf4j/slf4j-api/2.0.7/slf4j-api-2.0.7.jar");
+        .join("cache/minecraft/libraries/org/slf4j/slf4j-api/2.0.7/slf4j-api-2.0.7.jar");
     assert!(written.exists(), "expected library file at {written:?}");
     let contents = std::fs::read(&written).unwrap();
     assert_eq!(contents, b"jar-bytes");
@@ -193,7 +193,7 @@ async fn download_libraries_skips_when_destination_exists() {
     let tmp = tempfile::tempdir().unwrap();
     let existing = tmp
         .path()
-        .join("libraries/org/slf4j/slf4j-api/2.0.7/slf4j-api-2.0.7.jar");
+        .join("cache/minecraft/libraries/org/slf4j/slf4j-api/2.0.7/slf4j-api-2.0.7.jar");
     std::fs::create_dir_all(existing.parent().unwrap()).unwrap();
     std::fs::write(&existing, b"already there").unwrap();
 
@@ -240,11 +240,11 @@ async fn download_assets_from_writes_index_and_assets() {
         .await
         .expect("download_assets_from");
 
-    let index_path = tmp.path().join("assets/indexes/5.json");
+    let index_path = tmp.path().join("cache/minecraft/assets/indexes/5.json");
     assert!(index_path.exists(), "index file missing");
     let asset_path = tmp
         .path()
-        .join("assets/objects/ab/ab1234567890abcdef1234567890abcdef123456");
+        .join("cache/minecraft/assets/objects/ab/ab1234567890abcdef1234567890abcdef123456");
     assert!(asset_path.exists(), "asset file missing");
     assert_eq!(std::fs::read(&asset_path).unwrap(), b"asset-bytes");
 }
@@ -269,7 +269,7 @@ async fn download_assets_writes_index_when_objects_is_empty() {
         .await
         .expect("download_assets index-only");
 
-    let index_path = tmp.path().join("assets/indexes/5.json");
+    let index_path = tmp.path().join("cache/minecraft/assets/indexes/5.json");
     assert!(
         index_path.exists(),
         "expected asset index at {index_path:?}"
@@ -277,32 +277,4 @@ async fn download_assets_writes_index_when_objects_is_empty() {
     let body: serde_json::Value =
         serde_json::from_slice(&std::fs::read(&index_path).unwrap()).unwrap();
     assert!(body.get("objects").is_some());
-}
-
-#[tokio::test]
-async fn fetch_version_manifest_retries_5xx_and_succeeds() {
-    let server = MockServer::start().await;
-
-    // one transient 503 then the real payload; covers the integration of the
-    // retry envelope (already unit-tested in net_retry.rs) with the actual
-    // VersionManifest deserialisation path.
-    Mock::given(method("GET"))
-        .and(path("/manifest.json"))
-        .respond_with(ResponseTemplate::new(503))
-        .up_to_n_times(1)
-        .expect(1)
-        .mount(&server)
-        .await;
-    Mock::given(method("GET"))
-        .and(path("/manifest.json"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(synthetic_manifest()))
-        .expect(1)
-        .mount(&server)
-        .await;
-
-    let url = format!("{}/manifest.json", server.uri());
-    let manifest = fetch_version_manifest_from(&HttpClient::new(), &url)
-        .await
-        .expect("manifest after retry");
-    assert_eq!(manifest.versions.len(), 2);
 }

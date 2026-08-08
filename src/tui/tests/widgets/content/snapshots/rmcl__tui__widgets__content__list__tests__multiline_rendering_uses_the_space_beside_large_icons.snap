@@ -1,0 +1,10 @@
+---
+source: src/tui/tests/widgets/content/list.rs
+expression: terminal.backend().to_string()
+---
+"▌▄▄▄▄▄▄▄▄▄▄▄▄ World   Survival                                        "
+"▌▄▄▄▄▄▄▄▄▄▄▄▄ 1.21.1  •  2.0 MB                          Never played "
+"▌▄▄▄▄▄▄▄▄▄▄▄▄                                                         "
+"▌▄▄▄▄▄▄▄▄▄▄▄▄                                                         "
+"▌▄▄▄▄▄▄▄▄▄▄▄▄                                                         "
+"▌▄▄▄▄▄▄▄▄▄▄▄▄                                                         "

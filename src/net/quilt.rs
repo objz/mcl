@@ -5,9 +5,9 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
+use crate::feedback::progress::set_sub_action;
 use crate::instance::loader::GameVersion;
 use crate::net::{HttpClient, NetError, download_file};
-use crate::tui::progress::set_sub_action;
 
 const QUILT_META_BASE: &str = "https://meta.quiltmc.org/v3";
 
@@ -149,7 +149,7 @@ pub async fn download_quilt_libraries(
     profile: &QuiltProfile,
     meta_dir: &Path,
 ) -> Result<(), NetError> {
-    let libraries_dir = meta_dir.join("libraries");
+    let libraries_dir = crate::storage::MetadataPaths::new(meta_dir).libraries();
     tracing::debug!(
         "Resolving {} Quilt libraries into {}",
         profile.libraries.len(),
@@ -157,7 +157,7 @@ pub async fn download_quilt_libraries(
     );
 
     for lib in &profile.libraries {
-        let maven_path = match crate::net::maven_coord_to_path(&lib.name) {
+        let maven_path = match crate::instance::loader::maven::maven_coord_to_path(&lib.name) {
             Some(p) => p,
             None => {
                 return Err(NetError::Parse(format!(
@@ -186,38 +186,4 @@ pub async fn download_quilt_libraries(
 
     tracing::debug!("Quilt library resolution complete for {}", profile.id);
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::net::HttpClient;
-
-    #[tokio::test]
-    #[ignore = "hits live Quilt API"]
-    async fn test_fetch_versions() {
-        let client = HttpClient::new();
-        match fetch_quilt_versions(&client, "1.20.1").await {
-            Ok(versions) => {
-                assert!(
-                    !versions.is_empty(),
-                    "Should have Quilt versions for 1.20.1"
-                );
-            }
-            Err(e) => panic!("fetch_quilt_versions failed: {}", e),
-        }
-    }
-
-    #[tokio::test]
-    #[ignore = "hits live Quilt API"]
-    async fn test_fetch_game_versions() {
-        let client = HttpClient::new();
-        match fetch_quilt_game_versions(&client).await {
-            Ok(versions) => {
-                assert!(!versions.is_empty(), "Should have Quilt game versions");
-                assert!(versions.iter().any(|version| version.id == "1.20.1"));
-            }
-            Err(e) => panic!("fetch_quilt_game_versions failed: {}", e),
-        }
-    }
 }

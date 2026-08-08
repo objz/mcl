@@ -4,9 +4,9 @@
 
 use std::path::Path;
 
+use crate::feedback::progress;
 use crate::instance::manager::InstanceManager;
 use crate::instance::models::ModLoader;
-use crate::tui::progress;
 
 use super::{ImportSummary, PackFormat};
 use serde::Deserialize;
@@ -87,6 +87,7 @@ pub fn build_summary(path: &Path) -> Result<ImportSummary, String> {
         override_count,
         format: PackFormat::Mmc,
         archive_path: path.to_path_buf(),
+        source: None,
     })
 }
 
@@ -114,8 +115,14 @@ pub async fn execute_import(
         .await
         .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> { Box::new(e) })?;
 
-    let minecraft_dir = manager.instances_dir.join(&name).join(".minecraft");
-    extract_mmc_archive(&summary.archive_path, &minecraft_dir)?;
+    let minecraft_dir = manager
+        .instances_dir
+        .join(&name)
+        .join(crate::storage::MINECRAFT_DIR_NAME);
+    if let Err(error) = extract_mmc_archive(&summary.archive_path, &minecraft_dir) {
+        super::cleanup_failed_import(manager, &name);
+        return Err(error);
+    }
 
     progress::clear();
     tracing::info!(
@@ -155,11 +162,25 @@ fn extract_mmc_archive(
         let mut entry = archive.by_index(i)?;
         let entry_name = entry.name().to_string();
 
-        let Some(relative) = entry_name.strip_prefix(&minecraft_prefix) else {
+        if !entry_name.starts_with(&minecraft_prefix) {
             continue;
-        };
+        }
+        let enclosed = entry.enclosed_name().ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("Unsafe archive path: {entry_name}"),
+            )
+        })?;
+        let relative = enclosed
+            .strip_prefix(minecraft_prefix.trim_end_matches('/'))
+            .map_err(|_| {
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!("Invalid archive path: {entry_name}"),
+                )
+            })?;
 
-        if relative.is_empty() || entry_name.ends_with('/') {
+        if relative.as_os_str().is_empty() || entry_name.ends_with('/') {
             std::fs::create_dir_all(minecraft_dir.join(relative))?;
             dirs += 1;
             continue;
@@ -170,7 +191,10 @@ fn extract_mmc_archive(
             std::fs::create_dir_all(parent)?;
         }
 
-        let filename = relative.rsplit('/').next().unwrap_or(relative);
+        let filename = relative
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or_default();
         progress::set_sub_action(filename.to_string());
 
         let mut buf = Vec::new();
@@ -279,90 +303,5 @@ fn count_content_files(path: &Path) -> Result<(usize, usize), String> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn parse_mmc_pack_json() {
-        let json = r#"{
-            "formatVersion": 1,
-            "components": [
-                {
-                    "uid": "net.minecraft",
-                    "version": "1.7.10",
-                    "cachedName": "Minecraft"
-                },
-                {
-                    "uid": "net.minecraftforge",
-                    "version": "10.13.4.1614",
-                    "cachedName": "Forge"
-                }
-            ]
-        }"#;
-        let pack: MmcPack = serde_json::from_str(json).unwrap();
-        assert_eq!(pack.game_version(), Some("1.7.10".to_string()));
-        let (loader, version) = pack.loader();
-        assert_eq!(loader, Some(ModLoader::Forge));
-        assert_eq!(version, Some("10.13.4.1614".to_string()));
-    }
-
-    #[test]
-    fn parse_mmc_pack_vanilla() {
-        let json = r#"{
-            "formatVersion": 1,
-            "components": [
-                {"uid": "net.minecraft", "version": "1.21.4"}
-            ]
-        }"#;
-        let pack: MmcPack = serde_json::from_str(json).unwrap();
-        assert!(pack.loader().0.is_none());
-    }
-
-    // builds an in-memory mmc-style pack zip and verifies that
-    // extract_mmc_archive copies only the .minecraft/ subtree into the
-    // destination, preserving relative paths and skipping siblings.
-    #[test]
-    fn extract_mmc_archive_copies_minecraft_subtree() {
-        use std::io::Write;
-
-        let tmp = tempfile::tempdir().unwrap();
-        let archive_path = tmp.path().join("pack.zip");
-        let dest = tmp.path().join("instance/.minecraft");
-        std::fs::create_dir_all(&dest).unwrap();
-
-        // Pack/ is the prefix; only .minecraft/ entries should land in dest.
-        // mmc-style pack: a root dir "Pack/" wrapping the .minecraft tree
-        // plus a sibling mmc-pack.json that should NOT be extracted.
-        {
-            let file = std::fs::File::create(&archive_path).unwrap();
-            let mut zip = zip::ZipWriter::new(file);
-            let opts: zip::write::SimpleFileOptions = Default::default();
-
-            zip.start_file("Pack/mmc-pack.json", opts).unwrap();
-            zip.write_all(b"{}").unwrap();
-
-            zip.start_file("Pack/.minecraft/options.txt", opts).unwrap();
-            zip.write_all(b"lang:en_us").unwrap();
-
-            zip.start_file("Pack/.minecraft/mods/test-mod.jar", opts)
-                .unwrap();
-            zip.write_all(b"jar-bytes").unwrap();
-
-            zip.finish().unwrap();
-        }
-
-        extract_mmc_archive(&archive_path, &dest).expect("extract");
-
-        // .minecraft/ entries must have been copied with their relative paths
-        let options = std::fs::read(dest.join("options.txt")).expect("options.txt");
-        assert_eq!(options, b"lang:en_us");
-        let modjar = std::fs::read(dest.join("mods/test-mod.jar")).expect("mods/test-mod.jar");
-        assert_eq!(modjar, b"jar-bytes");
-
-        // and the sibling outside .minecraft/ must not have been copied
-        assert!(
-            !dest.join("mmc-pack.json").exists(),
-            "mmc-pack.json should not land in the instance dir"
-        );
-    }
-}
+#[path = "../tests/import/mmc.rs"]
+mod tests;

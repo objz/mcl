@@ -20,14 +20,7 @@ impl ModLoaderInstaller for VanillaInstaller {
 
     async fn get_game_versions(&self, client: &HttpClient) -> Result<Vec<GameVersion>, NetError> {
         let manifest = mojang::fetch_version_manifest(client).await?;
-        Ok(manifest
-            .versions
-            .into_iter()
-            .map(|v| GameVersion {
-                id: v.id,
-                stable: v.version_type == "release",
-            })
-            .collect())
+        Ok(game_versions_from_manifest(manifest))
     }
 
     async fn get_versions(
@@ -49,3 +42,18 @@ impl ModLoaderInstaller for VanillaInstaller {
         Ok(())
     }
 }
+
+fn game_versions_from_manifest(manifest: mojang::VersionManifest) -> Vec<GameVersion> {
+    manifest
+        .versions
+        .into_iter()
+        .map(|version| GameVersion {
+            id: version.id,
+            stable: version.version_type == "release",
+        })
+        .collect()
+}
+
+#[cfg(test)]
+#[path = "../tests/loader/vanilla.rs"]
+mod tests;

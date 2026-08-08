@@ -126,7 +126,7 @@ impl InstanceManager {
         loader_version: Option<&str>,
         instance_dir: &std::path::Path,
     ) -> Result<InstanceConfig, InstanceError> {
-        let minecraft_dir = instance_dir.join(".minecraft");
+        let minecraft_dir = instance_dir.join(crate::storage::MINECRAFT_DIR_NAME);
         tracing::debug!(
             "Preparing Minecraft directory for '{}': {}",
             name,
@@ -149,11 +149,12 @@ impl InstanceManager {
             );
         }
 
+        let metadata_paths = crate::storage::MetadataPaths::new(&self.meta_dir);
         for meta_subdir in &[
-            self.meta_dir.join("versions"),
-            self.meta_dir.join("libraries"),
-            self.meta_dir.join("assets").join("objects"),
-            self.meta_dir.join("assets").join("indexes"),
+            metadata_paths.versions(),
+            metadata_paths.libraries(),
+            metadata_paths.assets().join("objects"),
+            metadata_paths.assets().join("indexes"),
         ] {
             std::fs::create_dir_all(meta_subdir)?;
             tracing::trace!("Ensured metadata directory {}", meta_subdir.display());
@@ -198,9 +199,8 @@ impl InstanceManager {
         crate::net::mojang::download_client_jar(&self.client, &version_meta, &self.meta_dir)
             .await?;
 
-        let meta_json_path = self
-            .meta_dir
-            .join("versions")
+        let meta_json_path = metadata_paths
+            .versions()
             .join(game_version)
             .join("meta.json");
         if let Some(parent) = meta_json_path.parent()
@@ -272,13 +272,110 @@ impl InstanceManager {
             jvm_args: vec![],
             resolution: None,
             config_sync_profile: None,
+            modpack_source: None,
         };
 
         self.save(&config)?;
         tracing::info!("Created instance '{}'", name);
 
-        crate::tui::progress::clear();
+        crate::feedback::progress::clear();
         Ok(config)
+    }
+
+    pub async fn repair_runtime_cache(&self, config: &InstanceConfig) -> Result<(), InstanceError> {
+        let task = crate::feedback::progress::ProgressTask::start(format!(
+            "Rebuilding runtime for '{}'",
+            config.name
+        ));
+        task.set_sub_action(format!("Minecraft {}", config.game_version));
+        let metadata_paths = crate::storage::MetadataPaths::new(&self.meta_dir);
+        for directory in [
+            metadata_paths.versions(),
+            metadata_paths.libraries(),
+            metadata_paths.assets().join("objects"),
+            metadata_paths.assets().join("indexes"),
+            metadata_paths.loader_profiles(),
+        ] {
+            std::fs::create_dir_all(directory)?;
+        }
+
+        let meta_path = metadata_paths
+            .versions()
+            .join(&config.game_version)
+            .join("meta.json");
+        let (version_meta, raw_meta) = if meta_path.exists() {
+            let raw = std::fs::read(&meta_path)?;
+            let parsed = serde_json::from_slice(&raw).map_err(|error| {
+                InstanceError::InvalidName(format!(
+                    "Cached metadata for Minecraft {} is invalid: {error}",
+                    config.game_version
+                ))
+            })?;
+            (parsed, raw)
+        } else {
+            let manifest = crate::net::mojang::fetch_version_manifest(&self.client).await?;
+            let version_entry = manifest
+                .versions
+                .iter()
+                .find(|version| version.id == config.game_version)
+                .ok_or_else(|| {
+                    InstanceError::InvalidName(format!(
+                        "Minecraft version '{}' is no longer present in Mojang's manifest",
+                        config.game_version
+                    ))
+                })?;
+            crate::net::mojang::fetch_version_meta_with_raw(&self.client, version_entry).await?
+        };
+        crate::net::mojang::download_client_jar(&self.client, &version_meta, &self.meta_dir)
+            .await?;
+        if let Some(parent) = meta_path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        if !meta_path.exists() {
+            crate::storage::write_atomic(&meta_path, &raw_meta)?;
+        }
+        crate::net::mojang::download_libraries(&self.client, &version_meta, &self.meta_dir).await?;
+        crate::net::mojang::download_assets(&self.client, &version_meta, &self.meta_dir).await?;
+
+        if config.loader != ModLoader::Vanilla {
+            let loader_version = config.loader_version.as_deref().ok_or_else(|| {
+                InstanceError::InvalidName(format!(
+                    "Instance '{}' has no {} loader version",
+                    config.name, config.loader
+                ))
+            })?;
+            let profile_name = match config.loader {
+                ModLoader::Fabric => {
+                    format!("fabric-{}-{loader_version}.json", config.game_version)
+                }
+                ModLoader::Quilt => {
+                    format!("quilt-{}-{loader_version}.json", config.game_version)
+                }
+                ModLoader::Forge => {
+                    format!("forge-{}-{loader_version}.json", config.game_version)
+                }
+                ModLoader::NeoForge => format!("neoforge-{loader_version}.json"),
+                ModLoader::Vanilla => unreachable!(),
+            };
+            if !metadata_paths.loader_profiles().join(profile_name).exists() {
+                task.set_sub_action(format!("{} {}", config.loader, loader_version));
+                crate::instance::loader::get_installer(config.loader)
+                    .install(
+                        &self.client,
+                        &config.game_version,
+                        loader_version,
+                        &self.instances_dir.join(&config.name),
+                        &self.meta_dir,
+                    )
+                    .await
+                    .map_err(|error| match error {
+                        InstallError::Download(error) => InstanceError::Download(error),
+                        InstallError::Installer(error) => InstanceError::InstallerError(error),
+                    })?;
+            }
+        }
+        task.finish();
+        Ok(())
     }
 
     pub fn delete(&self, name: &str) -> Result<(), InstanceError> {
@@ -493,171 +590,5 @@ fn validate_name(name: &str) -> Result<(), InstanceError> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::instance::models::ModLoader;
-    use tempfile::TempDir;
-
-    // tmp owns the temp directory; its Drop impl cleans up everything when
-    // the test ends. the returned InstanceManager points at tmp.path() so
-    // tests can join("name") off of either to refer to the same locations.
-    fn test_manager() -> (InstanceManager, TempDir) {
-        let tmp = tempfile::tempdir().unwrap();
-        let meta = tmp.path().join("meta");
-        std::fs::create_dir_all(&meta).unwrap();
-        (InstanceManager::new(tmp.path().to_path_buf(), meta), tmp)
-    }
-
-    fn dummy_config(name: &str) -> InstanceConfig {
-        InstanceConfig {
-            name: name.to_string(),
-            game_version: "1.20.1".to_string(),
-            loader: ModLoader::Vanilla,
-            loader_version: None,
-            created: chrono::Utc::now(),
-            last_played: None,
-            java_path: None,
-            memory_max: None,
-            memory_min: None,
-            jvm_args: vec![],
-            resolution: None,
-            config_sync_profile: None,
-        }
-    }
-
-    #[test]
-    fn validate_name_accepts_safe_names() {
-        assert!(validate_name("my-instance").is_ok());
-        assert!(validate_name("test_world").is_ok());
-    }
-
-    #[test]
-    fn validate_name_rejects_empty_traversal_and_hidden() {
-        assert!(validate_name("").is_err());
-        assert!(validate_name("path/traversal").is_err());
-        assert!(validate_name(".hidden").is_err());
-    }
-
-    #[test]
-    fn delete_missing_instance_returns_not_found() {
-        let (manager, _tmp) = test_manager();
-        let result = manager.delete("ghost-instance");
-        assert!(matches!(result, Err(InstanceError::NotFound(_))));
-    }
-
-    #[test]
-    fn save_then_load_all_round_trips_config() {
-        let (manager, tmp) = test_manager();
-        std::fs::create_dir_all(tmp.path().join("test-save")).unwrap();
-        manager.save(&dummy_config("test-save")).expect("save");
-
-        let all = manager.load_all();
-        assert_eq!(all.len(), 1);
-        assert_eq!(all[0].name, "test-save");
-        assert_eq!(all[0].game_version, "1.20.1");
-    }
-
-    #[test]
-    fn load_all_accepts_numeric_memory() {
-        let (manager, tmp) = test_manager();
-        let instance_dir = tmp.path().join("test-memory");
-        std::fs::create_dir_all(&instance_dir).unwrap();
-        std::fs::write(
-            instance_dir.join("instance.json"),
-            r#"{
-  "name": "test-memory",
-  "game_version": "1.7.10",
-  "loader": "forge",
-  "loader_version": "10.13.4.1614",
-  "created": "2026-04-20T18:04:25.567993893Z",
-  "memory_max": 8,
-  "memory_min": 512
-}"#,
-        )
-        .expect("write config");
-
-        let all = manager.load_all();
-        assert_eq!(all.len(), 1);
-        assert_eq!(all[0].memory_max.as_deref(), Some("8G"));
-        assert_eq!(all[0].memory_min.as_deref(), Some("512M"));
-    }
-
-    #[test]
-    fn load_one_missing_returns_not_found() {
-        let (manager, _tmp) = test_manager();
-        let result = manager.load_one("ghost-instance");
-        assert!(matches!(result, Err(InstanceError::NotFound(_))));
-    }
-
-    #[test]
-    fn rename_moves_dir_and_updates_config_name() {
-        let (manager, tmp) = test_manager();
-        let old_dir = tmp.path().join("old-name");
-        std::fs::create_dir_all(&old_dir).unwrap();
-        manager.save(&dummy_config("old-name")).expect("save");
-
-        manager.rename("old-name", "new-name").expect("rename");
-
-        assert!(!old_dir.exists(), "old dir should be gone");
-        let new_dir = tmp.path().join("new-name");
-        assert!(new_dir.exists(), "new dir should exist");
-        let reloaded = manager.load_one("new-name").expect("load_one new-name");
-        assert_eq!(reloaded.name, "new-name");
-    }
-
-    #[test]
-    fn rename_to_same_name_is_noop() {
-        let (manager, tmp) = test_manager();
-        let dir = tmp.path().join("same");
-        std::fs::create_dir_all(&dir).unwrap();
-        manager.save(&dummy_config("same")).expect("save");
-        manager.rename("same", "same").expect("noop rename");
-        assert!(dir.exists());
-    }
-
-    #[test]
-    fn rename_empty_target_rejects() {
-        let (manager, tmp) = test_manager();
-        std::fs::create_dir_all(tmp.path().join("orig")).unwrap();
-        manager.save(&dummy_config("orig")).expect("save");
-        let err = manager.rename("orig", "   ").unwrap_err();
-        assert!(matches!(err, InstanceError::InvalidName(_)));
-    }
-
-    #[test]
-    fn rename_missing_source_errors() {
-        let (manager, _tmp) = test_manager();
-        let err = manager.rename("ghost", "anything").unwrap_err();
-        assert!(matches!(err, InstanceError::NotFound(_)));
-    }
-
-    #[test]
-    fn rename_target_exists_errors() {
-        let (manager, tmp) = test_manager();
-        std::fs::create_dir_all(tmp.path().join("source")).unwrap();
-        std::fs::create_dir_all(tmp.path().join("collision")).unwrap();
-        manager.save(&dummy_config("source")).expect("save src");
-        manager.save(&dummy_config("collision")).expect("save dst");
-        let err = manager.rename("source", "collision").unwrap_err();
-        assert!(matches!(err, InstanceError::AlreadyExists(_)));
-    }
-
-    #[test]
-    fn touch_last_played_updates_field() {
-        let (manager, tmp) = test_manager();
-        std::fs::create_dir_all(tmp.path().join("ticker")).unwrap();
-        manager.save(&dummy_config("ticker")).expect("save");
-        assert!(manager.load_one("ticker").unwrap().last_played.is_none());
-
-        manager.touch_last_played("ticker").expect("touch");
-        let reloaded = manager.load_one("ticker").unwrap();
-        let stamp = reloaded
-            .last_played
-            .expect("last_played should be Some now");
-        let age = chrono::Utc::now() - stamp;
-        assert!(
-            age.num_seconds().abs() < 5,
-            "last_played should be roughly now, got age {age:?}"
-        );
-    }
-}
+#[path = "tests/manager.rs"]
+mod tests;

@@ -7,8 +7,8 @@ use clap::ArgMatches;
 
 use super::utils::{confirm, required_arg};
 use crate::cli::output::{format_datetime, print_table};
+use crate::instance::runtime::RunState;
 use crate::instance::{InstanceManager, ModLoader};
-use crate::running::RunState;
 
 type CliResult = Result<(), Box<dyn std::error::Error>>;
 const LOCAL_CONFIG_PROFILE: &str = "instance default";
@@ -136,14 +136,14 @@ async fn launch_instance(matches: &ArgMatches) -> CliResult {
     let meta_dir = crate::config::SETTINGS.paths.resolve_meta_dir();
     let config = manager.load_one(name)?;
 
-    crate::instance::launch::launch(&config, &instances_dir, &meta_dir)
+    crate::instance::launch::launch(&config, &instances_dir, &meta_dir, None)
         .await
         .map_err(|error| io::Error::other(format!("Launch failed: {}", error)))?;
 
     // poll until the game process exits. in CLI mode this blocks here
     // so the user gets a proper exit code at the end.
     loop {
-        match crate::running::get(name) {
+        match crate::instance::runtime::get(name) {
             Some(RunState::Crashed(Some(code))) => {
                 println!("Game exited with status {}", code);
                 break;
@@ -354,21 +354,5 @@ fn apply_config_update(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::parse_resolution;
-
-    #[test]
-    fn parses_valid_resolution() {
-        assert_eq!(
-            parse_resolution("1920x1080").expect("should parse"),
-            (1920, 1080)
-        );
-    }
-
-    #[test]
-    fn rejects_invalid_resolution_format() {
-        assert!(parse_resolution("1920").is_err());
-        assert!(parse_resolution("1920xa").is_err());
-        assert!(parse_resolution("0x1080").is_err());
-    }
-}
+#[path = "tests/instance.rs"]
+mod tests;

@@ -9,7 +9,7 @@ use ratatui::{
     layout::Rect,
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Paragraph, Widget},
+    widgets::{Paragraph, Widget, Wrap},
 };
 
 use crate::config::theme::THEME;
@@ -37,22 +37,55 @@ pub enum ConfirmTarget {
     Content {
         name: String,
         path: std::path::PathBuf,
+        dependents: Vec<String>,
+    },
+    OrphanDependencies {
+        paths: Vec<std::path::PathBuf>,
     },
 }
 
 impl ConfirmTarget {
     fn title(&self) -> String {
-        format!(" Delete '{}' ", self.name())
+        match self {
+            Self::OrphanDependencies { .. } => " Remove unused dependencies ".to_owned(),
+            _ => format!(" Delete '{}' ", self.name()),
+        }
     }
 
-    fn body(&self) -> &'static str {
+    fn body(&self) -> String {
         match self {
-            ConfirmTarget::Instance { .. } => "This will permanently remove the instance",
-            ConfirmTarget::Account { .. } => "This will permanently remove this account",
-            ConfirmTarget::ConfigProfile { .. } => {
-                "This will permanently remove this config profile"
+            ConfirmTarget::Instance { .. } => {
+                "This will permanently remove the instance".to_owned()
             }
-            ConfirmTarget::Content { .. } => "This will permanently remove the selected item",
+            ConfirmTarget::Account { .. } => "This will permanently remove this account".to_owned(),
+            ConfirmTarget::ConfigProfile { .. } => {
+                "This will permanently remove this config profile".to_owned()
+            }
+            ConfirmTarget::Content { dependents, .. } if !dependents.is_empty() => {
+                format!(
+                    "Still required by installed mods:\n{}\n! Deleting this dependency may break those mods.",
+                    dependents
+                        .iter()
+                        .map(|name| format!("• {name}"))
+                        .collect::<Vec<_>>()
+                        .join("\n")
+                )
+            }
+            ConfirmTarget::Content { .. } => {
+                "This will permanently remove the selected item".to_owned()
+            }
+            ConfirmTarget::OrphanDependencies { paths } => paths
+                .iter()
+                .map(|path| {
+                    format!(
+                        "• {}",
+                        path.file_name()
+                            .and_then(|name| name.to_str())
+                            .unwrap_or("dependency")
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("\n"),
         }
     }
 
@@ -62,6 +95,15 @@ impl ConfirmTarget {
             ConfirmTarget::Account { username, .. } => username,
             ConfirmTarget::ConfigProfile { profile } => profile,
             ConfirmTarget::Content { name, .. } => name,
+            ConfirmTarget::OrphanDependencies { .. } => "unused dependencies",
+        }
+    }
+
+    fn confirm_label(&self) -> &'static str {
+        match self {
+            Self::Content { dependents, .. } if !dependents.is_empty() => " delete anyway",
+            Self::OrphanDependencies { .. } => " remove all",
+            _ => " confirm",
         }
     }
 }
@@ -86,10 +128,23 @@ pub fn set_pending_instance_delete(name: impl Into<String>) {
 }
 
 pub fn set_pending_content_delete(name: impl Into<String>, path: impl Into<std::path::PathBuf>) {
+    set_pending_managed_content_delete(name, path, Vec::new());
+}
+
+pub fn set_pending_managed_content_delete(
+    name: impl Into<String>,
+    path: impl Into<std::path::PathBuf>,
+    dependents: Vec<String>,
+) {
     set_pending(ConfirmTarget::Content {
         name: name.into(),
         path: path.into(),
+        dependents,
     });
+}
+
+pub fn set_pending_orphan_dependencies(paths: Vec<std::path::PathBuf>) {
+    set_pending(ConfirmTarget::OrphanDependencies { paths });
 }
 
 pub fn pending_target() -> Option<ConfirmTarget> {
@@ -112,19 +167,17 @@ pub fn clear_pending() {
 
 pub struct ConfirmPopup {
     title: String,
-    body: &'static str,
+    body: String,
+    confirm_label: &'static str,
 }
 
 impl ConfirmPopup {
-    pub fn new(title: impl Into<String>, body: &'static str) -> Self {
-        Self {
-            title: title.into(),
-            body,
-        }
-    }
-
     pub fn for_target(target: &ConfirmTarget) -> Self {
-        Self::new(target.title(), target.body())
+        Self {
+            title: target.title(),
+            body: target.body(),
+            confirm_label: target.confirm_label(),
+        }
     }
 }
 
@@ -136,14 +189,19 @@ impl Widget for ConfirmPopup {
         let title = Line::from(vec![Span::styled(
             self.title,
             Style::default()
-                .fg(theme.text_dim())
+                .fg(theme.accent())
                 .add_modifier(Modifier::BOLD),
         )]);
-        let kb = keybind_line(&[("Enter", " confirm")]);
+        let kb = keybind_line(&[("Esc", " cancel"), ("Enter", self.confirm_label)]);
 
         let border_color = theme.text_dim();
         let bg_color = theme.surface();
-        let text_color = theme.text();
+        let accent = theme.accent();
+        let text = theme.text();
+        let text_dim = theme.text_dim();
+        let error = theme.error();
+        let body = self.body;
+        let styled_list = body.contains("• ");
         let popup = PopupFrame {
             title,
             border_color,
@@ -151,8 +209,26 @@ impl Widget for ConfirmPopup {
             keybinds: Some(kb),
             search_line: None,
             content: Box::new(move |inner, buf| {
-                Paragraph::new(self.body)
-                    .style(Style::default().fg(text_color))
+                let lines = body
+                    .lines()
+                    .map(|line| {
+                        if let Some(value) = line.strip_prefix("• ") {
+                            Line::from(vec![
+                                Span::styled("• ", Style::default().fg(accent)),
+                                Span::styled(value.to_owned(), Style::default().fg(text)),
+                            ])
+                        } else if line.starts_with('!') {
+                            Line::styled(line.to_owned(), Style::default().fg(error))
+                        } else {
+                            Line::styled(
+                                line.to_owned(),
+                                Style::default().fg(if styled_list { text_dim } else { text }),
+                            )
+                        }
+                    })
+                    .collect::<Vec<_>>();
+                Paragraph::new(lines)
+                    .wrap(Wrap { trim: true })
                     .render(inner, buf);
             }),
         };
@@ -165,10 +241,12 @@ pub fn confirm_popup_area(frame_area: Rect, target: &ConfirmTarget) -> Rect {
     use super::word_wrap_size;
     use ratatui::layout::Constraint;
     const MAX_W: usize = 48;
-    let title_w = target.name().len() + 12;
-    let (body_w, _) = word_wrap_size(target.body(), MAX_W);
-    let inner_w = title_w.max(body_w).min(MAX_W);
-    let (_, lines) = word_wrap_size(target.body(), inner_w);
+    let body = target.body();
+    let title_w = Span::raw(target.name()).width() + 12;
+    let footer_w = Span::raw(format!("[Esc] cancel  [Enter]{}", target.confirm_label())).width();
+    let (body_w, _) = word_wrap_size(&body, MAX_W);
+    let inner_w = title_w.max(body_w).max(footer_w).min(MAX_W);
+    let (_, lines) = word_wrap_size(&body, inner_w);
     let popup_w = ((inner_w + 2) as u16).min(frame_area.width.saturating_sub(4));
     let popup_h = ((lines + 2) as u16).min(frame_area.height.saturating_sub(4));
     frame_area.centered(Constraint::Length(popup_w), Constraint::Length(popup_h))

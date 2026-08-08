@@ -4,13 +4,15 @@
 // fixture layout in a tempdir, call the seam, and assert on the rendered
 // LaunchInvocation. nothing here actually spawns a process.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use chrono::Utc;
 use serde_json::json;
 use tempfile::TempDir;
 
-use rmcl::instance::launch::{LaunchAuth, LaunchError, build_launch_invocation};
+use rmcl::instance::launch::{
+    LaunchAuth, LaunchError, build_launch_invocation, supports_quick_play,
+};
 use rmcl::instance::models::{InstanceConfig, ModLoader};
 
 // ---------- helpers ----------
@@ -53,6 +55,7 @@ fn make_config_with(
         jvm_args: Vec::new(),
         resolution: None,
         config_sync_profile: None,
+        modpack_source: None,
     }
 }
 
@@ -73,9 +76,9 @@ fn fake_java(tmp: &TempDir, major: u32) -> String {
 }
 
 // builds the on-disk layout that build_launch_invocation expects:
-//   <tmp>/instances/<name>/.minecraft/        (instance dir, created empty)
+//   <tmp>/instances/<name>/minecraft/         (instance dir, created empty)
 //   <tmp>/meta/versions/<game_version>/meta.json
-//   <tmp>/meta/loader-profiles/               (created empty)
+//   <tmp>/meta/cache/loaders/profiles/         (created empty)
 //   <tmp>/meta/libraries/                     (created empty)
 struct Fixture {
     _tmp: TempDir,
@@ -89,12 +92,12 @@ impl Fixture {
         let instances_dir = tmp.path().join("instances");
         let meta_dir = tmp.path().join("meta");
 
-        let instance_minecraft = instances_dir.join(instance_name).join(".minecraft");
+        let instance_minecraft = instances_dir.join(instance_name).join("minecraft");
         std::fs::create_dir_all(&instance_minecraft).unwrap();
 
-        std::fs::create_dir_all(meta_dir.join("libraries")).unwrap();
-        std::fs::create_dir_all(meta_dir.join("loader-profiles")).unwrap();
-        let version_dir = meta_dir.join("versions").join(game_version);
+        std::fs::create_dir_all(meta_dir.join("cache/minecraft/libraries")).unwrap();
+        std::fs::create_dir_all(meta_dir.join("cache/loaders/profiles")).unwrap();
+        let version_dir = meta_dir.join("cache/minecraft/versions").join(game_version);
         std::fs::create_dir_all(&version_dir).unwrap();
         std::fs::write(
             version_dir.join("meta.json"),
@@ -111,7 +114,7 @@ impl Fixture {
 
     fn write_loader_profile(&self, filename: &str, content: serde_json::Value) {
         std::fs::write(
-            self.meta_dir.join("loader-profiles").join(filename),
+            self.meta_dir.join("cache/loaders/profiles").join(filename),
             serde_json::to_vec_pretty(&content).unwrap(),
         )
         .unwrap();
@@ -120,7 +123,7 @@ impl Fixture {
     fn instance_libraries_dir(&self, instance_name: &str) -> PathBuf {
         self.instances_dir
             .join(instance_name)
-            .join(".minecraft")
+            .join("minecraft")
             .join("libraries")
     }
 }
@@ -201,7 +204,7 @@ async fn vanilla_modern_builds_complete_invocation() {
     let fx = Fixture::new("v1", "1.20.1", modern_vanilla_meta("1.20.1"));
     let config = make_config("v1", "1.20.1", ModLoader::Vanilla);
 
-    let inv = build_launch_invocation(&config, &fx.instances_dir, &fx.meta_dir, &test_auth())
+    let inv = build_launch_invocation(&config, &fx.instances_dir, &fx.meta_dir, &test_auth(), None)
         .await
         .unwrap();
 
@@ -209,13 +212,21 @@ async fn vanilla_modern_builds_complete_invocation() {
     assert_eq!(inv.main_class, "net.minecraft.client.main.Main");
     assert!(inv.extra_args.is_empty());
 
-    let expected_natives = fx.meta_dir.join("versions").join("1.20.1").join("natives");
-    assert!(
-        inv.jvm_args
-            .iter()
-            .any(|a| a == &format!("-Djava.library.path={}", expected_natives.display())),
+    let expected_natives = fx
+        .meta_dir
+        .join("cache/minecraft/versions")
+        .join("1.20.1")
+        .join("natives");
+    let actual_natives = inv
+        .jvm_args
+        .iter()
+        .find_map(|arg| arg.strip_prefix("-Djava.library.path="))
+        .map(Path::new);
+    assert_eq!(
+        actual_natives,
+        Some(expected_natives.as_path()),
         "jvm_args missing natives substitution: {:?}",
-        inv.jvm_args
+        inv.jvm_args,
     );
     assert!(
         inv.jvm_args
@@ -225,18 +236,57 @@ async fn vanilla_modern_builds_complete_invocation() {
         inv.jvm_args
     );
 
-    // working_dir is <instances_dir>/<name>/.minecraft
+    // working_dir is <instances_dir>/<name>/minecraft
     assert_eq!(
         inv.working_dir,
-        fx.instances_dir.join("v1").join(".minecraft")
+        fx.instances_dir.join("v1").join("minecraft")
     );
     // classpath = the one vanilla lib + the vanilla client jar
     let slf4j = fx
         .meta_dir
-        .join("libraries/org/slf4j/slf4j-api/2.0.7/slf4j-api-2.0.7.jar");
-    let client_jar = fx.meta_dir.join("versions/1.20.1/1.20.1.jar");
+        .join("cache/minecraft/libraries/org/slf4j/slf4j-api/2.0.7/slf4j-api-2.0.7.jar");
+    let client_jar = fx
+        .meta_dir
+        .join("cache/minecraft/versions/1.20.1/1.20.1.jar");
     assert!(inv.classpath.contains(&slf4j));
     assert!(inv.classpath.contains(&client_jar));
+}
+
+#[tokio::test]
+async fn quick_play_passes_the_selected_save_folder() {
+    let mut meta = modern_vanilla_meta("1.20.1");
+    meta["arguments"]["game"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({
+            "rules": [{
+                "action": "allow",
+                "features": { "is_quick_play_singleplayer": true }
+            }],
+            "value": ["--quickPlaySingleplayer", "${quickPlaySingleplayer}"]
+        }));
+    let fx = Fixture::new("quick", "1.20.1", meta);
+    let world_dir = fx.instances_dir.join("quick/minecraft/saves/Display World");
+    std::fs::create_dir_all(&world_dir).unwrap();
+    let config = make_config("quick", "1.20.1", ModLoader::Vanilla);
+
+    assert!(supports_quick_play(&fx.meta_dir, "1.20.1"));
+    let invocation = build_launch_invocation(
+        &config,
+        &fx.instances_dir,
+        &fx.meta_dir,
+        &test_auth(),
+        Some("Display World"),
+    )
+    .await
+    .unwrap();
+
+    assert!(
+        invocation
+            .game_args
+            .windows(2)
+            .any(|args| args == ["--quickPlaySingleplayer", "Display World"])
+    );
 }
 
 #[cfg(unix)]
@@ -250,7 +300,7 @@ async fn launch_fails_when_selected_java_is_older_than_profile_requires() {
     let mut config = make_config("java-old", "26.1.2", ModLoader::Vanilla);
     config.java_path = Some(fake_java(&fx._tmp, 21));
 
-    let err = build_launch_invocation(&config, &fx.instances_dir, &fx.meta_dir, &test_auth())
+    let err = build_launch_invocation(&config, &fx.instances_dir, &fx.meta_dir, &test_auth(), None)
         .await
         .expect_err("java 21 should fail for a Java 25 profile");
 
@@ -272,7 +322,7 @@ async fn vanilla_legacy_args_format_substitutes_tokens() {
     let fx = Fixture::new("vlegacy", "1.7.10", legacy_vanilla_meta("1.7.10"));
     let config = make_config("vlegacy", "1.7.10", ModLoader::Vanilla);
 
-    let inv = build_launch_invocation(&config, &fx.instances_dir, &fx.meta_dir, &test_auth())
+    let inv = build_launch_invocation(&config, &fx.instances_dir, &fx.meta_dir, &test_auth(), None)
         .await
         .unwrap();
 
@@ -318,7 +368,7 @@ async fn forge_modern_includes_add_opens() {
     );
     let config = make_config_with("f1", "1.20.1", ModLoader::Forge, Some("47.2.0"));
 
-    let inv = build_launch_invocation(&config, &fx.instances_dir, &fx.meta_dir, &test_auth())
+    let inv = build_launch_invocation(&config, &fx.instances_dir, &fx.meta_dir, &test_auth(), None)
         .await
         .unwrap();
 
@@ -374,7 +424,7 @@ async fn forge_local_lib_dir_preferred_over_meta_dir() {
     std::fs::write(&local_jar, b"jar").unwrap();
 
     let config = make_config_with("f2", "1.20.1", ModLoader::Forge, Some("47.2.0"));
-    let inv = build_launch_invocation(&config, &fx.instances_dir, &fx.meta_dir, &test_auth())
+    let inv = build_launch_invocation(&config, &fx.instances_dir, &fx.meta_dir, &test_auth(), None)
         .await
         .unwrap();
 
@@ -413,7 +463,7 @@ async fn fabric_implicit_inheritsfrom_resolves() {
     );
     let config = make_config_with("fab", "1.20.1", ModLoader::Fabric, Some("0.15.0"));
 
-    let inv = build_launch_invocation(&config, &fx.instances_dir, &fx.meta_dir, &test_auth())
+    let inv = build_launch_invocation(&config, &fx.instances_dir, &fx.meta_dir, &test_auth(), None)
         .await
         .unwrap();
 
@@ -422,12 +472,12 @@ async fn fabric_implicit_inheritsfrom_resolves() {
         "net.fabricmc.loader.impl.launch.knot.KnotClient"
     );
     // both fabric-loader and vanilla slf4j must appear on the merged classpath
-    let fabric_loader = fx
-        .meta_dir
-        .join("libraries/net/fabricmc/fabric-loader/0.15.0/fabric-loader-0.15.0.jar");
+    let fabric_loader = fx.meta_dir.join(
+        "cache/minecraft/libraries/net/fabricmc/fabric-loader/0.15.0/fabric-loader-0.15.0.jar",
+    );
     let slf4j = fx
         .meta_dir
-        .join("libraries/org/slf4j/slf4j-api/2.0.7/slf4j-api-2.0.7.jar");
+        .join("cache/minecraft/libraries/org/slf4j/slf4j-api/2.0.7/slf4j-api-2.0.7.jar");
     assert!(
         inv.classpath.contains(&fabric_loader),
         "fabric-loader missing from classpath: {:?}",
@@ -463,7 +513,7 @@ async fn neoforge_inheritsfrom_resolves() {
     );
     let config = make_config_with("ne", "1.20.6", ModLoader::NeoForge, Some("20.4.190"));
 
-    let inv = build_launch_invocation(&config, &fx.instances_dir, &fx.meta_dir, &test_auth())
+    let inv = build_launch_invocation(&config, &fx.instances_dir, &fx.meta_dir, &test_auth(), None)
         .await
         .unwrap();
 
@@ -487,7 +537,7 @@ async fn auth_credentials_substituted_in_game_args() {
     let fx = Fixture::new("auth", "1.20.1", modern_vanilla_meta("1.20.1"));
     let config = make_config("auth", "1.20.1", ModLoader::Vanilla);
 
-    let inv = build_launch_invocation(&config, &fx.instances_dir, &fx.meta_dir, &test_auth())
+    let inv = build_launch_invocation(&config, &fx.instances_dir, &fx.meta_dir, &test_auth(), None)
         .await
         .unwrap();
 
@@ -521,7 +571,7 @@ async fn version_type_substituted() {
     let fx = Fixture::new("vt", "1.20.1", meta);
     let config = make_config("vt", "1.20.1", ModLoader::Vanilla);
 
-    let inv = build_launch_invocation(&config, &fx.instances_dir, &fx.meta_dir, &test_auth())
+    let inv = build_launch_invocation(&config, &fx.instances_dir, &fx.meta_dir, &test_auth(), None)
         .await
         .unwrap();
 
@@ -539,7 +589,7 @@ async fn classpath_uses_platform_separator() {
     let fx = Fixture::new("cp", "1.20.1", modern_vanilla_meta("1.20.1"));
     let config = make_config("cp", "1.20.1", ModLoader::Vanilla);
 
-    let inv = build_launch_invocation(&config, &fx.instances_dir, &fx.meta_dir, &test_auth())
+    let inv = build_launch_invocation(&config, &fx.instances_dir, &fx.meta_dir, &test_auth(), None)
         .await
         .unwrap();
 
@@ -581,7 +631,7 @@ async fn rule_disallow_excludes_library() {
     let fx = Fixture::new("rule", "1.20.1", meta);
     let config = make_config("rule", "1.20.1", ModLoader::Vanilla);
 
-    let inv = build_launch_invocation(&config, &fx.instances_dir, &fx.meta_dir, &test_auth())
+    let inv = build_launch_invocation(&config, &fx.instances_dir, &fx.meta_dir, &test_auth(), None)
         .await
         .unwrap();
 
@@ -602,7 +652,7 @@ async fn xms_xmx_use_config_memory() {
     config.memory_min = Some("1G".into());
     config.memory_max = Some("4G".into());
 
-    let inv = build_launch_invocation(&config, &fx.instances_dir, &fx.meta_dir, &test_auth())
+    let inv = build_launch_invocation(&config, &fx.instances_dir, &fx.meta_dir, &test_auth(), None)
         .await
         .unwrap();
 
@@ -616,7 +666,7 @@ async fn default_memory_used_when_unset() {
     let config = make_config("memdef", "1.20.1", ModLoader::Vanilla);
     // memory_min and memory_max default to None in make_config
 
-    let inv = build_launch_invocation(&config, &fx.instances_dir, &fx.meta_dir, &test_auth())
+    let inv = build_launch_invocation(&config, &fx.instances_dir, &fx.meta_dir, &test_auth(), None)
         .await
         .unwrap();
 
@@ -631,11 +681,11 @@ async fn meta_not_found_returns_error() {
     let tmp = tempfile::tempdir().unwrap();
     let instances_dir = tmp.path().join("instances");
     let meta_dir = tmp.path().join("meta");
-    std::fs::create_dir_all(instances_dir.join("ghost").join(".minecraft")).unwrap();
-    std::fs::create_dir_all(meta_dir.join("versions")).unwrap();
+    std::fs::create_dir_all(instances_dir.join("ghost").join("minecraft")).unwrap();
+    std::fs::create_dir_all(meta_dir.join("cache/minecraft/versions")).unwrap();
 
     let config = make_config("ghost", "1.20.1", ModLoader::Vanilla);
-    let err = build_launch_invocation(&config, &instances_dir, &meta_dir, &test_auth())
+    let err = build_launch_invocation(&config, &instances_dir, &meta_dir, &test_auth(), None)
         .await
         .unwrap_err();
     assert!(
@@ -649,7 +699,7 @@ async fn loader_profile_missing_returns_error() {
     let fx = Fixture::new("lpmiss", "1.20.1", modern_vanilla_meta("1.20.1"));
     let config = make_config_with("lpmiss", "1.20.1", ModLoader::Fabric, Some("0.15.0"));
 
-    let err = build_launch_invocation(&config, &fx.instances_dir, &fx.meta_dir, &test_auth())
+    let err = build_launch_invocation(&config, &fx.instances_dir, &fx.meta_dir, &test_auth(), None)
         .await
         .unwrap_err();
     assert!(
@@ -668,7 +718,7 @@ async fn merged_profile_missing_main_class_fails() {
     let fx = Fixture::new("nomc", "1.20.1", meta);
     let config = make_config("nomc", "1.20.1", ModLoader::Vanilla);
 
-    let err = build_launch_invocation(&config, &fx.instances_dir, &fx.meta_dir, &test_auth())
+    let err = build_launch_invocation(&config, &fx.instances_dir, &fx.meta_dir, &test_auth(), None)
         .await
         .unwrap_err();
     let msg = format!("{err:?}");
@@ -698,7 +748,7 @@ async fn legacy_loader_profile_missing_loader_version_errors() {
     let mut config = make_config("nolv", "1.20.1", ModLoader::Forge);
     config.loader_version = None;
 
-    let err = build_launch_invocation(&config, &fx.instances_dir, &fx.meta_dir, &test_auth())
+    let err = build_launch_invocation(&config, &fx.instances_dir, &fx.meta_dir, &test_auth(), None)
         .await
         .unwrap_err();
     let msg = format!("{err:?}");
@@ -725,7 +775,7 @@ async fn legacy_loader_profile_missing_installer_json_errors() {
 
     let config = make_config_with("noinst", "1.20.1", ModLoader::Forge, Some("47.2.0"));
 
-    let err = build_launch_invocation(&config, &fx.instances_dir, &fx.meta_dir, &test_auth())
+    let err = build_launch_invocation(&config, &fx.instances_dir, &fx.meta_dir, &test_auth(), None)
         .await
         .unwrap_err();
     let msg = format!("{err:?}");

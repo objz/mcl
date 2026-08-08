@@ -1,0 +1,714 @@
+use crossterm::event::{KeyCode, MouseEventKind};
+use std::path::{Path, PathBuf};
+
+use super::harness::UiHarness;
+use crate::instance::content::entry::ContentEntry;
+use crate::instance::{
+    ContentFileRecord, ContentKind, ContentManifest, FileFingerprint, ProviderProject, Resolution,
+};
+use crate::net::modrinth::DiscoveryProject;
+use crate::tui::{
+    app::{FocusedArea, ProviderConflictState},
+    widgets::{
+        content::{ContentMode, ContentTab},
+        popups::confirm,
+    },
+};
+
+#[test]
+fn global_navigation_returns_from_log_overlay() {
+    let mut ui = UiHarness::new();
+
+    ui.key(KeyCode::Char('C'));
+    assert_eq!(ui.app.focused, FocusedArea::Content);
+
+    ui.key(KeyCode::Char('O'));
+    assert_eq!(ui.app.focused, FocusedArea::OverviewExpanded);
+
+    ui.key(KeyCode::Esc);
+    assert_eq!(ui.app.focused, FocusedArea::Content);
+
+    ui.key(KeyCode::Char('q'));
+    assert!(ui.app.exit);
+}
+
+#[test]
+fn escape_returns_through_nested_sections() {
+    let mut ui = UiHarness::new();
+
+    ui.app.focused = FocusedArea::Content;
+    ui.app.mods_state.search.activate();
+    ui.key(KeyCode::Esc);
+    assert_eq!(ui.app.focused, FocusedArea::Content);
+    ui.key(KeyCode::Esc);
+    assert_eq!(ui.app.focused, FocusedArea::Instances);
+
+    ui.app.focused = FocusedArea::Account;
+    ui.key(KeyCode::Char('a'));
+    ui.key(KeyCode::Esc);
+    assert_eq!(ui.app.focused, FocusedArea::Account);
+    ui.key(KeyCode::Esc);
+    assert_eq!(ui.app.focused, FocusedArea::Instances);
+
+    ui.app.focused = FocusedArea::Settings;
+    ui.key(KeyCode::Char('a'));
+    ui.key(KeyCode::Esc);
+    assert_eq!(ui.app.focused, FocusedArea::Settings);
+    ui.key(KeyCode::Esc);
+    assert_eq!(ui.app.focused, FocusedArea::Instances);
+
+    ui.app.focused = FocusedArea::Content;
+    ui.app.content_tab = ContentTab::Worlds;
+    ui.app.open_world_datapacks = Some(("World".to_owned(), PathBuf::from("World")));
+    ui.key(KeyCode::Esc);
+
+    assert_eq!(ui.app.focused, FocusedArea::Content);
+    assert!(ui.app.open_world_datapacks.is_none());
+}
+
+#[test]
+fn installed_version_action_requires_selected_provider_match() {
+    let mut ui = UiHarness::new();
+    ui.add_instance("Unmatched");
+    ui.app.focused = FocusedArea::Content;
+    ui.app.content_tab = ContentTab::Mods;
+    let path = ui
+        .instance_path("Unmatched")
+        .join(crate::storage::MINECRAFT_DIR_NAME)
+        .join("mods/unknown.jar");
+    ui.app.mods_state.entries = vec![content_entry("Unknown mod", path)];
+    ui.app.mods_state.list_state.selected = Some(0);
+    let record = managed_mod_record("mods/unknown.jar", "known", false, Vec::new());
+    let project = record.resolved_project().unwrap().clone();
+    ui.app.content_manifest = Some((
+        "Unmatched".to_owned(),
+        ContentManifest {
+            files: vec![record],
+            ..Default::default()
+        },
+    ));
+
+    ui.key(KeyCode::Char('v'));
+    assert!(ui.app.mods_discovery_state.version_popup.is_none());
+
+    ui.app.mods_state.entries[0].provider_project = Some(project);
+    ui.key(KeyCode::Char('v'));
+    assert!(ui.app.mods_discovery_state.version_popup.is_some());
+}
+
+#[test]
+fn installed_version_hint_requires_selected_provider_match() {
+    let mut ui = UiHarness::new();
+    ui.app.focused = FocusedArea::Content;
+    ui.app.content_tab = ContentTab::Mods;
+    ui.app.mods_state.entries = vec![content_entry(
+        "Unknown mod",
+        PathBuf::from("mods/unknown.jar"),
+    )];
+    ui.app.mods_state.list_state.selected = Some(0);
+
+    ui.draw();
+    assert!(!ui.screen().contains("[v] versions"));
+
+    ui.app.mods_state.entries[0].provider_project = Some(ProviderProject {
+        provider: "modrinth".to_owned(),
+        project_id: "known".to_owned(),
+        version_id: "known-version".to_owned(),
+    });
+    ui.draw();
+    assert!(ui.screen().contains("[v] versions"));
+}
+
+#[test]
+fn managed_modpack_instance_exposes_direct_version_selector() {
+    let mut ui = UiHarness::new();
+    ui.add_instance("Managed Pack");
+
+    ui.draw();
+    assert!(!ui.screen().contains("[v] versions"));
+    ui.app.instances_state.instances[0].modpack_source = Some(ProviderProject {
+        provider: "unsupported".to_owned(),
+        project_id: "pack".to_owned(),
+        version_id: "current".to_owned(),
+    });
+
+    ui.draw();
+    assert!(ui.screen().contains("[v] versions"));
+    ui.key(KeyCode::Char('v'));
+    let popup = ui
+        .app
+        .modpack_versions_state
+        .as_ref()
+        .and_then(|state| state.version_popup.as_ref())
+        .unwrap();
+    assert!(!popup.selecting_minecraft_version);
+    assert_eq!(popup.current_version_id.as_deref(), Some("current"));
+
+    ui.key(KeyCode::Esc);
+    assert!(ui.app.modpack_versions_state.is_none());
+
+    ui.key(KeyCode::Char('v'));
+    let popup = ui
+        .app
+        .modpack_versions_state
+        .as_mut()
+        .and_then(|state| state.version_popup.as_mut())
+        .unwrap();
+    popup.loading = false;
+    popup.versions = vec![crate::net::modrinth::VersionInfo {
+        id: "current".to_owned(),
+        project_id: "pack".to_owned(),
+        name: "Current".to_owned(),
+        version_number: "1.0".to_owned(),
+        game_versions: vec!["1.21.1".to_owned()],
+        loaders: Vec::new(),
+        version_type: crate::net::modrinth::VersionType::Release,
+        dependencies: Vec::new(),
+        date_published: String::new(),
+        files: Vec::new(),
+    }];
+    ui.key(KeyCode::Enter);
+    assert!(ui.app.modpack_versions_state.is_none());
+    assert_eq!(
+        ui.app.modpack_update_popup.as_ref().unwrap().action,
+        crate::tui::widgets::popups::modpack_update::Action::Reinstall
+    );
+
+    ui.app.modpack_update_popup = None;
+    ui.key(KeyCode::Char('v'));
+    let popup = ui
+        .app
+        .modpack_versions_state
+        .as_mut()
+        .and_then(|state| state.version_popup.as_mut())
+        .unwrap();
+    popup.loading = false;
+    popup.versions = vec![crate::net::modrinth::VersionInfo {
+        id: "new".to_owned(),
+        project_id: "pack".to_owned(),
+        name: "New".to_owned(),
+        version_number: "2.0".to_owned(),
+        game_versions: vec!["1.21.1".to_owned()],
+        loaders: Vec::new(),
+        version_type: crate::net::modrinth::VersionType::Release,
+        dependencies: Vec::new(),
+        date_published: String::new(),
+        files: Vec::new(),
+    }];
+    ui.key(KeyCode::Enter);
+    assert_eq!(
+        ui.app.modpack_update_popup.as_ref().unwrap().action,
+        crate::tui::widgets::popups::modpack_update::Action::Change
+    );
+}
+
+#[test]
+fn world_datapack_version_action_requires_selected_provider_match() {
+    let mut ui = UiHarness::new();
+    ui.add_instance("Datapacks");
+    ui.app.focused = FocusedArea::Content;
+    ui.app.content_tab = ContentTab::Worlds;
+    let world = ui
+        .instance_path("Datapacks")
+        .join(crate::storage::MINECRAFT_DIR_NAME)
+        .join("saves/World");
+    let path = world.join("datapacks/unknown.zip");
+    ui.app.world_datapacks_state.entries = vec![content_entry("Unknown datapack", path)];
+    ui.app.world_datapacks_state.list_state.selected = Some(0);
+    ui.app.open_world_datapacks = Some(("World".to_owned(), world));
+    let mut record = managed_mod_record(
+        "saves/World/datapacks/unknown.zip",
+        "known",
+        false,
+        Vec::new(),
+    );
+    record.kind = ContentKind::DataPack;
+    let project = record.resolved_project().unwrap().clone();
+    ui.app.content_manifest = Some((
+        "Datapacks".to_owned(),
+        ContentManifest {
+            files: vec![record],
+            ..Default::default()
+        },
+    ));
+
+    ui.key(KeyCode::Char('v'));
+    assert!(ui.app.datapacks_discovery_state.version_popup.is_none());
+
+    ui.app.world_datapacks_state.entries[0].provider_project = Some(project);
+    ui.key(KeyCode::Char('v'));
+    assert!(ui.app.datapacks_discovery_state.version_popup.is_some());
+}
+
+#[test]
+fn worlds_reserves_q_for_available_quick_launch() {
+    let mut ui = UiHarness::new();
+    ui.add_instance("Test Instance");
+    ui.app.focused = FocusedArea::Content;
+    ui.app.content_tab = ContentTab::Worlds;
+
+    ui.key(KeyCode::Char('q'));
+    assert!(!ui.app.exit, "unsupported Quick Play must not quit rmcl");
+
+    let meta = serde_json::json!({
+        "id": "1.21.1",
+        "mainClass": "net.minecraft.client.main.Main",
+        "arguments": {
+            "game": [{
+                "rules": [{
+                    "action": "allow",
+                    "features": { "is_quick_play_singleplayer": true }
+                }],
+                "value": ["--quickPlaySingleplayer", "${quickPlaySingleplayer}"]
+            }],
+            "jvm": []
+        }
+    });
+    let meta_path = crate::storage::MetadataPaths::new(&ui.app.instance_manager.meta_dir)
+        .versions()
+        .join("1.21.1/meta.json");
+    std::fs::create_dir_all(meta_path.parent().unwrap()).unwrap();
+    std::fs::write(meta_path, serde_json::to_vec(&meta).unwrap()).unwrap();
+    ui.app.world_quick_play_support = None;
+    ui.draw();
+
+    assert!(ui.screen().contains("quick launch"));
+}
+
+#[test]
+fn mouse_wheel_uses_the_focused_views_scroll_navigation() {
+    let mut ui = UiHarness::new();
+    ui.app.focused = FocusedArea::OverviewExpanded;
+    ui.app.log_overlay_max_scroll = 1;
+
+    ui.mouse(MouseEventKind::ScrollDown);
+    ui.mouse(MouseEventKind::ScrollDown);
+    assert_eq!(ui.app.log_overlay_scroll, 1);
+
+    ui.mouse(MouseEventKind::ScrollUp);
+    assert_eq!(ui.app.log_overlay_scroll, 0);
+}
+
+#[test]
+fn discovery_mode_recovers_from_a_hidden_tab_and_cycles_visible_tabs() {
+    let mut ui = UiHarness::new();
+    ui.app.focused = FocusedArea::Content;
+    ui.app.content_tab = ContentTab::Logs;
+
+    ui.key(KeyCode::Tab);
+    assert_eq!(ui.app.content_mode, ContentMode::Discover);
+    assert_eq!(ui.app.content_tab, ContentTab::Mods);
+
+    ui.key(KeyCode::Right);
+    assert_eq!(ui.app.content_tab, ContentTab::ResourcePacks);
+
+    ui.key(KeyCode::Left);
+    assert_eq!(ui.app.content_tab, ContentTab::Mods);
+}
+
+#[test]
+fn versions_open_from_a_discovery_project_page() {
+    let mut ui = UiHarness::new();
+    ui.add_instance("Test Instance");
+    ui.app.focused = FocusedArea::Content;
+    ui.app.content_mode = ContentMode::Discover;
+    ui.app.content_tab = ContentTab::Mods;
+    ui.app.mods_discovery_state.list.entries.push(
+        crate::tui::widgets::content::discovery::provider_project_entry(
+            DiscoveryProject {
+                id: "project".to_owned(),
+                slug: "project".to_owned(),
+                title: "Project".to_owned(),
+                description: String::new(),
+                downloads: 0,
+                icon_url: None,
+                icon_bytes: None,
+            },
+            "modrinth",
+            "project".to_owned(),
+            None,
+        ),
+    );
+    ui.app.mods_discovery_state.list.list_state.selected = Some(0);
+    ui.app.mods_discovery_state.begin_project_page();
+
+    ui.key(KeyCode::Char('v'));
+
+    assert!(ui.app.mods_discovery_state.version_popup.is_some());
+}
+
+#[test]
+fn instance_delete_can_be_cancelled_without_touching_disk() {
+    let mut ui = UiHarness::new();
+    ui.add_instance("Test Instance");
+    let instance_path = ui.instance_path("Test Instance");
+
+    ui.key(KeyCode::Char('d'));
+    assert_eq!(ui.app.focused, FocusedArea::ConfirmDelete);
+    assert!(matches!(
+        confirm::pending_target(),
+        Some(confirm::ConfirmTarget::Instance { name }) if name == "Test Instance"
+    ));
+
+    ui.key(KeyCode::Esc);
+    assert_eq!(ui.app.focused, FocusedArea::Instances);
+    assert!(confirm::pending_target().is_none());
+    assert_eq!(ui.app.instances_state.instances.len(), 1);
+    assert!(instance_path.exists());
+}
+
+#[test]
+fn confirmed_instance_delete_removes_state_and_disk() {
+    let mut ui = UiHarness::new();
+    let name = format!("rmcl-ui-test-{}", std::process::id());
+    ui.add_instance(&name);
+    let instance_path = ui.instance_path(&name);
+    assert!(!crate::instance::desktop::exists(&name));
+
+    ui.key(KeyCode::Char('d'));
+    ui.draw();
+    assert!(ui.screen().contains(&format!("Delete '{name}'")));
+    assert!(
+        ui.screen()
+            .contains("This will permanently remove the instance")
+    );
+    ui.key(KeyCode::Char('y'));
+
+    assert_eq!(ui.app.focused, FocusedArea::Instances);
+    assert!(ui.app.instances_state.instances.is_empty());
+    assert!(!instance_path.exists());
+}
+
+#[test]
+fn confirmed_screenshot_delete_removes_state_and_file() {
+    let mut ui = UiHarness::new();
+    ui.add_instance("Screenshots");
+    let path = ui
+        .instance_path("Screenshots")
+        .join(crate::storage::MINECRAFT_DIR_NAME)
+        .join("screenshots")
+        .join("shot.png");
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(&path, b"image").unwrap();
+    ui.app.screenshots_state.entries = vec![crate::instance::screenshots::ScreenshotEntry {
+        name: "shot.png".to_owned(),
+        path: path.clone(),
+        width: 1,
+        height: 1,
+    }];
+    ui.app.focused = FocusedArea::Content;
+    ui.app.content_tab = ContentTab::Screenshots;
+
+    ui.key(KeyCode::Char('d'));
+    ui.key(KeyCode::Enter);
+
+    assert_eq!(ui.app.focused, FocusedArea::Content);
+    assert!(ui.app.screenshots_state.entries.is_empty());
+    assert!(!path.exists());
+}
+
+fn managed_mod_record(
+    path: &str,
+    project_id: &str,
+    automatic_dependency: bool,
+    required_dependencies: Vec<ProviderProject>,
+) -> ContentFileRecord {
+    ContentFileRecord {
+        relative_path: PathBuf::from(path),
+        kind: ContentKind::Mod,
+        enabled: true,
+        fingerprint: FileFingerprint {
+            size: 1,
+            modified_ns: 1,
+            hashes: Default::default(),
+        },
+        resolution: Resolution::Resolved {
+            project: ProviderProject {
+                provider: "modrinth".to_owned(),
+                project_id: project_id.to_owned(),
+                version_id: format!("{project_id}-version"),
+            },
+        },
+        provider_aliases: Vec::new(),
+        provider_checks: Vec::new(),
+        required_dependencies,
+        automatic_dependency,
+        cleanup_eligible: automatic_dependency,
+    }
+}
+
+fn content_entry(name: &str, path: PathBuf) -> ContentEntry {
+    ContentEntry {
+        file_stem: name.to_owned(),
+        name: name.to_owned(),
+        source_slug: None,
+        installed_path: Some(path.clone()),
+        provider_project: None,
+        world_details: None,
+        title_suffix: None,
+        footer_label: None,
+        footer_change: None,
+        description: String::new(),
+        enabled: true,
+        icon_bytes: None,
+        provider_icon: false,
+        provider_description: false,
+        path,
+        icon_lines: None,
+    }
+}
+
+#[test]
+fn deleting_a_mod_offers_its_unused_dependency_chain() {
+    let mut ui = UiHarness::new();
+    ui.add_instance("Dependencies");
+    let minecraft = ui
+        .instance_path("Dependencies")
+        .join(crate::storage::MINECRAFT_DIR_NAME);
+    let root_path = minecraft.join("mods/root.jar");
+    let library_path = minecraft.join("mods/library.jar");
+    std::fs::create_dir_all(root_path.parent().unwrap()).unwrap();
+    std::fs::write(&root_path, b"r").unwrap();
+    std::fs::write(&library_path, b"l").unwrap();
+    let dependency = ProviderProject {
+        provider: "modrinth".to_owned(),
+        project_id: "library".to_owned(),
+        version_id: "library-version".to_owned(),
+    };
+    ContentManifest {
+        version: 1,
+        files: vec![
+            managed_mod_record("mods/root.jar", "root", false, vec![dependency]),
+            managed_mod_record("mods/library.jar", "library", true, Vec::new()),
+        ],
+    }
+    .save(&crate::storage::InstancePaths::new(ui.instance_path("Dependencies")).content_manifest())
+    .unwrap();
+    ui.app.mods_state.entries = vec![content_entry("Root", root_path.clone())];
+    ui.app.mods_state.list_state.selected = Some(0);
+    ui.app.focused = FocusedArea::Content;
+    ui.app.content_tab = ContentTab::Mods;
+
+    ui.key(KeyCode::Char('d'));
+    ui.key(KeyCode::Enter);
+
+    assert!(!root_path.exists());
+    assert!(library_path.exists());
+    assert!(matches!(
+        confirm::pending_target(),
+        Some(confirm::ConfirmTarget::OrphanDependencies { paths })
+            if paths == vec![library_path.clone()]
+    ));
+    assert_eq!(ui.app.focused, FocusedArea::ConfirmDelete);
+
+    ui.key(KeyCode::Enter);
+
+    assert!(!library_path.exists());
+    assert_eq!(ui.app.focused, FocusedArea::Content);
+    let manifest = ContentManifest::load(
+        &crate::storage::InstancePaths::new(ui.instance_path("Dependencies")).content_manifest(),
+    )
+    .unwrap();
+    assert!(manifest.files.is_empty());
+}
+
+#[test]
+fn deleting_a_required_library_warns_but_can_continue() {
+    let mut ui = UiHarness::new();
+    ui.add_instance("Required");
+    let minecraft = ui
+        .instance_path("Required")
+        .join(crate::storage::MINECRAFT_DIR_NAME);
+    let library_path = minecraft.join("mods/library.jar");
+    std::fs::create_dir_all(library_path.parent().unwrap()).unwrap();
+    std::fs::write(&library_path, b"l").unwrap();
+    ContentManifest {
+        version: 1,
+        files: vec![
+            managed_mod_record(
+                "mods/root.jar",
+                "root",
+                false,
+                vec![ProviderProject {
+                    provider: "modrinth".to_owned(),
+                    project_id: "library".to_owned(),
+                    version_id: "library-version".to_owned(),
+                }],
+            ),
+            managed_mod_record("mods/library.jar", "library", true, Vec::new()),
+        ],
+    }
+    .save(&crate::storage::InstancePaths::new(ui.instance_path("Required")).content_manifest())
+    .unwrap();
+    ui.app.mods_state.entries = vec![content_entry("Library", library_path.clone())];
+    ui.app.mods_state.list_state.selected = Some(0);
+    ui.app.focused = FocusedArea::Content;
+    ui.app.content_tab = ContentTab::Mods;
+
+    ui.key(KeyCode::Char('d'));
+
+    assert!(matches!(
+        confirm::pending_target(),
+        Some(confirm::ConfirmTarget::Content { dependents, .. })
+            if dependents == vec!["root"]
+    ));
+    ui.key(KeyCode::Enter);
+    assert!(!Path::new(&library_path).exists());
+}
+
+#[test]
+fn confirmed_account_delete_updates_the_account_panel() {
+    let mut ui = UiHarness::new();
+    ui.add_account("Player");
+    ui.app.focused = FocusedArea::Account;
+
+    ui.key(KeyCode::Char('d'));
+    ui.key(KeyCode::Char('y'));
+
+    assert_eq!(ui.app.focused, FocusedArea::Account);
+    assert!(ui.app.account_state.store.accounts.is_empty());
+    assert_eq!(ui.app.account_state.list_state.selected, None);
+}
+
+#[test]
+fn settings_profile_can_be_created_from_key_events() {
+    let mut ui = UiHarness::new();
+    ui.app.focused = FocusedArea::Settings;
+
+    ui.key(KeyCode::Char('a'));
+    for character in "qConfig".chars() {
+        ui.key(KeyCode::Char(character));
+    }
+    ui.key(KeyCode::Enter);
+
+    assert!(!ui.app.exit);
+    assert_eq!(ui.app.focused, FocusedArea::Settings);
+    assert_eq!(ui.app.settings_state.profiles, ["qConfig"]);
+}
+
+#[test]
+fn instance_wizards_open_render_and_cancel_through_app_input() {
+    let mut ui = UiHarness::new();
+
+    ui.key(KeyCode::Char('a'));
+    assert_eq!(ui.app.focused, FocusedArea::Popup);
+    ui.draw();
+    assert!(ui.screen().contains("New Instance"));
+    ui.key(KeyCode::Esc);
+    assert_eq!(ui.app.focused, FocusedArea::Instances);
+
+    ui.key(KeyCode::Char('m'));
+    assert_eq!(ui.app.focused, FocusedArea::ImportPopup);
+    ui.draw();
+    assert!(ui.screen().contains("Browse Modpacks"));
+    ui.key(KeyCode::Char('i'));
+    ui.draw();
+    assert!(ui.screen().contains("Import Modpack"));
+    ui.key(KeyCode::Esc);
+    assert_eq!(ui.app.focused, FocusedArea::ImportPopup);
+    ui.key(KeyCode::Esc);
+    assert_eq!(ui.app.focused, FocusedArea::Instances);
+}
+
+#[test]
+fn provider_conflict_renders_and_can_be_deferred() {
+    let mut ui = UiHarness::new();
+    ui.app.provider_conflict = Some(ProviderConflictState {
+        relative_path: "mods/example.jar".into(),
+        candidates: vec![
+            ProviderProject {
+                provider: "modrinth".to_owned(),
+                project_id: "first".to_owned(),
+                version_id: "1".to_owned(),
+            },
+            ProviderProject {
+                provider: "curseforge".to_owned(),
+                project_id: "second".to_owned(),
+                version_id: "2".to_owned(),
+            },
+        ],
+        selected: 0,
+    });
+
+    ui.draw();
+    assert!(ui.screen().contains("Choose provider for example.jar"));
+
+    ui.key(KeyCode::Down);
+    assert_eq!(ui.app.provider_conflict.as_ref().unwrap().selected, 1);
+    ui.key(KeyCode::Esc);
+
+    assert!(ui.app.provider_conflict.is_none());
+    assert!(
+        ui.app
+            .dismissed_provider_conflicts
+            .contains(std::path::Path::new("mods/example.jar"))
+    );
+}
+
+#[test]
+fn provider_conflict_selection_is_persisted() {
+    let mut ui = UiHarness::new();
+    ui.add_instance("Conflict");
+    let relative_path = std::path::PathBuf::from("mods/example.jar");
+    let candidates = vec![
+        ProviderProject {
+            provider: "modrinth".to_owned(),
+            project_id: "first".to_owned(),
+            version_id: "1".to_owned(),
+        },
+        ProviderProject {
+            provider: "curseforge".to_owned(),
+            project_id: "second".to_owned(),
+            version_id: "2".to_owned(),
+        },
+    ];
+    let manifest = crate::instance::ContentManifest {
+        version: 1,
+        files: vec![crate::instance::ContentFileRecord {
+            relative_path: relative_path.clone(),
+            kind: crate::instance::ContentKind::Mod,
+            enabled: true,
+            fingerprint: crate::instance::FileFingerprint {
+                size: 1,
+                modified_ns: 0,
+                hashes: Default::default(),
+            },
+            resolution: crate::instance::Resolution::Ambiguous {
+                candidates: candidates.clone(),
+            },
+            provider_aliases: Vec::new(),
+            provider_checks: Vec::new(),
+            required_dependencies: Vec::new(),
+            automatic_dependency: false,
+            cleanup_eligible: false,
+        }],
+    };
+    let manifest_path =
+        crate::storage::InstancePaths::new(ui.instance_path("Conflict")).content_manifest();
+    manifest.save(&manifest_path).unwrap();
+    ui.app.content_manifest = Some(("Conflict".to_owned(), manifest));
+    ui.app.provider_conflict = Some(ProviderConflictState {
+        relative_path: relative_path.clone(),
+        candidates,
+        selected: 0,
+    });
+
+    ui.key(KeyCode::Down);
+    ui.key(KeyCode::Enter);
+
+    assert!(ui.app.provider_conflict.is_none());
+    let saved = crate::instance::ContentManifest::load(&manifest_path).unwrap();
+    assert!(matches!(
+        &saved.record(&relative_path).unwrap().resolution,
+        crate::instance::Resolution::Resolved { project }
+            if project.provider == "curseforge" && project.project_id == "second"
+    ));
+    assert_eq!(
+        saved.record(&relative_path).unwrap().provider_aliases,
+        vec![ProviderProject {
+            provider: "modrinth".to_owned(),
+            project_id: "first".to_owned(),
+            version_id: "1".to_owned(),
+        }]
+    );
+}

@@ -8,7 +8,7 @@ use clap::ArgMatches;
 
 use super::utils::{require_instance, required_arg};
 use crate::cli::output::print_table;
-use crate::instance::ContentEntry;
+use crate::instance::content::entry::ContentEntry;
 
 type CliResult = Result<(), Box<dyn std::error::Error>>;
 type Scanner = fn(&Path, &str) -> Vec<ContentEntry>;
@@ -106,7 +106,7 @@ fn toggle_entry(
         return Ok(());
     }
 
-    crate::instance::content::mods::toggle_entry(entry)?;
+    crate::instance::content::entry::toggle_entry(entry)?;
     println!(
         "{}d '{}'.",
         if should_enable { "Enable" } else { "Disable" },
@@ -116,33 +116,5 @@ fn toggle_entry(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::find_entry_by_stem;
-    use crate::instance::ContentEntry;
-    use std::path::PathBuf;
-
-    fn entry(file_stem: &str) -> ContentEntry {
-        ContentEntry {
-            file_stem: file_stem.to_string(),
-            name: file_stem.to_string(),
-            description: String::new(),
-            enabled: true,
-            icon_bytes: None,
-            path: PathBuf::from(file_stem),
-            icon_lines: None,
-        }
-    }
-
-    #[test]
-    fn matches_by_stem_case_insensitively() {
-        let entries = vec![entry("Sodium"), entry("Lithium")];
-        let found = find_entry_by_stem(&entries, "sOdIuM").expect("entry should match");
-        assert_eq!(found.file_stem, "Sodium");
-    }
-
-    #[test]
-    fn returns_none_for_missing_stem() {
-        let entries = vec![entry("Sodium")];
-        assert!(find_entry_by_stem(&entries, "iris").is_none());
-    }
-}
+#[path = "tests/content.rs"]
+mod tests;

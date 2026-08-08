@@ -1,20 +1,41 @@
 // rendering for the modpack import wizard. same pattern as new_instance:
 // snapshot the state, pick the right step renderer, done.
 
+use super::super::LoadState;
 use super::super::base::PopupFrame;
-use super::super::new_instance::LoadState;
-use super::state::{IMPORT_STATE, ImportStep, ImportWizardState};
-use crate::config::theme::THEME;
+use super::state::{DISCOVERY_STATE, IMPORT_STATE, ImportStep, ImportWizardState};
+use crate::config::theme::{BORDER_STYLE, THEME};
 use crate::tui::app::FocusedArea;
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{List, ListItem, ListState, Paragraph, StatefulWidget, Widget, Wrap},
+    widgets::{
+        Block, Borders, Clear, List, ListItem, ListState, Paragraph, StatefulWidget, Widget, Wrap,
+    },
 };
 
-pub fn render(frame: &mut Frame, area: Rect, _focused: FocusedArea) {
+#[cfg(test)]
+pub fn render(frame: &mut Frame, area: Rect, focused: FocusedArea) {
+    render_inner(frame, area, focused, None);
+}
+
+pub fn render_with_picker(
+    frame: &mut Frame,
+    area: Rect,
+    focused: FocusedArea,
+    picker: &ratatui_image::picker::Picker,
+) {
+    render_inner(frame, area, focused, Some(picker));
+}
+
+fn render_inner(
+    frame: &mut Frame,
+    area: Rect,
+    _focused: FocusedArea,
+    picker: Option<&ratatui_image::picker::Picker>,
+) {
     let snapshot = match IMPORT_STATE.lock() {
         Ok(state) => state.clone(),
         Err(e) => {
@@ -22,6 +43,12 @@ pub fn render(frame: &mut Frame, area: Rect, _focused: FocusedArea) {
             ImportWizardState::default()
         }
     };
+    if snapshot.step == ImportStep::Discover {
+        if let Some(picker) = picker {
+            render_discovery(frame, area, picker);
+        }
+        return;
+    }
 
     let keybinds = step_keybinds(&snapshot);
 
@@ -45,6 +72,7 @@ pub fn render(frame: &mut Frame, area: Rect, _focused: FocusedArea) {
                 .split(popup_area);
 
             match snapshot.step {
+                ImportStep::Discover => {}
                 ImportStep::Input => render_input_step(&snapshot, chunks[0], buf),
                 ImportStep::Fetching => render_fetching_step(chunks[0], buf),
                 ImportStep::Version => render_version_step(&snapshot, chunks[0], buf),
@@ -64,6 +92,9 @@ pub fn popup_rect(frame_area: Rect) -> Rect {
     };
 
     match step {
+        ImportStep::Discover => {
+            frame_area.centered(Constraint::Percentage(80), Constraint::Percentage(80))
+        }
         ImportStep::Input => {
             let h = 8u16.min(frame_area.height.saturating_sub(4));
             frame_area.centered(w, Constraint::Length(h))
@@ -79,9 +110,54 @@ pub fn popup_rect(frame_area: Rect) -> Rect {
             frame_area.centered(w, Constraint::Length(h))
         }
         ImportStep::Confirm => {
-            let h = 10u16.min(frame_area.height.saturating_sub(4));
+            let h = 8u16.min(frame_area.height.saturating_sub(4));
             frame_area.centered(w, Constraint::Length(h))
         }
+    }
+}
+
+fn render_discovery(frame: &mut Frame, area: Rect, picker: &ratatui_image::picker::Picker) {
+    let theme = THEME.as_ref();
+    Clear.render(area, frame.buffer_mut());
+    let Ok(mut state) = DISCOVERY_STATE.lock() else {
+        return;
+    };
+    let keybinds = discovery_keybinds(state.project_page_open());
+    let mut block = Block::default()
+        .title(crate::tui::widgets::styled_title("Browse Modpacks", false))
+        .title_bottom(
+            super::super::keybind_line(keybinds).alignment(ratatui::layout::Alignment::Right),
+        )
+        .borders(Borders::ALL)
+        .border_type(BORDER_STYLE.to_border_type())
+        .border_style(Style::default().fg(theme.accent()))
+        .style(Style::default().bg(theme.surface()));
+    if let Some(search_line) = state.search.title_line() {
+        block = block.title_top(search_line);
+    }
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+    crate::tui::widgets::content::tabs::render_discovery_popup(frame, inner, &mut state, picker);
+}
+
+fn discovery_keybinds(project_page_open: bool) -> &'static [(&'static str, &'static str)] {
+    if project_page_open {
+        &[
+            ("j/k", " scroll"),
+            ("g/G", " top/bottom"),
+            ("v", " versions"),
+            ("h", " back"),
+        ]
+    } else {
+        &[
+            ("j/k", " navigate"),
+            (" [/] ", " pages"),
+            ("Enter", " view"),
+            ("v", " versions"),
+            ("/", " search"),
+            ("i", " import"),
+            ("Esc", " close"),
+        ]
     }
 }
 
@@ -150,10 +226,10 @@ fn render_version_step(state: &ImportWizardState, area: Rect, buf: &mut ratatui:
                 .map(|version| {
                     let game_ver = version.game_versions.first().cloned().unwrap_or_default();
                     let loader = version.loaders.first().cloned().unwrap_or_default();
-                    ListItem::new(Line::from(Span::styled(
-                        format!("{}  {}  {}", version.version_number, game_ver, loader),
+                    ListItem::new(state.version_search.highlight_line(
+                        &format!("{}  {}  {}", version.version_number, game_ver, loader),
                         Style::default().fg(theme.text()),
-                    )))
+                    ))
                 })
                 .collect();
 
@@ -222,172 +298,31 @@ fn render_confirm_step(state: &ImportWizardState, area: Rect, buf: &mut ratatui:
     .render(area, buf);
 }
 
-fn wizard_title(_state: &ImportWizardState) -> Line<'static> {
+fn wizard_title(state: &ImportWizardState) -> Line<'static> {
     use crate::tui::widgets::styled_title;
-    styled_title("Import Modpack", false)
+    styled_title(
+        if state.step == ImportStep::Confirm {
+            "Install Modpack"
+        } else {
+            "Import Modpack"
+        },
+        false,
+    )
 }
 
 fn step_keybinds(state: &ImportWizardState) -> Line<'static> {
     use super::super::keybind_line;
     match state.step {
-        ImportStep::Input => keybind_line(&[("Enter", " fetch")]),
+        ImportStep::Discover => Line::default(),
+        ImportStep::Input => keybind_line(&[("Enter", " fetch"), ("Esc", " back")]),
         ImportStep::Fetching => keybind_line(&[("Esc", " cancel")]),
         ImportStep::Version => {
             keybind_line(&[("/", " search"), ("h", " back"), ("Enter", " select")])
         }
-        ImportStep::Confirm => keybind_line(&[("h", " back"), ("Enter", " import")]),
+        ImportStep::Confirm => keybind_line(&[("h", " back"), ("Enter", " install")]),
     }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use ratatui::Terminal;
-    use ratatui::backend::TestBackend;
-
-    // serialise against parallel tests of the same global IMPORT_STATE.
-    static TEST_SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
-    fn reset_import_state(step: ImportStep) {
-        let mut guard = IMPORT_STATE.lock().expect("IMPORT_STATE lock");
-        *guard = ImportWizardState::default();
-        guard.step = step;
-    }
-
-    #[test]
-    fn import_modpack_renders_input_step() {
-        let _serial = TEST_SERIAL.lock().unwrap_or_else(|e| e.into_inner());
-        reset_import_state(ImportStep::Input);
-
-        let backend = TestBackend::new(60, 12);
-        let mut terminal = Terminal::new(backend).unwrap();
-        terminal
-            .draw(|f| render(f, f.area(), FocusedArea::ImportPopup))
-            .unwrap();
-        insta::assert_snapshot!(terminal.backend());
-    }
-
-    #[test]
-    fn import_modpack_renders_fetching_step() {
-        let _serial = TEST_SERIAL.lock().unwrap_or_else(|e| e.into_inner());
-        reset_import_state(ImportStep::Fetching);
-
-        let backend = TestBackend::new(60, 12);
-        let mut terminal = Terminal::new(backend).unwrap();
-        terminal
-            .draw(|f| render(f, f.area(), FocusedArea::ImportPopup))
-            .unwrap();
-        insta::assert_snapshot!(terminal.backend());
-    }
-
-    // Version step: pre-populate versions as LoadState::Loaded with synthetic
-    // VersionInfo entries so render walks the list path without triggering
-    // any network helpers.
-    #[test]
-    fn import_modpack_renders_version_step() {
-        use crate::net::modrinth::VersionInfo;
-
-        let _serial = TEST_SERIAL.lock().unwrap_or_else(|e| e.into_inner());
-        {
-            let mut guard = IMPORT_STATE.lock().expect("IMPORT_STATE lock");
-            *guard = ImportWizardState::default();
-            guard.step = ImportStep::Version;
-            guard.project_title = Some("Synthetic Pack".into());
-            guard.versions = LoadState::Loaded(vec![
-                VersionInfo {
-                    id: "v1".into(),
-                    name: "1.0.0".into(),
-                    version_number: "1.0.0".into(),
-                    game_versions: vec!["1.20.1".into()],
-                    loaders: vec!["fabric".into()],
-                    files: vec![],
-                },
-                VersionInfo {
-                    id: "v2".into(),
-                    name: "0.9.0".into(),
-                    version_number: "0.9.0".into(),
-                    game_versions: vec!["1.20.1".into()],
-                    loaders: vec!["fabric".into()],
-                    files: vec![],
-                },
-            ]);
-        }
-
-        let backend = TestBackend::new(60, 14);
-        let mut terminal = Terminal::new(backend).unwrap();
-        terminal
-            .draw(|f| render(f, f.area(), FocusedArea::ImportPopup))
-            .unwrap();
-        insta::assert_snapshot!(terminal.backend());
-    }
-
-    // Confirm step: needs a populated ImportSummary so the render path
-    // doesn't bail. ImportSummary is constructed manually with synthetic
-    // values; archive_path is a fake tempdir-ish path that never gets read.
-    #[test]
-    fn import_modpack_renders_confirm_step() {
-        use crate::instance::import::{ImportSummary, PackFormat};
-        use crate::instance::models::ModLoader;
-        use std::path::PathBuf;
-
-        let _serial = TEST_SERIAL.lock().unwrap_or_else(|e| e.into_inner());
-        {
-            let mut guard = IMPORT_STATE.lock().expect("IMPORT_STATE lock");
-            *guard = ImportWizardState::default();
-            guard.step = ImportStep::Confirm;
-            guard.summary = Some(ImportSummary {
-                name: "Synthetic Pack".into(),
-                pack_version: "1.0.0".into(),
-                game_version: "1.20.1".into(),
-                loader: ModLoader::Fabric,
-                loader_version: Some("0.15.0".into()),
-                mod_count: 42,
-                override_count: 3,
-                format: PackFormat::Mrpack,
-                archive_path: PathBuf::from("/tmp/synthetic.mrpack"),
-            });
-        }
-
-        let backend = TestBackend::new(60, 14);
-        let mut terminal = Terminal::new(backend).unwrap();
-        terminal
-            .draw(|f| render(f, f.area(), FocusedArea::ImportPopup))
-            .unwrap();
-        insta::assert_snapshot!(terminal.backend());
-    }
-
-    // Confirm step with loader_version=None: covers the branch where the
-    // pack didn't declare a loader version (rare upstream, but happens for
-    // older mmc packs). render_confirm_step has to handle the Option.
-    #[test]
-    fn import_modpack_renders_confirm_step_without_loader_version() {
-        use crate::instance::import::{ImportSummary, PackFormat};
-        use crate::instance::models::ModLoader;
-        use std::path::PathBuf;
-
-        let _serial = TEST_SERIAL.lock().unwrap_or_else(|e| e.into_inner());
-        {
-            let mut guard = IMPORT_STATE.lock().expect("IMPORT_STATE lock");
-            *guard = ImportWizardState::default();
-            guard.step = ImportStep::Confirm;
-            guard.summary = Some(ImportSummary {
-                name: "Vanilla Pack".into(),
-                pack_version: "2.0".into(),
-                game_version: "1.20.1".into(),
-                loader: ModLoader::Vanilla,
-                loader_version: None,
-                mod_count: 0,
-                override_count: 12,
-                format: PackFormat::Mmc,
-                archive_path: PathBuf::from("/tmp/vanilla.zip"),
-            });
-        }
-
-        let backend = TestBackend::new(60, 14);
-        let mut terminal = Terminal::new(backend).unwrap();
-        terminal
-            .draw(|f| render(f, f.area(), FocusedArea::ImportPopup))
-            .unwrap();
-        insta::assert_snapshot!(terminal.backend());
-    }
-}
+#[path = "../../../tests/widgets/popups/import_modpack/render.rs"]
+mod tests;

@@ -1,6 +1,7 @@
 // networking layer: http client, file downloads, and shared utilities
 // for fetching game assets from mojang, mod loaders, and modrinth.
 
+pub mod curseforge;
 pub mod fabric;
 pub mod forge;
 pub mod modrinth;
@@ -9,9 +10,12 @@ pub mod neoforge;
 pub mod quilt;
 
 use reqwest::Client;
+use serde::Serialize;
 use serde::de::DeserializeOwned;
 use std::path::Path;
 use thiserror::Error;
+
+pub const MAX_PROVIDER_ASSET_BYTES: usize = 16 * 1024 * 1024;
 
 #[derive(Debug, Error)]
 pub enum NetError {
@@ -35,6 +39,18 @@ pub struct HttpClient {
 impl Default for HttpClient {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl From<Client> for HttpClient {
+    fn from(inner: Client) -> Self {
+        Self { inner }
+    }
+}
+
+impl NetError {
+    pub(crate) fn is_retryable(&self) -> bool {
+        matches!(self, Self::StatusError { status: 429, .. }) || is_retryable(self)
     }
 }
 
@@ -89,6 +105,59 @@ impl HttpClient {
             |resp| async move { Ok(resp.bytes().await?.to_vec()) },
         )
         .await
+    }
+
+    pub async fn get_bytes_limited(&self, url: &str, limit: usize) -> Result<Vec<u8>, NetError> {
+        get_with_retry(self, url, move |mut response| async move {
+            if response
+                .content_length()
+                .is_some_and(|length| length > limit as u64)
+            {
+                return Err(NetError::Parse(format!(
+                    "Response exceeds the {limit}-byte limit"
+                )));
+            }
+            let mut bytes = Vec::new();
+            while let Some(chunk) = response.chunk().await? {
+                if bytes.len().saturating_add(chunk.len()) > limit {
+                    return Err(NetError::Parse(format!(
+                        "Response exceeds the {limit}-byte limit"
+                    )));
+                }
+                bytes.extend_from_slice(&chunk);
+            }
+            Ok(bytes)
+        })
+        .await
+    }
+
+    pub async fn post_json<B, T>(&self, url: &str, body: &B) -> Result<T, NetError>
+    where
+        B: Serialize + ?Sized,
+        T: DeserializeOwned,
+    {
+        for attempt in 0..=MAX_RETRIES {
+            tracing::trace!("HTTP POST {}", url);
+            let result = async {
+                let response = self.inner.post(url).json(body).send().await?;
+                if !response.status().is_success() {
+                    return Err(NetError::StatusError {
+                        status: response.status().as_u16(),
+                        url: url.to_owned(),
+                    });
+                }
+                Ok(response.json().await?)
+            }
+            .await;
+            match result {
+                Ok(value) => return Ok(value),
+                Err(error) if is_retryable(&error) && attempt < MAX_RETRIES => {
+                    sleep_before_retry("request", url, attempt, &error).await;
+                }
+                Err(error) => return Err(error),
+            }
+        }
+        unreachable!("retry loop returns on success or final error")
     }
 
     // fetch JSON and also keep the raw bytes. used by install paths that
@@ -146,7 +215,7 @@ const RETRY_BASE_DELAY_MS: u64 = 500;
 
 async fn sleep_before_retry(kind: &str, url: &str, attempt: u32, err: &NetError) {
     let delay = RETRY_BASE_DELAY_MS * 2u64.pow(attempt);
-    tracing::warn!(
+    tracing::debug!(
         "{} failed, retrying after {}ms (attempt {}/{}): {}: {}",
         kind,
         delay,
@@ -169,23 +238,28 @@ pub async fn download_file(
 ) -> Result<(), NetError> {
     tracing::debug!("Downloading {} to {}", url, dest.display());
 
-    for attempt in 0..=MAX_RETRIES {
-        match download_file_once(client, url, dest, &progress_cb).await {
-            Ok(()) => {
-                tracing::debug!("Downloaded {} to {}", url, dest.display());
-                return Ok(());
-            }
-            Err(e) if is_retryable(&e) => {
-                if attempt == MAX_RETRIES {
-                    return Err(e);
+    let result = 'download: {
+        for attempt in 0..=MAX_RETRIES {
+            match download_file_once(client, url, dest, &progress_cb).await {
+                Ok(()) => {
+                    tracing::debug!("Downloaded {} to {}", url, dest.display());
+                    break 'download Ok(());
                 }
-                sleep_before_retry("download", url, attempt, &e).await;
+                Err(e) if is_retryable(&e) => {
+                    if attempt == MAX_RETRIES {
+                        break 'download Err(e);
+                    }
+                    sleep_before_retry("download", url, attempt, &e).await;
+                }
+                Err(e) => break 'download Err(e),
             }
-            Err(e) => return Err(e),
         }
+        unreachable!("retry loop returns on success or final error")
+    };
+    if result.is_err() {
+        let _ = tokio::fs::remove_file(dest).await;
     }
-
-    unreachable!("retry loop returns on success or final error")
+    result
 }
 
 // single attempt at downloading a file to disk
@@ -228,110 +302,5 @@ fn is_retryable(err: &NetError) -> bool {
         NetError::Http(e) => e.is_timeout() || e.is_body() || e.is_connect(),
         NetError::StatusError { status, .. } => *status >= 500,
         _ => false,
-    }
-}
-
-// tries JAVA_HOME first, then PATH, then just yolos "java" and hopes for the best
-#[must_use]
-pub fn detect_java_path() -> String {
-    if let Ok(java_home) = std::env::var("JAVA_HOME") {
-        let java_name = if cfg!(windows) { "java.exe" } else { "java" };
-        let bin = std::path::Path::new(&java_home).join("bin").join(java_name);
-        if bin.exists() {
-            tracing::trace!("Detected Java from JAVA_HOME: {}", bin.display());
-            return bin.to_string_lossy().to_string();
-        }
-        tracing::warn!(
-            "JAVA_HOME is set to {}, but {} does not exist",
-            java_home,
-            bin.display()
-        );
-    }
-    match which::which("java") {
-        Ok(path) => {
-            tracing::trace!("Detected Java from PATH: {}", path.display());
-            path.to_string_lossy().to_string()
-        }
-        Err(e) => {
-            tracing::warn!(
-                "Could not find java on PATH, falling back to literal 'java': {}",
-                e
-            );
-            "java".to_string()
-        }
-    }
-}
-
-// converts maven coordinates like "org.example:artifact:1.0" into a
-// filesystem path like "org/example/artifact/1.0/artifact-1.0.jar".
-// supports optional classifier as a 4th component.
-#[must_use]
-pub fn maven_coord_to_path(coord: &str) -> Option<String> {
-    let parts: Vec<&str> = coord.split(':').collect();
-    match parts.as_slice() {
-        [group, artifact, version] => {
-            let group_path = group.replace('.', "/");
-            Some(format!(
-                "{}/{}/{}/{}-{}.jar",
-                group_path, artifact, version, artifact, version
-            ))
-        }
-        [group, artifact, version, classifier] => {
-            let group_path = group.replace('.', "/");
-            Some(format!(
-                "{}/{}/{}/{}-{}-{}.jar",
-                group_path, artifact, version, artifact, version, classifier
-            ))
-        }
-        _ => None,
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn maven_3_part_coord() {
-        assert_eq!(
-            maven_coord_to_path("org.example:artifact:1.0"),
-            Some("org/example/artifact/1.0/artifact-1.0.jar".to_string())
-        );
-    }
-
-    #[test]
-    fn maven_4_part_coord_with_classifier() {
-        assert_eq!(
-            maven_coord_to_path("org.example:artifact:1.0:sources"),
-            Some("org/example/artifact/1.0/artifact-1.0-sources.jar".to_string())
-        );
-    }
-
-    #[test]
-    fn maven_nested_group() {
-        assert_eq!(
-            maven_coord_to_path("com.google.code.gson:gson:2.10"),
-            Some("com/google/code/gson/gson/2.10/gson-2.10.jar".to_string())
-        );
-    }
-
-    #[test]
-    fn maven_invalid_too_few_parts() {
-        assert_eq!(maven_coord_to_path("org.example:artifact"), None);
-    }
-
-    #[test]
-    fn maven_invalid_too_many_parts() {
-        assert_eq!(maven_coord_to_path("a:b:c:d:e"), None);
-    }
-
-    #[test]
-    fn maven_invalid_single_part() {
-        assert_eq!(maven_coord_to_path("just-a-string"), None);
-    }
-
-    #[test]
-    fn maven_empty_string() {
-        assert_eq!(maven_coord_to_path(""), None);
     }
 }

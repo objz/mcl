@@ -3,11 +3,12 @@
 // also keeps an in-memory ring buffer of log lines for the log overlay viewer.
 
 use std::fmt;
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use tracing::field::{Field, Visit};
 use tracing::{Level, Subscriber};
-use tracing_appender::non_blocking::WorkerGuard;
+use tracing_appender::non_blocking::{NonBlocking, WorkerGuard};
 use tracing_subscriber::filter::filter_fn;
 use tracing_subscriber::layer::Context;
 use tracing_subscriber::prelude::*;
@@ -15,7 +16,7 @@ use tracing_subscriber::{EnvFilter, Layer};
 
 use std::sync::LazyLock;
 
-use crate::tui::error_buffer::{self, ErrorEvent};
+use crate::feedback::errors::{self as error_buffer, ErrorEvent};
 
 const MINECRAFT_LOG_TARGET: &str = "mc_instance";
 const DEFAULT_FILE_FILTER: &str = "warn,rmcl=trace";
@@ -47,20 +48,8 @@ pub fn init() -> WorkerGuard {
         Some(d) => d.join("rmcl"),
         None => std::path::PathBuf::from("./cache"),
     };
-    match std::fs::create_dir_all(&log_dir) {
-        Ok(_) => {}
-        Err(e) => {
-            eprintln!(
-                "Warning: failed to create log directory {}: {}",
-                log_dir.display(),
-                e
-            );
-        }
-    }
 
-    let now = chrono::Local::now().format("%Y-%m-%d_%H-%M-%S");
-    let file_appender = tracing_appender::rolling::never(&log_dir, format!("rmcl_{now}.log"));
-    let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
+    let (non_blocking, guard) = open_log_writer(&log_dir);
 
     let file_filter =
         EnvFilter::try_from_env("RUST_LOG").unwrap_or_else(|_| EnvFilter::new(DEFAULT_FILE_FILTER));
@@ -102,6 +91,28 @@ pub fn init() -> WorkerGuard {
         .init();
 
     guard
+}
+
+fn open_log_writer(log_dir: &Path) -> (NonBlocking, WorkerGuard) {
+    let now = chrono::Local::now().format("%Y-%m-%d_%H-%M-%S");
+    let file = std::fs::create_dir_all(log_dir).and_then(|_| {
+        std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(log_dir.join(format!("rmcl_{now}.log")))
+    });
+
+    match file {
+        Ok(file) => tracing_appender::non_blocking(file),
+        Err(error) => {
+            eprintln!(
+                "Warning: failed to open log file in {}: {}",
+                log_dir.display(),
+                error
+            );
+            tracing_appender::non_blocking(std::io::sink())
+        }
+    }
 }
 
 // custom tracing layer that intercepts all log events:
@@ -150,8 +161,17 @@ fn should_record_app_log(target: &str, level: Level) -> bool {
     if target == MINECRAFT_LOG_TARGET {
         return false;
     }
+    if is_svg_renderer_target(target) {
+        return false;
+    }
 
     target == "rmcl" || target.starts_with("rmcl::") || level <= Level::WARN
+}
+
+fn is_svg_renderer_target(target: &str) -> bool {
+    ["usvg", "resvg", "tiny_skia", "fontdb"]
+        .iter()
+        .any(|renderer| target == *renderer || target.starts_with(&format!("{renderer}::")))
 }
 
 #[derive(Default)]
@@ -181,29 +201,5 @@ impl Visit for MessageVisitor {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn minecraft_events_are_not_general_app_logs() {
-        assert!(!should_record_app_log(MINECRAFT_LOG_TARGET, Level::ERROR));
-    }
-
-    #[test]
-    fn rmcl_events_are_general_app_logs() {
-        assert!(should_record_app_log(
-            "rmcl::instance::manager",
-            Level::TRACE
-        ));
-    }
-
-    #[test]
-    fn dependency_debug_events_are_not_general_app_logs() {
-        assert!(!should_record_app_log("log", Level::DEBUG));
-    }
-
-    #[test]
-    fn dependency_warnings_are_general_app_logs() {
-        assert!(should_record_app_log("notify", Level::WARN));
-    }
-}
+#[path = "tests/logging.rs"]
+mod tests;

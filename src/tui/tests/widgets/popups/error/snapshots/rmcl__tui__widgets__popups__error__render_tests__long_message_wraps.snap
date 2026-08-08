@@ -1,0 +1,14 @@
+---
+source: src/tui/tests/widgets/popups/error/render.rs
+expression: term.backend()
+---
+"╭ ERROR ───────────────────────────────╮"
+"│The Minecraft launcher could not reach│"
+"│the Mojang version manifest after     │"
+"│three retries. Check your network     │"
+"│connection or proxy settings.         │"
+"│                                      │"
+"│                                      │"
+"│                                      │"
+"│                                      │"
+"╰──────────────────────────────────────╯"

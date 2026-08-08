@@ -11,8 +11,8 @@ use thiserror::Error;
 
 use crate::auth::AccountType;
 use crate::instance::models::{InstanceConfig, ModLoader};
-use crate::launch_profile::model::LaunchProfile;
-use crate::launch_profile::rules::{self, FeatureSet, RuleContext};
+use crate::launch_profile::model::{Argument, LaunchProfile};
+use crate::launch_profile::rules::{self, FeatureSet, RuleAction, RuleContext};
 use crate::launch_profile::templates::TemplateContext;
 use crate::launch_profile::{render, resolve, system};
 
@@ -249,7 +249,7 @@ async fn migrate_legacy_loader_profile_if_needed(
     };
 
     let installer_json_path = instance_dir
-        .join(".minecraft")
+        .join(crate::storage::MINECRAFT_DIR_NAME)
         .join("versions")
         .join(&version_dir)
         .join(format!("{version_dir}.json"));
@@ -306,6 +306,46 @@ pub struct LaunchInvocation {
     pub working_dir: PathBuf,
 }
 
+pub fn supports_quick_play(meta_dir: &Path, game_version: &str) -> bool {
+    let path = crate::storage::MetadataPaths::new(meta_dir)
+        .versions()
+        .join(game_version)
+        .join("meta.json");
+    std::fs::read(path)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<LaunchProfile>(&bytes).ok())
+        .is_some_and(|profile| profile_supports_quick_play(&profile))
+}
+
+fn profile_supports_quick_play(profile: &LaunchProfile) -> bool {
+    profile.arguments.as_ref().is_some_and(|arguments| {
+        arguments.game.iter().any(|argument| {
+            let Argument::Conditional { rules, .. } = argument else {
+                return false;
+            };
+            rules.iter().any(|rule| {
+                rule.action == RuleAction::Allow
+                    && rule
+                        .features
+                        .as_ref()
+                        .is_some_and(|features| features.is_quick_play_singleplayer == Some(true))
+            })
+        })
+    })
+}
+
+fn validate_quick_play_world(minecraft_dir: &Path, world: &str) -> Result<(), LaunchError> {
+    let mut components = Path::new(world).components();
+    let is_single_name = matches!(components.next(), Some(std::path::Component::Normal(_)))
+        && components.next().is_none();
+    if !is_single_name || !minecraft_dir.join("saves").join(world).is_dir() {
+        return Err(LaunchError::Parse(
+            "Selected Quick Play world is not a valid save".to_owned(),
+        ));
+    }
+    Ok(())
+}
+
 // builds a fully-resolved java invocation for the given instance. reads
 // meta.json and the loader profile from disk, migrates legacy formats if
 // needed (may hit Mojang to refetch), resolves inheritsFrom, applies
@@ -316,12 +356,14 @@ pub async fn build_launch_invocation(
     instances_dir: &Path,
     meta_dir: &Path,
     auth: &LaunchAuth<'_>,
+    quick_play_world: Option<&str>,
 ) -> Result<LaunchInvocation, LaunchError> {
     let instance_dir = instances_dir.join(&config.name);
-    let minecraft_dir = instance_dir.join(".minecraft");
+    let minecraft_dir = instance_dir.join(crate::storage::MINECRAFT_DIR_NAME);
 
-    let meta_path = meta_dir
-        .join("versions")
+    let metadata_paths = crate::storage::MetadataPaths::new(meta_dir);
+    let meta_path = metadata_paths
+        .versions()
         .join(&config.game_version)
         .join("meta.json");
     if !meta_path.exists() {
@@ -333,7 +375,14 @@ pub async fn build_launch_invocation(
         None => meta,
     };
 
-    let current_features = FeatureSet::default();
+    if let Some(world) = quick_play_world {
+        validate_quick_play_world(&minecraft_dir, world)?;
+    }
+
+    let current_features = FeatureSet {
+        is_quick_play_singleplayer: quick_play_world.map(|_| true),
+        ..Default::default()
+    };
     let host_os_version = system::mojang_os_version();
     let rule_ctx = RuleContext {
         os_name: system::mojang_os_name(),
@@ -348,7 +397,7 @@ pub async fn build_launch_invocation(
         .map(|ai| ai.id.clone())
         .unwrap_or_default();
 
-    let lib_dir = meta_dir.join("libraries");
+    let lib_dir = metadata_paths.libraries();
 
     let lv = config.loader_version.as_deref().unwrap_or("unknown");
     let profile_filename = match config.loader {
@@ -364,7 +413,7 @@ pub async fn build_launch_invocation(
     // the vanilla meta migration above ensured is fresh on disk). when no
     // loader is configured we use the already-loaded vanilla meta directly.
     let merged_profile: LaunchProfile = if let Some(filename) = &profile_filename {
-        let profile_path = meta_dir.join("loader-profiles").join(filename);
+        let profile_path = metadata_paths.loader_profiles().join(filename);
         if !profile_path.exists() {
             return Err(LaunchError::MetaNotFound(
                 profile_path.display().to_string(),
@@ -403,6 +452,10 @@ pub async fn build_launch_invocation(
         .clone()
         .ok_or_else(|| LaunchError::Parse("merged profile missing mainClass".into()))?;
 
+    if quick_play_world.is_some() && !profile_supports_quick_play(&merged_profile) {
+        return Err(LaunchError::NotSupported("Quick Play".to_owned()));
+    }
+
     // rebuild the classpath from the merged profile. vanilla-style libraries
     // have `downloads.artifact.path` set and live in meta_dir/libraries/.
     // loader-style libraries only have a maven coordinate; for forge/neoforge,
@@ -432,8 +485,9 @@ pub async fn build_launch_invocation(
             .as_ref()
             .and_then(|d| d.artifact.as_ref())
             .map(|a| PathBuf::from(&a.path))
-            .or_else(|| crate::net::maven_coord_to_path(&lib.name).map(PathBuf::from))
-        {
+            .or_else(|| {
+                crate::instance::loader::maven::maven_coord_to_path(&lib.name).map(PathBuf::from)
+            }) {
             Some(p) => p,
             None => continue,
         };
@@ -453,8 +507,8 @@ pub async fn build_launch_invocation(
     }
 
     classpath.push(
-        meta_dir
-            .join("versions")
+        metadata_paths
+            .versions()
             .join(&config.game_version)
             .join(format!("{}.jar", config.game_version)),
     );
@@ -486,7 +540,7 @@ pub async fn build_launch_invocation(
                 .effective_java_path()
                 .map(str::to_owned)
         })
-        .unwrap_or_else(crate::net::detect_java_path);
+        .unwrap_or_else(crate::instance::java::detect_java_path);
 
     check_java_version(
         &java,
@@ -497,9 +551,9 @@ pub async fn build_launch_invocation(
     )
     .await?;
 
-    let assets_root = meta_dir.join("assets");
-    let natives_dir = meta_dir
-        .join("versions")
+    let assets_root = metadata_paths.assets();
+    let natives_dir = metadata_paths
+        .versions()
         .join(&config.game_version)
         .join("natives");
     let version_type = merged_profile.type_.as_deref().unwrap_or("release");
@@ -522,6 +576,7 @@ pub async fn build_launch_invocation(
         launcher_name: "rmcl",
         launcher_version: env!("CARGO_PKG_VERSION"),
         clientid: "0",
+        quick_play_singleplayer: quick_play_world,
     };
 
     let (upstream_jvm_args, game_args) =
@@ -555,6 +610,7 @@ pub async fn launch(
     config: &InstanceConfig,
     instances_dir: &Path,
     meta_dir: &Path,
+    quick_play_world: Option<&str>,
 ) -> Result<(), LaunchError> {
     let name = config.name.clone();
 
@@ -612,7 +668,8 @@ pub async fn launch(
         user_type,
     };
 
-    let invocation = build_launch_invocation(config, instances_dir, meta_dir, &auth).await?;
+    let invocation =
+        build_launch_invocation(config, instances_dir, meta_dir, &auth, quick_play_world).await?;
     tracing::debug!(
         "[{}] Prepared launch invocation: working_dir={} classpath_entries={} jvm_args={} extra_args={} game_args={} main_class={}",
         name,
@@ -631,8 +688,8 @@ pub async fn launch(
     )?;
 
     let (kill_tx, kill_rx) = tokio::sync::oneshot::channel::<()>();
-    crate::running::register_kill(&name, kill_tx);
-    crate::running::set_state(&name, crate::running::RunState::Starting);
+    crate::instance::runtime::register_kill(&name, kill_tx);
+    crate::instance::runtime::set_state(&name, crate::instance::runtime::RunState::Starting);
     tracing::info!(
         "[{}] Starting Minecraft ({} {})",
         name,
@@ -667,17 +724,17 @@ pub async fn launch(
     let mut child = match cmd.spawn() {
         Ok(c) => c,
         Err(e) => {
-            crate::running::cleanup_kill_sender(&name);
-            crate::running::remove(&name);
+            crate::instance::runtime::cleanup_kill_sender(&name);
+            crate::instance::runtime::remove(&name);
             tracing::error!("[{}] Failed to spawn Minecraft process: {}", name, e);
             return Err(LaunchError::Io(e));
         }
     };
     tracing::debug!("[{}] Spawned Minecraft process", name);
 
-    crate::running::set_state(&name, crate::running::RunState::Running);
+    crate::instance::runtime::set_state(&name, crate::instance::runtime::RunState::Running);
 
-    let log_file_path = crate::instance::log_files::create_log_file(instances_dir, &name);
+    let log_file_path = crate::instance::logs::files::create_log_file(instances_dir, &name);
     match &log_file_path {
         Some(path) => tracing::debug!(
             "[{}] Writing Minecraft process log to {}",
@@ -802,15 +859,18 @@ pub async fn launch(
             tracing::warn!("Failed to sync config for '{}': {}", name_for_task, e);
         }
         if code == Some(0) || killed_by_user {
-            crate::running::remove(&name_for_task);
+            crate::instance::runtime::remove(&name_for_task);
             tracing::debug!(
                 "[{}] Cleared running state after normal exit (killed_by_user={})",
                 name_for_task,
                 killed_by_user
             );
         } else {
-            crate::running::set_state(&name_for_task, crate::running::RunState::Crashed(code));
-            crate::tui::error_buffer::push_error(crate::tui::error_buffer::ErrorEvent {
+            crate::instance::runtime::set_state(
+                &name_for_task,
+                crate::instance::runtime::RunState::Crashed(code),
+            );
+            crate::feedback::errors::push_error(crate::feedback::errors::ErrorEvent {
                 id: 0,
                 level: tracing::Level::ERROR,
                 message: match code {
@@ -831,8 +891,8 @@ pub async fn launch(
                 e
             );
         }
-        crate::running::push_last_played(&name_for_task, chrono::Utc::now());
-        crate::running::cleanup_kill_sender(&name_for_task);
+        crate::instance::runtime::push_last_played(&name_for_task, chrono::Utc::now());
+        crate::instance::runtime::cleanup_kill_sender(&name_for_task);
     });
 
     Ok(())
@@ -860,241 +920,9 @@ fn emit_parsed_instance_log(
             tracing::trace!(target: "mc_instance", "[{}] {}", instance_name, text);
         }
     }
-    crate::instance_logs::push_event(instance_name, event);
+    crate::instance::logs::live::push_event(instance_name, event);
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[rstest::rstest]
-    #[case("openjdk version \"25.0.3\" 2026-04-21", Some(25))]
-    #[case("openjdk version \"21.0.11\" 2026-04-21", Some(21))]
-    #[case("java version \"1.8.0_402\"", Some(8))]
-    #[case("garbage", None)]
-    fn parse_java_major_version_handles_common_outputs(
-        #[case] output: &str,
-        #[case] expected: Option<u32>,
-    ) {
-        assert_eq!(parse_java_major_version(output), expected);
-    }
-
-    #[test]
-    fn build_game_args_renders_upstream_arguments() {
-        use crate::launch_profile::model::{Argument, Arguments, LaunchProfile};
-        use crate::launch_profile::rules::{FeatureSet, RuleContext};
-        use TemplateContext;
-        use std::path::PathBuf;
-
-        let lib = PathBuf::from("/m/libraries");
-        let nat = PathBuf::from("/m/natives");
-        let game_dir = PathBuf::from("/i/.minecraft");
-        let assets = PathBuf::from("/m/assets");
-
-        let template_ctx = TemplateContext {
-            library_directory: &lib,
-            classpath_separator: ":",
-            version_name: "1.20.1",
-            natives_directory: &nat,
-            classpath: "a.jar:b.jar",
-            game_directory: &game_dir,
-            assets_root: &assets,
-            assets_index_name: "5",
-            auth_player_name: "Player",
-            auth_uuid: "00000000-0000-0000-0000-000000000000",
-            auth_access_token: "token",
-            auth_xuid: "0",
-            user_type: "msa",
-            user_properties: "{}",
-            launcher_name: "rmcl",
-            launcher_version: "test",
-            clientid: "0",
-            version_type: "release",
-        };
-        let features = FeatureSet::default();
-        let rule_ctx = RuleContext {
-            os_name: "linux",
-            os_version: "6.0",
-            arch: "x86_64",
-            features: &features,
-        };
-
-        let profile = LaunchProfile {
-            id: "1.20.1".into(),
-            inherits_from: None,
-            main_class: Some("net.minecraft.client.main.Main".into()),
-            libraries: Vec::new(),
-            arguments: Some(Arguments {
-                game: vec![
-                    Argument::Literal("--username".into()),
-                    Argument::Literal("${auth_player_name}".into()),
-                ],
-                jvm: vec![Argument::Literal(
-                    "-Djava.library.path=${natives_directory}".into(),
-                )],
-            }),
-            ..Default::default()
-        };
-
-        let (jvm, game_args) = build_game_args(&profile, &rule_ctx, &template_ctx).unwrap();
-        assert_eq!(jvm, vec!["-Djava.library.path=/m/natives"]);
-        assert_eq!(game_args, vec!["--username", "Player"]);
-    }
-
-    // exercises the early-return branch of migrate_legacy_meta_if_needed.
-    // a profile with either arguments or minecraftArguments is not legacy
-    // and must produce Ok(None) without touching the network. covers both
-    // shapes in one parameterised test so a regression that drops one of
-    // the two predicate conditions is caught.
-    #[rstest::rstest]
-    #[case::modern_arguments(true, false)]
-    #[case::legacy_minecraft_arguments(false, true)]
-    #[tokio::test]
-    async fn migrate_legacy_meta_skips_when_arguments_present(
-        #[case] modern: bool,
-        #[case] legacy: bool,
-    ) {
-        use crate::launch_profile::model::{Arguments, LaunchProfile};
-        use tempfile::TempDir;
-
-        let tmp = TempDir::new().unwrap();
-        let meta_path = tmp.path().join("meta.json");
-        std::fs::write(&meta_path, b"{}").unwrap();
-
-        let profile = LaunchProfile {
-            id: "1.20.1".into(),
-            main_class: Some("net.test.Main".into()),
-            arguments: modern.then(Arguments::default),
-            minecraft_arguments: legacy.then(|| "--username Player".into()),
-            ..Default::default()
-        };
-
-        let result = migrate_legacy_meta_if_needed(&meta_path, &profile, "1.20.1").await;
-        assert!(
-            matches!(result, Ok(None)),
-            "expected Ok(None) for non-legacy profile, got {result:?}"
-        );
-    }
-
-    // each loader maps to a distinct directory-naming branch. one rstest
-    // exercises every variant so a regression that misorders the match
-    // arms in installer_version_dir_name is caught.
-    #[rstest::rstest]
-    #[case::forge(ModLoader::Forge, "1.20.1", "47.2.0", Some("1.20.1-forge-47.2.0"))]
-    #[case::neoforge(ModLoader::NeoForge, "1.21.1", "21.1.0", Some("neoforge-21.1.0"))]
-    #[case::vanilla(ModLoader::Vanilla, "1.20.1", "v", None)]
-    #[case::fabric(ModLoader::Fabric, "1.20.1", "0.14.21", None)]
-    #[case::quilt(ModLoader::Quilt, "1.20.1", "0.20.0", None)]
-    fn installer_version_dir_name_per_loader(
-        #[case] loader: ModLoader,
-        #[case] game_version: &str,
-        #[case] loader_version: &str,
-        #[case] expected: Option<&str>,
-    ) {
-        assert_eq!(
-            installer_version_dir_name(loader, game_version, loader_version),
-            expected.map(str::to_owned)
-        );
-    }
-
-    // exercises the modern-profile early-return in
-    // migrate_legacy_loader_profile_if_needed. any of inheritsFrom,
-    // arguments, minecraftArguments present (or game_arguments absent)
-    // means "not legacy" and the function must return Ok(None) without
-    // touching the installer JSON path.
-    #[tokio::test]
-    async fn migrate_legacy_loader_profile_skips_modern_with_inherits_from() {
-        use LaunchProfile;
-        use chrono::Utc;
-        use tempfile::TempDir;
-
-        let tmp = TempDir::new().unwrap();
-        let instance_dir = tmp.path().join("instance");
-        std::fs::create_dir_all(&instance_dir).unwrap();
-        let profile_path = tmp.path().join("forge-1.20.1-47.2.0.json");
-        std::fs::write(&profile_path, b"{}").unwrap();
-
-        let modern = LaunchProfile {
-            id: "1.20.1-forge-47.2.0".into(),
-            inherits_from: Some("1.20.1".into()),
-            main_class: Some("cpw.mods.bootstraplauncher.BootstrapLauncher".into()),
-            ..Default::default()
-        };
-
-        let config = InstanceConfig {
-            name: "test".into(),
-            game_version: "1.20.1".into(),
-            loader: ModLoader::Forge,
-            loader_version: Some("47.2.0".into()),
-            created: Utc::now(),
-            last_played: None,
-            java_path: None,
-            memory_max: None,
-            memory_min: None,
-            jvm_args: Vec::new(),
-            resolution: None,
-            config_sync_profile: None,
-        };
-
-        let result =
-            migrate_legacy_loader_profile_if_needed(&profile_path, &modern, &config, &instance_dir)
-                .await;
-        assert!(
-            matches!(result, Ok(None)),
-            "expected Ok(None), got {result:?}"
-        );
-    }
-
-    #[tokio::test]
-    async fn migrate_legacy_loader_profile_skips_fabric() {
-        // a fresh upstream Fabric profile happens to match the "legacy"
-        // shape (no inheritsFrom, no arguments, no minecraftArguments).
-        // make sure the migration helper recognises this is Fabric and
-        // returns Ok(None) instead of erroring with "reinstall Fabric".
-        use LaunchProfile;
-        use chrono::Utc;
-        use tempfile::TempDir;
-
-        let tmp = TempDir::new().unwrap();
-        let instance_dir = tmp.path().join("instance");
-        std::fs::create_dir_all(&instance_dir).unwrap();
-        let profile_path = tmp.path().join("fabric-1.20.1-0.14.21.json");
-        std::fs::write(&profile_path, b"{}").unwrap();
-
-        let upstream_fabric_shape = LaunchProfile {
-            id: "fabric-loader-0.14.21-1.20.1".into(),
-            inherits_from: None,
-            main_class: Some("net.fabricmc.loader.impl.launch.knot.KnotClient".into()),
-            libraries: Vec::new(),
-            ..Default::default()
-        };
-
-        let config = InstanceConfig {
-            name: "test".into(),
-            game_version: "1.20.1".into(),
-            loader: ModLoader::Fabric,
-            loader_version: Some("0.14.21".into()),
-            created: Utc::now(),
-            last_played: None,
-            java_path: None,
-            memory_max: None,
-            memory_min: None,
-            jvm_args: Vec::new(),
-            resolution: None,
-            config_sync_profile: None,
-        };
-
-        let result = migrate_legacy_loader_profile_if_needed(
-            &profile_path,
-            &upstream_fabric_shape,
-            &config,
-            &instance_dir,
-        )
-        .await;
-
-        assert!(
-            matches!(result, Ok(None)),
-            "expected Ok(None), got {result:?}"
-        );
-    }
-}
+#[path = "../tests/launch/pipeline.rs"]
+mod tests;

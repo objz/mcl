@@ -4,11 +4,14 @@
 // 4 attempts) is honoured. these tests exercise public HttpClient methods,
 // not the private retry helper directly.
 //
-// note: get_with_retry sleeps between attempts (500ms, 1000ms, 2000ms),
-// so the gives-up-after-max-retries test takes about 3.5s of wall time.
-// nothing to be done about that without making the delays configurable.
+// Tokio time is paused in retrying tests so the production backoff remains
+// covered without adding wall-clock delay to the suite.
 
 use std::path::PathBuf;
+use std::sync::{
+    Arc,
+    atomic::{AtomicUsize, Ordering},
+};
 
 use serde::Deserialize;
 use serde_json::json;
@@ -22,29 +25,33 @@ struct ApiResponse {
     ok: bool,
 }
 
+fn client_without_timeout() -> HttpClient {
+    reqwest::Client::builder().build().unwrap().into()
+}
+
 // ---------- get_json (via get_with_retry) ----------
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn get_json_retries_5xx_then_succeeds() {
     let server = MockServer::start().await;
+    let attempts = Arc::new(AtomicUsize::new(0));
 
-    // first request: 503. second and beyond: 200.
+    // first request: 503. second request: 200.
     Mock::given(method("GET"))
         .and(path("/api"))
-        .respond_with(ResponseTemplate::new(503))
-        .up_to_n_times(1)
-        .expect(1)
-        .mount(&server)
-        .await;
-    Mock::given(method("GET"))
-        .and(path("/api"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"ok": true})))
-        .expect(1)
+        .respond_with(move |_: &wiremock::Request| {
+            if attempts.fetch_add(1, Ordering::SeqCst) == 0 {
+                ResponseTemplate::new(503)
+            } else {
+                ResponseTemplate::new(200).set_body_json(json!({"ok": true}))
+            }
+        })
+        .expect(2)
         .mount(&server)
         .await;
 
     let url = format!("{}/api", server.uri());
-    let result: ApiResponse = HttpClient::new().get_json(&url).await.unwrap();
+    let result: ApiResponse = client_without_timeout().get_json(&url).await.unwrap();
     assert!(result.ok);
 }
 
@@ -72,7 +79,7 @@ async fn get_json_fails_fast_on_4xx() {
     );
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn get_json_gives_up_after_max_retries() {
     let server = MockServer::start().await;
 
@@ -86,7 +93,7 @@ async fn get_json_gives_up_after_max_retries() {
         .await;
 
     let url = format!("{}/api", server.uri());
-    let err = HttpClient::new()
+    let err = client_without_timeout()
         .get_json::<ApiResponse>(&url)
         .await
         .unwrap_err();
@@ -96,23 +103,41 @@ async fn get_json_gives_up_after_max_retries() {
     );
 }
 
-// ---------- download_file ----------
-
 #[tokio::test]
-async fn download_file_retries_5xx_then_succeeds() {
+async fn get_bytes_limited_rejects_oversized_responses() {
     let server = MockServer::start().await;
-
     Mock::given(method("GET"))
-        .and(path("/file.bin"))
-        .respond_with(ResponseTemplate::new(502))
-        .up_to_n_times(1)
+        .and(path("/large.bin"))
+        .respond_with(ResponseTemplate::new(200).set_body_bytes(vec![0; 9]))
         .expect(1)
         .mount(&server)
         .await;
+
+    let url = format!("{}/large.bin", server.uri());
+    let error = client_without_timeout()
+        .get_bytes_limited(&url, 8)
+        .await
+        .unwrap_err();
+    assert!(error.to_string().contains("8-byte limit"));
+}
+
+// ---------- download_file ----------
+
+#[tokio::test(start_paused = true)]
+async fn download_file_retries_5xx_then_succeeds() {
+    let server = MockServer::start().await;
+    let attempts = Arc::new(AtomicUsize::new(0));
+
     Mock::given(method("GET"))
         .and(path("/file.bin"))
-        .respond_with(ResponseTemplate::new(200).set_body_bytes(b"hello, retried".to_vec()))
-        .expect(1)
+        .respond_with(move |_: &wiremock::Request| {
+            if attempts.fetch_add(1, Ordering::SeqCst) == 0 {
+                ResponseTemplate::new(502)
+            } else {
+                ResponseTemplate::new(200).set_body_bytes(b"hello, retried".to_vec())
+            }
+        })
+        .expect(2)
         .mount(&server)
         .await;
 
@@ -120,7 +145,7 @@ async fn download_file_retries_5xx_then_succeeds() {
     let dest = tmp.path().join("downloaded.bin");
     let url = format!("{}/file.bin", server.uri());
 
-    download_file(&HttpClient::new(), &url, &dest, |_, _| {})
+    download_file(&client_without_timeout(), &url, &dest, |_, _| {})
         .await
         .unwrap();
 

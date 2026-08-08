@@ -19,6 +19,104 @@ pub enum ImageProtocol {
 pub struct General {}
 
 #[derive(Debug, Deserialize)]
+pub struct Content {
+    #[serde(default = "default_true")]
+    pub ask_on_provider_conflict: bool,
+    #[serde(default = "default_provider")]
+    pub preferred_provider: String,
+    #[serde(default)]
+    pub preferred_provider_only: bool,
+    #[serde(default = "default_unmatched_retry_hours")]
+    pub unmatched_retry_hours: u64,
+    #[serde(default = "default_max_fingerprint_size_mib")]
+    pub max_fingerprint_size_mib: u64,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+fn default_provider() -> String {
+    "modrinth".to_owned()
+}
+
+fn default_unmatched_retry_hours() -> u64 {
+    24
+}
+
+fn default_max_fingerprint_size_mib() -> u64 {
+    512
+}
+
+impl Default for Content {
+    fn default() -> Self {
+        Self {
+            ask_on_provider_conflict: true,
+            preferred_provider: default_provider(),
+            preferred_provider_only: false,
+            unmatched_retry_hours: default_unmatched_retry_hours(),
+            max_fingerprint_size_mib: default_max_fingerprint_size_mib(),
+        }
+    }
+}
+
+impl Content {
+    pub fn preferred_provider(&self) -> &str {
+        self.preferred_provider_with_curseforge(crate::net::curseforge::api_key().is_some())
+    }
+
+    pub fn discovery_provider_enabled(&self, provider: &str) -> bool {
+        self.discovery_provider_enabled_with_curseforge(
+            provider,
+            crate::net::curseforge::api_key().is_some(),
+        )
+    }
+
+    pub fn discovery_provider_label(&self) -> &'static str {
+        self.discovery_provider_label_with_curseforge(crate::net::curseforge::api_key().is_some())
+    }
+
+    fn preferred_provider_with_curseforge(&self, curseforge_available: bool) -> &'static str {
+        if self.preferred_provider.eq_ignore_ascii_case("curseforge") && curseforge_available {
+            "curseforge"
+        } else {
+            "modrinth"
+        }
+    }
+
+    fn discovery_provider_enabled_with_curseforge(
+        &self,
+        provider: &str,
+        curseforge_available: bool,
+    ) -> bool {
+        match provider {
+            "modrinth" => {
+                !self.preferred_provider_only
+                    || self.preferred_provider_with_curseforge(curseforge_available) == "modrinth"
+            }
+            "curseforge" => {
+                curseforge_available
+                    && (!self.preferred_provider_only
+                        || self.preferred_provider_with_curseforge(curseforge_available)
+                            == "curseforge")
+            }
+            _ => false,
+        }
+    }
+
+    fn discovery_provider_label_with_curseforge(&self, curseforge_available: bool) -> &'static str {
+        match (
+            self.discovery_provider_enabled_with_curseforge("modrinth", curseforge_available),
+            self.discovery_provider_enabled_with_curseforge("curseforge", curseforge_available),
+        ) {
+            (true, true) => "providers",
+            (false, true) => "CurseForge",
+            _ => "Modrinth",
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
 pub struct Paths {
     #[serde(default = "default_instances_dir")]
     pub instances_dir: String,
@@ -159,74 +257,10 @@ pub struct Config {
     pub defaults: Defaults,
     #[serde(default)]
     pub ui: Ui,
+    #[serde(default)]
+    pub content: Content,
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn effective_java_path_none_when_absent() {
-        let paths = Paths {
-            java_path: None,
-            ..Paths::default()
-        };
-        assert!(paths.effective_java_path().is_none());
-    }
-
-    #[test]
-    fn effective_java_path_none_when_empty() {
-        let paths = Paths {
-            java_path: Some(String::new()),
-            ..Paths::default()
-        };
-        assert!(paths.effective_java_path().is_none());
-    }
-
-    #[test]
-    fn effective_java_path_some_when_set() {
-        let paths = Paths {
-            java_path: Some("/usr/bin/java".to_owned()),
-            ..Paths::default()
-        };
-        assert_eq!(paths.effective_java_path(), Some("/usr/bin/java"));
-    }
-
-    #[test]
-    fn resolve_path_absolute() {
-        assert_eq!(resolve_path("/opt/rmcl"), PathBuf::from("/opt/rmcl"));
-    }
-
-    #[test]
-    fn resolve_path_tilde_prefix() {
-        let resolved = resolve_path("~/games/rmcl");
-        assert!(!resolved.to_string_lossy().starts_with('~'));
-        assert!(resolved.to_string_lossy().ends_with("games/rmcl"));
-    }
-
-    #[test]
-    fn resolve_path_bare_tilde() {
-        let resolved = resolve_path("~");
-        assert!(!resolved.to_string_lossy().starts_with('~'));
-    }
-
-    #[test]
-    fn config_deserializes_from_empty_toml() {
-        let config: Config = toml::from_str("").unwrap();
-        assert_eq!(config.defaults.memory_max, "2G");
-    }
-
-    #[test]
-    fn config_deserializes_partial_toml() {
-        let toml_str = r#"
-[general]
-debug = true
-
-[defaults]
-memory_max = "8G"
-"#;
-        let config: Config = toml::from_str(toml_str).unwrap();
-        assert_eq!(config.defaults.memory_max, "8G");
-        assert_eq!(config.defaults.memory_min, "512M");
-    }
-}
+#[path = "tests/settings.rs"]
+mod tests;

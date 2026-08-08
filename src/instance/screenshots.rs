@@ -14,7 +14,7 @@ pub struct ScreenshotEntry {
 pub fn scan_screenshots(instances_dir: &Path, instance_name: &str) -> Vec<ScreenshotEntry> {
     let dir = instances_dir
         .join(instance_name)
-        .join(".minecraft")
+        .join(crate::storage::MINECRAFT_DIR_NAME)
         .join("screenshots");
 
     let read_dir = match std::fs::read_dir(&dir) {

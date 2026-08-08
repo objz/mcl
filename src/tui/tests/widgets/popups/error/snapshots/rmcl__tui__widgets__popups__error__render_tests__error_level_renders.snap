@@ -1,0 +1,9 @@
+---
+source: src/tui/tests/widgets/popups/error/render.rs
+expression: term.backend()
+---
+"╭ ERROR ───────────────────────────────╮"
+"│Connection refused                    │"
+"│                                      │"
+"│                                      │"
+"╰──────────────────────────────────────╯"

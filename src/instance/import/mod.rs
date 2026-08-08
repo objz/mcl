@@ -1,8 +1,10 @@
 // modpack importing: parses user input, detects pack format from zip contents,
 // builds a summary, and delegates the actual import to format-specific modules.
 
+pub mod curseforge;
 pub mod mmc;
 pub mod mrpack;
+pub mod refresh;
 
 use std::path::{Path, PathBuf};
 
@@ -11,6 +13,7 @@ use crate::instance::models::ModLoader;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PackFormat {
+    CurseForge,
     Mrpack,
     Mmc,
 }
@@ -69,10 +72,11 @@ pub struct ImportSummary {
     pub override_count: usize,
     pub format: PackFormat,
     pub archive_path: PathBuf,
+    pub source: Option<crate::instance::ProviderProject>,
 }
 
 // peeks inside a zip to figure out what format it is.
-// checks for modrinth.index.json first, then mmc-pack.json.
+// checks provider manifests first, then mmc-pack.json.
 pub fn detect_format(path: &Path) -> Result<PackFormat, String> {
     tracing::debug!("Detecting modpack format for {}", path.display());
     let file =
@@ -85,6 +89,11 @@ pub fn detect_format(path: &Path) -> Result<PackFormat, String> {
         return Ok(PackFormat::Mrpack);
     }
 
+    if archive.file_names().any(|name| name == "manifest.json") {
+        tracing::debug!("Detected CurseForge archive: {}", path.display());
+        return Ok(PackFormat::CurseForge);
+    }
+
     // mmc-pack.json can be at root or one directory deep
     if archive
         .file_names()
@@ -95,7 +104,10 @@ pub fn detect_format(path: &Path) -> Result<PackFormat, String> {
     }
 
     tracing::warn!("Unknown modpack archive format: {}", path.display());
-    Err("Unknown pack format: no modrinth.index.json or mmc-pack.json found".to_string())
+    Err(
+        "Unknown pack format: no modrinth.index.json, manifest.json, or mmc-pack.json found"
+            .to_string(),
+    )
 }
 
 pub fn build_summary(path: &Path) -> Result<ImportSummary, String> {
@@ -105,6 +117,7 @@ pub fn build_summary(path: &Path) -> Result<ImportSummary, String> {
     }
     let format = detect_format(path)?;
     let summary = match format {
+        PackFormat::CurseForge => curseforge::build_summary(path),
         PackFormat::Mrpack => mrpack::build_summary(path),
         PackFormat::Mmc => mmc::build_summary(path),
     }?;
@@ -164,170 +177,106 @@ pub async fn execute_import(
         summary.name,
         summary.archive_path.display()
     );
-    match summary.format {
+    let mut config = match summary.format {
+        PackFormat::CurseForge => curseforge::execute_import(summary, manager).await,
         PackFormat::Mrpack => mrpack::execute_import(summary, manager).await,
         PackFormat::Mmc => mmc::execute_import(summary, manager).await,
+    }?;
+    if summary.source.is_some() {
+        config.modpack_source = summary.source.clone();
+        manager.save(&config)?;
+        let state = match owned_files(summary).await {
+            Ok(files) => refresh::PackState {
+                source: summary.source.clone().expect("source checked above"),
+                files,
+            },
+            Err(error) => {
+                cleanup_failed_import(manager, &config.name);
+                return Err(error.into());
+            }
+        };
+        if let Err(error) = state.save(&crate::storage::InstancePaths::new(
+            manager.instances_dir.join(&config.name),
+        )) {
+            cleanup_failed_import(manager, &config.name);
+            return Err(error.into());
+        }
+    }
+    Ok(config)
+}
+
+pub async fn provider_versions(
+    source: &crate::instance::ProviderProject,
+) -> Result<Vec<crate::net::modrinth::VersionInfo>, crate::net::NetError> {
+    let client = crate::net::HttpClient::new();
+    match source.provider.as_str() {
+        "curseforge" => {
+            let api_key = crate::net::curseforge::api_key().ok_or_else(|| {
+                crate::net::NetError::Parse("CurseForge API key is not configured".to_owned())
+            })?;
+            crate::net::curseforge::fetch_versions(&client, api_key, &source.project_id, "", None)
+                .await
+        }
+        "modrinth" => crate::net::modrinth::fetch_versions(&client, &source.project_id).await,
+        provider => Err(crate::net::NetError::Parse(format!(
+            "Unsupported modpack provider '{provider}'"
+        ))),
+    }
+}
+
+pub async fn download_provider_summary(
+    source: &crate::instance::ProviderProject,
+    version: &crate::net::modrinth::VersionInfo,
+    temporary_dir: &Path,
+) -> Result<ImportSummary, crate::net::NetError> {
+    tokio::fs::create_dir_all(temporary_dir).await?;
+    let registry = crate::instance::content::provider::ProviderRegistry::configured(
+        crate::net::HttpClient::new(),
+    );
+    let provider = registry.get(&source.provider).ok_or_else(|| {
+        crate::net::NetError::Parse(format!(
+            "{} content provider is unavailable",
+            source.provider
+        ))
+    })?;
+    let archive = match provider
+        .download_version(version, temporary_dir, None)
+        .await?
+    {
+        crate::net::modrinth::DownloadOutcome::Downloaded(path)
+        | crate::net::modrinth::DownloadOutcome::SkippedExisting(path) => path,
+    };
+    let mut summary = build_summary(&archive).map_err(crate::net::NetError::Parse)?;
+    summary.source = Some(crate::instance::ProviderProject {
+        provider: source.provider.clone(),
+        project_id: source.project_id.clone(),
+        version_id: version.id.clone(),
+    });
+    Ok(summary)
+}
+
+async fn owned_files(summary: &ImportSummary) -> Result<Vec<PathBuf>, String> {
+    match summary.format {
+        PackFormat::Mrpack => mrpack::owned_files(&summary.archive_path),
+        PackFormat::CurseForge => curseforge::owned_files(&summary.archive_path).await,
+        PackFormat::Mmc => Err("Managed updates are unavailable for MultiMC packs".to_owned()),
+    }
+}
+
+fn cleanup_failed_import(manager: &InstanceManager, name: &str) {
+    crate::feedback::progress::clear();
+    let instance_dir = manager.instances_dir.join(name);
+    if let Err(error) = std::fs::remove_dir_all(&instance_dir)
+        && error.kind() != std::io::ErrorKind::NotFound
+    {
+        tracing::warn!(
+            "Failed to clean up incomplete imported instance {}: {}",
+            instance_dir.display(),
+            error
+        );
     }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use std::io::Write;
-
-    fn make_pack_zip(tmp: &Path, name: &str, entries: &[(&str, &[u8])]) -> std::path::PathBuf {
-        let path = tmp.join(name);
-        let file = std::fs::File::create(&path).unwrap();
-        let mut zip = zip::ZipWriter::new(file);
-        let opts: zip::write::SimpleFileOptions = Default::default();
-        for (filename, bytes) in entries {
-            zip.start_file(*filename, opts).unwrap();
-            zip.write_all(bytes).unwrap();
-        }
-        zip.finish().unwrap();
-        path
-    }
-
-    #[test]
-    fn detect_format_recognises_mrpack() {
-        let tmp = tempfile::tempdir().unwrap();
-        let path = make_pack_zip(tmp.path(), "pack.mrpack", &[("modrinth.index.json", b"{}")]);
-        assert_eq!(detect_format(&path), Ok(PackFormat::Mrpack));
-    }
-
-    #[test]
-    fn detect_format_recognises_mmc_flat() {
-        // mmc-pack.json at the zip root - the flat layout that some mmc
-        // archives use.
-        let tmp = tempfile::tempdir().unwrap();
-        let path = make_pack_zip(tmp.path(), "pack.zip", &[("mmc-pack.json", b"{}")]);
-        assert_eq!(detect_format(&path), Ok(PackFormat::Mmc));
-    }
-
-    #[test]
-    fn detect_format_recognises_mmc_nested() {
-        // mmc-pack.json one directory deep - the more common layout where
-        // the archive wraps everything in a named directory.
-        let tmp = tempfile::tempdir().unwrap();
-        let path = make_pack_zip(tmp.path(), "pack.zip", &[("MyPack/mmc-pack.json", b"{}")]);
-        assert_eq!(detect_format(&path), Ok(PackFormat::Mmc));
-    }
-
-    #[test]
-    fn detect_format_prefers_mrpack_when_both_markers_present() {
-        // a zip with both markers should resolve to Mrpack since the
-        // detector checks modrinth.index.json first.
-        let tmp = tempfile::tempdir().unwrap();
-        let path = make_pack_zip(
-            tmp.path(),
-            "weird.zip",
-            &[("modrinth.index.json", b"{}"), ("mmc-pack.json", b"{}")],
-        );
-        assert_eq!(detect_format(&path), Ok(PackFormat::Mrpack));
-    }
-
-    #[test]
-    fn detect_format_errors_on_unknown_archive() {
-        let tmp = tempfile::tempdir().unwrap();
-        let path = make_pack_zip(tmp.path(), "random.zip", &[("readme.txt", b"hello")]);
-        let err = detect_format(&path).unwrap_err();
-        assert!(
-            err.contains("Unknown pack format"),
-            "expected unknown format error, got: {err}"
-        );
-    }
-
-    #[test]
-    fn detect_format_errors_on_missing_file() {
-        let err = detect_format(Path::new("/nonexistent/pack.zip")).unwrap_err();
-        assert!(err.contains("Cannot open"), "got: {err}");
-    }
-
-    #[test]
-    fn unique_name_no_collision() {
-        let tmp = tempfile::tempdir().unwrap();
-        let name = unique_instance_name("TestPack", tmp.path());
-        assert_eq!(name, "TestPack");
-    }
-
-    #[test]
-    fn unique_name_with_collision() {
-        let tmp = tempfile::tempdir().unwrap();
-        let dir = tmp.path().join("TestPack");
-        std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join("instance.json"), "{}").unwrap();
-        let name = unique_instance_name("TestPack", tmp.path());
-        assert_eq!(name, "TestPack (2)");
-    }
-
-    #[test]
-    fn unique_name_multiple_collisions() {
-        let tmp = tempfile::tempdir().unwrap();
-        for suffix in ["", " (2)", " (3)"] {
-            let dir = tmp.path().join(format!("TestPack{suffix}"));
-            std::fs::create_dir_all(&dir).unwrap();
-            std::fs::write(dir.join("instance.json"), "{}").unwrap();
-        }
-        let name = unique_instance_name("TestPack", tmp.path());
-        assert_eq!(name, "TestPack (4)");
-    }
-
-    #[test]
-    fn parse_project_url() {
-        assert_eq!(
-            parse_import_input("https://modrinth.com/modpack/fabulously-optimized"),
-            ImportInput::ProjectSlug("fabulously-optimized".to_string())
-        );
-    }
-
-    #[test]
-    fn parse_version_url() {
-        assert_eq!(
-            parse_import_input("https://modrinth.com/modpack/fabulously-optimized/version/abc123"),
-            ImportInput::VersionId {
-                slug: "fabulously-optimized".to_string(),
-                version_id: "abc123".to_string(),
-            }
-        );
-    }
-
-    #[test]
-    fn parse_local_mrpack() {
-        assert_eq!(
-            parse_import_input("/home/user/pack.mrpack"),
-            ImportInput::LocalFile("/home/user/pack.mrpack".to_string())
-        );
-    }
-
-    #[test]
-    fn parse_local_zip() {
-        assert_eq!(
-            parse_import_input("GT_New_Horizons.zip"),
-            ImportInput::LocalFile("GT_New_Horizons.zip".to_string())
-        );
-    }
-
-    #[test]
-    fn parse_tilde_path() {
-        assert_eq!(
-            parse_import_input("~/Downloads/pack.mrpack"),
-            ImportInput::LocalFile("~/Downloads/pack.mrpack".to_string())
-        );
-    }
-
-    #[test]
-    fn parse_bare_slug() {
-        assert_eq!(
-            parse_import_input("fabulously-optimized"),
-            ImportInput::ProjectSlug("fabulously-optimized".to_string())
-        );
-    }
-
-    #[test]
-    fn parse_input_trims_whitespace() {
-        assert_eq!(
-            parse_import_input("  fabulously-optimized  "),
-            ImportInput::ProjectSlug("fabulously-optimized".to_string())
-        );
-    }
-}
+#[path = "../tests/import/format_detection.rs"]
+mod tests;

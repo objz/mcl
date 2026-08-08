@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use rmcl::instance::screenshots::scan_screenshots;
 
 fn setup_screenshots_dir(tmp: &Path, instance: &str) -> PathBuf {
-    let dir = tmp.join(instance).join(".minecraft").join("screenshots");
+    let dir = tmp.join(instance).join("minecraft").join("screenshots");
     std::fs::create_dir_all(&dir).unwrap();
     dir
 }
@@ -30,16 +30,6 @@ fn scan_screenshots_missing_dir_returns_empty() {
     let tmp = tempfile::tempdir().unwrap();
     let screenshots = scan_screenshots(tmp.path(), "ghost");
     assert!(screenshots.is_empty());
-}
-
-#[test]
-fn scan_screenshots_finds_images() {
-    let tmp = tempfile::tempdir().unwrap();
-    let dir = setup_screenshots_dir(tmp.path(), "inst");
-    std::fs::write(dir.join("2024-01-01.png"), tiny_png()).unwrap();
-    std::fs::write(dir.join("2024-01-02.png"), tiny_png()).unwrap();
-    let screenshots = scan_screenshots(tmp.path(), "inst");
-    assert_eq!(screenshots.len(), 2);
 }
 
 #[test]

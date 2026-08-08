@@ -1,0 +1,28 @@
+---
+source: src/tui/tests/widgets/content/update.rs
+expression: terminal.backend()
+---
+"                                                                                                    "
+"                                                                                                    "
+"                                                                                                    "
+"                                                                                                    "
+"                                                                                                    "
+"                                                                                                    "
+"                                                                                                    "
+"                                                                                                    "
+"                                                                                                    "
+"                                                                                                    "
+"                    ╭Update installed content──────────────────────────────────╮                    "
+"                    │▌▄▄▄▄▄▄ Example Mod   Update                              │                    "
+"                    │▌▄▄▄▄▄▄ Existing project description       1.0   ➜   2.0  │                    "
+"                    │▌▄▄▄▄▄▄                                                   │                    "
+"                    ╰───────────[j/k] navigate  [Enter] update all  [Esc] close╯                    "
+"                                                                                                    "
+"                                                                                                    "
+"                                                                                                    "
+"                                                                                                    "
+"                                                                                                    "
+"                                                                                                    "
+"                                                                                                    "
+"                                                                                                    "
+"                                                                                                    "

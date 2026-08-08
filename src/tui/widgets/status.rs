@@ -11,8 +11,8 @@ use ratatui::{
 use throbber_widgets_tui::{Throbber, ThrobberState};
 
 use crate::config::theme::{BORDER_STYLE, THEME};
+use crate::feedback::progress::PROGRESS;
 use crate::tui::app::FocusedArea;
-use crate::tui::progress::PROGRESS;
 
 use super::styled_title;
 

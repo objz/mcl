@@ -1,9 +1,0 @@
----
-source: src/tui/widgets/popups/error.rs
-expression: term.backend()
----
-"╭ WARN ──────────╮"
-"│Short message   │"
-"│                │"
-"│                │"
-"╰────────────────╯"

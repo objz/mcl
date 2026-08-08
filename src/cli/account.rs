@@ -19,22 +19,6 @@ pub async fn handle_account(matches: &ArgMatches) -> CliResult {
     }
 }
 
-// trait indirection so a mock store can be swapped in for tests
-trait AccountStoreLike {
-    fn has_microsoft_account(&self) -> bool;
-    fn add_account(&mut self, account: Account);
-}
-
-impl AccountStoreLike for AccountStore {
-    fn has_microsoft_account(&self) -> bool {
-        AccountStore::has_microsoft_account(self)
-    }
-
-    fn add_account(&mut self, account: Account) {
-        self.add(account);
-    }
-}
-
 fn list_accounts() -> CliResult {
     let store = AccountStore::load();
     let rows = store
@@ -109,7 +93,7 @@ async fn add_microsoft_account() -> CliResult {
     }
 }
 
-fn add_offline_account<T: AccountStoreLike>(store: &mut T, username: &str) -> CliResult {
+fn add_offline_account(store: &mut AccountStore, username: &str) -> CliResult {
     let username = username.trim();
     if username.is_empty() {
         return Err(io::Error::other("offline username cannot be empty").into());
@@ -121,7 +105,7 @@ fn add_offline_account<T: AccountStoreLike>(store: &mut T, username: &str) -> Cl
         .into());
     }
 
-    store.add_account(crate::auth::create_offline_account(username));
+    store.add(crate::auth::create_offline_account(username));
     Ok(())
 }
 
@@ -160,63 +144,5 @@ fn find_account_index(accounts: &[Account], username: &str) -> Option<usize> {
 use super::utils::{confirm, required_arg};
 
 #[cfg(test)]
-mod tests {
-    use super::{AccountStoreLike, add_offline_account};
-    use crate::auth::{Account, AccountType};
-
-    #[derive(Default)]
-    struct MockStore {
-        accounts: Vec<Account>,
-    }
-
-    impl AccountStoreLike for MockStore {
-        fn has_microsoft_account(&self) -> bool {
-            self.accounts
-                .iter()
-                .any(|account| account.account_type == AccountType::Microsoft)
-        }
-
-        fn add_account(&mut self, account: Account) {
-            self.accounts.push(account);
-        }
-    }
-
-    fn microsoft_account() -> Account {
-        Account {
-            uuid: "00000000-0000-0000-0000-000000000001".to_owned(),
-            username: "Owner".to_owned(),
-            account_type: AccountType::Microsoft,
-            active: false,
-            refresh_token: Some("refresh".to_owned()),
-            cached_mc_token: None,
-            cached_mc_token_expires_at: None,
-        }
-    }
-
-    #[test]
-    fn creates_offline_account_after_microsoft_account_exists() {
-        let mut store = MockStore::default();
-        store.add_account(microsoft_account());
-        add_offline_account(&mut store, "Steve").expect("offline account should be added");
-
-        assert_eq!(store.accounts.len(), 2);
-        assert_eq!(store.accounts[1].username, "Steve");
-        assert_eq!(store.accounts[1].account_type, AccountType::Offline);
-    }
-
-    #[test]
-    fn rejects_offline_account_before_microsoft_account_exists() {
-        let mut store = MockStore::default();
-        let err = add_offline_account(&mut store, "Steve")
-            .expect_err("offline account should require a microsoft account");
-
-        assert!(err.to_string().contains("Microsoft account"));
-        assert!(store.accounts.is_empty());
-    }
-
-    #[test]
-    fn rejects_empty_offline_username() {
-        let mut store = MockStore::default();
-        assert!(add_offline_account(&mut store, "   ").is_err());
-    }
-}
+#[path = "tests/account.rs"]
+mod tests;

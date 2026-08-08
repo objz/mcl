@@ -158,7 +158,7 @@ fn effective_java_path(instance: &InstanceConfig) -> String {
         .java_path
         .clone()
         .or_else(|| SETTINGS.paths.effective_java_path().map(str::to_string))
-        .unwrap_or_else(crate::net::detect_java_path)
+        .unwrap_or_else(crate::instance::java::detect_java_path)
 }
 
 fn java_version_label(java_path: &str) -> String {
@@ -210,7 +210,7 @@ pub fn render(
         .border_type(BORDER_STYLE.to_border_type())
         .border_style(Style::default().fg(color));
 
-    if focused == FocusedArea::Settings {
+    let keybind_line = if focused == FocusedArea::Settings {
         let keybinds: &[(&str, &str)] = match state.pane {
             SettingsPane::Profile => &[
                 ("⏎", " select"),
@@ -218,18 +218,25 @@ pub fn render(
                 ("d", " del"),
                 ("j/k", " move"),
                 ("h/l", " tab"),
+                ("Esc", " back"),
             ],
             SettingsPane::Info => &[
                 ("e", " inst"),
                 ("g", " global"),
                 ("d", " desk"),
                 ("h/l", " tab"),
+                ("Esc", " back"),
             ],
         };
-        let lines = super::popups::keybind_lines_wrapped(keybinds, area.width.saturating_sub(2));
-        for line in lines {
-            block = block.title_bottom(line);
-        }
+        Some(super::popups::keybind_line_fitted(
+            keybinds,
+            area.width.saturating_sub(2),
+        ))
+    } else {
+        None
+    };
+    if let Some(line) = keybind_line {
+        block = block.title_bottom(line);
     }
 
     let inner = block.inner(area);
@@ -488,7 +495,7 @@ pub fn handle_key(
             }
             KeyCode::Backspace => {
                 let mut new_name = name.clone();
-                new_name.pop();
+                super::search::backspace(&mut new_name, key_event.modifiers);
                 state.add_mode = AddMode::ProfileName(new_name);
                 return SettingsAction::None;
             }
@@ -565,21 +572,5 @@ pub fn handle_key(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn removing_selected_last_profile_clamps_selection() {
-        let tmp = tempfile::tempdir().unwrap();
-        let mut state = SettingsState::new(tmp.path().to_path_buf());
-        state.profiles = vec!["first".to_string(), "second".to_string()];
-        state.active_profile = Some("second".to_string());
-        state.list_state.selected = Some(2);
-
-        state.remove_profile("second");
-
-        assert_eq!(state.profiles, vec!["first"]);
-        assert_eq!(state.active_profile, None);
-        assert_eq!(state.list_state.selected, Some(1));
-    }
-}
+#[path = "../tests/widgets/settings.rs"]
+mod tests;

@@ -23,3 +23,17 @@ error_fly_out_ms = 300
 
 # don’t let this blow up endlessly
 max_error_events = 50
+
+[content]
+# ask before choosing when the same file exists on multiple providers
+ask_on_provider_conflict = true
+# preferred for duplicate discovery results and automatic conflict resolution
+# accepts "modrinth" or "curseforge"
+preferred_provider = "modrinth"
+# only show results from the preferred provider instead of filling from both
+preferred_provider_only = false
+# retry unchanged files that were not found after this many hours
+unmatched_retry_hours = 24
+# avoid hashing enormous external packs during automatic provider matching;
+# set to 0 to remove the limit
+max_fingerprint_size_mib = 512

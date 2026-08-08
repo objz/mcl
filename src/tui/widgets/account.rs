@@ -138,7 +138,7 @@ pub fn handle_key(key_event: &KeyEvent, state: &mut AccountState) -> bool {
             }
             KeyCode::Backspace => {
                 let mut new_name = name.clone();
-                new_name.pop();
+                super::search::backspace(&mut new_name, key_event.modifiers);
                 state.add_mode = AddMode::OfflineNameInput(new_name);
                 true
             }
@@ -220,14 +220,21 @@ pub fn render(frame: &mut Frame, area: Rect, focused: FocusedArea, state: &mut A
         .border_type(BORDER_STYLE.to_border_type())
         .border_style(Style::default().fg(color));
 
-    if focused == FocusedArea::Account {
-        let lines = super::popups::keybind_lines_wrapped(
-            &[("⏎", " select"), ("a", " add"), ("d", " del")],
+    let keybind_line = if focused == FocusedArea::Account {
+        Some(super::popups::keybind_line_fitted(
+            &[
+                ("⏎", " select"),
+                ("a", " add"),
+                ("d", " del"),
+                ("Esc", " back"),
+            ],
             area.width.saturating_sub(2),
-        );
-        for line in lines {
-            block = block.title_bottom(line);
-        }
+        ))
+    } else {
+        None
+    };
+    if let Some(line) = keybind_line {
+        block = block.title_bottom(line);
     }
 
     let inner = block.inner(area);
@@ -350,7 +357,7 @@ fn render_choose_popup(frame: &mut Frame) {
     PopupFrame {
         title: Line::from(" Add Account ").centered(),
         border_color,
-        bg: None,
+        bg: Some(theme.surface()),
         keybinds: Some(Line::from(Span::styled(
             " Esc: cancel ",
             Style::default().fg(dim_color),
@@ -529,3 +536,7 @@ fn render_device_code_popup(frame: &mut Frame, info: &DeviceCodeInfo) {
     }
     .render(area, frame.buffer_mut());
 }
+
+#[cfg(test)]
+#[path = "../tests/widgets/account.rs"]
+mod tests;

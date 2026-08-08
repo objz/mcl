@@ -11,32 +11,56 @@ use ratatui::{
     text::{Line, Span, Text},
     widgets::{Block, Borders, Scrollbar, ScrollbarOrientation, ScrollbarState},
 };
+use std::collections::HashMap;
+use std::sync::{Arc, LazyLock, Mutex};
 use tui_widget_list::{ListBuilder, ListState as TuiListState, ListView};
 
 use crate::instance::models::InstanceConfig;
-use crate::running::{RunState, get as get_run_state};
+use crate::instance::runtime::{RunState, get as get_run_state};
+use crate::time::format_relative_time;
 use crate::tui::app::FocusedArea;
 
 use super::{WidgetKey, search::SearchState, styled_title};
 
-// rough human-friendly time delta. not trying to be precise here,
-// "2 months ago" is close enough when months are ~30 days
-fn format_last_played(last_played: Option<chrono::DateTime<chrono::Utc>>) -> String {
-    let Some(dt) = last_played else {
-        return "Never played".to_string();
-    };
-    let secs = chrono::Utc::now()
-        .signed_duration_since(dt)
-        .num_seconds()
-        .max(0) as u64;
-    match secs {
-        0..=59 => "Just now".to_string(),
-        60..=3599 => format!("{} minutes ago", secs / 60),
-        3600..=86399 => format!("{} hours ago", secs / 3600),
-        86400..=2591999 => format!("{} days ago", secs / 86400),
-        2592000..=31535999 => format!("{} months ago", secs / 2592000),
-        _ => "Over a year ago".to_string(),
+type PendingModpackUpdate = (
+    String,
+    crate::instance::ProviderProject,
+    Option<crate::net::modrinth::VersionInfo>,
+);
+static PENDING_MODPACK_UPDATES: LazyLock<Mutex<Vec<PendingModpackUpdate>>> =
+    LazyLock::new(|| Mutex::new(Vec::new()));
+static MODPACK_UPDATE_SLOTS: LazyLock<Arc<tokio::sync::Semaphore>> =
+    LazyLock::new(|| Arc::new(tokio::sync::Semaphore::new(4)));
+
+pub fn spawn_modpack_update_checks(instances: &[InstanceConfig]) {
+    for instance in instances {
+        spawn_modpack_update_check(instance);
     }
+}
+
+pub fn spawn_modpack_update_check(instance: &InstanceConfig) {
+    let Some(source) = instance.modpack_source.clone() else {
+        return;
+    };
+    let instance = instance.clone();
+    tokio::spawn(async move {
+        let Ok(_permit) = MODPACK_UPDATE_SLOTS.clone().acquire_owned().await else {
+            return;
+        };
+        let Ok(versions) = crate::instance::import::provider_versions(&source).await else {
+            return;
+        };
+        let update = versions.first().cloned().filter(|_| {
+            crate::instance::content::provider::has_newer_compatible_version(
+                &versions,
+                &source.version_id,
+            )
+        });
+        if let Ok(mut pending) = PENDING_MODPACK_UPDATES.lock() {
+            pending.push((instance.name, source, update));
+            crate::feedback::request_redraw();
+        }
+    });
 }
 
 #[derive(Debug, Default)]
@@ -48,6 +72,7 @@ pub struct State {
     pub show_import_popup: bool,
     pub search: SearchState,
     pub renaming: Option<String>,
+    pub(crate) modpack_updates: HashMap<String, crate::net::modrinth::VersionInfo>,
 }
 
 impl State {
@@ -61,6 +86,7 @@ impl State {
             show_import_popup: false,
             search: SearchState::default(),
             renaming: None,
+            modpack_updates: HashMap::new(),
         };
         if count > 0 {
             s.list_state.selected = Some(0);
@@ -141,13 +167,43 @@ impl State {
         self.instances.retain(|i| i.name != name);
         let after = self.instances.len();
         if after < before {
+            self.modpack_updates.remove(name);
             self.update_scrollbar();
+        }
+    }
+
+    pub fn drain_modpack_updates(&mut self) {
+        let Ok(mut pending) = PENDING_MODPACK_UPDATES.lock() else {
+            return;
+        };
+        for (name, source, update) in pending.drain(..) {
+            if self
+                .instances
+                .iter()
+                .find(|instance| instance.name == name)
+                .and_then(|instance| instance.modpack_source.as_ref())
+                != Some(&source)
+            {
+                continue;
+            }
+            if let Some(update) = update {
+                self.modpack_updates.insert(name, update);
+            } else {
+                self.modpack_updates.remove(&name);
+            }
         }
     }
 
     pub fn add_instance(&mut self, instance: InstanceConfig) {
         self.instances.push(instance);
+        self.list_state.selected = self.filtered_indices().len().checked_sub(1);
         self.update_scrollbar();
+    }
+
+    pub fn selected_modpack_update(&self) -> Option<crate::net::modrinth::VersionInfo> {
+        self.selected_instance()
+            .and_then(|instance| self.modpack_updates.get(&instance.name))
+            .cloned()
     }
 
     pub fn replace_instance(&mut self, old_name: &str, instance: InstanceConfig) {
@@ -179,7 +235,7 @@ impl WidgetKey for State {
                     self.update_scrollbar();
                 }
                 KeyCode::Backspace => {
-                    self.search.pop();
+                    self.search.backspace(key_event.modifiers);
                     self.list_state.selected = Some(0);
                     self.update_scrollbar();
                 }
@@ -203,7 +259,7 @@ impl WidgetKey for State {
                 self.show_popup = true;
                 self.update_scrollbar();
             }
-            KeyCode::Char('i') => {
+            KeyCode::Char('m') => {
                 self.show_import_popup = true;
             }
             KeyCode::Char('d') => {}
@@ -291,10 +347,9 @@ pub fn render(frame: &mut Frame, area: Rect, focused: FocusedArea, state: &mut S
                 ),
             ])
         } else {
-            Line::from(vec![
-                selector.clone(),
-                Span::styled(instance.name.as_str(), name_style),
-            ])
+            let mut spans = vec![selector.clone()];
+            spans.extend(state.search.highlight_spans(&instance.name, name_style));
+            Line::from(spans)
         };
 
         let (meta_text, meta_text_style) = match get_run_state(&instance.name) {
@@ -305,7 +360,7 @@ pub fn render(frame: &mut Frame, area: Rect, focused: FocusedArea, state: &mut S
             Some(RunState::Running) | Some(RunState::Starting) => {
                 ("Playing".to_string(), Style::default().fg(theme.success()))
             }
-            _ => (format_last_played(instance.last_played), meta_style),
+            _ => (format_relative_time(instance.last_played), meta_style),
         };
 
         let meta_line = Line::from(vec![
@@ -339,85 +394,5 @@ pub fn render(frame: &mut Frame, area: Rect, focused: FocusedArea, state: &mut S
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn format_last_played_none_returns_never_played() {
-        assert_eq!(format_last_played(None), "Never played");
-    }
-
-    // each #[case] picks a "seconds ago" value that lands in exactly one
-    // bucket of the match. mutating any bucket boundary (e.g. 3600 to 3601,
-    // or "minutes" to "seconds") makes one of these cases fail.
-    #[rstest::rstest]
-    #[case::just_now(0, "Just now")]
-    #[case::just_now_upper(59, "Just now")]
-    #[case::minutes(60, "1 minutes ago")]
-    #[case::minutes_upper(3599, "59 minutes ago")]
-    #[case::hours(3600, "1 hours ago")]
-    #[case::hours_upper(86_399, "23 hours ago")]
-    #[case::days(86_400, "1 days ago")]
-    #[case::days_upper(2_591_999, "29 days ago")]
-    #[case::months(2_592_000, "1 months ago")]
-    #[case::months_upper(31_535_999, "12 months ago")]
-    #[case::over_a_year(31_536_000, "Over a year ago")]
-    fn format_last_played_buckets(#[case] seconds_ago: i64, #[case] expected: &str) {
-        let dt = chrono::Utc::now() - chrono::Duration::seconds(seconds_ago);
-        assert_eq!(format_last_played(Some(dt)), expected);
-    }
-
-    use crate::instance::models::{InstanceConfig, ModLoader};
-    use ratatui::Terminal;
-    use ratatui::backend::TestBackend;
-
-    fn synthetic_instance(name: &str) -> InstanceConfig {
-        // last_played intentionally None so the rendered text is the
-        // deterministic "Never played" string. anything else would make the
-        // snapshot drift relative to chrono::Utc::now().
-        InstanceConfig {
-            name: name.to_string(),
-            game_version: "1.20.1".to_string(),
-            loader: ModLoader::Vanilla,
-            loader_version: None,
-            created: chrono::Utc::now(),
-            last_played: None,
-            java_path: None,
-            memory_max: None,
-            memory_min: None,
-            jvm_args: vec![],
-            resolution: None,
-            config_sync_profile: None,
-        }
-    }
-
-    #[test]
-    fn instances_list_renders_three_instances() {
-        let mut state = State::with_instances(vec![
-            synthetic_instance("Vanilla 1.20.1"),
-            synthetic_instance("Forge Pack"),
-            synthetic_instance("Fabric Test"),
-        ]);
-
-        let backend = TestBackend::new(40, 12);
-        let mut terminal = Terminal::new(backend).unwrap();
-        terminal
-            .draw(|f| render(f, f.area(), FocusedArea::Instances, &mut state))
-            .unwrap();
-
-        insta::assert_snapshot!(terminal.backend());
-    }
-
-    #[test]
-    fn instances_list_renders_empty() {
-        let mut state = State::with_instances(vec![]);
-
-        let backend = TestBackend::new(40, 8);
-        let mut terminal = Terminal::new(backend).unwrap();
-        terminal
-            .draw(|f| render(f, f.area(), FocusedArea::Instances, &mut state))
-            .unwrap();
-
-        insta::assert_snapshot!(terminal.backend());
-    }
-}
+#[path = "../tests/widgets/instances.rs"]
+mod tests;

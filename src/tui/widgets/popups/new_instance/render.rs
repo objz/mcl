@@ -1,14 +1,15 @@
 // rendering for the new instance wizard. each step gets its own render fn
 // and the popup resizes itself based on which step is active.
 
+use super::super::LoadState;
 use super::state::{
-    LoadState, WIZARD_STATE, WizardState, WizardStep, clamp_loader_version_index,
-    clamp_version_index, ensure_loader_versions_loaded, ensure_versions_loaded, visible_versions,
+    WIZARD_STATE, WizardState, WizardStep, clamp_loader_version_index, clamp_version_index,
+    ensure_loader_versions_loaded, ensure_versions_loaded, visible_versions,
 };
 use crate::config::theme::THEME;
 use crate::instance::models::ModLoader;
 use crate::tui::app::FocusedArea;
-use crate::tui::widgets::popups::base::PopupFrame;
+use crate::tui::widgets::popups::base::{PopupFrame, render_summary};
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
@@ -107,7 +108,7 @@ pub fn popup_rect(frame_area: Rect) -> Rect {
             frame_area.centered(w, Constraint::Length(h))
         }
         WizardStep::Confirm => {
-            let h = 8u16.min(frame_area.height.saturating_sub(4));
+            let h = 6u16.min(frame_area.height.saturating_sub(4));
             frame_area.centered(w, Constraint::Length(h))
         }
     }
@@ -180,31 +181,45 @@ fn render_version_step(state: &WizardState, area: Rect, buf: &mut ratatui::buffe
         LoadState::Loaded(_) => {
             let items: Vec<ListItem> = visible_versions(state)
                 .into_iter()
-                .map(|version| {
+                .enumerate()
+                .map(|(index, version)| {
                     let suffix = if version.stable {
                         String::new()
                     } else {
                         " (snapshot)".to_string()
                     };
-                    ListItem::new(Line::from(Span::styled(
-                        format!("{}{}", version.id, suffix),
-                        Style::default().fg(theme.text()),
-                    )))
+                    ListItem::new(state.version_search.highlight_line(
+                        &format!("{}{}", version.id, suffix),
+                        Style::default().fg(if index == state.version_idx {
+                            theme.accent()
+                        } else {
+                            theme.text()
+                        }),
+                    ))
                 })
                 .collect();
 
-            let list = List::new(items)
-                .highlight_style(
-                    Style::default()
-                        .fg(theme.accent())
-                        .add_modifier(Modifier::BOLD),
-                )
-                .highlight_symbol("▶ ");
-
-            let mut list_state = ListState::default().with_selected(Some(state.version_idx));
-            StatefulWidget::render(list, area, buf, &mut list_state);
+            render_select_list(items, state.version_idx, area, buf);
         }
     }
+}
+
+pub(crate) fn render_select_list(
+    items: Vec<ListItem<'_>>,
+    selected: usize,
+    area: Rect,
+    buffer: &mut ratatui::buffer::Buffer,
+) {
+    let list = List::new(items)
+        .highlight_style(Style::default().add_modifier(Modifier::BOLD))
+        .highlight_symbol(Span::styled(
+            "▶ ",
+            Style::default()
+                .fg(THEME.as_ref().accent())
+                .add_modifier(Modifier::BOLD),
+        ));
+    let mut state = ListState::default().with_selected(Some(selected));
+    StatefulWidget::render(list, area, buffer, &mut state);
 }
 
 fn render_loader_step(state: &WizardState, area: Rect, buf: &mut ratatui::buffer::Buffer) {
@@ -286,7 +301,6 @@ fn render_loader_version_step(state: &WizardState, area: Rect, buf: &mut ratatui
 }
 
 fn render_confirm_step(state: &WizardState, area: Rect, buf: &mut ratatui::buffer::Buffer) {
-    let theme = THEME.as_ref();
     let game_version = state
         .selected_version()
         .map(|version| version.id.as_str())
@@ -299,173 +313,19 @@ fn render_confirm_step(state: &WizardState, area: Rect, buf: &mut ratatui::buffe
             .selected_loader_version()
             .unwrap_or_else(|| "<not selected>".to_string())
     };
-
-    let label_style = Style::default().fg(theme.text_dim());
-
-    Paragraph::new(vec![
-        Line::from(vec![
-            Span::styled("Name: ", label_style),
-            Span::raw(state.name_state.value()),
-        ]),
-        Line::from(vec![
-            Span::styled("MC: ", label_style),
-            Span::raw(game_version),
-        ]),
-        Line::from(vec![
-            Span::styled("Loader: ", label_style),
-            Span::raw(loader.to_string()),
-        ]),
-        Line::from(vec![
-            Span::styled("Loader version: ", label_style),
-            Span::raw(loader_version),
-        ]),
-    ])
-    .style(Style::default().fg(theme.text()))
-    .wrap(Wrap { trim: true })
-    .render(area, buf);
+    let loader = loader.to_string();
+    render_summary(
+        &[
+            ("Name", state.name_state.value()),
+            ("MC", game_version),
+            ("Loader", &loader),
+            ("Loader version", &loader_version),
+        ],
+        area,
+        buf,
+    );
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use ratatui::Terminal;
-    use ratatui::backend::TestBackend;
-
-    // WIZARD_STATE is a process-global static; without serialisation, parallel
-    // tests would race when each test sets the step and then renders, since
-    // render re-acquires the WIZARD_STATE mutex internally. this guard mutex
-    // ensures only one wizard snapshot test runs at a time.
-    static TEST_SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
-    fn reset_wizard_state(step: WizardStep) {
-        let mut guard = WIZARD_STATE.lock().expect("WIZARD_STATE lock");
-        *guard = WizardState::default();
-        guard.step = step;
-    }
-
-    #[test]
-    fn new_instance_renders_name_step() {
-        let _serial = TEST_SERIAL.lock().unwrap_or_else(|e| e.into_inner());
-        // Name is the default step; render touches no network helpers.
-        reset_wizard_state(WizardStep::Name);
-
-        let backend = TestBackend::new(60, 12);
-        let mut terminal = Terminal::new(backend).unwrap();
-        terminal
-            .draw(|f| render(f, f.area(), FocusedArea::Popup))
-            .unwrap();
-        insta::assert_snapshot!(terminal.backend());
-    }
-
-    #[test]
-    fn new_instance_renders_loader_step() {
-        let _serial = TEST_SERIAL.lock().unwrap_or_else(|e| e.into_inner());
-        // Loader step is reached after Name; render just paints the hardcoded
-        // loader list, no network.
-        reset_wizard_state(WizardStep::Loader);
-
-        let backend = TestBackend::new(60, 12);
-        let mut terminal = Terminal::new(backend).unwrap();
-        terminal
-            .draw(|f| render(f, f.area(), FocusedArea::Popup))
-            .unwrap();
-        insta::assert_snapshot!(terminal.backend());
-    }
-
-    // Version step: pre-populate versions as LoadState::Loaded so
-    // ensure_versions_loaded short-circuits and never spawns a network task.
-    // the three synthetic versions are marked stable=true so they show with
-    // show_snapshots=false (the default).
-    #[test]
-    fn new_instance_renders_version_step() {
-        use crate::instance::loader::GameVersion;
-
-        let _serial = TEST_SERIAL.lock().unwrap_or_else(|e| e.into_inner());
-        {
-            let mut guard = WIZARD_STATE.lock().expect("WIZARD_STATE lock");
-            *guard = WizardState::default();
-            guard.step = WizardStep::Version;
-            guard.versions = LoadState::Loaded(vec![
-                GameVersion {
-                    id: "1.20.1".into(),
-                    stable: true,
-                },
-                GameVersion {
-                    id: "1.19.4".into(),
-                    stable: true,
-                },
-                GameVersion {
-                    id: "1.18.2".into(),
-                    stable: true,
-                },
-            ]);
-        }
-
-        let backend = TestBackend::new(60, 14);
-        let mut terminal = Terminal::new(backend).unwrap();
-        terminal
-            .draw(|f| render(f, f.area(), FocusedArea::Popup))
-            .unwrap();
-        insta::assert_snapshot!(terminal.backend());
-    }
-
-    // LoaderVersion step: needs both versions and loader_versions pre-loaded.
-    // pick a non-Vanilla loader (loader_idx=2 = Forge) so the step doesn't
-    // skip itself to Confirm.
-    #[test]
-    fn new_instance_renders_loader_version_step() {
-        use crate::instance::loader::GameVersion;
-
-        let _serial = TEST_SERIAL.lock().unwrap_or_else(|e| e.into_inner());
-        {
-            let mut guard = WIZARD_STATE.lock().expect("WIZARD_STATE lock");
-            *guard = WizardState::default();
-            guard.step = WizardStep::LoaderVersion;
-            guard.loader_idx = 2; // Forge
-            guard.versions = LoadState::Loaded(vec![GameVersion {
-                id: "1.20.1".into(),
-                stable: true,
-            }]);
-            guard.loader_versions =
-                LoadState::Loaded(vec!["47.2.0".into(), "47.1.0".into(), "47.0.50".into()]);
-        }
-
-        let backend = TestBackend::new(60, 14);
-        let mut terminal = Terminal::new(backend).unwrap();
-        terminal
-            .draw(|f| render(f, f.area(), FocusedArea::Popup))
-            .unwrap();
-        insta::assert_snapshot!(terminal.backend());
-    }
-
-    // Confirm step: paints a summary, no network, no list. requires
-    // versions + loader_versions Loaded so selected_*() return Some.
-    #[test]
-    fn new_instance_renders_confirm_step() {
-        use crate::instance::loader::GameVersion;
-        use tui_prompts::TextState;
-
-        let _serial = TEST_SERIAL.lock().unwrap_or_else(|e| e.into_inner());
-        {
-            let mut guard = WIZARD_STATE.lock().expect("WIZARD_STATE lock");
-            *guard = WizardState::default();
-            guard.step = WizardStep::Confirm;
-            guard.loader_idx = 1; // Fabric
-            guard.versions = LoadState::Loaded(vec![GameVersion {
-                id: "1.20.1".into(),
-                stable: true,
-            }]);
-            guard.loader_versions = LoadState::Loaded(vec!["0.15.0".into()]);
-            // TextState exposes only constructors; rebuilding with the
-            // desired initial value is the supported path.
-            guard.name_state = TextState::new().with_value("MyPack");
-        }
-
-        let backend = TestBackend::new(60, 12);
-        let mut terminal = Terminal::new(backend).unwrap();
-        terminal
-            .draw(|f| render(f, f.area(), FocusedArea::Popup))
-            .unwrap();
-        insta::assert_snapshot!(terminal.backend());
-    }
-}
+#[path = "../../../tests/widgets/popups/new_instance/render.rs"]
+mod tests;
