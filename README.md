@@ -12,6 +12,9 @@
 
 ![screenshot](assets/screenshot.png)
 
+
+![modpage](assets/modpage.png)
+
 [Report Bug](https://github.com/objz/rmcl/issues) · [Request Feature](https://github.com/objz/rmcl/issues)
 
 </div>
