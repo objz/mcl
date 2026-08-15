@@ -22,9 +22,16 @@ pub struct UpdateSnapshot {
     pub loader: ModLoader,
     #[serde(default)]
     pub inventory: Vec<ProviderProject>,
+    #[serde(default)]
+    pub checked_at: i64,
     pub updates: Vec<AvailableUpdate>,
     pub failures: Vec<UpdateCheckFailure>,
 }
+
+/// How long a snapshot is trusted before the next reconciliation rechecks it.
+/// Anything shorter re-scans every mod against the provider APIs each time the
+/// instance is selected.
+const RECHECK_AFTER_SECONDS: i64 = 30 * 60;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UpdateCheckFailure {
@@ -87,6 +94,29 @@ impl UpdateSnapshot {
         self.inventory == resolved_inventory(manifest)
     }
 
+    /// Whether the snapshot is worth re-scanning. Note that a stale snapshot is
+    /// still displayed: every entry is keyed by its exact installed version, so
+    /// content that changed since the scan simply stops matching instead of
+    /// invalidating the labels of everything else.
+    pub fn is_stale(&self, manifest: &ContentManifest) -> bool {
+        !self.matches_manifest(manifest)
+            || chrono::Utc::now()
+                .timestamp()
+                .saturating_sub(self.checked_at)
+                >= RECHECK_AFTER_SECONDS
+    }
+
+    /// Keeps known updates for entries whose check failed this round so a flaky
+    /// network or a rate limited provider does not drop labels that were correct.
+    fn carry_over(&mut self, previous: &Self) {
+        for failure in &self.failures {
+            if let Some(update) = previous.update_for(&failure.installed) {
+                self.updates.push(update.clone());
+            }
+        }
+        sort_updates(&mut self.updates);
+    }
+
     pub fn update_for(&self, installed: &ProviderProject) -> Option<&AvailableUpdate> {
         self.updates.iter().find(|update| {
             update.installed.provider == installed.provider
@@ -98,7 +128,12 @@ impl UpdateSnapshot {
 
 pub fn spawn(instance: InstanceConfig, manifest: ContentManifest, path: std::path::PathBuf) {
     tokio::spawn(async move {
-        let snapshot = scan(&instance, &manifest).await;
+        let previous =
+            UpdateSnapshot::load(&path).filter(|previous| previous.applies_to(&instance));
+        let mut snapshot = scan(&instance, &manifest).await;
+        if let Some(previous) = previous {
+            snapshot.carry_over(&previous);
+        }
         if let Ok(bytes) = serde_json::to_vec_pretty(&snapshot)
             && let Err(error) = crate::storage::write_atomic(&path, &bytes)
         {
@@ -144,9 +179,16 @@ pub async fn scan(instance: &InstanceConfig, manifest: &ContentManifest) -> Upda
         .collect();
 
     let slots = Arc::new(tokio::sync::Semaphore::new(8));
+    // one registry (and therefore one pooled http client) for the whole scan
+    let registry = Arc::new(
+        crate::instance::content::provider::ProviderRegistry::configured(
+            crate::net::HttpClient::new(),
+        ),
+    );
     let mut tasks = tokio::task::JoinSet::new();
     for (installed, kind) in projects {
         let slots = slots.clone();
+        let registry = registry.clone();
         let game_version = instance.game_version.clone();
         let loader = instance.loader;
         tasks.spawn(async move {
@@ -155,9 +197,6 @@ pub async fn scan(instance: &InstanceConfig, manifest: &ContentManifest) -> Upda
                     .acquire_owned()
                     .await
                     .map_err(|error| error.to_string())?;
-                let registry = crate::instance::content::provider::ProviderRegistry::configured(
-                    crate::net::HttpClient::new(),
-                );
                 let provider = registry.get(&installed.provider).ok_or_else(|| {
                     format!("{} content provider is unavailable", installed.provider)
                 })?;
@@ -165,17 +204,27 @@ pub async fn scan(instance: &InstanceConfig, manifest: &ContentManifest) -> Upda
                     .compatible_versions(&installed.project_id, kind, &game_version, loader)
                     .await
                     .map_err(|error| error.to_string())?;
-                let current = versions
+                let Some(newest) = crate::instance::content::provider::newest_version(&versions)
+                else {
+                    return Ok(None);
+                };
+                // a modpack pins files that are often not tagged for the exact
+                // game version of the instance, so the installed version can be
+                // missing from the compatible list. asking the provider for it
+                // directly is the only way to tell "up to date" from "unknown".
+                let current = match versions
                     .iter()
                     .find(|version| version.id == installed.version_id)
-                    .cloned();
-                let target = versions.first().cloned().filter(|_| {
-                    crate::instance::content::provider::has_newer_compatible_version(
-                        &versions,
-                        &installed.version_id,
-                    )
-                });
-                Ok::<_, String>(target.map(|target| (current, target)))
+                {
+                    Some(current) => current.clone(),
+                    None => provider
+                        .version(&installed.version_id)
+                        .await
+                        .map_err(|error| error.to_string())?,
+                };
+                let target = crate::instance::content::provider::is_newer(newest, &current)
+                    .then(|| newest.clone());
+                Ok::<_, String>(target.map(|target| (Some(current), target)))
             }
             .await;
             (installed, kind, result)
@@ -201,17 +250,22 @@ pub async fn scan(instance: &InstanceConfig, manifest: &ContentManifest) -> Upda
             Err(error) => tracing::debug!("Content update task failed: {error}"),
         }
     }
-    updates.sort_by(|left, right| {
-        (&left.installed.provider, &left.installed.project_id)
-            .cmp(&(&right.installed.provider, &right.installed.project_id))
-    });
+    sort_updates(&mut updates);
     UpdateSnapshot {
         game_version: instance.game_version.clone(),
         loader: instance.loader,
         inventory,
+        checked_at: chrono::Utc::now().timestamp(),
         updates,
         failures,
     }
+}
+
+fn sort_updates(updates: &mut [AvailableUpdate]) {
+    updates.sort_by(|left, right| {
+        (&left.installed.provider, &left.installed.project_id)
+            .cmp(&(&right.installed.provider, &right.installed.project_id))
+    });
 }
 
 fn resolved_inventory(manifest: &ContentManifest) -> Vec<ProviderProject> {
@@ -375,6 +429,7 @@ mod tests {
             game_version: "1.21.1".to_owned(),
             loader: ModLoader::Fabric,
             inventory: vec![installed.clone()],
+            checked_at: chrono::Utc::now().timestamp(),
             updates: vec![AvailableUpdate {
                 installed: installed.clone(),
                 current: Some(version("old")),
@@ -396,7 +451,7 @@ mod tests {
     }
 
     #[test]
-    fn cached_updates_require_the_same_content_inventory() {
+    fn a_changed_content_inventory_only_schedules_a_rescan() {
         let project = ProviderProject {
             provider: "modrinth".to_owned(),
             project_id: "project".to_owned(),
@@ -406,6 +461,7 @@ mod tests {
             game_version: "1.21.1".to_owned(),
             loader: ModLoader::Fabric,
             inventory: vec![project.clone()],
+            checked_at: chrono::Utc::now().timestamp(),
             updates: Vec::new(),
             failures: Vec::new(),
         };
@@ -427,12 +483,58 @@ mod tests {
             cleanup_eligible: false,
         });
 
-        assert!(snapshot.matches_manifest(&manifest));
+        assert!(!snapshot.is_stale(&manifest));
         manifest.files[0].resolution = crate::instance::Resolution::Unmatched {
             checked_at: 0,
             providers: Vec::new(),
         };
-        assert!(!snapshot.matches_manifest(&manifest));
+        assert!(snapshot.is_stale(&manifest));
+
+        let expired = UpdateSnapshot {
+            checked_at: chrono::Utc::now().timestamp() - RECHECK_AFTER_SECONDS,
+            ..snapshot
+        };
+        assert!(expired.is_stale(&manifest));
+    }
+
+    #[test]
+    fn failed_checks_keep_the_previously_known_update() {
+        let installed = ProviderProject {
+            provider: "modrinth".to_owned(),
+            project_id: "project".to_owned(),
+            version_id: "old".to_owned(),
+        };
+        let previous = UpdateSnapshot {
+            game_version: "1.21.1".to_owned(),
+            loader: ModLoader::Fabric,
+            inventory: vec![installed.clone()],
+            checked_at: 0,
+            updates: vec![AvailableUpdate {
+                installed: installed.clone(),
+                current: Some(version("old")),
+                target: version("new"),
+                kind: ContentKind::Mod,
+            }],
+            failures: Vec::new(),
+        };
+        let mut offline = UpdateSnapshot {
+            updates: Vec::new(),
+            failures: vec![UpdateCheckFailure {
+                installed: installed.clone(),
+                kind: ContentKind::Mod,
+                reason: "request timed out".to_owned(),
+            }],
+            ..previous.clone()
+        };
+
+        offline.carry_over(&previous);
+
+        assert_eq!(
+            offline
+                .update_for(&installed)
+                .map(|update| &update.target.id),
+            Some(&"new".to_owned())
+        );
     }
 
     #[test]

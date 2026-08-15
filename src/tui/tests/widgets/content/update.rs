@@ -62,6 +62,7 @@ fn snapshot() -> UpdateSnapshot {
         game_version: "1.21.1".to_owned(),
         loader: crate::instance::ModLoader::Fabric,
         inventory: Vec::new(),
+        checked_at: 0,
         updates: Vec::new(),
         failures: Vec::new(),
     }

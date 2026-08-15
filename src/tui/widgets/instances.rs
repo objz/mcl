@@ -50,12 +50,14 @@ pub fn spawn_modpack_update_check(instance: &InstanceConfig) {
         let Ok(versions) = crate::instance::import::provider_versions(&source).await else {
             return;
         };
-        let update = versions.first().cloned().filter(|_| {
-            crate::instance::content::provider::has_newer_compatible_version(
-                &versions,
-                &source.version_id,
-            )
-        });
+        let update = crate::instance::content::provider::newest_version(&versions)
+            .cloned()
+            .filter(|_| {
+                crate::instance::content::provider::has_newer_compatible_version(
+                    &versions,
+                    &source.version_id,
+                )
+            });
         if let Ok(mut pending) = PENDING_MODPACK_UPDATES.lock() {
             pending.push((instance.name, source, update));
             crate::feedback::request_redraw();

@@ -372,14 +372,43 @@ pub struct ProviderRegistry {
     providers: Vec<Box<dyn ContentProvider>>,
 }
 
+/// Newest entry by publish date. Providers are not required to sort their
+/// responses, so list order is only the tie-breaker.
+pub(crate) fn newest_version(versions: &[VersionInfo]) -> Option<&VersionInfo> {
+    let first = versions.first()?;
+    Some(versions.iter().fold(first, |newest, version| {
+        match (published_at(version), published_at(newest)) {
+            (Some(candidate), Some(current)) if candidate > current => version,
+            _ => newest,
+        }
+    }))
+}
+
+/// Whether `target` supersedes `installed`. Falls back to identity when a
+/// provider omits publish dates, which keeps the newest-first list order as the
+/// only signal we have left.
+pub(crate) fn is_newer(target: &VersionInfo, installed: &VersionInfo) -> bool {
+    match (published_at(target), published_at(installed)) {
+        (Some(target), Some(installed)) => target > installed,
+        _ => target.id != installed.id,
+    }
+}
+
+fn published_at(version: &VersionInfo) -> Option<chrono::DateTime<chrono::FixedOffset>> {
+    chrono::DateTime::parse_from_rfc3339(&version.date_published).ok()
+}
+
 pub(crate) fn has_newer_compatible_version(
     versions: &[VersionInfo],
     installed_version_id: &str,
 ) -> bool {
-    versions
+    let Some(installed) = versions
         .iter()
-        .position(|version| version.id == installed_version_id)
-        .is_some_and(|position| position > 0)
+        .find(|version| version.id == installed_version_id)
+    else {
+        return false;
+    };
+    newest_version(versions).is_some_and(|target| is_newer(target, installed))
 }
 
 impl ProviderRegistry {

@@ -1158,11 +1158,7 @@ impl App {
         let cached_snapshot = self
             .content_update_snapshot
             .as_ref()
-            .filter(|(name, snapshot)| {
-                name == &instance.name
-                    && snapshot.applies_to(&instance)
-                    && snapshot.matches_manifest(&manifest)
-            })
+            .filter(|(name, snapshot)| name == &instance.name && snapshot.applies_to(&instance))
             .map(|(_, snapshot)| snapshot.clone());
         if cached_snapshot
             .as_ref()

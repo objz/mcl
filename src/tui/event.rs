@@ -402,19 +402,23 @@ impl App {
                 .instances_dir
                 .join(&result.instance_name),
         );
-        self.content_update_snapshot =
+        let cached =
             crate::instance::content::updates::UpdateSnapshot::load(&paths.content_updates())
-                .filter(|snapshot| {
-                    snapshot.applies_to(&selected) && snapshot.matches_manifest(&result.manifest)
-                })
-                .map(|snapshot| (result.instance_name.clone(), snapshot));
+                .filter(|snapshot| snapshot.applies_to(&selected));
+        let stale = cached
+            .as_ref()
+            .is_none_or(|snapshot| snapshot.is_stale(&result.manifest));
+        self.content_update_snapshot =
+            cached.map(|snapshot| (result.instance_name.clone(), snapshot));
         self.content_manifest = Some((result.instance_name.clone(), result.manifest.clone()));
         self.apply_content_update_snapshot();
-        crate::instance::content::updates::spawn(
-            selected,
-            result.manifest,
-            paths.content_updates(),
-        );
+        if stale {
+            crate::instance::content::updates::spawn(
+                selected,
+                result.manifest,
+                paths.content_updates(),
+            );
+        }
     }
 
     fn apply_cached_content_manifest(&mut self) {
@@ -458,36 +462,30 @@ impl App {
         };
         let snapshot = match crate::instance::content::updates::PENDING_UPDATE_SNAPSHOTS.lock() {
             Ok(mut pending) => {
-                pending.retain(|pending| {
-                    pending.instance_name != selected.name
-                        || pending.instance_created == selected.created
-                });
-                pending
+                let latest = pending
                     .iter()
                     .rposition(|pending| {
                         pending.instance_name == selected.name
                             && pending.instance_created == selected.created
                     })
-                    .map(|index| pending.remove(index))
+                    .map(|index| pending.remove(index));
+                // every scan also writes its result to disk, so whatever is left
+                // here is recovered on the next reconciliation of that instance
+                pending.clear();
+                latest
             }
             Err(_) => return,
         };
         let Some(snapshot) = snapshot else {
             return;
         };
-        let current_manifest = self
-            .content_manifest
-            .as_ref()
-            .filter(|(name, _)| name == &snapshot.instance_name)
-            .map(|(_, manifest)| manifest);
-        if current_manifest.is_none_or(|manifest| !snapshot.snapshot.matches_manifest(manifest)) {
-            return;
-        }
         self.content_update_snapshot = Some((snapshot.instance_name, snapshot.snapshot));
         self.apply_content_update_snapshot();
     }
 
     fn apply_content_update_snapshot(&mut self) {
+        // matched per entry by exact installed version, so a snapshot that no
+        // longer covers the whole manifest still labels everything it does cover
         let snapshot = self
             .content_update_snapshot
             .as_ref()
@@ -495,14 +493,7 @@ impl App {
                 self.instances_state
                     .selected_instance()
                     .filter(|instance| instance.name == *name && snapshot.applies_to(instance))
-                    .and_then(|_| {
-                        self.content_manifest
-                            .as_ref()
-                            .filter(|(manifest_name, manifest)| {
-                                manifest_name == name && snapshot.matches_manifest(manifest)
-                            })
-                            .map(|_| snapshot)
-                    })
+                    .map(|_| snapshot)
             });
         self.mods_state.apply_update_snapshot(snapshot);
         self.resource_packs_state.apply_update_snapshot(snapshot);
