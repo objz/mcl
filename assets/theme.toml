@@ -2,9 +2,11 @@
 #   catppuccin, dracula, nord, gruvbox, one-dark,
 #   solarized, tailwind, tokyo-night, rose-pine, terminal
 #
-# custom themes: 
-#   theme = "my-theme"        (loads ~/.config/mcl/theme/my-theme.toml)
+# custom themes:
+#   theme = "my-theme"        (loads ~/.config/rmcl/theme/my-theme.toml)
 #   theme = "/path/to/file"   (loads from absolute path)
+# a theme file has flat top-level keys (name, id, accent, ...), not the
+# [custom] table below. see assets/example-theme.toml in the repo.
 theme = "gruvbox"
 
 # rounded, plain, double, thick

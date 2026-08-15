@@ -1,0 +1,32 @@
+# example custom theme -> ~/.config/rmcl/theme/my-theme.toml
+# activate it in ~/.config/rmcl/theme.toml with:  theme = "my-theme"
+#
+# this file is a theme, not the config: keys live at the top level, NOT under
+# [theme] or [custom]. only name, id and accent are required; every other key
+# falls back to a sane default.
+#
+# color formats: "#f97316" | "Red" / "LightBlue" (ANSI names) |
+#                { Rgb = [249, 115, 22] } | { Indexed = 42 }
+
+name = "My Theme"
+id = "my-theme"
+
+accent = { Rgb = [249, 115, 22] }
+accent_dim = "#7f5539"
+
+text = "#cdd6f4"
+text_dim = "DarkGray"
+text_bright = "#ffffff"
+
+success = "#a6e3a1"
+error = "#f38ba8"
+warning = "#f9e2af"
+info = "#89dceb"
+
+diff_added = "#a6e3a1"
+diff_removed = "#f38ba8"
+diff_context = "DarkGray"
+
+border = "#585b70"
+surface = "#313244"
+background = "#1e1e2e"

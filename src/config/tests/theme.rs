@@ -66,6 +66,28 @@ fn resolve_builtin_theme() {
     assert_eq!(theme.id(), expected);
 }
 
+// a theme file in config/theme/ is a flat CustomTheme: name/id/accent are
+// required, everything else falls back to themekit defaults.
+#[test]
+fn custom_theme_file_parses() {
+    let full = toml::from_str::<CustomTheme>(include_str!("../../../assets/example-theme.toml"))
+        .expect("bundled example theme must parse");
+    assert_eq!(full.id, "my-theme");
+    assert_eq!(full.accent, Color::Rgb(249, 115, 22));
+    assert_eq!(full.text, Color::Rgb(205, 214, 244));
+
+    let minimal =
+        toml::from_str::<CustomTheme>("name = \"X\"\nid = \"x\"\naccent = \"#f97316\"\n").unwrap();
+    assert_eq!(minimal.accent, Color::Rgb(249, 115, 22));
+
+    // the two failure modes users hit: nesting under [theme], or omitting name/id
+    assert!(
+        toml::from_str::<CustomTheme>("[theme]\nname = \"X\"\nid = \"x\"\naccent = \"Red\"\n")
+            .is_err()
+    );
+    assert!(toml::from_str::<CustomTheme>("accent = \"Red\"\n").is_err());
+}
+
 #[test]
 fn theme_config_empty_toml_uses_defaults() {
     let config: ThemeConfig = toml::from_str("").unwrap();

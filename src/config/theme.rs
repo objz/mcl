@@ -151,10 +151,13 @@ fn load_base_theme(name: &str) -> Box<dyn Theme> {
     if let Some(path) = path
         && let Ok(content) = std::fs::read_to_string(&path)
     {
-        if let Ok(custom) = toml::from_str::<CustomTheme>(&content) {
-            return Box::new(custom);
-        } else {
-            tracing::warn!("Failed to parse theme file: {}", path.display());
+        match toml::from_str::<CustomTheme>(&content) {
+            Ok(custom) => return Box::new(custom),
+            Err(e) => tracing::warn!(
+                "Failed to parse theme file {}: {e}. Theme files need top-level \
+                 name, id and accent keys (not nested under [theme]).",
+                path.display()
+            ),
         }
     }
 

@@ -163,7 +163,44 @@ rmcl ships with 10 built-in themes:
 
 `catppuccin` · `dracula` · `nord` · `gruvbox` · `one-dark` · `solarized` · `tailwind` · `tokyo-night` · `rose-pine` · `terminal`
 
-you can create your own by dropping a TOML file in `~/.config/rmcl/theme/` and referencing it by name, or point to an absolute path.
+pick one in `~/.config/rmcl/theme.toml`:
+
+```toml
+theme = "gruvbox"
+border_style = "rounded"   # rounded | plain | double | thick
+```
+
+### custom themes
+
+drop a TOML file in `~/.config/rmcl/theme/` and reference it by name, or point `theme` at an absolute path. keys are flat and top level, don't nest them under `[theme]`. only `name`, `id` and `accent` are required, the rest falls back to a default:
+
+```toml
+# ~/.config/rmcl/theme/my-theme.toml
+name = "My Theme"
+id = "my-theme"
+
+accent = { Rgb = [249, 115, 22] }
+accent_dim = "#7f5539"
+text = "#cdd6f4"
+text_dim = "DarkGray"
+text_bright = "#ffffff"
+success = "#a6e3a1"
+error = "#f38ba8"
+warning = "#f9e2af"
+info = "#89dceb"
+diff_added = "#a6e3a1"
+diff_removed = "#f38ba8"
+diff_context = "DarkGray"
+border = "#585b70"
+surface = "#313244"
+background = "#1e1e2e"
+```
+
+then set `theme = "my-theme"` in `theme.toml`.
+
+colors accept `"#f97316"`, ANSI names (`"Red"`, `"LightBlue"`), `{ Rgb = [r, g, b] }` or `{ Indexed = n }`.
+
+note that `[custom]` in `theme.toml` is only for overriding single values of a builtin, it doesn't define a new theme. same for `border_style`, that one lives in `theme.toml`, not in a theme file.
 
 ---
 
