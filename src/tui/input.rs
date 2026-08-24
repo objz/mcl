@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Constantin Bauer
+// SPDX-License-Identifier: GPL-3.0-only
+
 // keybindings and input dispatch.
 // the general pattern: check which area is focused, give it first crack at the
 // keypress, and fall through to global bindings if nobody claimed it.
@@ -661,14 +664,30 @@ impl App {
                             let new_name = self.instances_state.renaming.take().unwrap_or_default();
                             if let Some(inst) = self.instances_state.selected_instance() {
                                 let old_name = inst.name.clone();
-                                if let Ok(()) = self.instance_manager.rename(&old_name, &new_name)
-                                    && let Some(inst) = self
-                                        .instances_state
-                                        .instances
-                                        .iter_mut()
-                                        .find(|i| i.name == old_name)
-                                {
-                                    inst.name = new_name.trim().to_owned();
+                                match self.instance_manager.rename(&old_name, &new_name) {
+                                    Ok(()) => {
+                                        if let Some(inst) = self
+                                            .instances_state
+                                            .instances
+                                            .iter_mut()
+                                            .find(|i| i.name == old_name)
+                                        {
+                                            inst.name = new_name.trim().to_owned();
+                                        }
+                                    }
+                                    Err(e) => {
+                                        tracing::error!(
+                                            "Failed to rename instance '{}': {}",
+                                            old_name,
+                                            e
+                                        );
+                                        error_buffer::push_error(error_buffer::ErrorEvent {
+                                            id: 0,
+                                            level: tracing::Level::ERROR,
+                                            message: format!("Rename failed: {e}"),
+                                            pushed_at: std::time::Instant::now(),
+                                        });
+                                    }
                                 }
                             }
                         }
