@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Constantin Bauer
+// SPDX-License-Identifier: GPL-3.0-only
+
 // integration tests for the public mojang fetchers. wiremock stands in for
 // Mojang so tests are fast, deterministic, and don't depend on the live
 // endpoint. these are different from the #[ignore = "hits live Mojang API"]
@@ -144,8 +147,11 @@ fn meta_with_one_library(server_uri: &str) -> VersionMeta {
                     sha1: "0".repeat(40),
                     size: 11,
                 }),
+                classifiers: None,
             },
             rules: None,
+            natives: None,
+            extract: None,
         }],
         java_version: Some(JavaVersion { major_version: 17 }),
     }
@@ -178,14 +184,49 @@ async fn download_libraries_writes_artifact_to_meta_dir() {
 
 #[tokio::test]
 async fn download_libraries_skips_when_destination_exists() {
-    // pre-create the destination file. download_libraries should detect it
-    // and skip the network entirely; wiremock's expect(0) would panic on any
-    // request hitting the mock.
+    // pre-create the destination file with content matching the recorded
+    // size + sha1. download_libraries should verify and skip the network
+    // entirely; wiremock's expect(0) would panic on any request.
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/slf4j.jar"))
         .respond_with(ResponseTemplate::new(500))
         .expect(0)
+        .mount(&server)
+        .await;
+
+    let mut meta = meta_with_one_library(&server.uri());
+    let tmp = tempfile::tempdir().unwrap();
+    let existing = tmp
+        .path()
+        .join("cache/minecraft/libraries/org/slf4j/slf4j-api/2.0.7/slf4j-api-2.0.7.jar");
+    std::fs::create_dir_all(existing.parent().unwrap()).unwrap();
+    std::fs::write(&existing, b"already there").unwrap();
+
+    use sha1::Digest;
+    let mut hasher = sha1::Sha1::new();
+    hasher.update(b"already there");
+    let artifact = meta.libraries[0].downloads.artifact.as_mut().unwrap();
+    artifact.sha1 = format!("{:x}", hasher.finalize());
+    artifact.size = b"already there".len() as u64;
+
+    download_libraries(&HttpClient::new(), &meta, tmp.path())
+        .await
+        .expect("noop succeeds");
+
+    // file untouched, mock untouched (server drop will panic if it isn't)
+    assert_eq!(std::fs::read(&existing).unwrap(), b"already there");
+}
+
+#[tokio::test]
+async fn download_libraries_redownloads_corrupted_cache() {
+    // a cached file whose content doesn't match the recorded sha1/size
+    // (e.g. a previously killed download) must be replaced, not trusted.
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/slf4j.jar"))
+        .respond_with(ResponseTemplate::new(200).set_body_bytes(b"fresh-bytes".to_vec()))
+        .expect(1)
         .mount(&server)
         .await;
 
@@ -195,14 +236,13 @@ async fn download_libraries_skips_when_destination_exists() {
         .path()
         .join("cache/minecraft/libraries/org/slf4j/slf4j-api/2.0.7/slf4j-api-2.0.7.jar");
     std::fs::create_dir_all(existing.parent().unwrap()).unwrap();
-    std::fs::write(&existing, b"already there").unwrap();
+    std::fs::write(&existing, b"truncated").unwrap();
 
     download_libraries(&HttpClient::new(), &meta, tmp.path())
         .await
-        .expect("noop succeeds");
+        .expect("re-download succeeds");
 
-    // file untouched, mock untouched (server drop will panic if it isn't)
-    assert_eq!(std::fs::read(&existing).unwrap(), b"already there");
+    assert_eq!(std::fs::read(&existing).unwrap(), b"fresh-bytes");
 }
 
 #[tokio::test]
@@ -277,4 +317,102 @@ async fn download_assets_writes_index_when_objects_is_empty() {
     let body: serde_json::Value =
         serde_json::from_slice(&std::fs::read(&index_path).unwrap()).unwrap();
     assert!(body.get("objects").is_some());
+}
+
+#[tokio::test]
+async fn download_libraries_downloads_and_extracts_natives() {
+    // pre-1.13-era library: no artifact, only a natives classifier for the
+    // running OS. the jar must be cached in libraries/ and unpacked into
+    // versions/<id>/natives, honouring extract.exclude.
+    let server = MockServer::start().await;
+
+    use std::io::Write as _;
+    let mut jar = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    jar.start_file("META-INF/MANIFEST.MF", zip::write::SimpleFileOptions::default())
+        .unwrap();
+    jar.write_all(b"manifest").unwrap();
+    jar.start_file("lib/native.so", zip::write::SimpleFileOptions::default())
+        .unwrap();
+    jar.write_all(b"native-bits").unwrap();
+    let jar_bytes = jar.finish().unwrap().into_inner();
+
+    use sha1::Digest;
+    let mut hasher = sha1::Sha1::new();
+    hasher.update(&jar_bytes);
+    let jar_sha1 = format!("{:x}", hasher.finalize());
+
+    Mock::given(method("GET"))
+        .and(path("/lwjgl-natives.jar"))
+        .respond_with(ResponseTemplate::new(200).set_body_bytes(jar_bytes.clone()))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let server_uri = server.uri();
+    let meta = VersionMeta {
+        id: "test".to_string(),
+        main_class: "net.test.Main".to_string(),
+        asset_index: AssetIndex {
+            id: "5".to_string(),
+            url: format!("{server_uri}/assets/index.json"),
+            sha1: "0".repeat(40),
+        },
+        downloads: VersionDownloads {
+            client: Download {
+                url: format!("{server_uri}/client.jar"),
+                sha1: "0".repeat(40),
+                size: 0,
+            },
+        },
+        libraries: vec![Library {
+            name: "org.lwjgl.lwjgl:lwjgl:2.9.4".to_string(),
+            downloads: LibraryDownloads {
+                artifact: None,
+                classifiers: Some(std::collections::HashMap::from([(
+                    "natives-linux".to_string(),
+                    Artifact {
+                        url: format!("{server_uri}/lwjgl-natives.jar"),
+                        path: "org/lwjgl/lwjgl/lwjgl/2.9.4/lwjgl-2.9.4-natives-linux.jar"
+                            .to_string(),
+                        sha1: jar_sha1,
+                        size: jar_bytes.len() as u64,
+                    },
+                )])),
+            },
+            rules: None,
+            natives: Some(std::collections::HashMap::from([(
+                rmcl::launch_profile::system::mojang_os_name().to_string(),
+                "natives-linux".to_string(),
+            )])),
+            extract: Some(rmcl::net::mojang::LibraryExtract {
+                exclude: Some(vec!["META-INF/".to_string()]),
+            }),
+        }],
+        java_version: Some(JavaVersion { major_version: 8 }),
+    };
+
+    let tmp = tempfile::tempdir().unwrap();
+    download_libraries(&HttpClient::new(), &meta, tmp.path())
+        .await
+        .expect("download_libraries with natives");
+
+    let cached_jar = tmp.path().join(
+        "cache/minecraft/libraries/org/lwjgl/lwjgl/lwjgl/2.9.4/lwjgl-2.9.4-natives-linux.jar",
+    );
+    assert_eq!(std::fs::read(&cached_jar).unwrap(), jar_bytes);
+
+    let extracted = tmp
+        .path()
+        .join("cache/minecraft/versions/test/natives/lib/native.so");
+    assert_eq!(
+        std::fs::read(&extracted).unwrap(),
+        b"native-bits",
+        "natives payload must be unpacked next to java.library.path"
+    );
+    assert!(
+        !tmp.path()
+            .join("cache/minecraft/versions/test/natives/META-INF")
+            .exists(),
+        "extract.exclude prefixes must be skipped"
+    );
 }

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Constantin Bauer
+// SPDX-License-Identifier: GPL-3.0-only
+
 // handles all downloads from mojang's servers: version manifests,
 // client jars, libraries, and asset objects. this is the core of
 // getting vanilla minecraft onto disk.
@@ -77,16 +80,36 @@ pub struct Library {
     pub name: String,
     pub downloads: LibraryDownloads,
     pub rules: Option<Vec<crate::launch_profile::rules::Rule>>,
+    // os name -> natives classifier (e.g. "linux" -> "natives-linux").
+    // present on pre-1.13-era libraries whose native code ships in
+    // separate per-platform jars.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub natives: Option<HashMap<String, String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub extract: Option<LibraryExtract>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct LibraryExtract {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exclude: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct LibraryDownloads {
     pub artifact: Option<Artifact>,
+    // classifier -> download info (same shape as artifact). populated on
+    // libraries that declare `natives`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub classifiers: Option<HashMap<String, Artifact>>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Artifact {
     pub url: String,
+    // empty when upstream omits it; callers fall back to deriving the
+    // relative path from the library's maven coordinate.
+    #[serde(default)]
     pub path: String,
     pub sha1: String,
     pub size: u64,
@@ -147,6 +170,40 @@ pub async fn fetch_version_meta_with_raw(
     client.get_json_with_raw(&entry.url, "version meta").await
 }
 
+// sha1 of a file as lowercase hex, or None if unreadable.
+fn sha1_hex(path: &Path) -> Option<String> {
+    use sha1::Digest;
+    use std::io::Read;
+    let mut file = std::fs::File::open(path).ok()?;
+    let mut hasher = sha1::Sha1::new();
+    let mut buffer = [0u8; 64 * 1024];
+    loop {
+        match file.read(&mut buffer) {
+            Ok(0) => break,
+            Ok(read) => hasher.update(&buffer[..read]),
+            Err(_) => return None,
+        }
+    }
+    Some(format!("{:x}", hasher.finalize()))
+}
+
+// true when the cached file matches mojang's recorded size + sha1.
+// guards against partial files left by killed downloads: those used to be
+// trusted forever on the strength of an exists() check alone. size is
+// checked first so truncated files skip the hashing cost.
+fn verify_cached(path: &Path, expected_sha1: &str, expected_size: u64) -> bool {
+    if !path.exists() {
+        return false;
+    }
+    if expected_size > 0 {
+        let actual = std::fs::metadata(path).map(|meta| meta.len()).unwrap_or(0);
+        if actual != expected_size {
+            return false;
+        }
+    }
+    sha1_hex(path).is_some_and(|hash| hash == expected_sha1)
+}
+
 pub async fn download_client_jar(
     client: &HttpClient,
     meta: &VersionMeta,
@@ -157,7 +214,11 @@ pub async fn download_client_jar(
         .join(&meta.id)
         .join(format!("{}.jar", meta.id));
 
-    if jar_path.exists() {
+    if verify_cached(
+        &jar_path,
+        &meta.downloads.client.sha1,
+        meta.downloads.client.size,
+    ) {
         tracing::info!("Client JAR already cached: {}", meta.id);
         tracing::trace!("Cached client JAR path: {}", jar_path.display());
         return Ok(());
@@ -181,6 +242,22 @@ pub async fn download_client_jar(
     .await;
 
     clear();
+
+    // a fresh download that doesn't match the manifest is worse than no
+    // download: delete it so the next attempt doesn't trust it.
+    if result.is_ok()
+        && !verify_cached(
+            &jar_path,
+            &meta.downloads.client.sha1,
+            meta.downloads.client.size,
+        )
+    {
+        let _ = tokio::fs::remove_file(&jar_path).await;
+        return Err(NetError::Parse(format!(
+            "Downloaded client JAR {} failed its sha1 verification",
+            meta.id
+        )));
+    }
     result
 }
 
@@ -205,7 +282,17 @@ pub async fn download_libraries(
         features: &features,
     };
 
-    let mut downloads = Vec::new();
+    // matches the directory launch passes as java.library.path
+    // (instance/launch/mod.rs).
+    let natives_dir = crate::storage::MetadataPaths::new(meta_dir)
+        .versions()
+        .join(&meta.id)
+        .join("natives");
+
+    let mut downloads: Vec<(String, PathBuf, String)> = Vec::new();
+    // natives jars to unpack once every download has landed:
+    // (jar path inside the library cache, extract.exclude prefixes)
+    let mut natives_jars: Vec<(PathBuf, Vec<String>)> = Vec::new();
     for library in &meta.libraries {
         if let Some(rules) = &library.rules
             && !crate::launch_profile::rules::evaluate(rules, &rule_ctx)
@@ -214,39 +301,136 @@ pub async fn download_libraries(
             continue;
         }
 
-        let artifact = match &library.downloads.artifact {
-            Some(artifact) => artifact,
-            None => {
-                tracing::trace!(
-                    "Skipping library {} without artifact download",
-                    library.name
-                );
-                continue;
+        if let Some(artifact) = &library.downloads.artifact {
+            let rel = match library_relative_path(library, artifact.path.as_str()) {
+                Some(rel) => rel,
+                None => {
+                    tracing::warn!("Skipping unresolvable library {}", library.name);
+                    continue;
+                }
+            };
+            let destination = crate::storage::MetadataPaths::new(meta_dir)
+                .libraries()
+                .join(&rel);
+            if verify_cached(&destination, &artifact.sha1, artifact.size) {
+                tracing::trace!("Library already cached: {}", rel);
+            } else {
+                downloads.push((artifact.url.clone(), destination, rel));
             }
-        };
-
-        let destination = crate::storage::MetadataPaths::new(meta_dir)
-            .libraries()
-            .join(&artifact.path);
-
-        if destination.exists() {
-            tracing::trace!("Library already cached: {}", artifact.path);
-            continue;
         }
 
-        downloads.push((artifact.url.clone(), destination, artifact.path.clone()));
+        // native classifier jar (pre-1.13 era libraries). the jar itself is
+        // cached alongside the other libraries; its contents get unpacked
+        // into versions/<id>/natives where java.library.path points.
+        if let Some(classifier) = library
+            .natives
+            .as_ref()
+            .and_then(|n| n.get(crate::launch_profile::system::mojang_os_name()))
+            && let Some(info) = library
+                .downloads
+                .classifiers
+                .as_ref()
+                .and_then(|classifiers| classifiers.get(classifier))
+        {
+            // the maven fallback must carry the classifier: it selects
+            // <artifact>-<version>-<classifier>.jar, not the base jar.
+            let rel = if !info.path.is_empty() {
+                info.path.clone()
+            } else {
+                match crate::instance::loader::maven::maven_coord_to_path(&format!(
+                    "{}:{}",
+                    library.name, classifier
+                )) {
+                    Some(rel) => rel,
+                    None => {
+                        tracing::warn!(
+                            "Skipping natives of library {}: no usable path",
+                            library.name
+                        );
+                        continue;
+                    }
+                }
+            };
+            let destination = crate::storage::MetadataPaths::new(meta_dir)
+                .libraries()
+                .join(&rel);
+            if !verify_cached(&destination, &info.sha1, info.size) {
+                downloads.push((info.url.clone(), destination.clone(), rel));
+            }
+            let exclude = library
+                .extract
+                .as_ref()
+                .and_then(|extract| extract.exclude.clone())
+                .unwrap_or_default();
+            natives_jars.push((destination, exclude));
+        }
     }
 
-    if downloads.is_empty() {
+    let result = if downloads.is_empty() {
         tracing::info!("All libraries already cached");
-        clear();
-        return Ok(());
+        Ok(())
+    } else {
+        tracing::debug!("Downloading {} missing libraries", downloads.len());
+        run_parallel_downloads(client, downloads, false).await
+    };
+    clear();
+    result?;
+
+    for (jar, exclude) in &natives_jars {
+        extract_natives(jar, &natives_dir, exclude)?;
     }
 
-    tracing::debug!("Downloading {} missing libraries", downloads.len());
-    let result = run_parallel_downloads(client, downloads, false).await;
-    clear();
-    result
+    Ok(())
+}
+
+// relative path of a library artifact inside the shared library cache.
+// upstream usually records it; fall back to deriving it from the maven
+// coordinate when the field is missing/empty.
+fn library_relative_path(library: &Library, recorded_path: &str) -> Option<String> {
+    if !recorded_path.is_empty() {
+        return Some(recorded_path.to_owned());
+    }
+    crate::instance::loader::maven::maven_coord_to_path(&library.name)
+}
+
+// unpacks a natives jar into dest. skips directories, archive entries with
+// traversal paths, and anything matching an `extract.exclude` prefix.
+fn extract_natives(jar: &Path, dest: &Path, exclude: &[String]) -> Result<(), NetError> {
+    let file = std::fs::File::open(jar)?;
+    let mut archive = zip::ZipArchive::new(file)
+        .map_err(|e| NetError::Parse(format!("Invalid natives jar {}: {e}", jar.display())))?;
+    std::fs::create_dir_all(dest)?;
+    for index in 0..archive.len() {
+        let mut entry = archive.by_index(index).map_err(|e| {
+            NetError::Parse(format!(
+                "Corrupt entry in natives jar {}: {e}",
+                jar.display()
+            ))
+        })?;
+        if entry.is_dir() {
+            continue;
+        }
+        // enclosed_name is None for absolute paths / .. traversal
+        let Some(rel) = entry.enclosed_name() else {
+            tracing::warn!(
+                "Skipping unsafe path in natives jar {}: {}",
+                jar.display(),
+                entry.name()
+            );
+            continue;
+        };
+        let name = rel.to_string_lossy();
+        if exclude.iter().any(|prefix| name.starts_with(prefix)) {
+            continue;
+        }
+        let out_path = dest.join(&rel);
+        if let Some(parent) = out_path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let mut out = std::fs::File::create(&out_path)?;
+        std::io::copy(&mut entry, &mut out)?;
+    }
+    Ok(())
 }
 
 pub async fn download_assets(
@@ -337,7 +521,7 @@ pub async fn download_assets_from(
             .join(prefix)
             .join(&object.hash);
 
-        if destination.exists() {
+        if verify_cached(&destination, &object.hash, object.size) {
             continue;
         }
 
