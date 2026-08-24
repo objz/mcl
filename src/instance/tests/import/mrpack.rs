@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Constantin Bauer
+// SPDX-License-Identifier: GPL-3.0-only
+
 use std::collections::HashMap;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -219,6 +222,11 @@ fn mod_file_without_a_download_url_fails_without_creating_a_file() {
 
 #[test]
 fn mod_file_rejects_paths_outside_the_instance() {
+    // download_mod_files writes global progress state before validating
+    // paths, so isolate like the sibling tests do.
+    let _guard = crate::tests::TEST_LOCK
+        .lock()
+        .unwrap_or_else(|error| error.into_inner());
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -243,6 +251,7 @@ fn mod_file_rejects_paths_outside_the_instance() {
 
         assert!(error.to_string().contains("Unsafe .mrpack file path"));
         assert!(!tmp.path().parent().unwrap().join("escape.jar").exists());
+        crate::feedback::progress::clear();
     });
 }
 

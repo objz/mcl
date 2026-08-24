@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Constantin Bauer
+// SPDX-License-Identifier: GPL-3.0-only
+
 use super::*;
 
 #[test]
@@ -63,7 +66,8 @@ fn register_and_send_kill() {
     let (tx, mut rx) = tokio::sync::oneshot::channel::<()>();
     register_kill("run_test_kill", tx);
     assert!(send_kill("run_test_kill"));
-    let _ = rx.try_recv();
+    // the kill signal itself must arrive, not just report success
+    assert!(rx.try_recv().is_ok());
 }
 
 #[test]

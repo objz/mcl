@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Constantin Bauer
+// SPDX-License-Identifier: GPL-3.0-only
+
 use super::*;
 
 #[test]
@@ -30,7 +33,9 @@ fn load_config_from_empty_file() {
 fn load_config_missing_file_uses_defaults() {
     let tmp = tempfile::tempdir().unwrap();
     let path = tmp.path().join("nonexistent.toml");
-    load_config(&path).unwrap();
+    let config = load_config(&path).unwrap();
+    assert_eq!(config.defaults.memory_max, "2G");
+    assert_eq!(config.defaults.memory_min, "512M");
 }
 
 #[test]

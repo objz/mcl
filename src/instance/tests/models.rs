@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Constantin Bauer
+// SPDX-License-Identifier: GPL-3.0-only
+
 use super::*;
 
 #[test]
@@ -23,11 +26,9 @@ fn instance_config_roundtrips_through_json() {
     };
     let json = serde_json::to_string_pretty(&config).expect("serialize");
     let parsed: InstanceConfig = serde_json::from_str(&json).expect("deserialize");
-    assert_eq!(parsed.name, config.name);
-    assert_eq!(parsed.game_version, config.game_version);
-    assert_eq!(parsed.loader, config.loader);
-    assert_eq!(parsed.resolution, config.resolution);
-    assert_eq!(parsed.modpack_source, config.modpack_source);
+    // full-struct comparison: a serde skip/rename regression on any field
+    // (loader_version, created, memory, jvm_args, ...) must fail this test.
+    assert_eq!(parsed, config);
 }
 
 #[test]

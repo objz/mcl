@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Constantin Bauer
+// SPDX-License-Identifier: GPL-3.0-only
+
 // core data types for an instance: what loader it uses, what version, memory
 // settings, etc. this is what gets persisted to instance.json
 
@@ -28,7 +31,7 @@ impl fmt::Display for ModLoader {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct InstanceConfig {
     pub name: String,
     pub game_version: String,
