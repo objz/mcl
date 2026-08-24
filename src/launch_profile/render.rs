@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Constantin Bauer
+// SPDX-License-Identifier: GPL-3.0-only
+
 // renders a parsed launch profile into final argv-style lists for the JVM
 // and the game. resolves conditional argument shapes (`{rules, value}`),
 // filters them through the rule evaluator, and substitutes mojang template

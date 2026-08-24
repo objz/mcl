@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Constantin Bauer
+// SPDX-License-Identifier: GPL-3.0-only
+
 // cli entry point and clap command definitions.
 // no subcommand = launch TUI, otherwise dispatch to the appropriate handler.
 mod account;

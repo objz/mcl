@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Constantin Bauer
+// SPDX-License-Identifier: GPL-3.0-only
+
 use super::*;
 use crate::launch_profile::model::{Argument, ArgumentValue, AssetIndex, JavaVersion, Library};
 use crate::launch_profile::rules::{Rule, RuleAction};

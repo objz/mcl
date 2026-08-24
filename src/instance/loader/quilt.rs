@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Constantin Bauer
+// SPDX-License-Identifier: GPL-3.0-only
+
 // quilt installation. same clean approach as fabric (profile json + library
 // downloads). they're basically fabric's cooler sibling.
 

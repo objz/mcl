@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Constantin Bauer
+// SPDX-License-Identifier: GPL-3.0-only
+
 // fabric installation. the nice one: just fetch a profile json and download
 // the libraries. no java installer nonsense required.
 

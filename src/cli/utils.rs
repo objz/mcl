@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Constantin Bauer
+// SPDX-License-Identifier: GPL-3.0-only
+
 // shared CLI helpers: confirmation prompts, arg extraction, instance validation
 use std::io::{self, Write};
 

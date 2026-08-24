@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Constantin Bauer
+// SPDX-License-Identifier: GPL-3.0-only
+
 use ratatui::{Terminal, backend::TestBackend};
 
 fn formatted_text(source: &str, width: u16) -> ratatui::text::Text<'static> {

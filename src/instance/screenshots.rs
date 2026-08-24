@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Constantin Bauer
+// SPDX-License-Identifier: GPL-3.0-only
+
 use std::path::{Path, PathBuf};
 
 // width/height are read from the actual image file so the TUI can show

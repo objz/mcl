@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Constantin Bauer
+// SPDX-License-Identifier: GPL-3.0-only
+
 // integration tests for build_launch_invocation - the seam that takes an
 // instance config plus resolved auth credentials and returns the full java
 // invocation that would be spawned. these tests build the expected on-disk

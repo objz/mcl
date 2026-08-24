@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Constantin Bauer
+// SPDX-License-Identifier: GPL-3.0-only
+
 // theme resolution: loads theme.toml, picks a base theme (builtin or custom file),
 // then layers user color overrides on top. supports loading .toml themes from the
 // config/theme/ directory or by absolute path.

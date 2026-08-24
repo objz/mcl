@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Constantin Bauer
+// SPDX-License-Identifier: GPL-3.0-only
+
 // world save scanning. worlds are always directories (never zips) and store
 // their icon as icon.png. also computes an approximate size from top-level
 // files + region data so the user gets some sense of how chonky their world is.

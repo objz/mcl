@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Constantin Bauer
+// SPDX-License-Identifier: GPL-3.0-only
+
 // creates OS-native shortcuts for launching instances directly:
 // .desktop files on linux, .bat on windows, .command on macos
 

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Constantin Bauer
+// SPDX-License-Identifier: GPL-3.0-only
+
 // settings panel: manages config profiles and shows compact instance info.
 // also provides keybinds to open config files in $EDITOR.
 

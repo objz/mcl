@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Constantin Bauer
+// SPDX-License-Identifier: GPL-3.0-only
+
 // mod scanning and loader-specific metadata extraction.
 // jar files are just zips, so it cracks them open looking for loader-specific
 // metadata (fabric.mod.json, quilt.mod.json, mods.toml, mcmod.info) to get

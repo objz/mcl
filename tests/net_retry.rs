@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Constantin Bauer
+// SPDX-License-Identifier: GPL-3.0-only
+
 // integration tests for the retry envelope in src/net/mod.rs. wiremock
 // stands in for live upstream APIs so we can assert that 5xx responses
 // retry, 4xx responses fail fast, and the cap (MAX_RETRIES = 3, total

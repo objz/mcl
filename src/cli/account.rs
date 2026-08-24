@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Constantin Bauer
+// SPDX-License-Identifier: GPL-3.0-only
+
 // cli handlers for account management (microsoft oauth + offline accounts)
 use std::io;
 use std::time::Duration;

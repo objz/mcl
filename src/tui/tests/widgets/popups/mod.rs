@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Constantin Bauer
+// SPDX-License-Identifier: GPL-3.0-only
+
 use super::{
     confirm::{ConfirmTarget, confirm_popup_area},
     keybind_line_fitted, word_wrap_size,

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Constantin Bauer
+// SPDX-License-Identifier: GPL-3.0-only
+
 // rendering for the modpack import wizard. same pattern as new_instance:
 // snapshot the state, pick the right step renderer, done.
 

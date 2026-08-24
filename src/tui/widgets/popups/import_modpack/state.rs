@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Constantin Bauer
+// SPDX-License-Identifier: GPL-3.0-only
+
 // state machine for the modpack import wizard.
 // browses modpacks from configured providers and keeps the archive import flow
 // for modrinth URLs, project slugs, version IDs, and local pack archives.

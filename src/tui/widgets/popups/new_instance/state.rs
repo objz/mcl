@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Constantin Bauer
+// SPDX-License-Identifier: GPL-3.0-only
+
 // state machine and input handling for the new instance wizard.
 // flow: Name -> Loader -> Version -> LoaderVersion -> Confirm
 // version lists are fetched lazily from the network when you reach that step.

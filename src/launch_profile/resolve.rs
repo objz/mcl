@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Constantin Bauer
+// SPDX-License-Identifier: GPL-3.0-only
+
 // resolves the `inheritsFrom` chain of a parsed `LaunchProfile`. mojang's
 // version JSON allows a profile to inherit from another profile by id; the
 // loaders (forge / neoforge / fabric / quilt) use this to layer their

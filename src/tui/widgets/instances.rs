@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Constantin Bauer
+// SPDX-License-Identifier: GPL-3.0-only
+
 // the instance list on the left side of the UI.
 // handles search/filter, scrollbar sync, and inline renaming.
 // each row shows instance name + "last played" or current run state.

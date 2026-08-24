@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Constantin Bauer
+// SPDX-License-Identifier: GPL-3.0-only
+
 // generic scrollable list for content items (mods, resource packs, shaders, worlds).
 // supports toggling items on/off by renaming files with .disabled suffix,
 // search filtering, per-instance caching, and directory change detection.

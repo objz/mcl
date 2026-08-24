@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Constantin Bauer
+// SPDX-License-Identifier: GPL-3.0-only
+
 // integration tests for the loader-specific net::* fetchers (forge,
 // fabric, quilt, neoforge). each module's fetch_* function now has a
 // _from variant that lets the test point the HTTP call at a wiremock

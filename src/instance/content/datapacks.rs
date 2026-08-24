@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Constantin Bauer
+// SPDX-License-Identifier: GPL-3.0-only
+
 // data pack scanning backed by the same pack.mcmeta reader as resource packs.
 
 use std::path::Path;

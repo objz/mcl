@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Constantin Bauer
+// SPDX-License-Identifier: GPL-3.0-only
+
 // forge installation. modern forge runs a java installer, old forge (pre-1.13)
 // can't run headless so we extract the profile and libraries from the jar
 // directly. the installer jar gets cleaned up either way.

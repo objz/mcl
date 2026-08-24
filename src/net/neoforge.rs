@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Constantin Bauer
+// SPDX-License-Identifier: GPL-3.0-only
+
 // neoforge: the forge fork that broke away after 1.20.1.
 // uses a different versioning scheme where neoforge versions map to
 // minecraft versions by dropping the "1." prefix (e.g. MC 1.21 = NF 21.x).

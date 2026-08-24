@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Constantin Bauer
+// SPDX-License-Identifier: GPL-3.0-only
+
 // vanilla "installer". doesn't actually install anything since the launch
 // process already handles downloading vanilla assets/libraries. this just
 // exists so vanilla fits the same ModLoaderInstaller trait as everyone else.

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Constantin Bauer
+// SPDX-License-Identifier: GPL-3.0-only
+
 use chrono::{DateTime, Utc};
 
 // Rough human-friendly time delta. "2 months ago" is close enough when months

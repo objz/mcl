@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Constantin Bauer
+// SPDX-License-Identifier: GPL-3.0-only
+
 // integration tests for the public log files API.
 // these tests touch the filesystem and exercise the module as an external
 // consumer would.

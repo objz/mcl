@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Constantin Bauer
+// SPDX-License-Identifier: GPL-3.0-only
+
 // modpack importing from modrinth (remote slug/url) or local files (.mrpack, mmc zips).
 // resolves the input, downloads if needed, then hands off to the import engine.
 use clap::ArgMatches;

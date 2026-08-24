@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Constantin Bauer
+// SPDX-License-Identifier: GPL-3.0-only
+
 // responsive grid of screenshot thumbnails rendered directly in the terminal.
 // images load lazily on background threads as they scroll into view,
 // and get converted to terminal graphics via ratatui-image protocols.

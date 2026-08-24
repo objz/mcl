@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Constantin Bauer
+// SPDX-License-Identifier: GPL-3.0-only
+
 // shared widget utilities and the trait all key-handling widgets implement
 
 use crate::config::theme::THEME;

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Constantin Bauer
+// SPDX-License-Identifier: GPL-3.0-only
+
 // shader pack scanner backed by the shared pack.mcmeta reader.
 
 use std::path::Path;

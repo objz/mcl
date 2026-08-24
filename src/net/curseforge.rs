@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Constantin Bauer
+// SPDX-License-Identifier: GPL-3.0-only
+
 // curseforge api client. responses are mapped into the same app-facing
 // project/version types used by discovery, so the tui stays provider-neutral.
 

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Constantin Bauer
+// SPDX-License-Identifier: GPL-3.0-only
+
 // mojang-format launch profile types. mirrors the on-disk JSON schema
 // used by vanilla versions, forge installer output, neoforge installer
 // output, fabric profiles, and quilt profiles. parsing is lossless for

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Constantin Bauer
+// SPDX-License-Identifier: GPL-3.0-only
+
 use super::filter_manifest_versions;
 use crate::net::mojang::{LatestVersions, VersionEntry, VersionManifest};
 use std::collections::HashSet;

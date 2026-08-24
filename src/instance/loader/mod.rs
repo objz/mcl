@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Constantin Bauer
+// SPDX-License-Identifier: GPL-3.0-only
+
 // mod loader installation. each loader (fabric, forge, neoforge, quilt, vanilla)
 // implements the same trait so the UI can treat them uniformly: pick game version,
 // pick loader version, install. the actual installation strategies differ wildly

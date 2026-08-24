@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Constantin Bauer
+// SPDX-License-Identifier: GPL-3.0-only
+
 // shared utilities for popup widgets: layout helpers, word wrapping, keybind rendering.
 // individual popup types live in their own submodules.
 

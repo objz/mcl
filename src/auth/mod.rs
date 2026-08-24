@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Constantin Bauer
+// SPDX-License-Identifier: GPL-3.0-only
+
 // auth module: account storage (offline + microsoft) and the oauth device code flow
 mod accounts;
 mod oauth;

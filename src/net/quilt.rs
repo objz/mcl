@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Constantin Bauer
+// SPDX-License-Identifier: GPL-3.0-only
+
 // quilt mod loader: fabric fork with a nearly identical metadata API.
 // if you're getting deja vu reading this after fabric.rs, that's why.
 

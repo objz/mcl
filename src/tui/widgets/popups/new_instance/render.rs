@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Constantin Bauer
+// SPDX-License-Identifier: GPL-3.0-only
+
 // rendering for the new instance wizard. each step gets its own render fn
 // and the popup resizes itself based on which step is active.
 

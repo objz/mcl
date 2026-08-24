@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Constantin Bauer
+// SPDX-License-Identifier: GPL-3.0-only
+
 // modrinth .mrpack import: parse the manifest, download all the mods,
 // and extract config/resource overrides from the zip
 

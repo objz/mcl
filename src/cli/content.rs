@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Constantin Bauer
+// SPDX-License-Identifier: GPL-3.0-only
+
 // unified content management for mods, resource packs, and shaders.
 // all three content types share the same list/enable/disable workflow,
 // just with different scanner functions plugged in.

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Constantin Bauer
+// SPDX-License-Identifier: GPL-3.0-only
+
 // instance lifecycle: create, delete, rename, launch, config, desktop shortcuts.
 // the heaviest handler in the CLI since instances are the core concept.
 use std::io;

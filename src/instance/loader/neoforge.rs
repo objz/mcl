@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Constantin Bauer
+// SPDX-License-Identifier: GPL-3.0-only
+
 // neoforge installation. same java installer dance as forge (they forked from it,
 // after all), just with different URLs and version naming.
 

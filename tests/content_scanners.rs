@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Constantin Bauer
+// SPDX-License-Identifier: GPL-3.0-only
+
 // integration tests for the public content-scanner APIs: shaders, worlds,
 // and resource packs. each scanner walks an instance's minecraft subdir
 // and returns ContentEntry rows; shape varies slightly per content type

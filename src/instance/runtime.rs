@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Constantin Bauer
+// SPDX-License-Identifier: GPL-3.0-only
+
 // global tracking for running minecraft instances. everything is behind
 // Arc<Mutex<>> because the launch/monitor tasks live on separate tokio threads
 // and the TUI render loop needs to read state every frame.

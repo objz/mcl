@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Constantin Bauer
+// SPDX-License-Identifier: GPL-3.0-only
+
 // thread-safe FIFO queue for error/warning toasts displayed in the UI.
 // also (ab)used for INFO toasts like "desktop shortcut created" because
 // why build a separate notification system when this one works fine.

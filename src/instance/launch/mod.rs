@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Constantin Bauer
+// SPDX-License-Identifier: GPL-3.0-only
+
 // builds the full java command line and spawns minecraft as a child process.
 // handles classpath assembly, auth token injection, and log capture.
 // loader-specific patches live in submodules (e.g. patches.rs for lwjgl3ify).

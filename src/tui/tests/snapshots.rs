@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Constantin Bauer
+// SPDX-License-Identifier: GPL-3.0-only
+
 use super::harness::UiHarness;
 use crate::instance::ProviderProject;
 use crate::tui::app::ProviderConflictState;

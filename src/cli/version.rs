@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Constantin Bauer
+// SPDX-License-Identifier: GPL-3.0-only
+
 // lists available game versions, optionally filtered by mod loader support.
 // fetches the mojang manifest and cross-references with loader APIs
 // to show only versions that actually work with a given loader.

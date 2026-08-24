@@ -214,8 +214,9 @@ contributions are welcome. fork it, branch it, PR it. see [CONTRIBUTING.md](CONT
 ---
 
 ## license
+Copyright (C) 2026 Constantin Bauer
 
-GPL-3.0. see [LICENSE](LICENSE).
+This project is licensed under the GNU General Public License v3.0. see [LICENSE](LICENSE).
 
 ---
 

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Constantin Bauer
+// SPDX-License-Identifier: GPL-3.0-only
+
 // account management panel: list, add (microsoft/offline), delete
 // microsoft auth uses the device code flow, so it polls a shared mutex
 // for the result while showing the user a code to enter in their browser

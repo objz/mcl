@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Constantin Bauer
+// SPDX-License-Identifier: GPL-3.0-only
+
 // app state: holds everything the TUI needs between frames.
 // this is basically the "god struct" of the UI. not ideal, but ratatui
 // kinda pushes you into this pattern since you need mutable access

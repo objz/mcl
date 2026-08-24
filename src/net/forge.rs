@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Constantin Bauer
+// SPDX-License-Identifier: GPL-3.0-only
+
 // forge mod loader: version discovery via promotions API, download and
 // installation. modern forge runs a java installer, old forge (pre-1.13ish)
 // doesn't support headless install so we extract directly from the jar.

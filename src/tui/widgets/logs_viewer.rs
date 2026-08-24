@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Constantin Bauer
+// SPDX-License-Identifier: GPL-3.0-only
+
 // split-pane log viewer: file list on the left, log content on the right.
 // supports live log tailing when the instance is running, plus search
 // filtering in both the file list and the viewer pane.

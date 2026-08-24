@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Constantin Bauer
+// SPDX-License-Identifier: GPL-3.0-only
+
 // the outer frame for the content area: tab bar, keybind footer,
 // and dispatching render calls to the active tab's widget.
 // also renders the instance name/version header with run state indicators.
