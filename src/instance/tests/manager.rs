@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Constantin Bauer
+// SPDX-License-Identifier: GPL-3.0-only
+
 use super::*;
 use crate::instance::models::ModLoader;
 use tempfile::TempDir;
@@ -127,6 +130,17 @@ fn rename_empty_target_rejects() {
     manager.save(&dummy_config("orig")).expect("save");
     let err = manager.rename("orig", "   ").unwrap_err();
     assert!(matches!(err, InstanceError::InvalidName(_)));
+}
+
+#[test]
+fn rename_traversal_target_rejects() {
+    let (manager, tmp) = test_manager();
+    std::fs::create_dir_all(tmp.path().join("orig")).unwrap();
+    manager.save(&dummy_config("orig")).expect("save");
+    let err = manager.rename("orig", "../escape").unwrap_err();
+    assert!(matches!(err, InstanceError::InvalidName(_)));
+    assert!(!tmp.path().parent().unwrap().join("escape").exists());
+    assert!(tmp.path().join("orig").exists(), "source must be untouched");
 }
 
 #[test]

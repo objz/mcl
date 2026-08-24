@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Constantin Bauer
+// SPDX-License-Identifier: GPL-3.0-only
+
 // CRUD for instances: create, delete, rename, load, save.
 // creation is the heavy one since it downloads the game, assets, and libraries.
 
@@ -415,6 +418,10 @@ impl InstanceManager {
             tracing::debug!("Ignoring no-op instance rename '{}'", old_name);
             return Ok(());
         }
+        // same path-traversal guards as create: without this, "../x" or ".x"
+        // would move the instance directory out of (or hide it inside) the
+        // instances root.
+        validate_name(new_name)?;
         let old_dir = self.instances_dir.join(old_name);
         let new_dir = self.instances_dir.join(new_name);
         if !old_dir.exists() {
