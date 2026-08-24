@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Constantin Bauer
+// SPDX-License-Identifier: GPL-3.0-only
+
 // modrinth api client and provider file downloads.
 
 use serde::Deserialize;
@@ -555,23 +558,17 @@ pub async fn resolve_version_files(
 }
 
 // grabs the primary file from a version, falling back to the first file
-// if none is marked primary (some projects are sloppy about that)
+// if none is marked primary (some projects are sloppy about that).
+// routes through the shared verified download (temp file + size/hash check
+// + rename) so a truncated or corrupted .mrpack is never left in place.
 pub async fn download_mrpack(
     client: &crate::net::HttpClient,
     version: &VersionInfo,
     dest: &std::path::Path,
 ) -> Result<std::path::PathBuf, crate::net::NetError> {
-    let file = select_primary_file(version)?;
-
-    let mrpack_path = dest.join(&file.filename);
-    tracing::info!(
-        "Downloading Modrinth pack file '{}' for version '{}' to {}",
-        file.filename,
-        version.id,
-        mrpack_path.display()
-    );
-    crate::net::download_file(client, &file.url, &mrpack_path, |_, _| {}).await?;
-    Ok(mrpack_path)
+    match download_version_file(client, version, dest).await? {
+        DownloadOutcome::Downloaded(path) | DownloadOutcome::SkippedExisting(path) => Ok(path),
+    }
 }
 
 #[cfg(test)]
