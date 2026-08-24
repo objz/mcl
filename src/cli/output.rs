@@ -1,6 +1,10 @@
+// SPDX-FileCopyrightText: 2026 Constantin Bauer
+// SPDX-License-Identifier: GPL-3.0-only
+
 // plain-text table rendering for CLI output. no fancy box-drawing,
 // just left-aligned columns with two-space gaps. keeps it pipeable.
 use chrono::{DateTime, Utc};
+use ratatui::text::Span;
 
 pub fn print_table(headers: &[&str], rows: &[Vec<String>]) {
     print!("{}", render_table(headers, rows));
@@ -37,9 +41,15 @@ pub fn active_marker(active: bool) -> &'static str {
     if active { ">" } else { " " }
 }
 
+// display width (not byte length): instance and pack names are often
+// non-ASCII, and padding by bytes misaligns every row below them.
+fn display_width(value: &str) -> usize {
+    Span::raw(value).width()
+}
+
 // find the widest value in each column to pad everything evenly
 fn column_widths(headers: &[&str], rows: &[Vec<String>]) -> Vec<usize> {
-    let mut widths: Vec<usize> = headers.iter().map(|header| header.len()).collect();
+    let mut widths: Vec<usize> = headers.iter().map(|header| display_width(header)).collect();
 
     for row in rows {
         if row.len() > widths.len() {
@@ -47,7 +57,7 @@ fn column_widths(headers: &[&str], rows: &[Vec<String>]) -> Vec<usize> {
         }
 
         for (index, value) in row.iter().enumerate() {
-            widths[index] = widths[index].max(value.len());
+            widths[index] = widths[index].max(display_width(value));
         }
     }
 
@@ -59,11 +69,12 @@ fn render_row(row: &[String], widths: &[usize]) -> String {
         .iter()
         .enumerate()
         .map(|(index, width)| {
-            format!(
-                "{:<width$}",
-                row.get(index).map(String::as_str).unwrap_or(""),
-                width = width
-            )
+            // manual space padding: {:<width$} counts chars, not columns,
+            // so it would under-pad multi-byte names.
+            let value = row.get(index).map(String::as_str).unwrap_or("");
+            let mut cell = String::from(value);
+            cell.push_str(&" ".repeat(width.saturating_sub(display_width(value))));
+            cell
         })
         .collect::<Vec<_>>()
         .join("  ")
