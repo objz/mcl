@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Constantin Bauer
+// SPDX-License-Identifier: GPL-3.0-only
+
 use std::path::{Path, PathBuf};
 
 use thiserror::Error;
@@ -228,16 +231,43 @@ fn acquire_lock(profile_dir: &Path) -> Result<ConfigSyncLock, ConfigSyncError> {
 }
 
 fn mirror_dir(src: &Path, dst: &Path) -> Result<(), ConfigSyncError> {
-    if dst.exists() {
-        remove_path(dst)?;
+    // stage the copy in a sibling temp dir and swap it in only when complete.
+    // deleting dst up-front (the old behaviour) meant a failure mid-copy
+    // destroyed the current config tree with nothing to fall back to.
+    let parent = dst.parent().filter(|p| !p.as_os_str().is_empty());
+    let Some(parent) = parent else {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!("no parent directory for {}", dst.display()),
+        )
+        .into());
+    };
+    std::fs::create_dir_all(parent)?;
+    let name = dst
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("mirror");
+    let staging = parent.join(format!(".{name}.mirror-tmp"));
+    if staging.exists() {
+        remove_path(&staging)?;
     }
-    std::fs::create_dir_all(dst)?;
+    std::fs::create_dir_all(&staging)?;
 
-    if !src.exists() {
-        return Ok(());
+    let result = (|| {
+        if src.exists() {
+            copy_dir_contents(src, &staging)?;
+        }
+        if dst.exists() {
+            remove_path(dst)?;
+        }
+        std::fs::rename(&staging, dst)?;
+        Ok(())
+    })();
+
+    if result.is_err() {
+        let _ = std::fs::remove_dir_all(&staging);
     }
-
-    copy_dir_contents(src, dst)
+    result
 }
 
 fn sync_to_profile(minecraft_dir: &Path, profile_dir: &Path) -> Result<(), ConfigSyncError> {
