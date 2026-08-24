@@ -243,10 +243,7 @@ fn mirror_dir(src: &Path, dst: &Path) -> Result<(), ConfigSyncError> {
         .into());
     };
     std::fs::create_dir_all(parent)?;
-    let name = dst
-        .file_name()
-        .and_then(|s| s.to_str())
-        .unwrap_or("mirror");
+    let name = dst.file_name().and_then(|s| s.to_str()).unwrap_or("mirror");
     let staging = parent.join(format!(".{name}.mirror-tmp"));
     if staging.exists() {
         remove_path(&staging)?;

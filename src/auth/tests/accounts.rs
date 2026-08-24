@@ -152,7 +152,10 @@ fn store_set_active_out_of_bounds_keeps_selection() {
     store.add(create_offline_account("Alice"));
     store.add(create_offline_account("Bob"));
     store.set_active(99);
-    assert!(store.accounts[0].active, "existing selection must survive a bad index");
+    assert!(
+        store.accounts[0].active,
+        "existing selection must survive a bad index"
+    );
     assert!(!store.accounts[1].active);
 }
 

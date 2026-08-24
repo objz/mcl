@@ -328,8 +328,11 @@ async fn download_libraries_downloads_and_extracts_natives() {
 
     use std::io::Write as _;
     let mut jar = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
-    jar.start_file("META-INF/MANIFEST.MF", zip::write::SimpleFileOptions::default())
-        .unwrap();
+    jar.start_file(
+        "META-INF/MANIFEST.MF",
+        zip::write::SimpleFileOptions::default(),
+    )
+    .unwrap();
     jar.write_all(b"manifest").unwrap();
     jar.start_file("lib/native.so", zip::write::SimpleFileOptions::default())
         .unwrap();

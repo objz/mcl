@@ -128,10 +128,7 @@ impl AccountStore {
         let replaced = self.accounts.iter().any(|a| a.uuid == *uuid);
         // re-adding the currently active account must not drop the selection:
         // the replacement takes over the old account's active flag.
-        let replaced_active = self
-            .accounts
-            .iter()
-            .any(|a| a.uuid == *uuid && a.active);
+        let replaced_active = self.accounts.iter().any(|a| a.uuid == *uuid && a.active);
         let account_type = account.account_type.clone();
         let username = account.username.clone();
         self.accounts.retain(|a| a.uuid != *uuid);
