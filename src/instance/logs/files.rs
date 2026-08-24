@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Constantin Bauer
+// SPDX-License-Identifier: GPL-3.0-only
+
 // per-launch log files stored under minecraft/logs/launches/
 // each launch gets its own timestamped file so you can go back and see what
 // crashed last tuesday at 3am
@@ -21,7 +24,9 @@ pub fn log_dir(instances_dir: &Path, instance_name: &str) -> PathBuf {
 pub fn create_log_file(instances_dir: &Path, instance_name: &str) -> Option<PathBuf> {
     let dir = log_dir(instances_dir, instance_name);
     std::fs::create_dir_all(&dir).ok()?;
-    let now = chrono::Local::now().format("%Y-%m-%d_%H-%M-%S");
+    // millisecond precision: a same-second relaunch (crash loop, quit+relaunch)
+    // would otherwise collide on one file and File::create truncates the old log.
+    let now = chrono::Local::now().format("%Y-%m-%d_%H-%M-%S%3f");
     Some(dir.join(format!("{now}.log")))
 }
 
