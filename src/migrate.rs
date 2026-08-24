@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Constantin Bauer
+// SPDX-License-Identifier: GPL-3.0-only
+
 //! Legacy mcl→rmcl path migration. Runs once before any other init in main().
 //! Idempotent: absence of the old dir is the sentinel.
 
@@ -135,6 +138,8 @@ fn rewrite_linux_desktop_entries(_data_dir: &Path, _instances_dir: &Path) {
 fn rewrite_native_desktop_shortcuts(_desktop_dir: &Path, _instances_dir: &Path) {
     #[cfg(any(target_os = "windows", target_os = "macos"))]
     {
+        // mcl-era windows shortcuts were .bat files; current rmcl writes
+        // .vbs, so only the legacy extension is rewritten here.
         let ext = if cfg!(target_os = "windows") {
             "bat"
         } else {
@@ -145,7 +150,10 @@ fn rewrite_native_desktop_shortcuts(_desktop_dir: &Path, _instances_dir: &Path) 
         };
         for entry in entries.flatten() {
             let display = entry.file_name().to_string_lossy().into_owned();
-            let path = _desktop_dir.join(format!("Minecraft - {display}.{ext}"));
+            // mcl named shortcut files with the sanitized form of the
+            // instance name ("My Pack" -> "My_Pack"), so look those up.
+            let sanitized = sanitize(&display);
+            let path = _desktop_dir.join(format!("Minecraft - {sanitized}.{ext}"));
             if !path.exists() {
                 continue;
             }
