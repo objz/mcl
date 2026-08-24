@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Constantin Bauer
+// SPDX-License-Identifier: GPL-3.0-only
+
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock, Mutex};
@@ -428,7 +431,10 @@ fn reconcile_inventory(
                 fingerprint: record.fingerprint.clone(),
             });
         }
-        manifest.upsert(record);
+        // content_files() yields paths in sorted order and stripping the
+        // common prefix preserves that order, so appending keeps manifest
+        // files sorted without an O(log n) lookup per record.
+        manifest.files.push(record);
         task.set_progress(index as u64 + 1, file_count);
     }
     Ok(Inventory { manifest, queries })

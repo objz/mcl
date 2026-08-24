@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Constantin Bauer
+// SPDX-License-Identifier: GPL-3.0-only
+
 use std::collections::{BTreeMap, HashMap};
 use std::io::{Read, Seek};
 use std::path::{Path, PathBuf};
@@ -121,10 +124,15 @@ impl ContentManifest {
             return Ok(Self::default());
         }
         let bytes = std::fs::read(path)?;
-        let manifest: Self = serde_json::from_slice(&bytes)?;
+        let mut manifest: Self = serde_json::from_slice(&bytes)?;
         if manifest.version != MANIFEST_VERSION {
             return Err(ManifestError::UnsupportedVersion(manifest.version));
         }
+        // record()/upsert() rely on files being sorted by relative_path;
+        // normalize here so hand-edited manifests can't break the lookups.
+        manifest
+            .files
+            .sort_by(|left, right| left.relative_path.cmp(&right.relative_path));
         Ok(manifest)
     }
 
@@ -158,23 +166,31 @@ impl ContentManifest {
         Ok(result)
     }
 
+    // binary search: files is kept sorted by relative_path (see load/upsert),
+    // so per-file lookups stay O(log n) even for large manifests.
     pub fn record(&self, relative_path: &Path) -> Option<&ContentFileRecord> {
+        let index = self
+            .files
+            .partition_point(|record| record.relative_path < relative_path);
         self.files
-            .iter()
-            .find(|record| record.relative_path == relative_path)
+            .get(index)
+            .filter(|record| record.relative_path == relative_path)
     }
 
     pub fn upsert(&mut self, record: ContentFileRecord) {
-        if let Some(existing) = self
+        let index = self
             .files
-            .iter_mut()
-            .find(|existing| existing.relative_path == record.relative_path)
+            .partition_point(|existing| existing.relative_path < record.relative_path);
+        if self
+            .files
+            .get(index)
+            .is_some_and(|existing| existing.relative_path == record.relative_path)
         {
-            *existing = record;
+            self.files[index] = record;
         } else {
-            self.files.push(record);
-            self.files
-                .sort_by(|left, right| left.relative_path.cmp(&right.relative_path));
+            // insert at the sorted position instead of re-sorting the whole
+            // vec; bulk callers that push pre-sorted records get O(1) each.
+            self.files.insert(index, record);
         }
     }
 
