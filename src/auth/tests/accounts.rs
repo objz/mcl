@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Constantin Bauer
+// SPDX-License-Identifier: GPL-3.0-only
+
 use super::*;
 
 impl AccountStore {
@@ -140,6 +143,34 @@ fn store_set_active_changes_active() {
     store.set_active(1);
     assert!(!store.accounts[0].active);
     assert!(store.accounts[1].active);
+}
+
+#[test]
+fn store_set_active_out_of_bounds_keeps_selection() {
+    let tmp = tempfile::tempdir().unwrap();
+    let mut store = make_store(tmp.path());
+    store.add(create_offline_account("Alice"));
+    store.add(create_offline_account("Bob"));
+    store.set_active(99);
+    assert!(store.accounts[0].active, "existing selection must survive a bad index");
+    assert!(!store.accounts[1].active);
+}
+
+#[test]
+fn store_add_replacing_active_keeps_active() {
+    let tmp = tempfile::tempdir().unwrap();
+    let mut store = make_store(tmp.path());
+    store.add(create_offline_account("Alice"));
+    store.add(create_offline_account("Bob"));
+    let mut dup = create_offline_account("Alice");
+    dup.username = "AliceRenamed".to_owned();
+    store.add(dup);
+    assert!(
+        store.accounts.iter().any(|a| a.active),
+        "re-adding the active account must not orphan the selection"
+    );
+    let active = store.active_account().unwrap();
+    assert_eq!(active.username, "AliceRenamed");
 }
 
 #[test]

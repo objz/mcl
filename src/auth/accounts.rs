@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Constantin Bauer
+// SPDX-License-Identifier: GPL-3.0-only
+
 // account management: persistence, switching active accounts, and offline uuid generation
 
 use std::path::PathBuf;
@@ -72,7 +75,9 @@ impl AccountStore {
         }
         match serde_json::to_string_pretty(&self.accounts) {
             Ok(json) => {
-                if let Err(e) = std::fs::write(&self.path, json) {
+                // this file holds microsoft refresh tokens: a torn write on
+                // crash would permanently lock the user out, so write atomically.
+                if let Err(e) = crate::storage::write_atomic(&self.path, json.as_bytes()) {
                     tracing::error!(
                         "Failed to write accounts file {}: {}",
                         self.path.display(),
@@ -101,18 +106,18 @@ impl AccountStore {
     }
 
     pub fn set_active(&mut self, index: usize) {
-        let username = self
-            .accounts
-            .get(index)
-            .map(|account| account.username.clone());
+        let Some(account) = self.accounts.get(index) else {
+            // out-of-range: leave the current selection untouched. marking
+            // every account inactive here would break the single-active
+            // invariant and orphan the store with no usable account.
+            tracing::warn!("Tried to select missing account index {}", index);
+            return;
+        };
+        let username = account.username.clone();
         for (i, acc) in self.accounts.iter_mut().enumerate() {
             acc.active = i == index;
         }
-        if let Some(username) = username {
-            tracing::info!("Selected account '{}'", username);
-        } else {
-            tracing::warn!("Tried to select missing account index {}", index);
-        }
+        tracing::info!("Selected account '{}'", username);
         self.save();
     }
 
@@ -121,11 +126,17 @@ impl AccountStore {
     pub fn add(&mut self, account: Account) {
         let uuid = &account.uuid;
         let replaced = self.accounts.iter().any(|a| a.uuid == *uuid);
+        // re-adding the currently active account must not drop the selection:
+        // the replacement takes over the old account's active flag.
+        let replaced_active = self
+            .accounts
+            .iter()
+            .any(|a| a.uuid == *uuid && a.active);
         let account_type = account.account_type.clone();
         let username = account.username.clone();
         self.accounts.retain(|a| a.uuid != *uuid);
         let mut account = account;
-        if self.accounts.is_empty() {
+        if self.accounts.is_empty() || replaced_active {
             account.active = true;
         }
         self.accounts.push(account);
