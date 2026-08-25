@@ -419,7 +419,9 @@ fn extract_natives(jar: &Path, dest: &Path, exclude: &[String]) -> Result<(), Ne
             );
             continue;
         };
-        let name = rel.to_string_lossy();
+        // zip entry names use '/', but PathBuf renders them with the host
+        // separator ('\'), so normalize before matching exclude prefixes.
+        let name = rel.to_string_lossy().replace('\\', "/");
         if exclude.iter().any(|prefix| name.starts_with(prefix)) {
             continue;
         }
