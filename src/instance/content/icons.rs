@@ -165,7 +165,9 @@ pub(crate) fn fallback_icon() -> Vec<Vec<IconCell>> {
         [false, false, false, false, false, false],
         [false, false, true, true, false, false],
     ];
-    MASK.chunks_exact(2)
+    MASK.as_chunks::<2>()
+        .0
+        .iter()
         .map(|pair| {
             pair[0]
                 .iter()
