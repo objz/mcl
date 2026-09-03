@@ -504,7 +504,10 @@ pub fn render(
             }
             let loading_text = format!(
                 "Searching {}...",
-                crate::config::SETTINGS.content.discovery_provider_label()
+                crate::config::SETTINGS
+                    .read()
+                    .content
+                    .discovery_provider_label()
             );
             render_discovery(
                 frame,
@@ -671,7 +674,10 @@ fn render_downloadable(
     if mode == ContentMode::Discover {
         let loading_text = format!(
             "Searching {}...",
-            crate::config::SETTINGS.content.discovery_provider_label()
+            crate::config::SETTINGS
+                .read()
+                .content
+                .discovery_provider_label()
         );
         render_discovery(
             frame,

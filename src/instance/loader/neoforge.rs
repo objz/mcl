@@ -57,6 +57,7 @@ impl ModLoaderInstaller for NeoForgeInstaller {
         neoforge_api::download_neoforge_installer(client, loader_version, &installer_jar).await?;
 
         let java_path = crate::config::SETTINGS
+            .read()
             .paths
             .effective_java_path()
             .map(str::to_owned)

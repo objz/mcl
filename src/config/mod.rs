@@ -7,7 +7,7 @@
 use config::{Config as ConfigLoader, ConfigError, File};
 use std::fs;
 use std::path::PathBuf;
-use std::sync::LazyLock;
+use std::sync::{LazyLock, RwLock, RwLockReadGuard};
 
 pub mod settings;
 pub mod theme;
@@ -56,18 +56,75 @@ pub fn load_config(config_path: &std::path::Path) -> Result<Config, ConfigError>
         .try_deserialize()
 }
 
-pub static SETTINGS: LazyLock<Config> = LazyLock::new(|| {
-    let path = ensure_config_exists();
-    load_config(&path).unwrap_or_else(|e| {
-        tracing::error!("Config load failed, using defaults: {}", e);
-        Config {
-            general: settings::General::default(),
-            paths: settings::Paths::default(),
-            defaults: settings::Defaults::default(),
-            ui: settings::Ui::default(),
-            content: settings::Content::default(),
-        }
-    })
+pub struct ConfigStore(RwLock<Config>);
+
+impl ConfigStore {
+    pub fn read(&self) -> RwLockReadGuard<'_, Config> {
+        self.0
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    pub fn save_launcher_settings(&self, edited: Config) -> std::io::Result<()> {
+        let path = get_config_path().join("config.toml");
+        let current = self.read().clone();
+        let mut persisted = load_config(&path).unwrap_or_else(|error| {
+            tracing::warn!("Failed to merge config.toml while saving settings: {error}");
+            current.clone()
+        });
+        persisted.defaults = edited.defaults.clone();
+        persisted.paths.java_path = edited.paths.java_path.clone();
+        let serialized = toml::to_string_pretty(&persisted).map_err(std::io::Error::other)?;
+        crate::storage::write_atomic(&path, serialized.as_bytes())?;
+        let mut runtime = current;
+        runtime.defaults = edited.defaults;
+        runtime.paths.java_path = edited.paths.java_path;
+        *self
+            .0
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = runtime;
+        Ok(())
+    }
+
+    pub fn reload(&self) -> Result<bool, ConfigError> {
+        let mut config = load_config(&get_config_path().join("config.toml"))?;
+        let restart_required = {
+            let current = self.read();
+            let changed = current.paths.instances_dir != config.paths.instances_dir
+                || current.paths.meta_dir != config.paths.meta_dir
+                || current.ui.image_protocol != config.ui.image_protocol;
+            // App owns a manager and several watchers rooted at these paths.
+            // Keep them stable for this process; persisted path edits apply on restart.
+            config
+                .paths
+                .instances_dir
+                .clone_from(&current.paths.instances_dir);
+            config.paths.meta_dir.clone_from(&current.paths.meta_dir);
+            config.ui.image_protocol = current.ui.image_protocol;
+            changed
+        };
+        *self
+            .0
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = config;
+        Ok(restart_required)
+    }
+}
+
+pub static SETTINGS: LazyLock<ConfigStore> = LazyLock::new(|| {
+    ConfigStore(RwLock::new({
+        let path = ensure_config_exists();
+        load_config(&path).unwrap_or_else(|e| {
+            tracing::error!("Config load failed, using defaults: {}", e);
+            Config {
+                general: settings::General::default(),
+                paths: settings::Paths::default(),
+                defaults: settings::Defaults::default(),
+                ui: settings::Ui::default(),
+                content: settings::Content::default(),
+            }
+        })
+    }))
 });
 
 #[cfg(test)]

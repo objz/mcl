@@ -5,10 +5,7 @@
 // flow: Name -> Loader -> Version -> LoaderVersion -> Confirm
 // version lists are fetched lazily from the network when you reach that step.
 
-use crate::instance::{
-    loader::{GameVersion, get_installer},
-    models::ModLoader,
-};
+use crate::instance::{loader::GameVersion, models::ModLoader};
 use crate::tui::widgets::instances;
 use crossterm::event::{KeyCode, KeyEvent};
 use std::sync::LazyLock;
@@ -405,12 +402,9 @@ pub(crate) fn ensure_versions_loaded(state: &mut WizardState) {
     let versions_arc = WIZARD_STATE.clone();
     let loader = state.selected_loader();
     tokio::spawn(async move {
-        let client = crate::net::HttpClient::new();
-        let installer = get_installer(loader);
-        match installer.get_game_versions(&client).await {
-            Ok(mut versions) => match versions_arc.lock() {
+        match super::super::version_lists::game_versions(loader).await {
+            Ok(versions) => match versions_arc.lock() {
                 Ok(mut s) => {
-                    sort_versions_semver(&mut versions);
                     s.versions = LoadState::Loaded(versions);
                     clamp_version_index(&mut s);
                 }
@@ -442,9 +436,7 @@ pub(crate) fn ensure_loader_versions_loaded(
     state.loader_versions = LoadState::Loading;
     let versions_arc = WIZARD_STATE.clone();
     tokio::spawn(async move {
-        let client = crate::net::HttpClient::new();
-        let installer = get_installer(loader);
-        match installer.get_versions(&client, &game_version).await {
+        match super::super::version_lists::loader_versions(loader, &game_version).await {
             Ok(versions) => match versions_arc.lock() {
                 Ok(mut s) => {
                     s.loader_versions = LoadState::Loaded(versions);
@@ -464,10 +456,6 @@ pub(crate) fn ensure_loader_versions_loaded(
             },
         }
     });
-}
-
-fn sort_versions_semver(versions: &mut [GameVersion]) {
-    versions.sort_by(|a, b| super::super::compare_game_versions(&b.id, &a.id));
 }
 
 #[cfg(test)]

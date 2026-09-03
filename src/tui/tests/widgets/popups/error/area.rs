@@ -11,7 +11,7 @@ fn frame() -> Rect {
 
 #[test]
 fn returns_none_after_dismiss_timeout() {
-    let past_dismiss = SETTINGS.ui.error_auto_dismiss_ms as u128 + 1;
+    let past_dismiss = SETTINGS.read().ui.error_auto_dismiss_ms as u128 + 1;
     assert!(popup_area(frame(), "msg", 0, past_dismiss).is_none());
 }
 

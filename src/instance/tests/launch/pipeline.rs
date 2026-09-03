@@ -57,6 +57,8 @@ fn build_game_args_renders_upstream_arguments() {
         launcher_version: "test",
         clientid: "0",
         quick_play_singleplayer: None,
+        resolution_width: None,
+        resolution_height: None,
         version_type: "release",
     };
     let features = FeatureSet::default();
@@ -87,6 +89,27 @@ fn build_game_args_renders_upstream_arguments() {
     let (jvm, game_args) = build_game_args(&profile, &rule_ctx, &template_ctx).unwrap();
     assert_eq!(jvm, vec!["-Djava.library.path=/m/natives"]);
     assert_eq!(game_args, vec!["--username", "Player"]);
+}
+
+#[test]
+fn custom_resolution_is_added_once() {
+    let mut args = vec!["--username".to_owned(), "Player".to_owned()];
+    apply_custom_resolution(&mut args, Some((1920, 1080)));
+    assert_eq!(
+        args,
+        [
+            "--username",
+            "Player",
+            "--width",
+            "1920",
+            "--height",
+            "1080"
+        ]
+    );
+
+    apply_custom_resolution(&mut args, Some((1280, 720)));
+    assert_eq!(args.iter().filter(|arg| *arg == "--width").count(), 1);
+    assert_eq!(args.iter().filter(|arg| *arg == "--height").count(), 1);
 }
 
 // exercises the early-return branch of migrate_legacy_meta_if_needed.

@@ -135,9 +135,7 @@ impl App {
             frame,
             bottom_chunks[1],
             self.focused,
-            &mut self.settings_state,
             self.instances_state.selected_instance(),
-            &self.instance_manager.instances_dir,
         );
         widgets::status::render(
             frame,
@@ -148,6 +146,20 @@ impl App {
 
         if self.focused == FocusedArea::OverviewExpanded {
             self.render_log_overlay(frame);
+        }
+
+        if self.focused == FocusedArea::InstanceSettings
+            && let Some(state) = self.instance_settings.as_ref()
+        {
+            let area = widgets::popups::instance_settings::popup_rect(frame.area());
+            widgets::popups::instance_settings::render(frame, area, state);
+        }
+
+        if self.focused == FocusedArea::GlobalSettings
+            && let Some(state) = self.global_settings.as_ref()
+        {
+            let area = widgets::popups::instance_settings::popup_rect(frame.area());
+            widgets::popups::global_settings::render(frame, area, state);
         }
 
         // error toasts stack from the top, each one below the previous
@@ -343,9 +355,9 @@ impl App {
         use crate::config::theme::THEME;
         let theme = THEME.as_ref();
         let bg = theme.background();
-        let fly_out_ms = SETTINGS.ui.error_fly_out_ms as u128;
-        let fly_start_ms = SETTINGS.ui.error_auto_dismiss_ms as u128
-            - fly_out_ms.min(SETTINGS.ui.error_auto_dismiss_ms as u128);
+        let fly_out_ms = SETTINGS.read().ui.error_fly_out_ms as u128;
+        let fly_start_ms = SETTINGS.read().ui.error_auto_dismiss_ms as u128
+            - fly_out_ms.min(SETTINGS.read().ui.error_auto_dismiss_ms as u128);
 
         if elapsed_ms >= fly_start_ms {
             let entry = self

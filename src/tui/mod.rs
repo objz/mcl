@@ -49,7 +49,7 @@ pub async fn show() -> color_eyre::Result<()> {
         let mut picker = ratatui_image::picker::Picker::from_query_stdio()
             .unwrap_or_else(|_| ratatui_image::picker::Picker::halfblocks());
         let detected_protocol = picker.protocol_type();
-        let requested_protocol = match crate::config::SETTINGS.ui.image_protocol {
+        let requested_protocol = match crate::config::SETTINGS.read().ui.image_protocol {
             crate::config::settings::ImageProtocol::Halfblocks
             | crate::config::settings::ImageProtocol::Quadrants => {
                 ratatui_image::picker::ProtocolType::Halfblocks
@@ -106,8 +106,8 @@ async fn run_layout_migration_screen(
     use std::sync::{Arc, Mutex};
     use std::time::Duration;
 
-    let instances_dir = crate::config::SETTINGS.paths.resolve_instances_dir();
-    let meta_dir = crate::config::SETTINGS.paths.resolve_meta_dir();
+    let instances_dir = crate::config::SETTINGS.read().paths.resolve_instances_dir();
+    let meta_dir = crate::config::SETTINGS.read().paths.resolve_meta_dir();
     if !crate::layout_migration::is_needed(&instances_dir, &meta_dir) {
         crate::layout_migration::initialize_new_layout(&meta_dir)?;
         return Ok(MigrationScreenOutcome::NotNeeded);

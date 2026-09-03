@@ -542,7 +542,7 @@ impl ContentListState {
 
         let use_image_protocol =
             picker.protocol_type() != ratatui_image::picker::ProtocolType::Halfblocks;
-        let use_quadrants = crate::config::SETTINGS.ui.image_protocol
+        let use_quadrants = crate::config::SETTINGS.read().ui.image_protocol
             == crate::config::settings::ImageProtocol::Quadrants;
         if !use_image_protocol {
             self.image_protocols.clear();

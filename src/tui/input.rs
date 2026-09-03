@@ -552,101 +552,185 @@ impl App {
             return Ok(());
         }
 
-        if self.focused == FocusedArea::Settings {
-            let editing_profile = matches!(
-                &self.settings_state.add_mode,
-                widgets::settings::AddMode::ProfileName(_)
-            );
-            match widgets::settings::handle_key(
-                &key_event,
-                &mut self.settings_state,
-                self.instances_state.selected_instance(),
-                &self.instance_manager.instances_dir,
-            ) {
-                widgets::settings::SettingsAction::EditInstance(path)
-                | widgets::settings::SettingsAction::EditGlobal(path) => {
-                    self.pending_editor = Some(path);
-                    return Ok(());
+        if self.focused == FocusedArea::GlobalSettings {
+            let action = self
+                .global_settings
+                .as_mut()
+                .map(|state| state.handle_key(&key_event))
+                .unwrap_or(widgets::popups::global_settings::Action::Close);
+            match action {
+                widgets::popups::global_settings::Action::None => {}
+                widgets::popups::global_settings::Action::Close => {
+                    self.global_settings = None;
+                    self.focused = self.pre_overlay_focused;
                 }
-                widgets::settings::SettingsAction::ToggleDesktop => {
-                    if let Some(inst) = self.instances_state.selected_instance() {
-                        let name = inst.name.clone();
-                        match crate::instance::desktop::toggle(inst) {
-                            Ok(true) => {
-                                error_buffer::push_error(error_buffer::ErrorEvent {
-                                    id: 0,
-                                    level: tracing::Level::INFO,
-                                    message: format!("Desktop shortcut created for '{name}'"),
-                                    pushed_at: std::time::Instant::now(),
-                                });
-                            }
-                            Ok(false) => {
-                                error_buffer::push_error(error_buffer::ErrorEvent {
-                                    id: 0,
-                                    level: tracing::Level::INFO,
-                                    message: format!("Desktop shortcut removed for '{name}'"),
-                                    pushed_at: std::time::Instant::now(),
-                                });
-                            }
-                            Err(e) => {
-                                tracing::error!("Failed to toggle desktop shortcut: {}", e);
+                widgets::popups::global_settings::Action::OpenRaw(path) => {
+                    self.pending_editor = Some(path);
+                    self.global_settings = None;
+                    self.focused = self.pre_overlay_focused;
+                }
+                widgets::popups::global_settings::Action::Save(config, theme, border) => {
+                    let result = crate::config::SETTINGS
+                        .save_launcher_settings(*config)
+                        .and_then(|()| crate::config::theme::apply_theme(theme, border));
+                    match result {
+                        Ok(()) => {
+                            self.global_settings = None;
+                            self.focused = self.pre_overlay_focused;
+                        }
+                        Err(error) => error_buffer::push_error(error_buffer::ErrorEvent {
+                            id: 0,
+                            level: tracing::Level::ERROR,
+                            message: error.to_string(),
+                            pushed_at: std::time::Instant::now(),
+                        }),
+                    }
+                }
+            }
+            return Ok(());
+        }
+
+        if self.focused == FocusedArea::InstanceSettings {
+            let action = self
+                .instance_settings
+                .as_mut()
+                .map(|state| state.handle_key(&key_event))
+                .unwrap_or(widgets::popups::instance_settings::Action::Close);
+            match action {
+                widgets::popups::instance_settings::Action::None => {}
+                widgets::popups::instance_settings::Action::Close => {
+                    self.instance_settings = None;
+                    self.focused = self.pre_overlay_focused;
+                }
+                widgets::popups::instance_settings::Action::OpenRaw => {
+                    if let Some(instance) = self.instances_state.selected_instance() {
+                        self.pending_editor = Some(
+                            self.instance_manager
+                                .instances_dir
+                                .join(&instance.name)
+                                .join("instance.json"),
+                        );
+                    }
+                    self.instance_settings = None;
+                    self.focused = self.pre_overlay_focused;
+                }
+                widgets::popups::instance_settings::Action::DeleteProfile(profile) => {
+                    match self.delete_config_profile(&profile) {
+                        Ok(()) => {
+                            if let Some(state) = self.instance_settings.as_mut() {
+                                state.profile_deleted(&profile);
                             }
                         }
+                        Err(error) => error_buffer::push_error(error_buffer::ErrorEvent {
+                            id: 0,
+                            level: tracing::Level::ERROR,
+                            message: error.to_string(),
+                            pushed_at: std::time::Instant::now(),
+                        }),
                     }
-                    return Ok(());
                 }
-                widgets::settings::SettingsAction::SelectProfile(profile) => {
-                    if let Some(inst) = self.instances_state.selected_instance().cloned() {
-                        let instance_dir = self.instance_manager.instances_dir.join(&inst.name);
-                        match crate::instance::config_sync::switch_profile(
-                            &inst.name,
-                            inst.config_sync_profile.as_deref(),
-                            profile.as_deref(),
-                            &self.instance_manager.meta_dir,
-                            &instance_dir,
-                        ) {
-                            Ok(selected) => {
-                                let mut updated = inst.clone();
-                                updated.config_sync_profile = selected;
-                                if let Err(e) = self.instance_manager.save(&updated) {
-                                    tracing::error!("Failed to save config profile: {}", e);
-                                } else {
-                                    self.instances_state.replace_instance(&inst.name, updated);
-                                }
-                            }
-                            Err(e) => {
+                widgets::popups::instance_settings::Action::Save(updated, desktop) => {
+                    let mut updated = *updated;
+                    if let Some(previous) = self.instances_state.selected_instance().cloned() {
+                        let structural_change = previous.game_version != updated.game_version
+                            || previous.loader != updated.loader
+                            || previous.loader_version != updated.loader_version;
+                        if structural_change {
+                            if crate::instance::runtime::is_active(&previous.name) {
                                 error_buffer::push_error(error_buffer::ErrorEvent {
                                     id: 0,
                                     level: tracing::Level::ERROR,
-                                    message: e.to_string(),
+                                    message: "Stop the instance before changing its runtime"
+                                        .to_owned(),
+                                    pushed_at: std::time::Instant::now(),
+                                });
+                                return Ok(());
+                            }
+                            self.spawn_instance_settings_update(previous, updated, desktop);
+                            self.instance_settings = None;
+                            self.focused = self.pre_overlay_focused;
+                            return Ok(());
+                        }
+                        if previous.config_sync_profile != updated.config_sync_profile {
+                            let instance_dir =
+                                self.instance_manager.instances_dir.join(&previous.name);
+                            match crate::instance::config_sync::switch_profile(
+                                &previous.name,
+                                previous.config_sync_profile.as_deref(),
+                                updated.config_sync_profile.as_deref(),
+                                &self.instance_manager.meta_dir,
+                                &instance_dir,
+                            ) {
+                                Ok(profile) => updated.config_sync_profile = profile,
+                                Err(error) => {
+                                    error_buffer::push_error(error_buffer::ErrorEvent {
+                                        id: 0,
+                                        level: tracing::Level::ERROR,
+                                        message: error.to_string(),
+                                        pushed_at: std::time::Instant::now(),
+                                    });
+                                    return Ok(());
+                                }
+                            }
+                        }
+                        match self.instance_manager.save(&updated) {
+                            Ok(()) => {
+                                let shortcut_result = if desktop {
+                                    crate::instance::desktop::create(&updated).map(|_| ())
+                                } else {
+                                    crate::instance::desktop::remove(&updated.name)
+                                };
+                                if let Err(error) = shortcut_result {
+                                    error_buffer::push_error(error_buffer::ErrorEvent {
+                                        id: 0,
+                                        level: tracing::Level::ERROR,
+                                        message: format!(
+                                            "Instance saved, but shortcut update failed: {error}"
+                                        ),
+                                        pushed_at: std::time::Instant::now(),
+                                    });
+                                }
+                                self.instances_state
+                                    .replace_instance(&previous.name, updated);
+                                error_buffer::push_error(error_buffer::ErrorEvent {
+                                    id: 0,
+                                    level: tracing::Level::INFO,
+                                    message: format!("Updated instance '{}'", previous.name),
+                                    pushed_at: std::time::Instant::now(),
+                                });
+                                self.instance_settings = None;
+                                self.focused = self.pre_overlay_focused;
+                            }
+                            Err(error) => {
+                                if previous.config_sync_profile != updated.config_sync_profile {
+                                    let instance_dir =
+                                        self.instance_manager.instances_dir.join(&previous.name);
+                                    if let Err(rollback_error) =
+                                        crate::instance::config_sync::switch_profile(
+                                            &previous.name,
+                                            updated.config_sync_profile.as_deref(),
+                                            previous.config_sync_profile.as_deref(),
+                                            &self.instance_manager.meta_dir,
+                                            &instance_dir,
+                                        )
+                                    {
+                                        tracing::error!(
+                                            "Failed to roll back config profile: {rollback_error}"
+                                        );
+                                    }
+                                }
+                                error_buffer::push_error(error_buffer::ErrorEvent {
+                                    id: 0,
+                                    level: tracing::Level::ERROR,
+                                    message: error.to_string(),
                                     pushed_at: std::time::Instant::now(),
                                 });
                             }
                         }
                     }
-                    return Ok(());
                 }
-                widgets::settings::SettingsAction::ConfirmDeleteProfile(profile) => {
-                    confirm_popup::set_pending(confirm_popup::ConfirmTarget::ConfigProfile {
-                        profile,
-                    });
-                    self.focused = FocusedArea::ConfirmDelete;
-                    return Ok(());
-                }
-                widgets::settings::SettingsAction::Error(message) => {
-                    error_buffer::push_error(error_buffer::ErrorEvent {
-                        id: 0,
-                        level: tracing::Level::ERROR,
-                        message,
-                        pushed_at: std::time::Instant::now(),
-                    });
-                    return Ok(());
-                }
-                widgets::settings::SettingsAction::None => {}
             }
-            if editing_profile {
-                return Ok(());
-            }
+            return Ok(());
         }
 
         match self.focused {
@@ -732,6 +816,22 @@ impl App {
                     KeyCode::Char('C') => self.focused = FocusedArea::Content,
                     KeyCode::Char('A') => self.focused = FocusedArea::Account,
                     KeyCode::Char('S') => self.focused = FocusedArea::Settings,
+                    KeyCode::Char('E') => {
+                        if let Some(instance) = self.instances_state.selected_instance() {
+                            self.pre_overlay_focused = self.focused;
+                            self.instance_settings =
+                                Some(widgets::popups::instance_settings::State::new(
+                                    instance,
+                                    &self.instance_manager.meta_dir,
+                                ));
+                            self.focused = FocusedArea::InstanceSettings;
+                        }
+                    }
+                    KeyCode::Char('G') => {
+                        self.pre_overlay_focused = self.focused;
+                        self.global_settings = Some(widgets::popups::global_settings::State::new());
+                        self.focused = FocusedArea::GlobalSettings;
+                    }
                     KeyCode::Char('O') => {
                         self.pre_overlay_focused = self.focused;
                         self.focused = FocusedArea::OverviewExpanded;
@@ -1783,6 +1883,15 @@ impl App {
 
     fn delete_config_profile(&mut self, profile: &str) -> color_eyre::Result<()> {
         let instances = self.instance_manager.load_all();
+        if let Some(instance) = instances.iter().find(|instance| {
+            instance.config_sync_profile.as_deref() == Some(profile)
+                && crate::instance::runtime::is_active(&instance.name)
+        }) {
+            return Err(color_eyre::eyre::eyre!(
+                "Stop '{}' before deleting its active config profile",
+                instance.name
+            ));
+        }
         for instance in instances
             .into_iter()
             .filter(|instance| instance.config_sync_profile.as_deref() == Some(profile))
@@ -1802,7 +1911,6 @@ impl App {
         }
 
         crate::instance::config_sync::delete_profile(&self.instance_manager.meta_dir, profile)?;
-        self.settings_state.remove_profile(profile);
         Ok(())
     }
 

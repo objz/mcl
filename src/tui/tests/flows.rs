@@ -54,9 +54,6 @@ fn escape_returns_through_nested_sections() {
     assert_eq!(ui.app.focused, FocusedArea::Instances);
 
     ui.app.focused = FocusedArea::Settings;
-    ui.key(KeyCode::Char('a'));
-    ui.key(KeyCode::Esc);
-    assert_eq!(ui.app.focused, FocusedArea::Settings);
     ui.key(KeyCode::Esc);
     assert_eq!(ui.app.focused, FocusedArea::Instances);
 
@@ -574,19 +571,37 @@ fn confirmed_account_delete_updates_the_account_panel() {
 }
 
 #[test]
-fn settings_profile_can_be_created_from_key_events() {
+fn settings_popups_open_from_global_key_events() {
     let mut ui = UiHarness::new();
+    ui.add_instance("settings-test");
     ui.app.focused = FocusedArea::Settings;
 
-    ui.key(KeyCode::Char('a'));
-    for character in "qConfig".chars() {
-        ui.key(KeyCode::Char(character));
-    }
+    ui.key(KeyCode::Char('E'));
+    assert_eq!(ui.app.focused, FocusedArea::InstanceSettings);
+    ui.draw();
+    assert!(ui.screen().contains("Instance settings: settings-test"));
+    assert!(ui.screen().contains("Game version"));
+    assert!(ui.screen().contains("Desktop shortcut"));
+    ui.key(KeyCode::Down);
     ui.key(KeyCode::Enter);
-
-    assert!(!ui.app.exit);
+    ui.draw();
+    assert!(ui.screen().contains("Select loader"));
+    assert!(ui.screen().contains("Fabric"));
+    ui.key(KeyCode::Esc);
+    ui.key(KeyCode::Esc);
     assert_eq!(ui.app.focused, FocusedArea::Settings);
-    assert_eq!(ui.app.settings_state.profiles, ["qConfig"]);
+
+    ui.key(KeyCode::Char('G'));
+    assert_eq!(ui.app.focused, FocusedArea::GlobalSettings);
+    ui.draw();
+    assert!(ui.screen().contains("Launcher settings"));
+    assert!(ui.screen().contains("Default memory max"));
+    ui.key(KeyCode::Enter);
+    ui.draw();
+    assert!(ui.screen().contains("Select theme"));
+    ui.key(KeyCode::Esc);
+    ui.key(KeyCode::Esc);
+    assert_eq!(ui.app.focused, FocusedArea::Settings);
 }
 
 #[test]

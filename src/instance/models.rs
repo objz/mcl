@@ -56,6 +56,25 @@ pub struct InstanceConfig {
     pub modpack_source: Option<crate::instance::ProviderProject>,
 }
 
+pub fn parse_resolution(input: &str) -> Result<(u32, u32), String> {
+    let (width, height) = input
+        .trim()
+        .split_once(['x', 'X'])
+        .ok_or_else(|| "resolution must be in WxH format".to_string())?;
+    let width = width
+        .parse::<u32>()
+        .map_err(|_| "resolution width must be a positive integer".to_string())?;
+    let height = height
+        .parse::<u32>()
+        .map_err(|_| "resolution height must be a positive integer".to_string())?;
+
+    if width == 0 || height == 0 {
+        return Err("resolution values must be greater than zero".to_string());
+    }
+
+    Ok((width, height))
+}
+
 pub fn normalize_memory_value(raw: &str) -> Option<String> {
     let trimmed = raw.trim();
     if trimmed.is_empty() {

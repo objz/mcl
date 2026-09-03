@@ -27,8 +27,8 @@ pub async fn init() {
         return;
     }
 
-    let instances_dir = crate::config::SETTINGS.paths.resolve_instances_dir();
-    let meta_dir = crate::config::SETTINGS.paths.resolve_meta_dir();
+    let instances_dir = crate::config::SETTINGS.read().paths.resolve_instances_dir();
+    let meta_dir = crate::config::SETTINGS.read().paths.resolve_meta_dir();
     if crate::layout_migration::is_needed(&instances_dir, &meta_dir) {
         let config = crate::config::get_config_path().join("config.toml");
         if let Err(error) =

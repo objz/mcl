@@ -41,7 +41,8 @@ pub struct App {
     pub(super) screenshots_state: widgets::screenshots_grid::ScreenshotsState,
     pub(super) logs_state: widgets::logs_viewer::LogsState,
     pub(super) account_state: widgets::account::AccountState,
-    pub(super) settings_state: widgets::settings::SettingsState,
+    pub(super) instance_settings: Option<widgets::popups::instance_settings::State>,
+    pub(super) global_settings: Option<widgets::popups::global_settings::State>,
     pub(super) picker: ratatui_image::picker::Picker,
     pub(super) instance_manager: InstanceManager,
     pub(super) log_overlay_scroll: usize,
@@ -89,6 +90,8 @@ pub enum FocusedArea {
     ImportPopup,
     ErrorPopup,
     ConfirmDelete,
+    InstanceSettings,
+    GlobalSettings,
 }
 
 impl App {
@@ -115,8 +118,8 @@ impl App {
     }
 
     pub fn new(picker: ratatui_image::picker::Picker) -> Self {
-        let instances_dir = crate::config::SETTINGS.paths.resolve_instances_dir();
-        let meta_dir = crate::config::SETTINGS.paths.resolve_meta_dir();
+        let instances_dir = crate::config::SETTINGS.read().paths.resolve_instances_dir();
+        let meta_dir = crate::config::SETTINGS.read().paths.resolve_meta_dir();
 
         let _ = std::fs::create_dir_all(&instances_dir);
         let _ = std::fs::create_dir_all(&meta_dir);
@@ -169,7 +172,8 @@ impl App {
             world_quick_play_support: None,
             logs_state: widgets::logs_viewer::LogsState::default(),
             account_state: widgets::account::AccountState::default(),
-            settings_state: widgets::settings::SettingsState::new(manager.meta_dir.clone()),
+            instance_settings: None,
+            global_settings: None,
             screenshots_state: {
                 let mut s = widgets::screenshots_grid::ScreenshotsState::default();
                 let font_size = picker.font_size();

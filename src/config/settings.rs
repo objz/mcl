@@ -6,9 +6,9 @@
 
 use std::path::PathBuf;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Deserialize, Default, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, Default, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum ImageProtocol {
     Halfblocks,
@@ -18,10 +18,10 @@ pub enum ImageProtocol {
     Iterm2,
 }
 
-#[derive(Debug, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct General {}
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Content {
     #[serde(default = "default_true")]
     pub ask_on_provider_conflict: bool,
@@ -119,7 +119,7 @@ impl Content {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Paths {
     #[serde(default = "default_instances_dir")]
     pub instances_dir: String,
@@ -185,7 +185,7 @@ impl Paths {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Defaults {
     #[serde(default = "default_memory_min")]
     pub memory_min: String,
@@ -209,7 +209,7 @@ impl Default for Defaults {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 // timing knobs for the error toast animation: show for 5s, start sliding at 3.5s,
 // fly off screen over 300ms. tweak these if the toasts feel too fast or slow.
 pub struct Ui {
@@ -250,7 +250,7 @@ impl Default for Ui {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     #[serde(default)]
     pub general: General,

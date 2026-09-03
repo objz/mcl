@@ -84,3 +84,16 @@ fn normalize_memory_value_rejects_invalid_values() {
     assert_eq!(normalize_memory_value("8GB"), None);
     assert_eq!(normalize_memory_value("banana"), None);
 }
+
+#[test]
+fn parse_resolution_accepts_common_separators() {
+    assert_eq!(parse_resolution("1920x1080"), Ok((1920, 1080)));
+    assert_eq!(parse_resolution(" 1280X720 "), Ok((1280, 720)));
+}
+
+#[test]
+fn parse_resolution_rejects_invalid_values() {
+    assert!(parse_resolution("1920").is_err());
+    assert!(parse_resolution("0x1080").is_err());
+    assert!(parse_resolution("wide x tall").is_err());
+}

@@ -209,6 +209,8 @@ impl App {
             + usize::from(self.instances_state.show_import_popup)
             + usize::from(self.focused == super::app::FocusedArea::OverviewExpanded)
             + usize::from(self.focused == super::app::FocusedArea::ConfirmDelete)
+            + usize::from(self.focused == super::app::FocusedArea::InstanceSettings)
+            + usize::from(self.focused == super::app::FocusedArea::GlobalSettings)
             + usize::from(self.provider_conflict.is_some())
             + usize::from(
                 self.content_update_popup
@@ -220,10 +222,6 @@ impl App {
             + usize::from(!matches!(
                 &self.account_state.add_mode,
                 widgets::account::AddMode::None
-            ))
-            + usize::from(!matches!(
-                &self.settings_state.add_mode,
-                widgets::settings::AddMode::None
             ))
             + [
                 &self.mods_discovery_state,
@@ -505,7 +503,10 @@ impl App {
     }
 
     fn ensure_provider_conflict_popup(&mut self) {
-        if !crate::config::SETTINGS.content.ask_on_provider_conflict
+        if !crate::config::SETTINGS
+            .read()
+            .content
+            .ask_on_provider_conflict
             || self.focused != super::app::FocusedArea::Content
             || self.provider_conflict.is_some()
         {
@@ -569,7 +570,7 @@ impl App {
 
     fn spawn_create(&self, params: new_instance::WizardParams) {
         let instances_dir = self.instance_manager.instances_dir.clone();
-        let meta_dir = crate::config::SETTINGS.paths.resolve_meta_dir();
+        let meta_dir = crate::config::SETTINGS.read().paths.resolve_meta_dir();
         let pending_instances = PENDING_INSTANCES.clone();
 
         tokio::spawn(async move {
@@ -605,9 +606,64 @@ impl App {
         });
     }
 
+    pub(super) fn spawn_instance_settings_update(
+        &self,
+        previous: crate::instance::InstanceConfig,
+        mut updated: crate::instance::InstanceConfig,
+        desktop: bool,
+    ) {
+        let instances_dir = self.instance_manager.instances_dir.clone();
+        let meta_dir = self.instance_manager.meta_dir.clone();
+        let pending_instances = PENDING_INSTANCES.clone();
+
+        tokio::spawn(async move {
+            progress::set_action(format!("Updating instance '{}'...", updated.name));
+            progress::set_sub_action(format!("{} {}", updated.game_version, updated.loader));
+            let manager = InstanceManager::new(&instances_dir, &meta_dir);
+            updated = match apply_instance_settings_update(&manager, &previous, updated).await {
+                Ok(updated) => updated,
+                Err(error) => {
+                    progress::clear();
+                    error_buffer::push_error(error_buffer::ErrorEvent {
+                        id: 0,
+                        level: tracing::Level::ERROR,
+                        message: format!("Failed to update instance '{}': {error}", previous.name),
+                        pushed_at: std::time::Instant::now(),
+                    });
+                    return;
+                }
+            };
+
+            let shortcut_result = if desktop {
+                crate::instance::desktop::create(&updated).map(|_| ())
+            } else {
+                crate::instance::desktop::remove(&updated.name)
+            };
+            if let Err(error) = shortcut_result {
+                error_buffer::push_error(error_buffer::ErrorEvent {
+                    id: 0,
+                    level: tracing::Level::ERROR,
+                    message: format!("Instance saved, but shortcut update failed: {error}"),
+                    pushed_at: std::time::Instant::now(),
+                });
+            }
+            if let Ok(mut pending) = pending_instances.lock() {
+                pending.push(updated);
+            }
+            progress::clear();
+            error_buffer::push_error(error_buffer::ErrorEvent {
+                id: 0,
+                level: tracing::Level::INFO,
+                message: format!("Updated instance '{}'", previous.name),
+                pushed_at: std::time::Instant::now(),
+            });
+            crate::feedback::request_redraw();
+        });
+    }
+
     fn spawn_import(&self, result: import_modpack::ImportResult) {
         let instances_dir = self.instance_manager.instances_dir.clone();
-        let meta_dir = crate::config::SETTINGS.paths.resolve_meta_dir();
+        let meta_dir = crate::config::SETTINGS.read().paths.resolve_meta_dir();
         let pending_instances = PENDING_INSTANCES.clone();
 
         tokio::spawn(async move {
@@ -689,8 +745,38 @@ impl App {
     }
 
     fn reload_edited_config(&mut self, path: &std::path::Path) {
-        if path.file_name().and_then(|n| n.to_str()) != Some("instance.json") {
-            return;
+        match path.file_name().and_then(|name| name.to_str()) {
+            Some("config.toml") => {
+                match crate::config::SETTINGS.reload() {
+                    Ok(true) => error_buffer::push_error(error_buffer::ErrorEvent {
+                        id: 0,
+                        level: tracing::Level::INFO,
+                        message: "Path and image protocol changes apply after restart".to_owned(),
+                        pushed_at: std::time::Instant::now(),
+                    }),
+                    Ok(false) => {}
+                    Err(error) => error_buffer::push_error(error_buffer::ErrorEvent {
+                        id: 0,
+                        level: tracing::Level::ERROR,
+                        message: format!("Failed to reload config.toml: {error}"),
+                        pushed_at: std::time::Instant::now(),
+                    }),
+                }
+                return;
+            }
+            Some("theme.toml") => {
+                if let Err(error) = crate::config::theme::reload_theme() {
+                    error_buffer::push_error(error_buffer::ErrorEvent {
+                        id: 0,
+                        level: tracing::Level::ERROR,
+                        message: format!("Failed to reload theme.toml: {error}"),
+                        pushed_at: std::time::Instant::now(),
+                    });
+                }
+                return;
+            }
+            Some("instance.json") => {}
+            _ => return,
         }
 
         let Some(name) = path
@@ -776,7 +862,7 @@ impl App {
             match error_buffer::peek_error() {
                 Some(event)
                     if event.pushed_at.elapsed().as_millis()
-                        >= SETTINGS.ui.error_auto_dismiss_ms as u128 =>
+                        >= SETTINGS.read().ui.error_auto_dismiss_ms as u128 =>
                 {
                     let _ = error_buffer::pop_error();
                 }
@@ -790,7 +876,17 @@ impl App {
             for config in pending.drain(..) {
                 self.forget_instance_content(&config.name);
                 widgets::instances::spawn_modpack_update_check(&config);
-                self.instances_state.add_instance(config);
+                if self
+                    .instances_state
+                    .instances
+                    .iter()
+                    .any(|instance| instance.name == config.name)
+                {
+                    let name = config.name.clone();
+                    self.instances_state.replace_instance(&name, config);
+                } else {
+                    self.instances_state.add_instance(config);
+                }
             }
         }
     }
@@ -838,6 +934,42 @@ impl App {
             self.screenshots_state.set_protocol(idx, proto);
         }
     }
+}
+
+async fn apply_instance_settings_update(
+    manager: &InstanceManager,
+    previous: &crate::instance::InstanceConfig,
+    mut updated: crate::instance::InstanceConfig,
+) -> color_eyre::Result<crate::instance::InstanceConfig> {
+    manager.repair_runtime_cache(&updated).await?;
+
+    let profile_changed = previous.config_sync_profile != updated.config_sync_profile;
+    if profile_changed {
+        updated.config_sync_profile = crate::instance::config_sync::switch_profile(
+            &previous.name,
+            previous.config_sync_profile.as_deref(),
+            updated.config_sync_profile.as_deref(),
+            &manager.meta_dir,
+            &manager.instances_dir.join(&previous.name),
+        )?;
+    }
+
+    if let Err(error) = manager.save(&updated) {
+        if profile_changed
+            && let Err(rollback_error) = crate::instance::config_sync::switch_profile(
+                &previous.name,
+                updated.config_sync_profile.as_deref(),
+                previous.config_sync_profile.as_deref(),
+                &manager.meta_dir,
+                &manager.instances_dir.join(&previous.name),
+            )
+        {
+            tracing::error!("Failed to roll back config profile: {rollback_error}");
+        }
+        return Err(error.into());
+    }
+
+    Ok(updated)
 }
 
 fn mark_terminal_images(buffer: &mut Buffer, alternate: bool) {

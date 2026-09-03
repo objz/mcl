@@ -74,7 +74,7 @@ pub fn popup_area(frame_area: Rect, message: &str, base_y: u16, elapsed_ms: u128
     const MAX_W: usize = 58;
     const MIN_W: usize = 22;
 
-    if elapsed_ms >= SETTINGS.ui.error_auto_dismiss_ms as u128 {
+    if elapsed_ms >= SETTINGS.read().ui.error_auto_dismiss_ms as u128 {
         return None;
     }
 

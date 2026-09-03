@@ -59,6 +59,18 @@ fn build_game_args(
     Ok((rendered.jvm, rendered.game))
 }
 
+fn apply_custom_resolution(game_args: &mut Vec<String>, resolution: Option<(u32, u32)>) {
+    let Some((width, height)) = resolution else {
+        return;
+    };
+    if !game_args.iter().any(|arg| arg == "--width") {
+        game_args.extend(["--width".to_owned(), width.to_string()]);
+    }
+    if !game_args.iter().any(|arg| arg == "--height") {
+        game_args.extend(["--height".to_owned(), height.to_string()]);
+    }
+}
+
 fn parse_java_major_version(text: &str) -> Option<u32> {
     let quoted = text
         .split_once('"')
@@ -384,6 +396,7 @@ pub async fn build_launch_invocation(
 
     let current_features = FeatureSet {
         is_quick_play_singleplayer: quick_play_world.map(|_| true),
+        has_custom_resolution: config.resolution.map(|_| true),
         ..Default::default()
     };
     let host_os_version = system::mojang_os_version();
@@ -539,6 +552,7 @@ pub async fn build_launch_invocation(
         .clone()
         .or_else(|| {
             crate::config::SETTINGS
+                .read()
                 .paths
                 .effective_java_path()
                 .map(str::to_owned)
@@ -560,6 +574,8 @@ pub async fn build_launch_invocation(
         .join(&config.game_version)
         .join("natives");
     let version_type = merged_profile.type_.as_deref().unwrap_or("release");
+    let resolution_width = config.resolution.map(|(width, _)| width.to_string());
+    let resolution_height = config.resolution.map(|(_, height)| height.to_string());
     let template_ctx = TemplateContext {
         library_directory,
         classpath_separator: sep,
@@ -580,15 +596,30 @@ pub async fn build_launch_invocation(
         launcher_version: env!("CARGO_PKG_VERSION"),
         clientid: "0",
         quick_play_singleplayer: quick_play_world,
+        resolution_width: resolution_width.as_deref(),
+        resolution_height: resolution_height.as_deref(),
     };
 
-    let (upstream_jvm_args, game_args) =
+    let (upstream_jvm_args, mut game_args) =
         build_game_args(&merged_profile, &rule_ctx, &template_ctx)?;
+    // Modern Mojang profiles include feature-gated resolution arguments.
+    // Older and third-party profiles may not, so add them when absent.
+    apply_custom_resolution(&mut game_args, config.resolution);
 
-    let mut jvm_args: Vec<String> = vec![
-        format!("-Xms{}", config.memory_min.as_deref().unwrap_or("512M")),
-        format!("-Xmx{}", config.memory_max.as_deref().unwrap_or("2G")),
-    ];
+    let (memory_min, memory_max) = {
+        let settings = crate::config::SETTINGS.read();
+        (
+            config
+                .memory_min
+                .clone()
+                .unwrap_or_else(|| settings.defaults.memory_min.clone()),
+            config
+                .memory_max
+                .clone()
+                .unwrap_or_else(|| settings.defaults.memory_max.clone()),
+        )
+    };
+    let mut jvm_args: Vec<String> = vec![format!("-Xms{memory_min}"), format!("-Xmx{memory_max}")];
     jvm_args.extend(patch_jvm_args);
     jvm_args.extend(upstream_jvm_args);
     jvm_args.extend(config.jvm_args.clone());

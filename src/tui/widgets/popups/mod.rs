@@ -7,10 +7,13 @@
 pub mod base;
 pub mod confirm;
 pub mod error;
+pub mod global_settings;
 pub mod import_modpack;
+pub mod instance_settings;
 mod load_state;
 pub mod modpack_update;
 pub mod new_instance;
+pub mod version_lists;
 
 pub use load_state::LoadState;
 

@@ -77,6 +77,7 @@ impl ModLoaderInstaller for ForgeInstaller {
         } else {
             // modern forge: run the java installer
             let java_path = crate::config::SETTINGS
+                .read()
                 .paths
                 .effective_java_path()
                 .map(str::to_owned)
