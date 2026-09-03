@@ -9,7 +9,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Clear, Paragraph},
+    widgets::{Block, Borders, Clear, Paragraph, Wrap},
 };
 use ratatui_textarea::{CursorMove, TextArea};
 use std::sync::{Arc, Mutex};
@@ -36,6 +36,10 @@ enum VersionPicker {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ChoicePicker {
     Loader,
+    Java,
+    MemoryMin,
+    MemoryMax,
+    Resolution,
     Profile,
 }
 
@@ -70,6 +74,7 @@ pub struct State {
     loader_versions: SharedLoad<Vec<String>>,
     choice_picker: Option<ChoicePicker>,
     choice_index: usize,
+    detected_java: String,
 }
 
 pub enum Action {
@@ -105,6 +110,7 @@ impl State {
             loader_versions: Arc::new(Mutex::new(LoadState::Idle)),
             choice_picker: None,
             choice_index: 0,
+            detected_java: crate::instance::java::detect_java_path(),
         }
     }
 
@@ -190,6 +196,10 @@ impl State {
                 self.error = Some("Vanilla does not use a loader version".to_owned());
             }
             2 => self.open_loader_picker(),
+            3 => self.open_choice_picker(ChoicePicker::Java),
+            4 => self.open_choice_picker(ChoicePicker::MemoryMin),
+            5 => self.open_choice_picker(ChoicePicker::MemoryMax),
+            7 => self.open_choice_picker(ChoicePicker::Resolution),
             8 => self.open_choice_picker(ChoicePicker::Profile),
             9 => self.desktop = !self.desktop,
             6 => self.editing = Some(new_text_area(self.draft.jvm_args.clone())),
@@ -204,6 +214,32 @@ impl State {
                 .iter()
                 .position(|loader| *loader == self.draft.loader)
                 .unwrap_or(0),
+            ChoicePicker::Java => self
+                .choice_values_for(picker)
+                .iter()
+                .position(|value| {
+                    self.draft.java_path.as_deref().map_or_else(
+                        || value == "automatic / launcher default",
+                        |current| value == current,
+                    )
+                })
+                .unwrap_or(0),
+            ChoicePicker::MemoryMin => {
+                self.memory_choice_index(picker, self.draft.memory_min.as_deref())
+            }
+            ChoicePicker::MemoryMax => {
+                self.memory_choice_index(picker, self.draft.memory_max.as_deref())
+            }
+            ChoicePicker::Resolution => self
+                .choice_values_for(picker)
+                .iter()
+                .position(|value| {
+                    self.draft.resolution.map_or_else(
+                        || value == "window default",
+                        |(width, height)| value == &format!("{width}x{height}"),
+                    )
+                })
+                .unwrap_or(0),
             ChoicePicker::Profile => self
                 .draft
                 .config_sync_profile
@@ -214,13 +250,65 @@ impl State {
     }
 
     fn choice_values(&self) -> Vec<String> {
-        match self.choice_picker {
-            Some(ChoicePicker::Loader) => loaders().iter().map(ToString::to_string).collect(),
-            Some(ChoicePicker::Profile) => std::iter::once("instance default".to_owned())
+        self.choice_picker
+            .map_or_else(Vec::new, |picker| self.choice_values_for(picker))
+    }
+
+    fn choice_values_for(&self, picker: ChoicePicker) -> Vec<String> {
+        match picker {
+            ChoicePicker::Loader => loaders().iter().map(ToString::to_string).collect(),
+            ChoicePicker::Java => {
+                let mut values = vec!["automatic / launcher default".to_owned()];
+                if !self.detected_java.is_empty() {
+                    values.push(self.detected_java.clone());
+                }
+                if let Some(current) = &self.draft.java_path
+                    && !values.contains(current)
+                {
+                    values.push(current.clone());
+                }
+                values.push("custom path…".to_owned());
+                values
+            }
+            ChoicePicker::MemoryMin | ChoicePicker::MemoryMax => {
+                let current = if picker == ChoicePicker::MemoryMin {
+                    self.draft.memory_min.as_ref()
+                } else {
+                    self.draft.memory_max.as_ref()
+                };
+                memory_choices(current, true)
+            }
+            ChoicePicker::Resolution => {
+                let mut values = vec![
+                    "window default".to_owned(),
+                    "854x480".to_owned(),
+                    "1280x720".to_owned(),
+                    "1600x900".to_owned(),
+                    "1920x1080".to_owned(),
+                    "2560x1440".to_owned(),
+                ];
+                if let Some((width, height)) = self.draft.resolution {
+                    let current = format!("{width}x{height}");
+                    if !values.contains(&current) {
+                        values.push(current);
+                    }
+                }
+                values.push("custom resolution…".to_owned());
+                values
+            }
+            ChoicePicker::Profile => std::iter::once("instance default".to_owned())
                 .chain(self.profiles.iter().cloned())
                 .collect(),
-            None => Vec::new(),
         }
+    }
+
+    fn memory_choice_index(&self, picker: ChoicePicker, current: Option<&str>) -> usize {
+        self.choice_values_for(picker)
+            .iter()
+            .position(|value| {
+                current.map_or(value == "launcher default", |current| value == current)
+            })
+            .unwrap_or(0)
     }
 
     fn handle_choice_key(&mut self, key: &KeyEvent) {
@@ -239,6 +327,11 @@ impl State {
     }
 
     fn apply_choice(&mut self) {
+        let selected = self
+            .choice_values()
+            .get(self.choice_index)
+            .cloned()
+            .unwrap_or_default();
         match self.choice_picker {
             Some(ChoicePicker::Loader) => {
                 let available = loaders();
@@ -249,6 +342,41 @@ impl State {
                     self.loader_versions = Arc::new(Mutex::new(LoadState::Idle));
                     self.game_versions = Arc::new(Mutex::new(LoadState::Idle));
                 }
+            }
+            Some(ChoicePicker::Java) if selected == "custom path…" => {
+                self.editing = Some(new_text_area(vec![self.value(3)]));
+            }
+            Some(ChoicePicker::Java) => {
+                self.draft.java_path =
+                    (selected != "automatic / launcher default").then_some(selected);
+            }
+            Some(ChoicePicker::MemoryMin | ChoicePicker::MemoryMax)
+                if selected == "custom memory…" =>
+            {
+                let field = if self.choice_picker == Some(ChoicePicker::MemoryMin) {
+                    4
+                } else {
+                    5
+                };
+                self.editing = Some(new_text_area(vec![self.value(field)]));
+            }
+            Some(ChoicePicker::MemoryMin) => {
+                self.draft.memory_min = (selected != "launcher default")
+                    .then(|| normalize_memory_value(&selected))
+                    .flatten();
+            }
+            Some(ChoicePicker::MemoryMax) => {
+                self.draft.memory_max = (selected != "launcher default")
+                    .then(|| normalize_memory_value(&selected))
+                    .flatten();
+            }
+            Some(ChoicePicker::Resolution) if selected == "custom resolution…" => {
+                self.editing = Some(new_text_area(vec![self.value(7)]));
+            }
+            Some(ChoicePicker::Resolution) => {
+                self.draft.resolution = (selected != "window default")
+                    .then(|| parse_resolution(&selected).ok())
+                    .flatten();
             }
             Some(ChoicePicker::Profile) => {
                 self.draft.config_sync_profile = self
@@ -263,7 +391,16 @@ impl State {
 
     fn rotate_choice(&mut self, picker: ChoicePicker, forward: bool) {
         self.open_choice_picker(picker);
-        let count = self.choice_values().len();
+        let count = self
+            .choice_values()
+            .len()
+            .saturating_sub(usize::from(matches!(
+                picker,
+                ChoicePicker::Java
+                    | ChoicePicker::MemoryMin
+                    | ChoicePicker::MemoryMax
+                    | ChoicePicker::Resolution
+            )));
         if count > 0 {
             self.choice_index = if forward {
                 (self.choice_index + 1) % count
@@ -583,12 +720,20 @@ impl State {
             KeyCode::Char('k') | KeyCode::Up => self.selected = self.selected.saturating_sub(1),
             KeyCode::Left => match self.selected {
                 1 => self.rotate_choice(ChoicePicker::Loader, false),
+                3 => self.rotate_choice(ChoicePicker::Java, false),
+                4 => self.rotate_choice(ChoicePicker::MemoryMin, false),
+                5 => self.rotate_choice(ChoicePicker::MemoryMax, false),
+                7 => self.rotate_choice(ChoicePicker::Resolution, false),
                 8 => self.rotate_choice(ChoicePicker::Profile, false),
                 9 => self.desktop = !self.desktop,
                 _ => {}
             },
             KeyCode::Right => match self.selected {
                 1 => self.rotate_choice(ChoicePicker::Loader, true),
+                3 => self.rotate_choice(ChoicePicker::Java, true),
+                4 => self.rotate_choice(ChoicePicker::MemoryMin, true),
+                5 => self.rotate_choice(ChoicePicker::MemoryMax, true),
+                7 => self.rotate_choice(ChoicePicker::Resolution, true),
                 8 => self.rotate_choice(ChoicePicker::Profile, true),
                 9 => self.desktop = !self.desktop,
                 _ => {}
@@ -656,6 +801,25 @@ fn loaders() -> [ModLoader; 5] {
     ]
 }
 
+fn memory_choices(current: Option<&String>, include_default: bool) -> Vec<String> {
+    let mut values = Vec::new();
+    if include_default {
+        values.push("launcher default".to_owned());
+    }
+    values.extend(
+        ["512M", "1G", "2G", "4G", "6G", "8G", "12G", "16G"]
+            .into_iter()
+            .map(str::to_owned),
+    );
+    if let Some(current) = current
+        && !values.contains(current)
+    {
+        values.push(current.clone());
+    }
+    values.push("custom memory…".to_owned());
+    values
+}
+
 fn new_text_area(lines: Vec<String>) -> TextArea<'static> {
     let theme = THEME.as_ref();
     let mut editor = TextArea::new(if lines.is_empty() {
@@ -671,33 +835,43 @@ fn new_text_area(lines: Vec<String>) -> TextArea<'static> {
     editor
 }
 
-pub fn popup_rect(area: Rect) -> Rect {
-    let vertical = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Percentage(8),
-            Constraint::Percentage(84),
-            Constraint::Percentage(8),
-        ])
-        .split(area);
-    Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Percentage(12),
-            Constraint::Percentage(76),
-            Constraint::Percentage(12),
-        ])
-        .split(vertical[1])[1]
+pub fn popup_rect(area: Rect, state: &State) -> Rect {
+    let height = if state.picker.is_some() || state.choice_picker.is_some() {
+        19
+    } else if state.selected == 6 && state.editing.is_some() {
+        18
+    } else if state.editing.is_some() || state.profile_input.is_some() {
+        14
+    } else {
+        12
+    };
+    area.centered(
+        Constraint::Percentage(76),
+        Constraint::Length(height.min(area.height.saturating_sub(4))),
+    )
 }
 
 pub fn render(frame: &mut Frame, area: Rect, state: &State) {
     let theme = THEME.as_ref();
     frame.render_widget(Clear, area);
-    let title = format!(
-        " Instance settings: {} {}",
-        state.draft.name,
-        if state.dirty() { "*" } else { "" }
-    );
+    let mut title = vec![
+        Span::styled(
+            " Instance Settings ",
+            Style::default()
+                .fg(theme.text())
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            format!("· {} ", state.draft.name),
+            Style::default().fg(theme.text_dim()),
+        ),
+    ];
+    if state.dirty() {
+        title.push(Span::styled(
+            "● modified ",
+            Style::default().fg(theme.warning()),
+        ));
+    }
     let keybinds = if state.picker.is_some() {
         super::keybind_line(&[
             ("j/k", " move"),
@@ -708,10 +882,20 @@ pub fn render(frame: &mut Frame, area: Rect, state: &State) {
         ])
     } else if state.choice_picker.is_some() {
         super::keybind_line(&[("j/k", " move"), ("Enter", " select"), ("Esc", " back")])
+    } else if state.selected == 8 {
+        super::keybind_line(&[
+            ("j/k", ""),
+            ("Enter", " choose"),
+            ("a", " add"),
+            ("d", " delete"),
+            ("s", " save"),
+            ("E", " raw"),
+            ("Esc", " back"),
+        ])
     } else {
         super::keybind_line(&[
-            ("j/k", " field"),
-            ("Enter", " edit"),
+            ("j/k", ""),
+            ("Enter", " open"),
             ("←/→", " switch"),
             ("s", " save"),
             ("E", " raw"),
@@ -719,11 +903,11 @@ pub fn render(frame: &mut Frame, area: Rect, state: &State) {
         ])
     };
     let block = Block::default()
-        .title(title)
+        .title(Line::from(title))
         .borders(Borders::ALL)
         .border_type(BORDER_STYLE.to_border_type())
-        .border_style(Style::default().fg(theme.accent()))
-        .style(Style::default().bg(theme.background()))
+        .border_style(Style::default().fg(theme.text_dim()))
+        .style(Style::default().bg(theme.surface()))
         .title_bottom(keybinds);
     let inner = block.inner(area);
     frame.render_widget(block, area);
@@ -737,177 +921,283 @@ pub fn render(frame: &mut Frame, area: Rect, state: &State) {
         return;
     }
 
-    let labels = [
-        "Game version",
-        "Loader",
-        "Loader version",
-        "Java",
-        "Memory min",
-        "Memory max",
-        "JVM args",
-        "Resolution",
-        "Config profile",
-        "Desktop shortcut",
-    ];
-    let mut lines = Vec::with_capacity(FIELD_COUNT + 2);
-    for (index, label) in labels.iter().enumerate() {
-        let selected = index == state.selected;
-        let marker = if selected { "▸ " } else { "  " };
-        let displayed = if selected && state.profile_input.is_some() {
-            "new profile (editing below)".to_owned()
-        } else if selected && state.editing.is_some() {
-            "editing below".to_owned()
-        } else {
-            state.display_value(index)
-        };
-        let mut spans = vec![
-            Span::styled(marker, Style::default().fg(theme.accent())),
-            Span::styled(
-                format!("{label:<18}"),
-                Style::default().fg(theme.text_dim()),
-            ),
-        ];
-        let value_style = Style::default()
-            .fg(if index == 9 && state.desktop {
-                theme.success()
-            } else if selected {
+    render_settings_form(frame, inner, state);
+}
+
+fn render_settings_form(frame: &mut Frame, area: Rect, state: &State) {
+    let sections = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(6),
+            Constraint::Length(3),
+            Constraint::Min(1),
+        ])
+        .split(area);
+    let top = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+        .split(sections[0]);
+
+    render_field_card(
+        frame,
+        top[0],
+        " Runtime ",
+        state,
+        &[
+            (0, "Version"),
+            (1, "Loader"),
+            (2, "Loader ver."),
+            (3, "Java"),
+        ],
+    );
+    render_field_card(
+        frame,
+        top[1],
+        " Launch ",
+        state,
+        &[
+            (4, "Min memory"),
+            (5, "Max memory"),
+            (6, "JVM args"),
+            (7, "Resolution"),
+        ],
+    );
+
+    let integration_block = settings_card(" Integration ", matches!(state.selected, 8 | 9));
+    let integration_inner = integration_block.inner(sections[1]);
+    frame.render_widget(integration_block, sections[1]);
+    let integration = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Percentage(58), Constraint::Percentage(42)])
+        .split(integration_inner);
+    frame.render_widget(
+        Paragraph::new(field_line(state, 8, "Profile", 9)),
+        integration[0],
+    );
+    frame.render_widget(
+        Paragraph::new(field_line(state, 9, "Desktop", 9)),
+        integration[1],
+    );
+
+    if let Some(editor) = state.editing.as_ref().or(state.profile_input.as_ref()) {
+        let theme = THEME.as_ref();
+        let editor_block = Block::default()
+            .title(match (state.selected, state.profile_input.is_some()) {
+                (_, true) => " New profile name · Enter create ",
+                (3, false) => " Custom Java executable path · Enter apply ",
+                (4, false) => " Custom minimum memory (K/M/G) · Enter apply ",
+                (5, false) => " Custom maximum memory (K/M/G) · Enter apply ",
+                (6, false) => " JVM arguments · one per line · Ctrl+Enter apply ",
+                (7, false) => " Custom resolution (WIDTHxHEIGHT) · Enter apply ",
+                _ => " Value · Enter apply ",
+            })
+            .borders(Borders::ALL)
+            .border_type(BORDER_STYLE.to_border_type())
+            .border_style(Style::default().fg(theme.accent()))
+            .style(Style::default().bg(theme.surface()));
+        let editor_inner = editor_block.inner(sections[2]);
+        frame.render_widget(editor_block, sections[2]);
+        frame.render_widget(editor, editor_inner);
+    } else {
+        frame.render_widget(
+            Paragraph::new(status_line(state)).wrap(Wrap { trim: true }),
+            sections[2],
+        );
+    }
+}
+
+fn settings_card(title: &'static str, active: bool) -> Block<'static> {
+    let theme = THEME.as_ref();
+    Block::default()
+        .title(Span::styled(
+            title,
+            Style::default().fg(if active {
                 theme.accent()
             } else {
-                theme.text()
-            })
-            .bg(theme.surface())
-            .add_modifier(if selected {
+                theme.text_dim()
+            }),
+        ))
+        .borders(Borders::ALL)
+        .border_type(BORDER_STYLE.to_border_type())
+        .border_style(Style::default().fg(if active {
+            theme.accent()
+        } else {
+            theme.border()
+        }))
+        .style(Style::default().bg(theme.surface()))
+}
+
+fn render_field_card(
+    frame: &mut Frame,
+    area: Rect,
+    title: &'static str,
+    state: &State,
+    fields: &[(usize, &str)],
+) {
+    let active = fields.iter().any(|(index, _)| *index == state.selected);
+    let block = settings_card(title, active);
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+    let lines = fields
+        .iter()
+        .map(|(index, label)| field_line(state, *index, label, 12))
+        .collect::<Vec<_>>();
+    frame.render_widget(Paragraph::new(lines), inner);
+}
+
+fn field_line<'a>(state: &'a State, index: usize, label: &str, label_width: usize) -> Line<'a> {
+    let theme = THEME.as_ref();
+    let selected = index == state.selected;
+    let displayed = state.display_value(index);
+    let value_color = if index == 9 && state.desktop {
+        theme.success()
+    } else if selected {
+        theme.accent()
+    } else {
+        theme.text()
+    };
+    let mut spans = vec![
+        Span::styled(
+            if selected { "▶ " } else { "  " },
+            Style::default().fg(theme.accent()),
+        ),
+        Span::styled(
+            format!("{label:<label_width$}"),
+            Style::default().fg(theme.text_dim()),
+        ),
+    ];
+    if matches!(index, 1 | 3 | 4 | 5 | 7 | 8 | 9)
+        && state.editing.is_none()
+        && state.profile_input.is_none()
+    {
+        spans.push(Span::styled(
+            format!(" ‹ {displayed} › "),
+            Style::default()
+                .fg(value_color)
+                .bg(theme.background())
+                .add_modifier(if selected {
+                    Modifier::BOLD
+                } else {
+                    Modifier::empty()
+                }),
+        ));
+    } else {
+        spans.push(Span::styled(
+            displayed,
+            Style::default().fg(value_color).add_modifier(if selected {
                 Modifier::BOLD
             } else {
                 Modifier::empty()
-            });
-        if matches!(index, 1 | 8 | 9) && state.editing.is_none() && state.profile_input.is_none() {
-            spans.push(Span::styled(
-                "‹ ",
-                Style::default().fg(if selected {
-                    theme.accent()
-                } else {
-                    theme.text_dim()
-                }),
-            ));
-            spans.push(Span::styled(format!(" {displayed} "), value_style));
-            spans.push(Span::styled(
-                " ›",
-                Style::default().fg(if selected {
-                    theme.accent()
-                } else {
-                    theme.text_dim()
-                }),
-            ));
-        } else {
-            spans.push(Span::styled(format!(" {displayed} "), value_style));
-        }
-        lines.push(Line::from(spans));
+            }),
+        ));
     }
+    Line::from(spans).style(Style::default().bg(if selected {
+        theme.stripe()
+    } else {
+        theme.surface()
+    }))
+}
+
+fn status_line(state: &State) -> Line<'_> {
+    let theme = THEME.as_ref();
     if state.confirm_profile_delete {
-        lines.push(Line::from(Span::styled(
-            "Delete the selected shared profile? [y/n]",
+        Line::from(Span::styled(
+            "  ! Delete this shared profile?  [y] yes  [n] no",
             Style::default().fg(theme.warning()),
-        )));
+        ))
     } else if let Some(error) = &state.error {
-        lines.push(Line::from(Span::styled(
-            error,
+        Line::from(Span::styled(
+            format!("  × {error}"),
             Style::default().fg(theme.error()),
-        )));
+        ))
     } else if state.confirm_runtime_change {
-        lines.push(Line::from(Span::styled(
-            "Changing the runtime downloads files and may break mods. Continue? [y/n]",
+        Line::from(Span::styled(
+            "  ! Runtime changes download files and may break mods.  [y] continue  [n] cancel",
             Style::default().fg(theme.warning()),
-        )));
+        ))
     } else if state.confirm_close {
-        lines.push(Line::from(Span::styled(
-            "Discard unsaved changes? [y] yes  [n] no",
+        Line::from(Span::styled(
+            "  ! Discard unsaved changes?  [y] yes  [n] no",
             Style::default().fg(theme.warning()),
-        )));
+        ))
     } else {
         let settings = SETTINGS.read();
-        let defaults = &settings.defaults;
-        lines.push(Line::from(Span::styled(
-            format!(
-                "Empty Java/memory values use launcher defaults ({}-{}).",
-                defaults.memory_min, defaults.memory_max
+        Line::from(vec![
+            Span::styled("  ◇ Defaults  ", Style::default().fg(theme.info())),
+            Span::styled(
+                format!(
+                    "empty Java or memory values inherit {} → {}",
+                    settings.defaults.memory_min, settings.defaults.memory_max
+                ),
+                Style::default().fg(theme.text_dim()),
             ),
-            Style::default().fg(theme.text_dim()),
-        )));
-    }
-    frame.render_widget(Paragraph::new(lines), inner);
-    if let Some(editor) = state.editing.as_ref().or(state.profile_input.as_ref()) {
-        let editor_area = Rect {
-            x: inner.x,
-            y: inner.y.saturating_add(12),
-            width: inner.width,
-            height: inner.height.saturating_sub(12).max(1),
-        };
-        let editor_block = Block::default()
-            .title(if state.selected == 6 {
-                " JVM arguments — one argument per line; Ctrl+Enter applies "
-            } else {
-                " Value — Enter applies "
-            })
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(theme.accent()));
-        let editor_inner = editor_block.inner(editor_area);
-        frame.render_widget(editor_block, editor_area);
-        frame.render_widget(editor, editor_inner);
+        ])
     }
 }
 
 fn render_choice_picker(frame: &mut Frame, area: Rect, state: &State) {
     let theme = THEME.as_ref();
     let title = match state.choice_picker {
-        Some(ChoicePicker::Loader) => "Select loader",
-        Some(ChoicePicker::Profile) => "Select config profile",
+        Some(ChoicePicker::Loader) => " Loader ",
+        Some(ChoicePicker::Java) => " Java Runtime ",
+        Some(ChoicePicker::MemoryMin) => " Minimum Memory ",
+        Some(ChoicePicker::MemoryMax) => " Maximum Memory ",
+        Some(ChoicePicker::Resolution) => " Window Resolution ",
+        Some(ChoicePicker::Profile) => " Config Profile ",
         None => return,
     };
-    let mut lines = vec![Line::from(Span::styled(
-        title,
-        Style::default()
-            .fg(theme.text())
-            .add_modifier(Modifier::BOLD),
-    ))];
+    let block = settings_card(title, true);
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+    let mut lines = Vec::new();
     let values = state.choice_values();
-    let visible_rows = area.height.saturating_sub(1) as usize;
+    let visible_rows = inner.height as usize;
     let start = state
         .choice_index
         .saturating_sub(visible_rows.saturating_sub(1));
     for (index, value) in values.iter().enumerate().skip(start).take(visible_rows) {
         let selected = index == state.choice_index;
-        lines.push(Line::from(vec![
-            Span::styled(
-                if selected { "▸ " } else { "  " },
-                Style::default().fg(theme.accent()),
-            ),
-            Span::styled(
-                value.clone(),
-                Style::default()
-                    .fg(if selected {
-                        theme.accent()
-                    } else {
-                        theme.text()
-                    })
-                    .add_modifier(if selected {
-                        Modifier::BOLD
-                    } else {
-                        Modifier::empty()
-                    }),
-            ),
-        ]));
+        lines.push(
+            Line::from(vec![
+                Span::styled(
+                    if selected { "▶ " } else { "  " },
+                    Style::default().fg(theme.accent()),
+                ),
+                Span::styled(
+                    value.clone(),
+                    Style::default()
+                        .fg(if selected {
+                            theme.accent()
+                        } else {
+                            theme.text()
+                        })
+                        .add_modifier(if selected {
+                            Modifier::BOLD
+                        } else {
+                            Modifier::empty()
+                        }),
+                ),
+            ])
+            .style(Style::default().bg(if selected {
+                theme.stripe()
+            } else {
+                theme.surface()
+            })),
+        );
     }
-    frame.render_widget(Paragraph::new(lines), area);
+    frame.render_widget(Paragraph::new(lines), inner);
 }
 
 fn render_version_picker(frame: &mut Frame, area: Rect, state: &State) {
     let theme = THEME.as_ref();
     let title = match state.picker {
-        Some(VersionPicker::Game) => "Minecraft version",
-        Some(VersionPicker::Loader) => "Loader version",
+        Some(VersionPicker::Game) => " Minecraft Version ",
+        Some(VersionPicker::Loader) => " Loader Version ",
         None => return,
     };
+    let block = settings_card(title, true);
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
     let status = match state.picker {
         Some(VersionPicker::Game) => match &*state
             .game_versions
@@ -932,7 +1222,7 @@ fn render_version_picker(frame: &mut Frame, area: Rect, state: &State) {
         None => return,
     };
     let mut lines = vec![Line::from(vec![
-        Span::styled(format!("{title}: "), Style::default().fg(theme.text_dim())),
+        Span::styled("Search  ", Style::default().fg(theme.text_dim())),
         Span::styled(
             if state.picker_search {
                 format!("/{}█", state.picker_query)
@@ -969,37 +1259,44 @@ fn render_version_picker(frame: &mut Frame, area: Rect, state: &State) {
             if versions.is_empty() {
                 lines.push(Line::from("No matching versions."));
             } else {
-                let visible_rows = area.height.saturating_sub(2) as usize;
+                let visible_rows = inner.height.saturating_sub(1) as usize;
                 let start = state
                     .picker_index
                     .saturating_sub(visible_rows.saturating_sub(1));
                 for (index, version) in versions.iter().enumerate().skip(start).take(visible_rows) {
                     let selected = index == state.picker_index;
-                    lines.push(Line::from(vec![
-                        Span::styled(
-                            if selected { "▸ " } else { "  " },
-                            Style::default().fg(theme.accent()),
-                        ),
-                        Span::styled(
-                            version.clone(),
-                            Style::default()
-                                .fg(if selected {
-                                    theme.accent()
-                                } else {
-                                    theme.text()
-                                })
-                                .add_modifier(if selected {
-                                    Modifier::BOLD
-                                } else {
-                                    Modifier::empty()
-                                }),
-                        ),
-                    ]));
+                    lines.push(
+                        Line::from(vec![
+                            Span::styled(
+                                if selected { "▶ " } else { "  " },
+                                Style::default().fg(theme.accent()),
+                            ),
+                            Span::styled(
+                                version.clone(),
+                                Style::default()
+                                    .fg(if selected {
+                                        theme.accent()
+                                    } else {
+                                        theme.text()
+                                    })
+                                    .add_modifier(if selected {
+                                        Modifier::BOLD
+                                    } else {
+                                        Modifier::empty()
+                                    }),
+                            ),
+                        ])
+                        .style(Style::default().bg(if selected {
+                            theme.stripe()
+                        } else {
+                            theme.surface()
+                        })),
+                    );
                 }
             }
         }
     }
-    frame.render_widget(Paragraph::new(lines), area);
+    frame.render_widget(Paragraph::new(lines), inner);
 }
 
 #[cfg(test)]
@@ -1048,6 +1345,8 @@ mod tests {
         let mut state = State::new(&config, temp.path());
         state.selected = 4;
         state.begin_edit();
+        state.choice_index = state.choice_values().len() - 1;
+        state.handle_key(&KeyEvent::from(KeyCode::Enter));
         state.handle_key(&KeyEvent::from(KeyCode::Left));
         state.handle_key(&KeyEvent::from(KeyCode::Char('0')));
         state.handle_key(&KeyEvent::from(KeyCode::Enter));
@@ -1155,5 +1454,34 @@ mod tests {
         let desktop = state.desktop;
         state.handle_key(&KeyEvent::from(KeyCode::Right));
         assert_ne!(state.desktop, desktop);
+    }
+
+    #[test]
+    fn typed_fields_use_presets_before_custom_input() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut state = State::new(&instance(), temp.path());
+
+        state.selected = 4;
+        state.begin_edit();
+        assert_eq!(state.choice_picker, Some(ChoicePicker::MemoryMin));
+        state.choice_index = state
+            .choice_values()
+            .iter()
+            .position(|value| value == "4G")
+            .unwrap();
+        state.handle_key(&KeyEvent::from(KeyCode::Enter));
+        assert_eq!(state.draft.memory_min.as_deref(), Some("4G"));
+        assert!(state.editing.is_none());
+
+        state.selected = 7;
+        state.begin_edit();
+        state.choice_index = state
+            .choice_values()
+            .iter()
+            .position(|value| value == "1920x1080")
+            .unwrap();
+        state.handle_key(&KeyEvent::from(KeyCode::Enter));
+        assert_eq!(state.draft.resolution, Some((1920, 1080)));
+        assert!(state.editing.is_none());
     }
 }
