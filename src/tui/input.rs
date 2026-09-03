@@ -223,6 +223,8 @@ impl App {
                                     message: e.to_string(),
                                     pushed_at: std::time::Instant::now(),
                                 });
+                            } else {
+                                self.settings_state.remove_profile(&profile);
                             }
                             FocusedArea::Settings
                         }
@@ -552,6 +554,112 @@ impl App {
             return Ok(());
         }
 
+        if self.focused == FocusedArea::Settings {
+            let editing_profile = matches!(
+                &self.settings_state.add_mode,
+                widgets::settings::AddMode::ProfileName(_)
+            );
+            match widgets::settings::handle_key(
+                &key_event,
+                &mut self.settings_state,
+                self.instances_state.selected_instance(),
+            ) {
+                widgets::settings::SettingsAction::OpenInstance => {
+                    if let Some(instance) = self.instances_state.selected_instance() {
+                        self.pre_overlay_focused = FocusedArea::Settings;
+                        self.instance_settings =
+                            Some(widgets::popups::instance_settings::State::new(
+                                instance,
+                                &self.instance_manager.meta_dir,
+                            ));
+                        self.focused = FocusedArea::InstanceSettings;
+                    }
+                    return Ok(());
+                }
+                widgets::settings::SettingsAction::OpenGlobal => {
+                    self.pre_overlay_focused = FocusedArea::Settings;
+                    self.global_settings = Some(widgets::popups::global_settings::State::new());
+                    self.focused = FocusedArea::GlobalSettings;
+                    return Ok(());
+                }
+                widgets::settings::SettingsAction::ToggleDesktop => {
+                    if let Some(instance) = self.instances_state.selected_instance() {
+                        let name = instance.name.clone();
+                        match crate::instance::desktop::toggle(instance) {
+                            Ok(true) => error_buffer::push_error(error_buffer::ErrorEvent {
+                                id: 0,
+                                level: tracing::Level::INFO,
+                                message: format!("Desktop shortcut created for '{name}'"),
+                                pushed_at: std::time::Instant::now(),
+                            }),
+                            Ok(false) => error_buffer::push_error(error_buffer::ErrorEvent {
+                                id: 0,
+                                level: tracing::Level::INFO,
+                                message: format!("Desktop shortcut removed for '{name}'"),
+                                pushed_at: std::time::Instant::now(),
+                            }),
+                            Err(error) => {
+                                tracing::error!("Failed to toggle desktop shortcut: {error}");
+                            }
+                        }
+                    }
+                    return Ok(());
+                }
+                widgets::settings::SettingsAction::SelectProfile(profile) => {
+                    if let Some(instance) = self.instances_state.selected_instance().cloned() {
+                        let instance_dir = self.instance_manager.instances_dir.join(&instance.name);
+                        match crate::instance::config_sync::switch_profile(
+                            &instance.name,
+                            instance.config_sync_profile.as_deref(),
+                            profile.as_deref(),
+                            &self.instance_manager.meta_dir,
+                            &instance_dir,
+                        ) {
+                            Ok(selected) => {
+                                let mut updated = instance.clone();
+                                updated.config_sync_profile = selected;
+                                if let Err(error) = self.instance_manager.save(&updated) {
+                                    tracing::error!("Failed to save config profile: {error}");
+                                } else {
+                                    self.instances_state
+                                        .replace_instance(&instance.name, updated);
+                                }
+                            }
+                            Err(error) => {
+                                error_buffer::push_error(error_buffer::ErrorEvent {
+                                    id: 0,
+                                    level: tracing::Level::ERROR,
+                                    message: error.to_string(),
+                                    pushed_at: std::time::Instant::now(),
+                                });
+                            }
+                        }
+                    }
+                    return Ok(());
+                }
+                widgets::settings::SettingsAction::ConfirmDeleteProfile(profile) => {
+                    confirm_popup::set_pending(confirm_popup::ConfirmTarget::ConfigProfile {
+                        profile,
+                    });
+                    self.focused = FocusedArea::ConfirmDelete;
+                    return Ok(());
+                }
+                widgets::settings::SettingsAction::Error(message) => {
+                    error_buffer::push_error(error_buffer::ErrorEvent {
+                        id: 0,
+                        level: tracing::Level::ERROR,
+                        message,
+                        pushed_at: std::time::Instant::now(),
+                    });
+                    return Ok(());
+                }
+                widgets::settings::SettingsAction::None => {}
+            }
+            if editing_profile {
+                return Ok(());
+            }
+        }
+
         if self.focused == FocusedArea::GlobalSettings {
             let action = self
                 .global_settings
@@ -617,6 +725,7 @@ impl App {
                 widgets::popups::instance_settings::Action::DeleteProfile(profile) => {
                     match self.delete_config_profile(&profile) {
                         Ok(()) => {
+                            self.settings_state.remove_profile(&profile);
                             if let Some(state) = self.instance_settings.as_mut() {
                                 state.profile_deleted(&profile);
                             }

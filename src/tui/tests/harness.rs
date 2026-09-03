@@ -82,6 +82,7 @@ impl UiHarness {
             },
             logs_state: widgets::logs_viewer::LogsState::default(),
             account_state,
+            settings_state: widgets::settings::SettingsState::new(meta_dir),
             instance_settings: None,
             global_settings: None,
             picker,

@@ -176,6 +176,8 @@ impl State {
             }
             6 if self.draft.jvm_args.is_empty() => "none".to_owned(),
             7 if self.draft.resolution.is_none() => "default".to_owned(),
+            9 if self.desktop => "● enabled".to_owned(),
+            9 => "○ disabled".to_owned(),
             _ => self.value(field).replace('\n', " ↵ "),
         }
     }
@@ -225,35 +227,50 @@ impl State {
         let count = self.choice_values().len();
         match key.code {
             KeyCode::Esc => self.choice_picker = None,
-            KeyCode::Char('j') | KeyCode::Down if count > 0 => {
+            KeyCode::Char('j') | KeyCode::Down | KeyCode::Right if count > 0 => {
                 self.choice_index = (self.choice_index + 1).min(count - 1);
             }
-            KeyCode::Char('k') | KeyCode::Up => {
+            KeyCode::Char('k') | KeyCode::Up | KeyCode::Left => {
                 self.choice_index = self.choice_index.saturating_sub(1);
             }
-            KeyCode::Enter => {
-                match self.choice_picker {
-                    Some(ChoicePicker::Loader) => {
-                        let available = loaders();
-                        let loader = available[self.choice_index.min(available.len() - 1)];
-                        if self.draft.loader != loader {
-                            self.draft.loader = loader;
-                            self.draft.loader_version = None;
-                            self.loader_versions = Arc::new(Mutex::new(LoadState::Idle));
-                            self.game_versions = Arc::new(Mutex::new(LoadState::Idle));
-                        }
-                    }
-                    Some(ChoicePicker::Profile) => {
-                        self.draft.config_sync_profile = self
-                            .choice_index
-                            .checked_sub(1)
-                            .and_then(|index| self.profiles.get(index).cloned());
-                    }
-                    None => {}
-                }
-                self.choice_picker = None;
-            }
+            KeyCode::Enter => self.apply_choice(),
             _ => {}
+        }
+    }
+
+    fn apply_choice(&mut self) {
+        match self.choice_picker {
+            Some(ChoicePicker::Loader) => {
+                let available = loaders();
+                let loader = available[self.choice_index.min(available.len() - 1)];
+                if self.draft.loader != loader {
+                    self.draft.loader = loader;
+                    self.draft.loader_version = None;
+                    self.loader_versions = Arc::new(Mutex::new(LoadState::Idle));
+                    self.game_versions = Arc::new(Mutex::new(LoadState::Idle));
+                }
+            }
+            Some(ChoicePicker::Profile) => {
+                self.draft.config_sync_profile = self
+                    .choice_index
+                    .checked_sub(1)
+                    .and_then(|index| self.profiles.get(index).cloned());
+            }
+            None => {}
+        }
+        self.choice_picker = None;
+    }
+
+    fn rotate_choice(&mut self, picker: ChoicePicker, forward: bool) {
+        self.open_choice_picker(picker);
+        let count = self.choice_values().len();
+        if count > 0 {
+            self.choice_index = if forward {
+                (self.choice_index + 1) % count
+            } else {
+                (self.choice_index + count - 1) % count
+            };
+            self.apply_choice();
         }
     }
 
@@ -564,6 +581,18 @@ impl State {
                 self.selected = (self.selected + 1).min(FIELD_COUNT - 1)
             }
             KeyCode::Char('k') | KeyCode::Up => self.selected = self.selected.saturating_sub(1),
+            KeyCode::Left => match self.selected {
+                1 => self.rotate_choice(ChoicePicker::Loader, false),
+                8 => self.rotate_choice(ChoicePicker::Profile, false),
+                9 => self.desktop = !self.desktop,
+                _ => {}
+            },
+            KeyCode::Right => match self.selected {
+                1 => self.rotate_choice(ChoicePicker::Loader, true),
+                8 => self.rotate_choice(ChoicePicker::Profile, true),
+                9 => self.desktop = !self.desktop,
+                _ => {}
+            },
             KeyCode::Enter => self.begin_edit(),
             KeyCode::Char('a') if self.selected == 8 => {
                 self.profile_input = Some(new_text_area(vec![String::new()]));
@@ -683,6 +712,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &State) {
         super::keybind_line(&[
             ("j/k", " field"),
             ("Enter", " edit"),
+            ("←/→", " switch"),
             ("s", " save"),
             ("E", " raw"),
             ("Esc", " back"),
@@ -730,27 +760,49 @@ pub fn render(frame: &mut Frame, area: Rect, state: &State) {
         } else {
             state.display_value(index)
         };
-        lines.push(Line::from(vec![
+        let mut spans = vec![
             Span::styled(marker, Style::default().fg(theme.accent())),
             Span::styled(
                 format!("{label:<18}"),
                 Style::default().fg(theme.text_dim()),
             ),
-            Span::styled(
-                displayed,
-                Style::default()
-                    .fg(if selected {
-                        theme.accent()
-                    } else {
-                        theme.text()
-                    })
-                    .add_modifier(if selected {
-                        Modifier::BOLD
-                    } else {
-                        Modifier::empty()
-                    }),
-            ),
-        ]));
+        ];
+        let value_style = Style::default()
+            .fg(if index == 9 && state.desktop {
+                theme.success()
+            } else if selected {
+                theme.accent()
+            } else {
+                theme.text()
+            })
+            .bg(theme.surface())
+            .add_modifier(if selected {
+                Modifier::BOLD
+            } else {
+                Modifier::empty()
+            });
+        if matches!(index, 1 | 8 | 9) && state.editing.is_none() && state.profile_input.is_none() {
+            spans.push(Span::styled(
+                "‹ ",
+                Style::default().fg(if selected {
+                    theme.accent()
+                } else {
+                    theme.text_dim()
+                }),
+            ));
+            spans.push(Span::styled(format!(" {displayed} "), value_style));
+            spans.push(Span::styled(
+                " ›",
+                Style::default().fg(if selected {
+                    theme.accent()
+                } else {
+                    theme.text_dim()
+                }),
+            ));
+        } else {
+            spans.push(Span::styled(format!(" {displayed} "), value_style));
+        }
+        lines.push(Line::from(spans));
     }
     if state.confirm_profile_delete {
         lines.push(Line::from(Span::styled(
@@ -1086,5 +1138,22 @@ mod tests {
         assert_eq!(state.draft.loader, ModLoader::Forge);
         assert_eq!(state.draft.loader_version, None);
         assert!(!state.validate_before_save());
+    }
+
+    #[test]
+    fn arrow_keys_rotate_badged_choices() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut state = State::new(&instance(), temp.path());
+
+        state.selected = 1;
+        state.handle_key(&KeyEvent::from(KeyCode::Right));
+        assert_eq!(state.draft.loader, ModLoader::Forge);
+        state.handle_key(&KeyEvent::from(KeyCode::Left));
+        assert_eq!(state.draft.loader, ModLoader::Fabric);
+
+        state.selected = 9;
+        let desktop = state.desktop;
+        state.handle_key(&KeyEvent::from(KeyCode::Right));
+        assert_ne!(state.desktop, desktop);
     }
 }

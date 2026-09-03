@@ -75,10 +75,15 @@ impl State {
     }
 
     fn display_value(&self, field: usize) -> String {
-        if field == 4 && self.config.paths.java_path.is_none() {
-            "auto-detect".to_owned()
-        } else {
-            self.value(field)
+        match field {
+            1 => match &self.theme.border_style {
+                BorderStyle::Rounded => "╭─╮ rounded".to_owned(),
+                BorderStyle::Plain => "┌─┐ plain".to_owned(),
+                BorderStyle::Double => "╔═╗ double".to_owned(),
+                BorderStyle::Thick => "┏━┓ thick".to_owned(),
+            },
+            4 if self.config.paths.java_path.is_none() => "auto-detect".to_owned(),
+            _ => self.value(field),
         }
     }
 
@@ -146,13 +151,26 @@ impl State {
         }
     }
 
-    fn cycle_border(&mut self) {
+    fn cycle_theme(&mut self, forward: bool) {
+        let count = self.themes.len();
+        if count == 0 {
+            return;
+        }
+        self.theme_index = if forward {
+            (self.theme_index + 1) % count
+        } else {
+            (self.theme_index + count - 1) % count
+        };
+        self.select_theme();
+    }
+
+    fn cycle_border(&mut self, forward: bool) {
         let previous = self.theme.border_style.clone();
-        self.theme.border_style = match self.theme.border_style {
-            BorderStyle::Rounded => BorderStyle::Plain,
-            BorderStyle::Plain => BorderStyle::Double,
-            BorderStyle::Double => BorderStyle::Thick,
-            BorderStyle::Thick => BorderStyle::Rounded,
+        self.theme.border_style = match (&self.theme.border_style, forward) {
+            (BorderStyle::Rounded, true) | (BorderStyle::Double, false) => BorderStyle::Plain,
+            (BorderStyle::Plain, true) | (BorderStyle::Thick, false) => BorderStyle::Double,
+            (BorderStyle::Double, true) | (BorderStyle::Rounded, false) => BorderStyle::Thick,
+            (BorderStyle::Thick, true) | (BorderStyle::Plain, false) => BorderStyle::Rounded,
         };
         self.error = None;
         if let Err(error) = crate::config::theme::apply_theme(
@@ -200,9 +218,19 @@ impl State {
         match key.code {
             KeyCode::Char('j') | KeyCode::Down => self.selected = (self.selected + 1).min(4),
             KeyCode::Char('k') | KeyCode::Up => self.selected = self.selected.saturating_sub(1),
+            KeyCode::Left => match self.selected {
+                0 => self.cycle_theme(false),
+                1 => self.cycle_border(false),
+                _ => {}
+            },
+            KeyCode::Right => match self.selected {
+                0 => self.cycle_theme(true),
+                1 => self.cycle_border(true),
+                _ => {}
+            },
             KeyCode::Enter => match self.selected {
                 0 => self.theme_picker = true,
-                1 => self.cycle_border(),
+                1 => self.cycle_border(true),
                 field => self.editing = Some(new_text_area(vec![self.value(field)])),
             },
             KeyCode::Char('s') => {
@@ -301,6 +329,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &State) {
         super::keybind_line(&[
             ("j/k", " field"),
             ("Enter", " edit"),
+            ("←/→", " switch"),
             ("s", " save"),
             ("E", " raw"),
             ("Esc", " back"),
@@ -380,7 +409,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &State) {
         } else {
             state.display_value(index)
         };
-        lines.push(Line::from(vec![
+        let mut spans = vec![
             Span::styled(
                 if selected { "▸ " } else { "  " },
                 Style::default().fg(theme.accent()),
@@ -389,21 +418,41 @@ pub fn render(frame: &mut Frame, area: Rect, state: &State) {
                 format!("{label:<20}"),
                 Style::default().fg(theme.text_dim()),
             ),
-            Span::styled(
-                displayed,
-                Style::default()
-                    .fg(if selected {
-                        theme.accent()
-                    } else {
-                        theme.text()
-                    })
-                    .add_modifier(if selected {
-                        Modifier::BOLD
-                    } else {
-                        Modifier::empty()
-                    }),
-            ),
-        ]));
+        ];
+        let value_style = Style::default()
+            .fg(if selected {
+                theme.accent()
+            } else {
+                theme.text()
+            })
+            .bg(theme.surface())
+            .add_modifier(if selected {
+                Modifier::BOLD
+            } else {
+                Modifier::empty()
+            });
+        if index <= 1 && state.editing.is_none() {
+            spans.push(Span::styled(
+                "‹ ",
+                Style::default().fg(if selected {
+                    theme.accent()
+                } else {
+                    theme.text_dim()
+                }),
+            ));
+            spans.push(Span::styled(format!(" {displayed} "), value_style));
+            spans.push(Span::styled(
+                " ›",
+                Style::default().fg(if selected {
+                    theme.accent()
+                } else {
+                    theme.text_dim()
+                }),
+            ));
+        } else {
+            spans.push(Span::styled(format!(" {displayed} "), value_style));
+        }
+        lines.push(Line::from(spans));
     }
     if let Some(error) = &state.error {
         lines.push(Line::from(Span::styled(

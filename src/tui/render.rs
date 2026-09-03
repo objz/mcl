@@ -135,6 +135,7 @@ impl App {
             frame,
             bottom_chunks[1],
             self.focused,
+            &mut self.settings_state,
             self.instances_state.selected_instance(),
         );
         widgets::status::render(

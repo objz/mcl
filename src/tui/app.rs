@@ -41,6 +41,7 @@ pub struct App {
     pub(super) screenshots_state: widgets::screenshots_grid::ScreenshotsState,
     pub(super) logs_state: widgets::logs_viewer::LogsState,
     pub(super) account_state: widgets::account::AccountState,
+    pub(super) settings_state: widgets::settings::SettingsState,
     pub(super) instance_settings: Option<widgets::popups::instance_settings::State>,
     pub(super) global_settings: Option<widgets::popups::global_settings::State>,
     pub(super) picker: ratatui_image::picker::Picker,
@@ -126,6 +127,7 @@ impl App {
         crate::instance::import::refresh::recover_interrupted(&instances_dir);
 
         let manager = InstanceManager::new(instances_dir, meta_dir);
+        let settings_state = widgets::settings::SettingsState::new(manager.meta_dir.clone());
         let instances = manager.load_all();
         instances::spawn_modpack_update_checks(&instances);
         let instances_state = instances::State::with_instances(instances);
@@ -172,6 +174,7 @@ impl App {
             world_quick_play_support: None,
             logs_state: widgets::logs_viewer::LogsState::default(),
             account_state: widgets::account::AccountState::default(),
+            settings_state,
             instance_settings: None,
             global_settings: None,
             screenshots_state: {

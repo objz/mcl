@@ -223,6 +223,10 @@ impl App {
                 &self.account_state.add_mode,
                 widgets::account::AddMode::None
             ))
+            + usize::from(!matches!(
+                &self.settings_state.add_mode,
+                widgets::settings::AddMode::None
+            ))
             + [
                 &self.mods_discovery_state,
                 &self.resource_packs_discovery_state,
