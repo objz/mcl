@@ -3,7 +3,7 @@
 
 // modal editor for settings belonging to the selected Minecraft instance.
 
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
@@ -24,7 +24,7 @@ use crate::{
     tui::widgets::popups::LoadState,
 };
 
-const FIELD_COUNT: usize = 10;
+const FIELD_COUNT: usize = 9;
 type SharedLoad<T> = Arc<Mutex<LoadState<T>>>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -37,10 +37,7 @@ enum VersionPicker {
 enum ChoicePicker {
     Loader,
     Java,
-    MemoryMin,
-    MemoryMax,
     Resolution,
-    Profile,
 }
 
 enum PickerLoad {
@@ -56,9 +53,9 @@ pub struct State {
     pub draft: InstanceConfig,
     selected: usize,
     editing: Option<TextArea<'static>>,
-    profiles: Vec<String>,
-    profile_input: Option<TextArea<'static>>,
-    confirm_profile_delete: bool,
+    jvm_args_open: bool,
+    jvm_arg_index: usize,
+    jvm_arg_input: Option<(Option<usize>, TextArea<'static>)>,
     pub desktop: bool,
     original_desktop: bool,
     error: Option<String>,
@@ -80,21 +77,20 @@ pub struct State {
 pub enum Action {
     None,
     Save(Box<InstanceConfig>, bool),
-    DeleteProfile(String),
     OpenRaw,
     Close,
 }
 
 impl State {
-    pub fn new(instance: &InstanceConfig, meta_dir: &std::path::Path) -> Self {
+    pub fn new(instance: &InstanceConfig, _meta_dir: &std::path::Path) -> Self {
         Self {
             original: instance.clone(),
             draft: instance.clone(),
             selected: 0,
             editing: None,
-            profiles: crate::instance::config_sync::list_profiles(meta_dir).unwrap_or_default(),
-            profile_input: None,
-            confirm_profile_delete: false,
+            jvm_args_open: false,
+            jvm_arg_index: 0,
+            jvm_arg_input: None,
             desktop: crate::instance::desktop::exists(&instance.name),
             original_desktop: crate::instance::desktop::exists(&instance.name),
             error: None,
@@ -126,6 +122,7 @@ impl State {
 
     fn validate_before_save(&mut self) -> bool {
         self.error = None;
+        let settings = SETTINGS.read();
         if self.draft.game_version.trim().is_empty() {
             self.error = Some("game version cannot be empty".to_owned());
         } else if self.draft.loader != ModLoader::Vanilla
@@ -137,8 +134,18 @@ impl State {
         {
             self.error = Some("the selected loader requires a loader version".to_owned());
         } else if let (Some(min), Some(max)) = (
-            self.draft.memory_min.as_deref().and_then(memory_kib),
-            self.draft.memory_max.as_deref().and_then(memory_kib),
+            memory_kib(
+                self.draft
+                    .memory_min
+                    .as_deref()
+                    .unwrap_or(&settings.defaults.memory_min),
+            ),
+            memory_kib(
+                self.draft
+                    .memory_max
+                    .as_deref()
+                    .unwrap_or(&settings.defaults.memory_max),
+            ),
         ) && min > max
         {
             self.error = Some("minimum memory cannot exceed maximum memory".to_owned());
@@ -154,18 +161,13 @@ impl State {
             3 => self.draft.java_path.clone().unwrap_or_default(),
             4 => self.draft.memory_min.clone().unwrap_or_default(),
             5 => self.draft.memory_max.clone().unwrap_or_default(),
-            6 => self.draft.jvm_args.join("\n"),
+            6 => self.draft.jvm_args.join(" "),
             7 => self
                 .draft
                 .resolution
                 .map(|(w, h)| format!("{w}x{h}"))
                 .unwrap_or_default(),
-            8 => self
-                .draft
-                .config_sync_profile
-                .clone()
-                .unwrap_or_else(|| "instance default".to_owned()),
-            9 => if self.desktop { "yes" } else { "no" }.to_owned(),
+            8 => if self.desktop { "yes" } else { "no" }.to_owned(),
             _ => String::new(),
         }
     }
@@ -180,10 +182,11 @@ impl State {
             5 if self.draft.memory_max.is_none() => {
                 format!("default ({})", SETTINGS.read().defaults.memory_max)
             }
-            6 if self.draft.jvm_args.is_empty() => "none".to_owned(),
+            6 if self.draft.jvm_args.is_empty() => "no arguments".to_owned(),
+            6 => format!("{} argument(s)", self.draft.jvm_args.len()),
             7 if self.draft.resolution.is_none() => "default".to_owned(),
-            9 if self.desktop => "● enabled".to_owned(),
-            9 => "○ disabled".to_owned(),
+            8 if self.desktop => "● enabled".to_owned(),
+            8 => "○ disabled".to_owned(),
             _ => self.value(field).replace('\n', " ↵ "),
         }
     }
@@ -197,12 +200,15 @@ impl State {
             }
             2 => self.open_loader_picker(),
             3 => self.open_choice_picker(ChoicePicker::Java),
-            4 => self.open_choice_picker(ChoicePicker::MemoryMin),
-            5 => self.open_choice_picker(ChoicePicker::MemoryMax),
+            4 | 5 => self.adjust_memory(self.selected, true),
+            6 => {
+                self.jvm_args_open = true;
+                self.jvm_arg_index = self
+                    .jvm_arg_index
+                    .min(self.draft.jvm_args.len().saturating_sub(1));
+            }
             7 => self.open_choice_picker(ChoicePicker::Resolution),
-            8 => self.open_choice_picker(ChoicePicker::Profile),
-            9 => self.desktop = !self.desktop,
-            6 => self.editing = Some(new_text_area(self.draft.jvm_args.clone())),
+            8 => self.desktop = !self.desktop,
             field => self.editing = Some(new_text_area(vec![self.value(field)])),
         }
     }
@@ -224,12 +230,6 @@ impl State {
                     )
                 })
                 .unwrap_or(0),
-            ChoicePicker::MemoryMin => {
-                self.memory_choice_index(picker, self.draft.memory_min.as_deref())
-            }
-            ChoicePicker::MemoryMax => {
-                self.memory_choice_index(picker, self.draft.memory_max.as_deref())
-            }
             ChoicePicker::Resolution => self
                 .choice_values_for(picker)
                 .iter()
@@ -240,12 +240,6 @@ impl State {
                     )
                 })
                 .unwrap_or(0),
-            ChoicePicker::Profile => self
-                .draft
-                .config_sync_profile
-                .as_deref()
-                .and_then(|selected| self.profiles.iter().position(|profile| profile == selected))
-                .map_or(0, |index| index + 1),
         };
     }
 
@@ -270,14 +264,6 @@ impl State {
                 values.push("custom path…".to_owned());
                 values
             }
-            ChoicePicker::MemoryMin | ChoicePicker::MemoryMax => {
-                let current = if picker == ChoicePicker::MemoryMin {
-                    self.draft.memory_min.as_ref()
-                } else {
-                    self.draft.memory_max.as_ref()
-                };
-                memory_choices(current, true)
-            }
             ChoicePicker::Resolution => {
                 let mut values = vec![
                     "window default".to_owned(),
@@ -296,19 +282,7 @@ impl State {
                 values.push("custom resolution…".to_owned());
                 values
             }
-            ChoicePicker::Profile => std::iter::once("instance default".to_owned())
-                .chain(self.profiles.iter().cloned())
-                .collect(),
         }
-    }
-
-    fn memory_choice_index(&self, picker: ChoicePicker, current: Option<&str>) -> usize {
-        self.choice_values_for(picker)
-            .iter()
-            .position(|value| {
-                current.map_or(value == "launcher default", |current| value == current)
-            })
-            .unwrap_or(0)
     }
 
     fn handle_choice_key(&mut self, key: &KeyEvent) {
@@ -350,26 +324,6 @@ impl State {
                 self.draft.java_path =
                     (selected != "automatic / launcher default").then_some(selected);
             }
-            Some(ChoicePicker::MemoryMin | ChoicePicker::MemoryMax)
-                if selected == "custom memory…" =>
-            {
-                let field = if self.choice_picker == Some(ChoicePicker::MemoryMin) {
-                    4
-                } else {
-                    5
-                };
-                self.editing = Some(new_text_area(vec![self.value(field)]));
-            }
-            Some(ChoicePicker::MemoryMin) => {
-                self.draft.memory_min = (selected != "launcher default")
-                    .then(|| normalize_memory_value(&selected))
-                    .flatten();
-            }
-            Some(ChoicePicker::MemoryMax) => {
-                self.draft.memory_max = (selected != "launcher default")
-                    .then(|| normalize_memory_value(&selected))
-                    .flatten();
-            }
             Some(ChoicePicker::Resolution) if selected == "custom resolution…" => {
                 self.editing = Some(new_text_area(vec![self.value(7)]));
             }
@@ -377,12 +331,6 @@ impl State {
                 self.draft.resolution = (selected != "window default")
                     .then(|| parse_resolution(&selected).ok())
                     .flatten();
-            }
-            Some(ChoicePicker::Profile) => {
-                self.draft.config_sync_profile = self
-                    .choice_index
-                    .checked_sub(1)
-                    .and_then(|index| self.profiles.get(index).cloned());
             }
             None => {}
         }
@@ -396,10 +344,7 @@ impl State {
             .len()
             .saturating_sub(usize::from(matches!(
                 picker,
-                ChoicePicker::Java
-                    | ChoicePicker::MemoryMin
-                    | ChoicePicker::MemoryMax
-                    | ChoicePicker::Resolution
+                ChoicePicker::Java | ChoicePicker::Resolution
             )));
         if count > 0 {
             self.choice_index = if forward {
@@ -408,6 +353,146 @@ impl State {
                 (self.choice_index + count - 1) % count
             };
             self.apply_choice();
+        }
+    }
+
+    fn adjust_memory(&mut self, field: usize, forward: bool) {
+        let settings = SETTINGS.read();
+        let current = if field == 4 {
+            self.draft
+                .memory_min
+                .as_deref()
+                .unwrap_or(&settings.defaults.memory_min)
+        } else {
+            self.draft
+                .memory_max
+                .as_deref()
+                .unwrap_or(&settings.defaults.memory_max)
+        };
+        let values = ["512M", "1G", "2G", "4G", "6G", "8G", "12G", "16G"];
+        let exact = values.iter().position(|value| *value == current);
+        let next = if let Some(index) = exact {
+            if forward {
+                (index + 1) % values.len()
+            } else {
+                (index + values.len() - 1) % values.len()
+            }
+        } else {
+            let current_kib = memory_kib(current).unwrap_or_default();
+            if forward {
+                values
+                    .iter()
+                    .position(|value| memory_kib(value).is_some_and(|kib| kib > current_kib))
+                    .unwrap_or(0)
+            } else {
+                values
+                    .iter()
+                    .rposition(|value| memory_kib(value).is_some_and(|kib| kib < current_kib))
+                    .unwrap_or(values.len() - 1)
+            }
+        };
+        drop(settings);
+        self.set_memory(field, Some(values[next].to_owned()));
+    }
+
+    fn set_memory(&mut self, field: usize, value: Option<String>) {
+        if field == 4 {
+            self.draft.memory_min = value.clone();
+        } else {
+            self.draft.memory_max = value.clone();
+        }
+
+        let settings = SETTINGS.read();
+        let min = self
+            .draft
+            .memory_min
+            .as_deref()
+            .unwrap_or(&settings.defaults.memory_min);
+        let max = self
+            .draft
+            .memory_max
+            .as_deref()
+            .unwrap_or(&settings.defaults.memory_max);
+        if memory_kib(min)
+            .zip(memory_kib(max))
+            .is_some_and(|(min, max)| min > max)
+        {
+            if field == 4 {
+                self.draft.memory_max = value;
+            } else {
+                self.draft.memory_min = value;
+            }
+        }
+    }
+
+    fn handle_jvm_args_key(&mut self, key: &KeyEvent) {
+        if let Some((target, input)) = &mut self.jvm_arg_input {
+            match key.code {
+                KeyCode::Enter => {
+                    let value = input.lines().join(" ").trim().to_owned();
+                    let target = *target;
+                    self.jvm_arg_input = None;
+                    if value.is_empty() {
+                        return;
+                    }
+                    if let Some(index) = target {
+                        if let Some(argument) = self.draft.jvm_args.get_mut(index) {
+                            *argument = value;
+                        }
+                    } else {
+                        self.draft.jvm_args.push(value);
+                        self.jvm_arg_index = self.draft.jvm_args.len() - 1;
+                    }
+                }
+                KeyCode::Esc => self.jvm_arg_input = None,
+                _ => {
+                    input.input(*key);
+                }
+            }
+            return;
+        }
+
+        match key.code {
+            KeyCode::Esc => self.jvm_args_open = false,
+            KeyCode::Char('j') | KeyCode::Down if !self.draft.jvm_args.is_empty() => {
+                self.jvm_arg_index = (self.jvm_arg_index + 1).min(self.draft.jvm_args.len() - 1);
+            }
+            KeyCode::Char('k') | KeyCode::Up => {
+                self.jvm_arg_index = self.jvm_arg_index.saturating_sub(1);
+            }
+            KeyCode::Left if self.jvm_arg_index > 0 => {
+                self.draft
+                    .jvm_args
+                    .swap(self.jvm_arg_index, self.jvm_arg_index - 1);
+                self.jvm_arg_index -= 1;
+            }
+            KeyCode::Right if self.jvm_arg_index + 1 < self.draft.jvm_args.len() => {
+                self.draft
+                    .jvm_args
+                    .swap(self.jvm_arg_index, self.jvm_arg_index + 1);
+                self.jvm_arg_index += 1;
+            }
+            KeyCode::Char('a') => {
+                self.jvm_arg_input = Some((None, new_text_area(vec![String::new()])));
+            }
+            KeyCode::Enter if self.draft.jvm_args.is_empty() => {
+                self.jvm_arg_input = Some((None, new_text_area(vec![String::new()])));
+            }
+            KeyCode::Enter if !self.draft.jvm_args.is_empty() => {
+                let index = self.jvm_arg_index.min(self.draft.jvm_args.len() - 1);
+                self.jvm_arg_input = Some((
+                    Some(index),
+                    new_text_area(vec![self.draft.jvm_args[index].clone()]),
+                ));
+            }
+            KeyCode::Char('d') if !self.draft.jvm_args.is_empty() => {
+                let index = self.jvm_arg_index.min(self.draft.jvm_args.len() - 1);
+                self.draft.jvm_args.remove(index);
+                self.jvm_arg_index = self
+                    .jvm_arg_index
+                    .min(self.draft.jvm_args.len().saturating_sub(1));
+            }
+            _ => {}
         }
     }
 
@@ -609,14 +694,6 @@ impl State {
             ),
             4 => self.draft.memory_min = normalize_memory_value(value),
             5 => self.draft.memory_max = normalize_memory_value(value),
-            6 => {
-                self.draft.jvm_args = value
-                    .lines()
-                    .map(str::trim)
-                    .filter(|argument| !argument.is_empty())
-                    .map(str::to_owned)
-                    .collect();
-            }
             7 if value.is_empty() => self.draft.resolution = None,
             7 => match parse_resolution(value) {
                 Ok(resolution) => self.draft.resolution = Some(resolution),
@@ -627,53 +704,16 @@ impl State {
     }
 
     pub fn handle_key(&mut self, key: &KeyEvent) -> Action {
+        if self.jvm_args_open {
+            self.handle_jvm_args_key(key);
+            return Action::None;
+        }
         if self.choice_picker.is_some() {
             self.handle_choice_key(key);
             return Action::None;
         }
         if self.picker.is_some() {
             self.handle_picker_key(key);
-            return Action::None;
-        }
-        if let Some(input) = &mut self.profile_input {
-            match key.code {
-                KeyCode::Enter => {
-                    let name = input.lines().join("").trim().to_owned();
-                    self.profile_input = None;
-                    if !name.is_empty() {
-                        match crate::instance::config_sync::validate_profile(&name) {
-                            Ok(()) => {
-                                if !self.profiles.contains(&name) {
-                                    self.profiles.push(name.clone());
-                                    self.profiles.sort_unstable();
-                                }
-                                self.draft.config_sync_profile = Some(name);
-                            }
-                            Err(error) => self.error = Some(error.to_string()),
-                        }
-                    }
-                }
-                KeyCode::Esc => self.profile_input = None,
-                _ => {
-                    input.input(*key);
-                }
-            }
-            return Action::None;
-        }
-        if self.confirm_profile_delete {
-            match key.code {
-                KeyCode::Char('y') | KeyCode::Enter => {
-                    self.confirm_profile_delete = false;
-                    if let Some(profile) = self.draft.config_sync_profile.clone()
-                        && (self.original.config_sync_profile.as_deref() == Some(&profile)
-                            || self.profiles.iter().any(|candidate| candidate == &profile))
-                    {
-                        return Action::DeleteProfile(profile);
-                    }
-                }
-                KeyCode::Char('n') | KeyCode::Esc => self.confirm_profile_delete = false,
-                _ => {}
-            }
             return Action::None;
         }
         if self.confirm_close {
@@ -699,11 +739,6 @@ impl State {
         }
         if let Some(input) = &mut self.editing {
             match key.code {
-                KeyCode::Enter
-                    if self.selected == 6 && !key.modifiers.contains(KeyModifiers::CONTROL) =>
-                {
-                    input.input(*key);
-                }
                 KeyCode::Enter => self.commit_edit(),
                 KeyCode::Esc => self.editing = None,
                 _ => {
@@ -721,31 +756,25 @@ impl State {
             KeyCode::Left => match self.selected {
                 1 => self.rotate_choice(ChoicePicker::Loader, false),
                 3 => self.rotate_choice(ChoicePicker::Java, false),
-                4 => self.rotate_choice(ChoicePicker::MemoryMin, false),
-                5 => self.rotate_choice(ChoicePicker::MemoryMax, false),
+                4 | 5 => self.adjust_memory(self.selected, false),
                 7 => self.rotate_choice(ChoicePicker::Resolution, false),
-                8 => self.rotate_choice(ChoicePicker::Profile, false),
-                9 => self.desktop = !self.desktop,
+                8 => self.desktop = !self.desktop,
                 _ => {}
             },
             KeyCode::Right => match self.selected {
                 1 => self.rotate_choice(ChoicePicker::Loader, true),
                 3 => self.rotate_choice(ChoicePicker::Java, true),
-                4 => self.rotate_choice(ChoicePicker::MemoryMin, true),
-                5 => self.rotate_choice(ChoicePicker::MemoryMax, true),
+                4 | 5 => self.adjust_memory(self.selected, true),
                 7 => self.rotate_choice(ChoicePicker::Resolution, true),
-                8 => self.rotate_choice(ChoicePicker::Profile, true),
-                9 => self.desktop = !self.desktop,
+                8 => self.desktop = !self.desktop,
                 _ => {}
             },
             KeyCode::Enter => self.begin_edit(),
-            KeyCode::Char('a') if self.selected == 8 => {
-                self.profile_input = Some(new_text_area(vec![String::new()]));
+            KeyCode::Char('c') if matches!(self.selected, 4 | 5 | 7) => {
+                self.editing = Some(new_text_area(vec![self.value(self.selected)]));
             }
-            KeyCode::Char('d')
-                if self.selected == 8 && self.draft.config_sync_profile.is_some() =>
-            {
-                self.confirm_profile_delete = true;
+            KeyCode::Char('r') if matches!(self.selected, 4 | 5) => {
+                self.set_memory(self.selected, None);
             }
             KeyCode::Char('s') if self.dirty() => {
                 if self.validate_before_save() {
@@ -766,16 +795,6 @@ impl State {
             _ => {}
         }
         Action::None
-    }
-
-    pub fn profile_deleted(&mut self, profile: &str) {
-        self.profiles.retain(|candidate| candidate != profile);
-        if self.draft.config_sync_profile.as_deref() == Some(profile) {
-            self.draft.config_sync_profile = None;
-        }
-        if self.original.config_sync_profile.as_deref() == Some(profile) {
-            self.original.config_sync_profile = None;
-        }
     }
 }
 
@@ -801,25 +820,6 @@ fn loaders() -> [ModLoader; 5] {
     ]
 }
 
-fn memory_choices(current: Option<&String>, include_default: bool) -> Vec<String> {
-    let mut values = Vec::new();
-    if include_default {
-        values.push("launcher default".to_owned());
-    }
-    values.extend(
-        ["512M", "1G", "2G", "4G", "6G", "8G", "12G", "16G"]
-            .into_iter()
-            .map(str::to_owned),
-    );
-    if let Some(current) = current
-        && !values.contains(current)
-    {
-        values.push(current.clone());
-    }
-    values.push("custom memory…".to_owned());
-    values
-}
-
 fn new_text_area(lines: Vec<String>) -> TextArea<'static> {
     let theme = THEME.as_ref();
     let mut editor = TextArea::new(if lines.is_empty() {
@@ -838,9 +838,9 @@ fn new_text_area(lines: Vec<String>) -> TextArea<'static> {
 pub fn popup_rect(area: Rect, state: &State) -> Rect {
     let height = if state.picker.is_some() || state.choice_picker.is_some() {
         19
-    } else if state.selected == 6 && state.editing.is_some() {
+    } else if state.jvm_args_open {
         18
-    } else if state.editing.is_some() || state.profile_input.is_some() {
+    } else if state.editing.is_some() {
         14
     } else {
         12
@@ -872,7 +872,20 @@ pub fn render(frame: &mut Frame, area: Rect, state: &State) {
             Style::default().fg(theme.warning()),
         ));
     }
-    let keybinds = if state.picker.is_some() {
+    let keybinds = if state.jvm_args_open {
+        if state.jvm_arg_input.is_some() {
+            super::keybind_line(&[("Enter", " apply"), ("Esc", " cancel")])
+        } else {
+            super::keybind_line(&[
+                ("j/k", ""),
+                ("←/→", ""),
+                ("Enter", " edit"),
+                ("a", " add"),
+                ("d", " delete"),
+                ("Esc", " back"),
+            ])
+        }
+    } else if state.picker.is_some() {
         super::keybind_line(&[
             ("j/k", " move"),
             ("Enter", " select"),
@@ -882,14 +895,30 @@ pub fn render(frame: &mut Frame, area: Rect, state: &State) {
         ])
     } else if state.choice_picker.is_some() {
         super::keybind_line(&[("j/k", " move"), ("Enter", " select"), ("Esc", " back")])
+    } else if matches!(state.selected, 4 | 5) {
+        super::keybind_line(&[
+            ("j/k", ""),
+            ("←/→", " memory"),
+            ("c", " custom"),
+            ("r", " default"),
+            ("s", ""),
+            ("E", ""),
+            ("Esc", ""),
+        ])
+    } else if state.selected == 6 {
+        super::keybind_line(&[
+            ("j/k", ""),
+            ("Enter", " manage args"),
+            ("s", " save"),
+            ("E", " raw"),
+            ("Esc", " back"),
+        ])
     } else if state.selected == 8 {
         super::keybind_line(&[
             ("j/k", ""),
-            ("Enter", " choose"),
-            ("a", " add"),
-            ("d", " delete"),
+            ("Enter", " toggle"),
+            ("←/→", " toggle"),
             ("s", " save"),
-            ("E", " raw"),
             ("Esc", " back"),
         ])
     } else {
@@ -912,6 +941,10 @@ pub fn render(frame: &mut Frame, area: Rect, state: &State) {
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
+    if state.jvm_args_open {
+        render_jvm_args(frame, inner, state);
+        return;
+    }
     if state.picker.is_some() {
         render_version_picker(frame, inner, state);
         return;
@@ -963,32 +996,22 @@ fn render_settings_form(frame: &mut Frame, area: Rect, state: &State) {
         ],
     );
 
-    let integration_block = settings_card(" Integration ", matches!(state.selected, 8 | 9));
-    let integration_inner = integration_block.inner(sections[1]);
-    frame.render_widget(integration_block, sections[1]);
-    let integration = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(58), Constraint::Percentage(42)])
-        .split(integration_inner);
+    let desktop_block = settings_card(" Desktop ", state.selected == 8);
+    let desktop_inner = desktop_block.inner(sections[1]);
+    frame.render_widget(desktop_block, sections[1]);
     frame.render_widget(
-        Paragraph::new(field_line(state, 8, "Profile", 9)),
-        integration[0],
-    );
-    frame.render_widget(
-        Paragraph::new(field_line(state, 9, "Desktop", 9)),
-        integration[1],
+        Paragraph::new(field_line(state, 8, "Shortcut", 12)),
+        desktop_inner,
     );
 
-    if let Some(editor) = state.editing.as_ref().or(state.profile_input.as_ref()) {
+    if let Some(editor) = state.editing.as_ref() {
         let theme = THEME.as_ref();
         let editor_block = Block::default()
-            .title(match (state.selected, state.profile_input.is_some()) {
-                (_, true) => " New profile name · Enter create ",
-                (3, false) => " Custom Java executable path · Enter apply ",
-                (4, false) => " Custom minimum memory (K/M/G) · Enter apply ",
-                (5, false) => " Custom maximum memory (K/M/G) · Enter apply ",
-                (6, false) => " JVM arguments · one per line · Ctrl+Enter apply ",
-                (7, false) => " Custom resolution (WIDTHxHEIGHT) · Enter apply ",
+            .title(match state.selected {
+                3 => " Custom Java executable path · Enter apply ",
+                4 => " Custom minimum memory (K/M/G) · Enter apply ",
+                5 => " Custom maximum memory (K/M/G) · Enter apply ",
+                7 => " Custom resolution (WIDTHxHEIGHT) · Enter apply ",
                 _ => " Value · Enter apply ",
             })
             .borders(Borders::ALL)
@@ -1049,7 +1072,7 @@ fn field_line<'a>(state: &'a State, index: usize, label: &str, label_width: usiz
     let theme = THEME.as_ref();
     let selected = index == state.selected;
     let displayed = state.display_value(index);
-    let value_color = if index == 9 && state.desktop {
+    let value_color = if index == 8 && state.desktop {
         theme.success()
     } else if selected {
         theme.accent()
@@ -1066,10 +1089,9 @@ fn field_line<'a>(state: &'a State, index: usize, label: &str, label_width: usiz
             Style::default().fg(theme.text_dim()),
         ),
     ];
-    if matches!(index, 1 | 3 | 4 | 5 | 7 | 8 | 9)
-        && state.editing.is_none()
-        && state.profile_input.is_none()
-    {
+    if matches!(index, 4 | 5) {
+        spans.push(memory_slider(state, index, selected));
+    } else if matches!(index, 1 | 3 | 7 | 8) && state.editing.is_none() {
         spans.push(Span::styled(
             format!(" ‹ {displayed} › "),
             Style::default()
@@ -1098,14 +1120,147 @@ fn field_line<'a>(state: &'a State, index: usize, label: &str, label_width: usiz
     }))
 }
 
+fn memory_slider(state: &State, index: usize, selected: bool) -> Span<'static> {
+    let theme = THEME.as_ref();
+    let settings = SETTINGS.read();
+    let configured = if index == 4 {
+        state.draft.memory_min.as_deref()
+    } else {
+        state.draft.memory_max.as_deref()
+    };
+    let effective = configured.unwrap_or_else(|| {
+        if index == 4 {
+            &settings.defaults.memory_min
+        } else {
+            &settings.defaults.memory_max
+        }
+    });
+    let thresholds = ["512M", "1G", "2G", "4G", "6G", "8G", "12G", "16G"];
+    let effective_kib = memory_kib(effective).unwrap_or(0);
+    let step = thresholds
+        .iter()
+        .position(|value| memory_kib(value).is_some_and(|limit| effective_kib <= limit))
+        .unwrap_or(thresholds.len() - 1);
+    let filled = ((step + 1) * 6).div_ceil(thresholds.len()).max(1);
+    let bar = format!("{}{}", "▰".repeat(filled), "▱".repeat(6 - filled));
+    let label = if configured.is_none() {
+        format!("default {effective}")
+    } else {
+        effective.to_owned()
+    };
+    Span::styled(
+        format!(" ◀ {bar} {label} ▶ "),
+        Style::default()
+            .fg(if selected {
+                theme.accent()
+            } else {
+                theme.text()
+            })
+            .bg(theme.background())
+            .add_modifier(if selected {
+                Modifier::BOLD
+            } else {
+                Modifier::empty()
+            }),
+    )
+}
+
+fn render_jvm_args(frame: &mut Frame, area: Rect, state: &State) {
+    let theme = THEME.as_ref();
+    let block = settings_card(" JVM Arguments ", true);
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    if let Some((target, editor)) = &state.jvm_arg_input {
+        let editor_block = Block::default()
+            .title(if target.is_some() {
+                " Edit argument · Enter apply "
+            } else {
+                " Add argument · Enter apply "
+            })
+            .borders(Borders::ALL)
+            .border_type(BORDER_STYLE.to_border_type())
+            .border_style(Style::default().fg(theme.accent()))
+            .style(Style::default().bg(theme.surface()));
+        let editor_inner = editor_block.inner(inner);
+        frame.render_widget(editor_block, inner);
+        frame.render_widget(editor, editor_inner);
+        return;
+    }
+
+    if state.draft.jvm_args.is_empty() {
+        frame.render_widget(
+            Paragraph::new(vec![
+                Line::from(""),
+                Line::from(Span::styled(
+                    "  No custom JVM arguments.",
+                    Style::default().fg(theme.text_dim()),
+                )),
+                Line::from(vec![
+                    Span::styled(
+                        "  [a] ",
+                        Style::default()
+                            .fg(theme.accent())
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled("add an argument", Style::default().fg(theme.text())),
+                ]),
+            ]),
+            inner,
+        );
+        return;
+    }
+
+    let visible_rows = inner.height as usize;
+    let start = state
+        .jvm_arg_index
+        .saturating_sub(visible_rows.saturating_sub(1));
+    let lines = state
+        .draft
+        .jvm_args
+        .iter()
+        .enumerate()
+        .skip(start)
+        .take(visible_rows)
+        .map(|(index, argument)| {
+            let selected = index == state.jvm_arg_index;
+            Line::from(vec![
+                Span::styled(
+                    if selected { "▶ " } else { "  " },
+                    Style::default().fg(theme.accent()),
+                ),
+                Span::styled(
+                    format!("{:02}  ", index + 1),
+                    Style::default().fg(theme.text_dim()),
+                ),
+                Span::styled(
+                    argument.clone(),
+                    Style::default()
+                        .fg(if selected {
+                            theme.accent()
+                        } else {
+                            theme.text()
+                        })
+                        .add_modifier(if selected {
+                            Modifier::BOLD
+                        } else {
+                            Modifier::empty()
+                        }),
+                ),
+            ])
+            .style(Style::default().bg(if selected {
+                theme.stripe()
+            } else {
+                theme.surface()
+            }))
+        })
+        .collect::<Vec<_>>();
+    frame.render_widget(Paragraph::new(lines), inner);
+}
+
 fn status_line(state: &State) -> Line<'_> {
     let theme = THEME.as_ref();
-    if state.confirm_profile_delete {
-        Line::from(Span::styled(
-            "  ! Delete this shared profile?  [y] yes  [n] no",
-            Style::default().fg(theme.warning()),
-        ))
-    } else if let Some(error) = &state.error {
+    if let Some(error) = &state.error {
         Line::from(Span::styled(
             format!("  × {error}"),
             Style::default().fg(theme.error()),
@@ -1140,10 +1295,7 @@ fn render_choice_picker(frame: &mut Frame, area: Rect, state: &State) {
     let title = match state.choice_picker {
         Some(ChoicePicker::Loader) => " Loader ",
         Some(ChoicePicker::Java) => " Java Runtime ",
-        Some(ChoicePicker::MemoryMin) => " Minimum Memory ",
-        Some(ChoicePicker::MemoryMax) => " Maximum Memory ",
         Some(ChoicePicker::Resolution) => " Window Resolution ",
-        Some(ChoicePicker::Profile) => " Config Profile ",
         None => return,
     };
     let block = settings_card(title, true);
@@ -1338,15 +1490,13 @@ mod tests {
     }
 
     #[test]
-    fn text_editor_supports_cursor_movement_and_multiline_jvm_arguments() {
+    fn custom_memory_editor_and_jvm_argument_manager_preserve_values() {
         let temp = tempfile::tempdir().unwrap();
         let mut config = instance();
         config.memory_min = Some("512M".to_owned());
         let mut state = State::new(&config, temp.path());
         state.selected = 4;
-        state.begin_edit();
-        state.choice_index = state.choice_values().len() - 1;
-        state.handle_key(&KeyEvent::from(KeyCode::Enter));
+        state.handle_key(&KeyEvent::from(KeyCode::Char('c')));
         state.handle_key(&KeyEvent::from(KeyCode::Left));
         state.handle_key(&KeyEvent::from(KeyCode::Char('0')));
         state.handle_key(&KeyEvent::from(KeyCode::Enter));
@@ -1354,15 +1504,26 @@ mod tests {
 
         state.selected = 6;
         state.begin_edit();
+        state.handle_key(&KeyEvent::from(KeyCode::Char('a')));
         for character in "-Xfoo".chars() {
             state.handle_key(&KeyEvent::from(KeyCode::Char(character)));
         }
         state.handle_key(&KeyEvent::from(KeyCode::Enter));
+        state.handle_key(&KeyEvent::from(KeyCode::Char('a')));
         for character in "-Xbar".chars() {
             state.handle_key(&KeyEvent::from(KeyCode::Char(character)));
         }
-        state.handle_key(&KeyEvent::new(KeyCode::Enter, KeyModifiers::CONTROL));
+        state.handle_key(&KeyEvent::from(KeyCode::Enter));
         assert_eq!(state.draft.jvm_args, ["-Xfoo", "-Xbar"]);
+
+        state.handle_key(&KeyEvent::from(KeyCode::Left));
+        assert_eq!(state.draft.jvm_args, ["-Xbar", "-Xfoo"]);
+        state.handle_key(&KeyEvent::from(KeyCode::Enter));
+        state.handle_key(&KeyEvent::from(KeyCode::Char('2')));
+        state.handle_key(&KeyEvent::from(KeyCode::Enter));
+        assert_eq!(state.draft.jvm_args, ["-Xbar2", "-Xfoo"]);
+        state.handle_key(&KeyEvent::from(KeyCode::Char('d')));
+        assert_eq!(state.draft.jvm_args, ["-Xfoo"]);
     }
 
     #[test]
@@ -1407,22 +1568,18 @@ mod tests {
     }
 
     #[test]
-    fn adding_profile_is_staged_until_settings_are_saved() {
+    fn popup_changes_do_not_replace_the_existing_config_profile() {
         let temp = tempfile::tempdir().unwrap();
-        let mut state = State::new(&instance(), temp.path());
-        state.profile_input = Some(new_text_area(vec!["new-profile".to_owned()]));
+        let mut config = instance();
+        config.config_sync_profile = Some("shared".to_owned());
+        let mut state = State::new(&config, temp.path());
+        state.desktop = !state.desktop;
 
-        state.handle_key(&KeyEvent::from(KeyCode::Enter));
+        let Action::Save(config, _) = state.handle_key(&KeyEvent::from(KeyCode::Char('s'))) else {
+            panic!("expected settings save");
+        };
 
-        assert_eq!(
-            state.draft.config_sync_profile.as_deref(),
-            Some("new-profile")
-        );
-        assert!(
-            crate::instance::config_sync::list_profiles(temp.path())
-                .unwrap()
-                .is_empty()
-        );
+        assert_eq!(config.config_sync_profile.as_deref(), Some("shared"));
     }
 
     #[test]
@@ -1450,28 +1607,28 @@ mod tests {
         state.handle_key(&KeyEvent::from(KeyCode::Left));
         assert_eq!(state.draft.loader, ModLoader::Fabric);
 
-        state.selected = 9;
+        state.selected = 8;
         let desktop = state.desktop;
         state.handle_key(&KeyEvent::from(KeyCode::Right));
         assert_ne!(state.desktop, desktop);
     }
 
     #[test]
-    fn typed_fields_use_presets_before_custom_input() {
+    fn memory_slider_and_resolution_picker_use_structured_values() {
         let temp = tempfile::tempdir().unwrap();
         let mut state = State::new(&instance(), temp.path());
 
         state.selected = 4;
         state.begin_edit();
-        assert_eq!(state.choice_picker, Some(ChoicePicker::MemoryMin));
-        state.choice_index = state
-            .choice_values()
-            .iter()
-            .position(|value| value == "4G")
-            .unwrap();
-        state.handle_key(&KeyEvent::from(KeyCode::Enter));
-        assert_eq!(state.draft.memory_min.as_deref(), Some("4G"));
+        assert!(state.draft.memory_min.is_some());
+        assert!(state.choice_picker.is_none());
         assert!(state.editing.is_none());
+
+        state.draft.memory_min = Some("4G".to_owned());
+        state.draft.memory_max = Some("4G".to_owned());
+        state.handle_key(&KeyEvent::from(KeyCode::Right));
+        assert_eq!(state.draft.memory_min.as_deref(), Some("6G"));
+        assert_eq!(state.draft.memory_max.as_deref(), Some("6G"));
 
         state.selected = 7;
         state.begin_edit();

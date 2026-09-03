@@ -24,8 +24,6 @@ use crate::{
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum PresetPicker {
     Border,
-    MemoryMin,
-    MemoryMax,
     Java,
 }
 
@@ -181,14 +179,6 @@ impl State {
                 "╔═╗ double".to_owned(),
                 "┏━┓ thick".to_owned(),
             ],
-            PresetPicker::MemoryMin | PresetPicker::MemoryMax => {
-                let current = if picker == PresetPicker::MemoryMin {
-                    &self.config.defaults.memory_min
-                } else {
-                    &self.config.defaults.memory_max
-                };
-                memory_choices(Some(current))
-            }
             PresetPicker::Java => {
                 let mut values = vec!["automatic detection".to_owned()];
                 if !self.detected_java.is_empty() {
@@ -214,8 +204,6 @@ impl State {
         self.preset_picker = Some(picker);
         let current = match picker {
             PresetPicker::Border => None,
-            PresetPicker::MemoryMin => Some(self.config.defaults.memory_min.as_str()),
-            PresetPicker::MemoryMax => Some(self.config.defaults.memory_max.as_str()),
             PresetPicker::Java => self.config.paths.java_path.as_deref(),
         };
         self.preset_index = self
@@ -225,7 +213,6 @@ impl State {
                 (PresetPicker::Border, _) => value == &self.display_value(1),
                 (PresetPicker::Java, None) => value == "automatic detection",
                 (_, Some(current)) => value == current,
-                _ => false,
             })
             .unwrap_or(0);
     }
@@ -252,28 +239,6 @@ impl State {
                 ) {
                     self.error = Some(error.to_string());
                     self.theme.border_style = previous;
-                }
-            }
-            Some(PresetPicker::MemoryMin | PresetPicker::MemoryMax)
-                if selected == "custom memory…" =>
-            {
-                let field = if self.preset_picker == Some(PresetPicker::MemoryMin) {
-                    2
-                } else {
-                    3
-                };
-                self.editing = Some(new_text_area(vec![self.value(field)]));
-            }
-            Some(PresetPicker::MemoryMin) => {
-                if let Some(value) = normalize_memory_value(&selected) {
-                    self.config.defaults.memory_min = value;
-                    self.config_dirty = true;
-                }
-            }
-            Some(PresetPicker::MemoryMax) => {
-                if let Some(value) = normalize_memory_value(&selected) {
-                    self.config.defaults.memory_max = value;
-                    self.config_dirty = true;
                 }
             }
             Some(PresetPicker::Java) if selected == "custom path…" => {
@@ -315,6 +280,50 @@ impl State {
             };
             self.apply_preset();
         }
+    }
+
+    fn adjust_memory(&mut self, field: usize, forward: bool) {
+        let values = ["512M", "1G", "2G", "4G", "6G", "8G", "12G", "16G"];
+        let current = if field == 2 {
+            &self.config.defaults.memory_min
+        } else {
+            &self.config.defaults.memory_max
+        };
+        let exact = values.iter().position(|value| *value == current);
+        let next = if let Some(index) = exact {
+            if forward {
+                (index + 1) % values.len()
+            } else {
+                (index + values.len() - 1) % values.len()
+            }
+        } else {
+            let current_kib = memory_kib(current).unwrap_or_default();
+            if forward {
+                values
+                    .iter()
+                    .position(|value| memory_kib(value).is_some_and(|kib| kib > current_kib))
+                    .unwrap_or(0)
+            } else {
+                values
+                    .iter()
+                    .rposition(|value| memory_kib(value).is_some_and(|kib| kib < current_kib))
+                    .unwrap_or(values.len() - 1)
+            }
+        };
+        let value = values[next].to_owned();
+        if field == 2 {
+            self.config.defaults.memory_min = value.clone();
+            if memory_kib(&value) > memory_kib(&self.config.defaults.memory_max) {
+                self.config.defaults.memory_max = value;
+            }
+        } else {
+            self.config.defaults.memory_max = value.clone();
+            if memory_kib(&value) < memory_kib(&self.config.defaults.memory_min) {
+                self.config.defaults.memory_min = value;
+            }
+        }
+        self.config_dirty = true;
+        self.error = None;
     }
 
     fn cycle_theme(&mut self, forward: bool) {
@@ -391,27 +400,27 @@ impl State {
             KeyCode::Left => match self.selected {
                 0 => self.cycle_theme(false),
                 1 => self.cycle_border(false),
-                2 => self.rotate_preset(PresetPicker::MemoryMin, false),
-                3 => self.rotate_preset(PresetPicker::MemoryMax, false),
+                2 | 3 => self.adjust_memory(self.selected, false),
                 4 => self.rotate_preset(PresetPicker::Java, false),
                 _ => {}
             },
             KeyCode::Right => match self.selected {
                 0 => self.cycle_theme(true),
                 1 => self.cycle_border(true),
-                2 => self.rotate_preset(PresetPicker::MemoryMin, true),
-                3 => self.rotate_preset(PresetPicker::MemoryMax, true),
+                2 | 3 => self.adjust_memory(self.selected, true),
                 4 => self.rotate_preset(PresetPicker::Java, true),
                 _ => {}
             },
             KeyCode::Enter => match self.selected {
                 0 => self.theme_picker = true,
                 1 => self.open_preset_picker(PresetPicker::Border),
-                2 => self.open_preset_picker(PresetPicker::MemoryMin),
-                3 => self.open_preset_picker(PresetPicker::MemoryMax),
+                2 | 3 => self.adjust_memory(self.selected, true),
                 4 => self.open_preset_picker(PresetPicker::Java),
                 _ => {}
             },
+            KeyCode::Char('c') if matches!(self.selected, 2 | 3) => {
+                self.editing = Some(new_text_area(vec![self.value(self.selected)]));
+            }
             KeyCode::Char('s') => {
                 if self.validate_before_save() {
                     return Action::Save(
@@ -484,20 +493,6 @@ fn available_themes() -> Vec<String> {
     themes
 }
 
-fn memory_choices(current: Option<&String>) -> Vec<String> {
-    let mut values = ["512M", "1G", "2G", "4G", "6G", "8G", "12G", "16G"]
-        .into_iter()
-        .map(str::to_owned)
-        .collect::<Vec<_>>();
-    if let Some(current) = current
-        && !values.contains(current)
-    {
-        values.push(current.clone());
-    }
-    values.push("custom memory…".to_owned());
-    values
-}
-
 fn new_text_area(lines: Vec<String>) -> TextArea<'static> {
     let theme = THEME.as_ref();
     let mut editor = TextArea::new(if lines.is_empty() {
@@ -530,6 +525,15 @@ pub fn render(frame: &mut Frame, area: Rect, state: &State) {
     frame.render_widget(Clear, area);
     let keybinds = if state.theme_picker || state.preset_picker.is_some() {
         super::keybind_line(&[("j/k", " move"), ("Enter", " apply"), ("Esc", " back")])
+    } else if matches!(state.selected, 2 | 3) {
+        super::keybind_line(&[
+            ("j/k", ""),
+            ("←/→", " memory"),
+            ("c", " custom"),
+            ("s", " save"),
+            ("E", " raw"),
+            ("Esc", " back"),
+        ])
     } else {
         super::keybind_line(&[
             ("j/k", ""),
@@ -568,8 +572,6 @@ pub fn render(frame: &mut Frame, area: Rect, state: &State) {
     if let Some(picker) = state.preset_picker {
         let title = match picker {
             PresetPicker::Border => " Border Style ",
-            PresetPicker::MemoryMin => " Minimum Memory ",
-            PresetPicker::MemoryMax => " Maximum Memory ",
             PresetPicker::Java => " Java Runtime ",
         };
         render_picker(
@@ -741,7 +743,7 @@ fn global_field_line<'a>(state: &'a State, index: usize, label: &str) -> Line<'a
     let theme = THEME.as_ref();
     let selected = index == state.selected;
     let displayed = state.display_value(index);
-    Line::from(vec![
+    let mut spans = vec![
         Span::styled(
             if selected { "▶ " } else { "  " },
             Style::default().fg(theme.accent()),
@@ -750,7 +752,11 @@ fn global_field_line<'a>(state: &'a State, index: usize, label: &str) -> Line<'a
             format!("{label:<13}"),
             Style::default().fg(theme.text_dim()),
         ),
-        Span::styled(
+    ];
+    if matches!(index, 2 | 3) {
+        spans.push(global_memory_slider(&displayed, selected));
+    } else {
+        spans.push(Span::styled(
             format!(" ‹ {displayed} › "),
             Style::default()
                 .fg(if selected {
@@ -764,13 +770,43 @@ fn global_field_line<'a>(state: &'a State, index: usize, label: &str) -> Line<'a
                 } else {
                     Modifier::empty()
                 }),
-        ),
-    ])
-    .style(Style::default().bg(if selected {
+        ));
+    }
+    Line::from(spans).style(Style::default().bg(if selected {
         theme.stripe()
     } else {
         theme.surface()
     }))
+}
+
+fn global_memory_slider(value: &str, selected: bool) -> Span<'static> {
+    let theme = THEME.as_ref();
+    let thresholds = ["512M", "1G", "2G", "4G", "6G", "8G", "12G", "16G"];
+    let value_kib = memory_kib(value).unwrap_or_default();
+    let step = thresholds
+        .iter()
+        .position(|threshold| memory_kib(threshold).is_some_and(|limit| value_kib <= limit))
+        .unwrap_or(thresholds.len() - 1);
+    let filled = step + 1;
+    Span::styled(
+        format!(
+            " ◀ {}{} {value} ▶ ",
+            "▰".repeat(filled),
+            "▱".repeat(thresholds.len() - filled)
+        ),
+        Style::default()
+            .fg(if selected {
+                theme.accent()
+            } else {
+                theme.text()
+            })
+            .bg(theme.background())
+            .add_modifier(if selected {
+                Modifier::BOLD
+            } else {
+                Modifier::empty()
+            }),
+    )
 }
 
 #[cfg(test)]
@@ -778,18 +814,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn launcher_defaults_open_purpose_built_pickers() {
+    fn launcher_defaults_use_memory_sliders_and_java_picker() {
         let mut state = State::new();
         state.selected = 2;
-        state.handle_key(&KeyEvent::from(KeyCode::Enter));
-        assert_eq!(state.preset_picker, Some(PresetPicker::MemoryMin));
-        state.preset_index = state
-            .preset_values()
-            .iter()
-            .position(|value| value == "4G")
-            .unwrap();
-        state.handle_key(&KeyEvent::from(KeyCode::Enter));
-        assert_eq!(state.config.defaults.memory_min, "4G");
+        let original = state.config.defaults.memory_min.clone();
+        state.handle_key(&KeyEvent::from(KeyCode::Right));
+        assert_ne!(state.config.defaults.memory_min, original);
+        assert!(state.preset_picker.is_none());
         assert!(state.editing.is_none());
 
         state.selected = 4;

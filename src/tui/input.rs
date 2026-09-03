@@ -722,22 +722,6 @@ impl App {
                     self.instance_settings = None;
                     self.focused = self.pre_overlay_focused;
                 }
-                widgets::popups::instance_settings::Action::DeleteProfile(profile) => {
-                    match self.delete_config_profile(&profile) {
-                        Ok(()) => {
-                            self.settings_state.remove_profile(&profile);
-                            if let Some(state) = self.instance_settings.as_mut() {
-                                state.profile_deleted(&profile);
-                            }
-                        }
-                        Err(error) => error_buffer::push_error(error_buffer::ErrorEvent {
-                            id: 0,
-                            level: tracing::Level::ERROR,
-                            message: error.to_string(),
-                            pushed_at: std::time::Instant::now(),
-                        }),
-                    }
-                }
                 widgets::popups::instance_settings::Action::Save(updated, desktop) => {
                     let mut updated = *updated;
                     if let Some(previous) = self.instances_state.selected_instance().cloned() {

@@ -585,6 +585,8 @@ fn settings_panel_routes_legacy_edit_keys_to_tui_popups() {
     assert!(ui.screen().contains("Runtime"));
     assert!(ui.screen().contains("Version"));
     assert!(ui.screen().contains("Desktop"));
+    assert!(!ui.screen().contains("Integration"));
+    assert!(ui.screen().contains('▰'));
     assert!(ui.screen().contains('‹'));
     assert!(ui.screen().contains('›'));
     ui.key(KeyCode::Down);
@@ -592,6 +594,14 @@ fn settings_panel_routes_legacy_edit_keys_to_tui_popups() {
     ui.draw();
     assert!(ui.screen().contains("Loader"));
     assert!(ui.screen().contains("Fabric"));
+    ui.key(KeyCode::Esc);
+    for _ in 0..5 {
+        ui.key(KeyCode::Down);
+    }
+    ui.key(KeyCode::Enter);
+    ui.draw();
+    assert!(ui.screen().contains("JVM Arguments"));
+    assert!(ui.screen().contains("No custom JVM arguments"));
     ui.key(KeyCode::Esc);
     ui.key(KeyCode::Esc);
     assert_eq!(ui.app.focused, FocusedArea::Settings);
@@ -602,6 +612,7 @@ fn settings_panel_routes_legacy_edit_keys_to_tui_popups() {
     assert!(ui.screen().contains("Launcher Settings"));
     assert!(ui.screen().contains("Launch Defaults"));
     assert!(ui.screen().contains("Max memory"));
+    assert!(ui.screen().contains('▰'));
     assert!(ui.screen().contains('‹'));
     assert!(ui.screen().contains('›'));
     ui.key(KeyCode::Enter);
