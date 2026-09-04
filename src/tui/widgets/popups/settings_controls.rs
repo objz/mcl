@@ -6,7 +6,10 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
     path::{Path, PathBuf},
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicU64, Ordering},
+    },
 };
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -21,7 +24,10 @@ use ratatui_textarea::{CursorMove, TextArea};
 
 use crate::{
     config::{settings::DEFAULT_RESOLUTION, theme::THEME},
-    instance::{WindowMode, java::JavaInstallation},
+    instance::{
+        java::JavaInstallation,
+        models::{WindowMode, memory_kib},
+    },
     tui::widgets::{popups::LoadState, status_badge},
 };
 
@@ -33,6 +39,13 @@ pub(crate) fn toggle_window_mode(mode: WindowMode) -> WindowMode {
     match mode {
         WindowMode::Windowed => WindowMode::Fullscreen,
         WindowMode::Fullscreen => WindowMode::Windowed,
+    }
+}
+
+pub(crate) fn window_mode_title(mode: WindowMode) -> &'static str {
+    match mode {
+        WindowMode::Windowed => "Windowed",
+        WindowMode::Fullscreen => "Fullscreen",
     }
 }
 
@@ -192,6 +205,7 @@ pub(crate) struct JavaPicker {
     picker: SettingsPicker,
     cache_path: Option<PathBuf>,
     refresh_started: bool,
+    generation: Arc<AtomicU64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -250,7 +264,7 @@ pub(crate) fn handle_resolution_picker_key(
     match key.code {
         KeyCode::Esc | KeyCode::Char('h') | KeyCode::Left => ResolutionPickerAction::Back,
         KeyCode::Char('d') => ResolutionPickerAction::Default,
-        KeyCode::Char('j') | KeyCode::Down | KeyCode::Right if count > 0 => {
+        KeyCode::Char('j') | KeyCode::Down if count > 0 => {
             *selected = (*selected + 1).min(count - 1);
             ResolutionPickerAction::None
         }
@@ -302,12 +316,17 @@ impl JavaPicker {
             picker: SettingsPicker::default(),
             cache_path,
             refresh_started: false,
+            generation: Arc::new(AtomicU64::new(0)),
         }
     }
 
-    pub(crate) fn open(&mut self, current: Option<&str>) {
+    pub(crate) fn set_current(&mut self, current: Option<&str>) {
         self.current = current.map(str::to_owned);
         self.picker.reset();
+    }
+
+    pub(crate) fn open(&mut self, current: Option<&str>) {
+        self.set_current(current);
         if self.refresh_started {
             return;
         }
@@ -322,6 +341,8 @@ impl JavaPicker {
         drop(load);
         let target = self.load.clone();
         let cache_path = self.cache_path.clone();
+        let refresh_generation = self.generation.load(Ordering::Relaxed);
+        let generation = self.generation.clone();
         let selected_paths = [Some(self.detected.clone()), self.current.clone()];
         let discover = move || {
             let mut installations = crate::instance::java::discover_installations();
@@ -337,22 +358,33 @@ impl JavaPicker {
                     installations.push(installation);
                 }
             }
+            let mut load = target
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            if generation.load(Ordering::Relaxed) != refresh_generation {
+                return;
+            }
             if let Some(cache_path) = cache_path
                 && let Err(error) =
                     crate::instance::java::save_installation_cache(&cache_path, &installations)
             {
                 tracing::debug!("Could not cache Java installations: {error}");
             }
-            *target
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner) =
-                LoadState::Loaded(installations);
+            *load = LoadState::Loaded(installations);
+            drop(load);
             crate::feedback::request_redraw();
         };
         if let Ok(runtime) = tokio::runtime::Handle::try_current() {
             runtime.spawn_blocking(discover);
         } else {
             self.refresh_started = false;
+            let mut load = self
+                .load
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            if matches!(*load, LoadState::Loading) {
+                *load = LoadState::Idle;
+            }
         }
     }
 
@@ -493,6 +525,20 @@ impl JavaPicker {
     pub(crate) fn automatic_change(&self, current: &str) -> bool {
         !same_executable(current, &self.detected)
     }
+
+    pub(crate) fn invalidate_cache(&mut self) {
+        self.generation.fetch_add(1, Ordering::Relaxed);
+        let mut load = self
+            .load
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(cache_path) = &self.cache_path {
+            let _ = std::fs::remove_file(cache_path);
+        }
+        *load = LoadState::Idle;
+        self.picker.reset();
+        self.refresh_started = false;
+    }
 }
 
 impl Default for JavaPicker {
@@ -542,7 +588,7 @@ impl GlfwPicker {
             *self
                 .load
                 .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner) = LoadState::Loaded(Vec::new());
+                .unwrap_or_else(std::sync::PoisonError::into_inner) = LoadState::Idle;
         }
     }
 
@@ -607,7 +653,7 @@ impl GlfwPicker {
         {
             LoadState::Loaded(installations) => installations
                 .iter()
-                .find(|installation| installation.path.to_string_lossy() == path)
+                .find(|installation| same_executable(&installation.path.to_string_lossy(), path))
                 .and_then(|installation| installation.version.clone()),
             _ => None,
         };
@@ -771,11 +817,25 @@ fn discover_glfw_installations() -> Vec<GlfwInstallation> {
 }
 
 fn is_glfw_library(path: &Path) -> bool {
+    if !path.is_file() {
+        return false;
+    }
     let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
         return false;
     };
+    is_glfw_library_name(name)
+}
+
+fn is_glfw_library_name(name: &str) -> bool {
     let name = name.to_ascii_lowercase();
-    name.starts_with("libglfw") && (name.contains(".so") || name.ends_with(".dylib"))
+    let versioned_so = name.strip_prefix("libglfw.so.").is_some_and(|version| {
+        version.split('.').all(|part| {
+            !part.is_empty() && part.chars().all(|character| character.is_ascii_digit())
+        })
+    });
+    name == "libglfw.so"
+        || versioned_so
+        || name.starts_with("libglfw.") && name.ends_with(".dylib")
         || name.starts_with("glfw") && name.ends_with(".dll")
 }
 
@@ -812,18 +872,12 @@ fn java_runtime_label(path: &str, version: Option<&str>) -> String {
 }
 
 fn java_title(version: &str) -> String {
-    let mut parts = version.split(['.', '_']);
-    let first = parts.next().unwrap_or(version);
-    let major = if first == "1" {
-        parts.next().unwrap_or(first)
+    let major = crate::instance::java::java_major(Some(version));
+    if major == 0 {
+        "Java".to_owned()
     } else {
-        first
-    };
-    format!("Java {major}")
-}
-
-pub(crate) fn memory_kib(value: &str) -> Option<u64> {
-    crate::instance::models::memory_kib(value)
+        format!("Java {major}")
+    }
 }
 
 pub(crate) fn adjust_memory(value: &str, forward: bool) -> String {
@@ -926,6 +980,10 @@ pub(crate) fn handle_text_area_input(input: &mut TextArea<'_>, key: &KeyEvent) {
 
 pub(crate) fn settings_text_area(lines: Vec<String>) -> TextArea<'static> {
     let theme = THEME.as_ref();
+    let lines = lines
+        .into_iter()
+        .flat_map(|line| line.split('\n').map(str::to_owned).collect::<Vec<String>>())
+        .collect::<Vec<_>>();
     let mut editor = TextArea::new(if lines.is_empty() {
         vec![String::new()]
     } else {
@@ -939,9 +997,79 @@ pub(crate) fn settings_text_area(lines: Vec<String>) -> TextArea<'static> {
     editor
 }
 
+pub(crate) fn parse_tag_values(input: &str) -> Result<Vec<String>, String> {
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    enum Quote {
+        None,
+        Single,
+        Double,
+    }
+
+    let mut values = Vec::new();
+    let mut current = String::new();
+    let mut quote = Quote::None;
+    let mut started = false;
+    let mut characters = input.chars().peekable();
+    while let Some(character) = characters.next() {
+        match (quote, character) {
+            (Quote::None, character) if character.is_whitespace() => {
+                if started {
+                    values.push(std::mem::take(&mut current));
+                    started = false;
+                }
+            }
+            (Quote::None, '\'') => {
+                quote = Quote::Single;
+                started = true;
+            }
+            (Quote::None, '"') => {
+                quote = Quote::Double;
+                started = true;
+            }
+            (Quote::Single, '\'') => quote = Quote::None,
+            (Quote::Double, '"') => quote = Quote::None,
+            (Quote::Double, '\\') if matches!(characters.peek(), Some('"' | '\\')) => {
+                current.push(characters.next().unwrap_or_default());
+                started = true;
+            }
+            (_, character) => {
+                current.push(character);
+                started = true;
+            }
+        }
+    }
+    if quote != Quote::None {
+        return Err("Quoted value is missing its closing quote.".to_owned());
+    }
+    if started {
+        values.push(current);
+    }
+    let mut seen = BTreeSet::new();
+    values.retain(|value| seen.insert(value.clone()));
+    Ok(values)
+}
+
+pub(crate) fn format_tag_values(values: &[String]) -> String {
+    values
+        .iter()
+        .map(|value| {
+            if !value.is_empty()
+                && !value
+                    .chars()
+                    .any(|character| character.is_whitespace() || matches!(character, '\'' | '"'))
+            {
+                value.clone()
+            } else {
+                format!("\"{}\"", value.replace('\\', "\\\\").replace('"', "\\\""))
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 pub(crate) fn parse_environment(value: &str) -> Result<BTreeMap<String, String>, String> {
     let mut environment = BTreeMap::new();
-    for assignment in value.split_whitespace() {
+    for assignment in parse_tag_values(value)? {
         let Some((key, value)) = assignment.split_once('=') else {
             return Err(format!(
                 "Environment variable '{assignment}' must use KEY=value."
@@ -1099,7 +1227,7 @@ pub(crate) fn resolution_choices(
     let mut choices = Vec::new();
     choices.extend(displays.iter().cloned().map(ResolutionChoice::Display));
     for (width, height) in [
-        (854, 480),
+        DEFAULT_RESOLUTION,
         (1280, 720),
         (1600, 900),
         (1920, 1080),
@@ -1230,6 +1358,52 @@ mod tests {
     }
 
     #[test]
+    fn setting_java_value_does_not_start_discovery() {
+        let mut picker = JavaPicker::with_auto_path("/auto/java".to_owned());
+
+        picker.set_current(Some("/custom/java"));
+
+        assert!(!picker.refresh_started);
+        assert!(matches!(
+            *picker
+                .load
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner),
+            LoadState::Idle
+        ));
+
+        picker.open(Some("/custom/java"));
+        assert!(!picker.refresh_started);
+        assert!(matches!(
+            *picker
+                .load
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner),
+            LoadState::Idle
+        ));
+    }
+
+    #[test]
+    fn invalidating_java_picker_drops_memory_and_disk_cache() {
+        let temp = tempfile::tempdir().unwrap();
+        let cache = temp.path().join("cache/java/installations.json");
+        std::fs::create_dir_all(cache.parent().unwrap()).unwrap();
+        std::fs::write(&cache, "[]").unwrap();
+        let mut picker = JavaPicker::with_cache("/auto/java".to_owned(), Some(cache.clone()));
+        *picker.load.lock().unwrap() = LoadState::Loaded(vec![JavaInstallation {
+            path: "/cached/java".into(),
+            version: Some("21".to_owned()),
+        }]);
+        picker.refresh_started = true;
+
+        picker.invalidate_cache();
+
+        assert!(!cache.exists());
+        assert!(!picker.refresh_started);
+        assert!(matches!(*picker.load.lock().unwrap(), LoadState::Idle));
+    }
+
+    #[test]
     fn java_title_is_minimal_and_uses_the_major_version() {
         let picker = JavaPicker::with_auto_path("/opt/jdk-25/bin/java".to_owned());
         assert_eq!(
@@ -1245,6 +1419,7 @@ mod tests {
             "Java 25  /opt/jdk-25/bin/java"
         );
         assert_eq!(java_title("1.8.0_412"), "Java 8");
+        assert_eq!(java_title("21-ea"), "Java 21");
     }
 
     #[test]
@@ -1282,6 +1457,20 @@ mod tests {
             picker.handle_key(&KeyEvent::from(KeyCode::Enter)),
             SettingsPickerAction::Select
         );
+        assert_eq!(
+            picker.handle_key(&KeyEvent::from(KeyCode::Right)),
+            SettingsPickerAction::Select
+        );
+    }
+
+    #[test]
+    fn right_arrow_selects_resolution_instead_of_moving_down() {
+        let mut selected = 0;
+        assert_eq!(
+            handle_resolution_picker_key(&mut selected, 3, &KeyEvent::from(KeyCode::Right)),
+            ResolutionPickerAction::Select
+        );
+        assert_eq!(selected, 0);
     }
 
     #[test]
@@ -1310,10 +1499,11 @@ mod tests {
 
     #[test]
     fn glfw_library_names_are_recognized() {
-        assert!(is_glfw_library(Path::new("/usr/lib/libglfw.so.3")));
-        assert!(is_glfw_library(Path::new("/usr/lib/libglfw.3.dylib")));
-        assert!(is_glfw_library(Path::new("C:/bin/glfw3.dll")));
-        assert!(!is_glfw_library(Path::new("/usr/lib/libGL.so")));
+        assert!(is_glfw_library_name("libglfw.so.3"));
+        assert!(is_glfw_library_name("libglfw.3.dylib"));
+        assert!(is_glfw_library_name("glfw3.dll"));
+        assert!(!is_glfw_library_name("libglfw.so.backup"));
+        assert!(!is_glfw_library_name("libGL.so"));
         assert_eq!(
             glfw_version_from_path(Path::new("/usr/lib/libglfw.so.3.4")).as_deref(),
             Some("3.4")
@@ -1331,6 +1521,47 @@ mod tests {
         );
 
         assert_eq!(input.lines(), ["one "]);
+    }
+
+    #[test]
+    fn tag_values_with_spaces_and_quotes_round_trip() {
+        let values = vec![
+            "-Xmx2G".to_owned(),
+            "-Dlabel=hello world".to_owned(),
+            r"C:\Program Files\Java".to_owned(),
+            "-Dquote=\"value\"".to_owned(),
+            String::new(),
+        ];
+
+        let formatted = format_tag_values(&values);
+
+        assert_eq!(parse_tag_values(&formatted).unwrap(), values);
+        assert!(parse_tag_values("\"unterminated").is_err());
+    }
+
+    #[test]
+    fn tag_values_drop_exact_duplicates_without_reordering() {
+        assert_eq!(
+            parse_tag_values("-Xmx2G '-Dlabel=hello world' -Xmx2G").unwrap(),
+            ["-Xmx2G", "-Dlabel=hello world"]
+        );
+    }
+
+    #[test]
+    fn environment_values_can_contain_spaces() {
+        let environment =
+            parse_environment(r#"LABEL="hello world" PATH="C:\Program Files""#).unwrap();
+
+        assert_eq!(
+            environment.get("LABEL").map(String::as_str),
+            Some("hello world")
+        );
+        assert_eq!(
+            environment.get("PATH").map(String::as_str),
+            Some(r"C:\Program Files")
+        );
+        assert!(parse_environment("=missing").is_err());
+        assert!(parse_environment("KEY=one KEY=two").is_err());
     }
 
     #[test]

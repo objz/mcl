@@ -27,6 +27,4 @@ pub use content::{
 pub use launch::LaunchError;
 pub use loader::{GameVersion, ModLoaderInstaller, VanillaInstaller, get_installer};
 pub use manager::{InstanceError, InstanceManager};
-pub use models::{
-    InstanceConfig, LaunchCommand, ModLoader, WindowMode, memory_kib, normalize_memory_value,
-};
+pub use models::{InstanceConfig, ModLoader, WindowMode, normalize_memory_value};

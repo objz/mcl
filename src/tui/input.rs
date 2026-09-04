@@ -217,8 +217,9 @@ impl App {
                                     if instance.preferred_account.as_deref()
                                         == Some(removed_uuid.as_str())
                                     {
-                                        instance.preferred_account = None;
-                                        if let Err(error) = self.instance_manager.save(instance) {
+                                        let mut updated = instance.clone();
+                                        updated.preferred_account = None;
+                                        if let Err(error) = self.instance_manager.save(&updated) {
                                             error_buffer::push_message(
                                                 tracing::Level::ERROR,
                                                 format!(
@@ -226,6 +227,8 @@ impl App {
                                                     instance.name
                                                 ),
                                             );
+                                        } else {
+                                            *instance = updated;
                                         }
                                     }
                                 }
@@ -301,6 +304,12 @@ impl App {
                             match crate::storage::clear_disposable_caches(&meta_dir) {
                                 Ok(()) => {
                                     self.reset_discovery_states();
+                                    if let Some(state) = self.global_settings.as_mut() {
+                                        state.invalidate_java_cache();
+                                    }
+                                    if let Some(state) = self.instance_settings.as_mut() {
+                                        state.invalidate_java_cache();
+                                    }
                                     error_buffer::push_message(
                                         tracing::Level::INFO,
                                         "Cleared launcher caches",
@@ -348,11 +357,9 @@ impl App {
                                     );
                                     if let Some(widgets::popups::global_settings::Action::Save(
                                         config,
-                                        theme,
-                                        border,
                                     )) = action
                                     {
-                                        self.apply_global_settings(*config, theme, border);
+                                        self.apply_global_settings(*config);
                                     }
                                 }
                             }
@@ -375,8 +382,12 @@ impl App {
                             FocusedArea::Settings
                         }
                         Some(confirm_popup::ConfirmTarget::InstanceRuntime { .. }) => {
-                            if let Some(state) = self.instance_settings.as_mut() {
-                                state.cancel_runtime_change();
+                            let remaining = self
+                                .instance_settings
+                                .as_mut()
+                                .and_then(|state| state.cancel_runtime_change());
+                            if let Some((updated, desktop)) = remaining {
+                                self.apply_instance_settings(*updated, desktop);
                             }
                             FocusedArea::InstanceSettings
                         }
@@ -695,6 +706,16 @@ impl App {
                 }
                 widgets::settings::SettingsAction::SelectProfile(profile) => {
                     if let Some(instance) = self.instances_state.selected_instance().cloned() {
+                        if self
+                            .pending_instance_settings_updates
+                            .contains(&instance.name)
+                        {
+                            error_buffer::push_message(
+                                tracing::Level::WARN,
+                                super::app::RUNTIME_UPDATE_PENDING_MESSAGE,
+                            );
+                            return Ok(());
+                        }
                         let instance_dir = self.instance_manager.instances_dir.join(&instance.name);
                         match crate::instance::config_sync::switch_profile(
                             &instance.name,
@@ -784,8 +805,8 @@ impl App {
                     self.global_settings = None;
                     self.focused = self.pre_overlay_focused;
                 }
-                widgets::popups::global_settings::Action::Save(config, theme, border) => {
-                    self.apply_global_settings(*config, theme, border);
+                widgets::popups::global_settings::Action::Save(config) => {
+                    self.apply_global_settings(*config);
                 }
             }
             return Ok(());
@@ -995,8 +1016,15 @@ impl App {
                     {
                         if let Some(instance) = self.instances_state.selected_instance() {
                             let name = instance.name.clone();
-                            confirm_popup::set_pending_instance_delete(&name);
-                            self.focused = FocusedArea::ConfirmDelete;
+                            if self.pending_instance_settings_updates.contains(&name) {
+                                error_buffer::push_message(
+                                    tracing::Level::WARN,
+                                    super::app::RUNTIME_UPDATE_PENDING_MESSAGE,
+                                );
+                            } else {
+                                confirm_popup::set_pending_instance_delete(&name);
+                                self.focused = FocusedArea::ConfirmDelete;
+                            }
                         }
                     }
                     // shift+enter = open .minecraft folder in file manager
@@ -1050,7 +1078,14 @@ impl App {
                             && !self.instances_state.search.active =>
                     {
                         if let Some(inst) = self.instances_state.selected_instance() {
-                            self.instances_state.renaming = Some(inst.name.clone());
+                            if self.pending_instance_settings_updates.contains(&inst.name) {
+                                error_buffer::push_message(
+                                    tracing::Level::WARN,
+                                    super::app::RUNTIME_UPDATE_PENDING_MESSAGE,
+                                );
+                            } else {
+                                self.instances_state.renaming = Some(inst.name.clone());
+                            }
                         }
                     }
                     // esc = kill running instance. brutal but effective
@@ -1090,6 +1125,20 @@ impl App {
     }
 
     fn spawn_modpack_update(&mut self) {
+        if self
+            .instances_state
+            .selected_instance()
+            .is_some_and(|instance| {
+                self.pending_instance_settings_updates
+                    .contains(&instance.name)
+            })
+        {
+            error_buffer::push_message(
+                tracing::Level::WARN,
+                super::app::RUNTIME_UPDATE_PENDING_MESSAGE,
+            );
+            return;
+        }
         let Some(target) = self.instances_state.selected_modpack_update() else {
             return;
         };
@@ -1100,6 +1149,16 @@ impl App {
         let Some(instance) = self.instances_state.selected_instance() else {
             return;
         };
+        if self
+            .pending_instance_settings_updates
+            .contains(&instance.name)
+        {
+            error_buffer::push_message(
+                tracing::Level::WARN,
+                super::app::RUNTIME_UPDATE_PENDING_MESSAGE,
+            );
+            return;
+        }
         let Some(source) = instance.modpack_source.clone() else {
             return;
         };
@@ -2163,19 +2222,10 @@ impl App {
         self.focused = FocusedArea::InstanceSettings;
     }
 
-    fn apply_global_settings(
-        &mut self,
-        config: crate::config::Config,
-        theme: String,
-        border: crate::config::theme::BorderStyle,
-    ) {
+    fn apply_global_settings(&mut self, config: crate::config::Config) {
         let result = crate::config::SETTINGS.save_launcher_settings(config);
         match result {
             Ok(outcome) => {
-                if let Err(error) = crate::config::theme::apply_theme(theme, border) {
-                    error_buffer::push_message(tracing::Level::ERROR, error.to_string());
-                    return;
-                }
                 if outcome.provider_changed {
                     self.reset_discovery_states();
                 }
@@ -2195,13 +2245,18 @@ impl App {
                 }
                 crate::feedback::request_redraw();
             }
-            Err(error) => error_buffer::push_message(tracing::Level::ERROR, error.to_string()),
+            Err(error) => {
+                if let Some(state) = self.global_settings.as_mut() {
+                    state.mark_save_failed();
+                }
+                error_buffer::push_message(tracing::Level::ERROR, error.to_string());
+            }
         }
     }
 
-    fn apply_instance_settings(
+    pub(super) fn apply_instance_settings(
         &mut self,
-        updated: crate::instance::models::InstanceConfig,
+        mut updated: crate::instance::models::InstanceConfig,
         desktop: bool,
     ) {
         let Some(previous) = self.instances_state.selected_instance().cloned() else {
@@ -2219,7 +2274,10 @@ impl App {
                     pushed_at: std::time::Instant::now(),
                 });
                 if let Some(state) = self.instance_settings.as_mut() {
-                    state.cancel_runtime_change();
+                    let remaining = state.cancel_runtime_change();
+                    if let Some((updated, desktop)) = remaining {
+                        self.apply_instance_settings(*updated, desktop);
+                    }
                 }
                 return;
             }
@@ -2232,13 +2290,20 @@ impl App {
             return;
         }
 
+        let current = match self.instance_manager.load_one(&previous.name) {
+            Ok(current) => current,
+            Err(error) => {
+                if let Some(state) = self.instance_settings.as_mut() {
+                    state.mark_save_failed();
+                }
+                error_buffer::push_message(tracing::Level::ERROR, error.to_string());
+                return;
+            }
+        };
+        updated = super::event::merge_instance_settings(&previous, &updated, current);
         match self.instance_manager.save(&updated) {
             Ok(()) => {
-                let shortcut_result = if desktop {
-                    crate::instance::desktop::create(&updated).map(|_| ())
-                } else {
-                    crate::instance::desktop::remove(&updated.name)
-                };
+                let shortcut_result = crate::instance::desktop::set_enabled(&updated, desktop);
                 let saved_desktop = match shortcut_result {
                     Ok(()) => desktop,
                     Err(error) => {
@@ -2257,12 +2322,17 @@ impl App {
                     state.mark_saved(&updated, saved_desktop);
                 }
             }
-            Err(error) => error_buffer::push_error(error_buffer::ErrorEvent {
-                id: 0,
-                level: tracing::Level::ERROR,
-                message: error.to_string(),
-                pushed_at: std::time::Instant::now(),
-            }),
+            Err(error) => {
+                if let Some(state) = self.instance_settings.as_mut() {
+                    state.mark_save_failed();
+                }
+                error_buffer::push_error(error_buffer::ErrorEvent {
+                    id: 0,
+                    level: tracing::Level::ERROR,
+                    message: error.to_string(),
+                    pushed_at: std::time::Instant::now(),
+                });
+            }
         }
     }
 

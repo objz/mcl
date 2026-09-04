@@ -151,11 +151,13 @@ async fn reconcile(job: ReconcileJob, task: &ProgressTask) -> ReconcileResult {
     let paths = InstancePaths::new(instances_dir.join(&instance_name));
     let manifest_path = paths.content_manifest();
     let minecraft_dir = paths.minecraft();
-    let retry_hours = crate::config::SETTINGS.read().content.unmatched_retry_hours;
-    let max_fingerprint_size_mib = crate::config::SETTINGS
-        .read()
-        .content
-        .max_fingerprint_size_mib;
+    let (retry_hours, max_fingerprint_size_mib) = {
+        let settings = crate::config::SETTINGS.read();
+        (
+            settings.content.unmatched_retry_hours,
+            settings.content.max_fingerprint_size_mib,
+        )
+    };
     let inventory_progress = task.handle();
     let inventory_minecraft_dir = minecraft_dir.clone();
     let inventory = tokio::task::spawn_blocking(move || {

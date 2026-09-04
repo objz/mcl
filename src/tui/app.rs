@@ -19,8 +19,11 @@ use crate::instance::{InstanceConfig, InstanceManager};
 // so the main loop can pick them up without blocking
 pub(super) static PENDING_INSTANCES: LazyLock<Arc<Mutex<Vec<InstanceConfig>>>> =
     LazyLock::new(|| Arc::new(Mutex::new(Vec::new())));
+pub(super) static COMPLETED_INSTANCE_SETTINGS_UPDATES: LazyLock<Arc<Mutex<Vec<InstanceConfig>>>> =
+    LazyLock::new(|| Arc::new(Mutex::new(Vec::new())));
 pub(super) static FAILED_INSTANCE_SETTINGS_UPDATES: LazyLock<Arc<Mutex<Vec<String>>>> =
     LazyLock::new(|| Arc::new(Mutex::new(Vec::new())));
+pub(super) const RUNTIME_UPDATE_PENDING_MESSAGE: &str = "Wait for the runtime update to finish";
 
 pub struct App {
     pub(super) exit: bool,

@@ -27,6 +27,26 @@ fn edited_instance_config_reloads_into_the_ui() {
 }
 
 #[test]
+fn runtime_update_merges_only_confirmed_fields_into_latest_config() {
+    let mut ui = UiHarness::new();
+    ui.add_instance("Merge Runtime");
+    let previous = ui.app.instances_state.selected_instance().unwrap().clone();
+    let mut updated = previous.clone();
+    updated.game_version = "1.21.2".to_owned();
+    updated.memory_max = Some("8G".to_owned());
+    let mut current = previous.clone();
+    current.config_sync_profile = Some("shared".to_owned());
+    current.preferred_account = Some("newer-account".to_owned());
+
+    let merged = merge_instance_settings(&previous, &updated, current);
+
+    assert_eq!(merged.game_version, "1.21.2");
+    assert_eq!(merged.memory_max.as_deref(), Some("8G"));
+    assert_eq!(merged.config_sync_profile.as_deref(), Some("shared"));
+    assert_eq!(merged.preferred_account.as_deref(), Some("newer-account"));
+}
+
+#[test]
 fn completed_background_instance_is_drained_into_the_ui() {
     let mut ui = UiHarness::new();
     ui.add_instance("Existing");
@@ -58,6 +78,42 @@ fn completed_background_instance_is_drained_into_the_ui() {
 }
 
 #[test]
+fn unrelated_background_result_does_not_complete_runtime_update() {
+    let mut ui = UiHarness::new();
+    ui.add_instance("Pending Runtime");
+    ui.app
+        .pending_instance_settings_updates
+        .insert("Pending Runtime".to_owned());
+    let config = ui.app.instances_state.selected_instance().unwrap().clone();
+    PENDING_INSTANCES.lock().unwrap().push(config);
+
+    ui.app.drain_pending_instances();
+
+    assert!(
+        ui.app
+            .pending_instance_settings_updates
+            .contains("Pending Runtime")
+    );
+}
+
+#[test]
+fn pending_runtime_update_blocks_instance_rename() {
+    let mut ui = UiHarness::new();
+    ui.add_instance("Pending Rename");
+    ui.app
+        .pending_instance_settings_updates
+        .insert("Pending Rename".to_owned());
+
+    ui.key(crossterm::event::KeyCode::Char('r'));
+
+    assert!(ui.app.instances_state.renaming.is_none());
+    assert_eq!(
+        crate::feedback::errors::peek_error().map(|error| error.message),
+        Some(RUNTIME_UPDATE_PENDING_MESSAGE.to_owned())
+    );
+}
+
+#[test]
 fn runtime_settings_update_keeps_the_editor_open_and_handles_results() {
     let mut ui = UiHarness::new();
     ui.add_instance("Runtime Settings");
@@ -82,8 +138,12 @@ fn runtime_settings_update_keeps_the_editor_open_and_handles_results() {
 
     let mut updated = ui.app.instances_state.selected_instance().unwrap().clone();
     updated.game_version = "1.21.2".to_owned();
-    PENDING_INSTANCES.lock().unwrap().push(updated);
-    ui.app.drain_pending_instances();
+    ui.app.instance_manager.save(&updated).unwrap();
+    COMPLETED_INSTANCE_SETTINGS_UPDATES
+        .lock()
+        .unwrap()
+        .push(updated);
+    ui.app.drain_completed_instance_settings_updates();
 
     let state = ui.app.instance_settings.as_ref().unwrap();
     assert_eq!(state.draft.game_version, "1.21.2");
@@ -188,6 +248,7 @@ fn structural_settings_update_repairs_runtime_before_persisting() {
             serde_json::to_vec(&serde_json::json!({
                 "id": "1.21.2",
                 "mainClass": "net.minecraft.client.main.Main",
+                "arguments": { "game": [], "jvm": [] },
                 "assetIndex": {
                     "id": "1.21.2",
                     "url": format!("{}/assets.json", server.uri()),

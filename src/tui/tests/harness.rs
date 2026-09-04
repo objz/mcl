@@ -30,6 +30,14 @@ impl UiHarness {
             .lock()
             .unwrap_or_else(|error| error.into_inner())
             .clear();
+        crate::tui::app::COMPLETED_INSTANCE_SETTINGS_UPDATES
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .clear();
+        crate::tui::app::PENDING_INSTANCES
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .clear();
         widgets::popups::new_instance::reset_for_test();
         widgets::popups::import_modpack::reset_for_test();
         crate::feedback::errors::ERROR_EVENTS

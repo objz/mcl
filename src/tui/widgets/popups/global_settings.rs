@@ -19,15 +19,15 @@ use crate::{
         settings::{ContentProvider, DEFAULT_RESOLUTION, ImageProtocol},
         theme::{BORDER_STYLE, BorderStyle, THEME, ThemeConfig},
     },
-    instance::models::{WindowMode, normalize_memory_value, parse_resolution},
+    instance::models::{memory_kib, normalize_memory_value, parse_resolution},
     tui::widgets::popups::settings_controls::{
         DisplayResolution, JavaChoice, JavaPicker, ResolutionChoice, ResolutionPickerAction,
         SettingsPicker, SettingsPickerAction, SettingsPickerOption, adjust_memory, auto_label,
         default_label, default_resolution, display_resolutions, environment_labels,
-        handle_resolution_picker_key, handle_text_area_input, is_default_resolution, memory_kib,
-        parse_environment, render_memory_gauge, render_settings_picker, resolution_choices,
-        resolution_items, settings_text_area, tagged_row_count, tagged_value_lines,
-        toggle_window_mode,
+        format_tag_values, handle_resolution_picker_key, handle_text_area_input,
+        is_default_resolution, parse_environment, parse_tag_values, render_memory_gauge,
+        render_settings_picker, resolution_choices, resolution_items, settings_text_area,
+        tagged_row_count, tagged_value_lines, toggle_window_mode, window_mode_title,
     },
     tui::widgets::status_badge,
 };
@@ -64,7 +64,7 @@ pub struct State {
 
 pub enum Action {
     None,
-    Save(Box<Config>, String, BorderStyle),
+    Save(Box<Config>),
     Error(String),
     ConfirmJavaAuto,
     ClearCache,
@@ -97,7 +97,7 @@ impl State {
                 .java_installations();
         let mut java_picker =
             JavaPicker::with_cache(crate::instance::java::detect_java_path(), Some(java_cache));
-        java_picker.open(config.paths.java_path.as_deref());
+        java_picker.set_current(config.paths.java_path.as_deref());
         Self {
             config,
             theme,
@@ -138,8 +138,8 @@ impl State {
                 .resolution
                 .map(|(width, height)| format!("{width}x{height}"))
                 .unwrap_or_default(),
-            8 => self.config.defaults.jvm_args.join(" "),
-            9 => environment_labels(&self.config.defaults.environment).join(" "),
+            8 => format_tag_values(&self.config.defaults.jvm_args),
+            9 => format_tag_values(&environment_labels(&self.config.defaults.environment)),
             10 => self.config.content.preferred_provider.to_string(),
             11 => status(self.config.content.preferred_provider_only),
             12 => status(self.config.content.ask_on_provider_conflict),
@@ -226,11 +226,13 @@ impl State {
                 }
                 Err(error) => invalid(self, error),
             },
-            8 => {
-                self.config.defaults.jvm_args =
-                    value.split_whitespace().map(str::to_owned).collect();
-                self.save_pending = true;
-            }
+            8 => match parse_tag_values(value) {
+                Ok(arguments) => {
+                    self.config.defaults.jvm_args = arguments;
+                    self.save_pending = true;
+                }
+                Err(error) => invalid(self, error),
+            },
             9 => match parse_environment(value) {
                 Ok(environment) => {
                     self.config.defaults.environment = environment;
@@ -290,14 +292,20 @@ impl State {
         let previous = self.theme.theme.clone();
         self.theme.theme = self.themes[self.theme_index].clone();
         self.error = None;
+        if self.theme.theme == previous {
+            return;
+        }
         if let Err(error) = crate::config::theme::apply_theme(
             self.theme.theme.clone(),
             self.theme.border_style.clone(),
         ) {
             self.error = Some(error.to_string());
             self.theme.theme = previous;
-        } else if self.theme.theme != previous {
-            self.save_pending = true;
+            self.theme_index = self
+                .themes
+                .iter()
+                .position(|candidate| candidate == &self.theme.theme)
+                .unwrap_or(0);
         }
     }
 
@@ -317,7 +325,14 @@ impl State {
 
     fn handle_theme_picker_key(&mut self, key: &KeyEvent) {
         match key.code {
-            KeyCode::Esc | KeyCode::Char('h') | KeyCode::Left => self.theme_picker = false,
+            KeyCode::Esc | KeyCode::Char('h') | KeyCode::Left => {
+                self.theme_picker = false;
+                self.theme_index = self
+                    .themes
+                    .iter()
+                    .position(|candidate| candidate == &self.theme.theme)
+                    .unwrap_or(0);
+            }
             KeyCode::Char('j') | KeyCode::Down => {
                 self.theme_index = (self.theme_index + 1).min(self.themes.len() - 1);
             }
@@ -349,8 +364,6 @@ impl State {
         ) {
             self.error = Some(error.to_string());
             self.theme.border_style = previous;
-        } else if self.theme.border_style != previous {
-            self.save_pending = true;
         }
     }
 
@@ -423,6 +436,7 @@ impl State {
                         .resolution_choices()
                         .get(self.choice_index)
                         .and_then(|choice| choice.resolution())
+                        && self.config.defaults.resolution != Some(resolution)
                     {
                         self.config.defaults.resolution = Some(resolution);
                         self.save_pending = true;
@@ -443,15 +457,18 @@ impl State {
                     return;
                 };
                 if picker == ChoicePicker::ImageProtocol {
-                    self.config.ui.image_protocol = match value.as_str() {
+                    let protocol = match value.as_str() {
                         "kitty" => ImageProtocol::Kitty,
                         "iterm2" => ImageProtocol::Iterm2,
                         "quadrants" => ImageProtocol::Quadrants,
                         "halfblocks" => ImageProtocol::Halfblocks,
                         _ => ImageProtocol::Kitty,
                     };
+                    if self.config.ui.image_protocol != protocol {
+                        self.config.ui.image_protocol = protocol;
+                        self.save_pending = true;
+                    }
                 }
-                self.save_pending = true;
                 self.choice_picker = None;
             }
             SettingsPickerAction::None => {}
@@ -463,8 +480,11 @@ impl State {
     }
 
     fn apply_default_resolution(&mut self) {
-        self.config.defaults.resolution = Some(default_resolution());
-        self.save_pending = true;
+        let resolution = Some(default_resolution());
+        if self.config.defaults.resolution != resolution {
+            self.config.defaults.resolution = resolution;
+            self.save_pending = true;
+        }
         self.error = None;
     }
 
@@ -521,11 +541,15 @@ impl State {
     pub fn confirm_auto_java(&mut self) -> Action {
         self.enable_auto_java();
         self.save_pending = false;
-        Action::Save(
-            Box::new(self.config.clone()),
-            self.theme.theme.clone(),
-            self.theme.border_style.clone(),
-        )
+        Action::Save(Box::new(self.config.clone()))
+    }
+
+    pub fn mark_save_failed(&mut self) {
+        self.save_pending = true;
+    }
+
+    pub fn invalidate_java_cache(&mut self) {
+        self.java_picker.invalidate_cache();
     }
 
     fn handle_java_picker_key(&mut self, key: &KeyEvent) {
@@ -548,6 +572,8 @@ impl State {
     }
 
     fn adjust_selected_memory(&mut self, forward: bool) {
+        let previous_min = self.config.defaults.memory_min.clone();
+        let previous_max = self.config.defaults.memory_max.clone();
         let value = if self.selected == 3 {
             &self.config.defaults.memory_min
         } else {
@@ -565,7 +591,8 @@ impl State {
                 self.config.defaults.memory_min = value;
             }
         }
-        self.save_pending = true;
+        self.save_pending |= self.config.defaults.memory_min != previous_min
+            || self.config.defaults.memory_max != previous_max;
         self.error = None;
     }
 
@@ -604,11 +631,7 @@ impl State {
         if self.save_pending && self.editing.is_none() {
             self.save_pending = false;
             self.config = self.config.clone().normalize();
-            return Action::Save(
-                Box::new(self.config.clone()),
-                self.theme.theme.clone(),
-                self.theme.border_style.clone(),
-            );
+            return Action::Save(Box::new(self.config.clone()));
         }
         Action::None
     }
@@ -1171,13 +1194,6 @@ fn image_protocol_title(protocol: ImageProtocol) -> &'static str {
     }
 }
 
-fn window_mode_title(mode: WindowMode) -> &'static str {
-    match mode {
-        WindowMode::Windowed => "Windowed",
-        WindowMode::Fullscreen => "Fullscreen",
-    }
-}
-
 fn restart_required_for(state: &State, index: usize) -> bool {
     let current = crate::config::SETTINGS.read();
     match index {
@@ -1195,6 +1211,7 @@ fn status(enabled: bool) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::instance::models::WindowMode;
 
     #[test]
     fn launcher_memory_uses_slider_and_java_uses_picker() {
@@ -1413,8 +1430,23 @@ mod tests {
         state.selected = 0;
         state.handle_key(&KeyEvent::from(KeyCode::Enter));
         assert!(state.theme_picker);
+        let active_theme = state.theme.theme.clone();
+        state.handle_key(&KeyEvent::from(KeyCode::Down));
         state.handle_key(&KeyEvent::from(KeyCode::Esc));
         assert!(!state.theme_picker);
+        assert_eq!(state.themes[state.theme_index], active_theme);
+    }
+
+    #[test]
+    fn failed_launcher_save_remains_pending() {
+        let mut state = State::new();
+        state.config.defaults.jvm_args.push("-Xretry".to_owned());
+        state.mark_save_failed();
+
+        assert!(matches!(
+            state.handle_key(&KeyEvent::from(KeyCode::Down)),
+            Action::Save(..)
+        ));
     }
 
     #[test]

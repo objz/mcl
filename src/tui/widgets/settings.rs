@@ -4,7 +4,7 @@
 // settings panel: manages config profiles and shows compact instance info.
 // detailed instance and launcher configuration opens in the TUI popups.
 
-use std::{path::PathBuf, process::Command};
+use std::path::{Path, PathBuf};
 
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
@@ -50,7 +50,6 @@ pub struct SettingsState {
     active_profile: Option<String>,
     instance_name: Option<String>,
     java_key: Option<String>,
-    java_source: Option<String>,
     java_label: String,
 }
 
@@ -69,7 +68,6 @@ impl SettingsState {
             active_profile: None,
             instance_name: None,
             java_key: None,
-            java_source: None,
             java_label: "unknown".to_string(),
         };
         state.select_active();
@@ -129,7 +127,6 @@ impl SettingsState {
                 .map(java_version_label)
                 .unwrap_or_else(|| "unknown".to_string());
             self.java_key = java_key;
-            self.java_source = java_source;
         }
     }
 }
@@ -174,25 +171,11 @@ fn effective_java_path(instance: &InstanceConfig) -> String {
 }
 
 fn java_version_label(java_path: &str) -> String {
-    let output = Command::new(java_path).arg("-version").output();
-    let Ok(output) = output else {
+    let Some(version) = crate::instance::java::java_version(Path::new(java_path)) else {
         return "unknown".to_string();
     };
-    let raw = String::from_utf8_lossy(if output.stderr.is_empty() {
-        &output.stdout
-    } else {
-        &output.stderr
-    });
-    let first_line = raw.lines().next().unwrap_or_default();
-    let Some(version) = first_line.split('"').nth(1) else {
-        return "unknown".to_string();
-    };
-    let major = if let Some(stripped) = version.strip_prefix("1.") {
-        stripped.split('.').next().unwrap_or(stripped)
-    } else {
-        version.split('.').next().unwrap_or(version)
-    };
-    if major.is_empty() {
+    let major = crate::instance::java::java_major(Some(&version));
+    if major == 0 {
         "unknown".to_string()
     } else {
         format!("jdk{major}")

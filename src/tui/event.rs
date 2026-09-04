@@ -10,7 +10,10 @@ use ratatui::{
 use std::time::Duration;
 
 use super::Tui;
-use super::app::{App, FAILED_INSTANCE_SETTINGS_UPDATES, FocusedArea, PENDING_INSTANCES};
+use super::app::{
+    App, COMPLETED_INSTANCE_SETTINGS_UPDATES, FAILED_INSTANCE_SETTINGS_UPDATES, FocusedArea,
+    PENDING_INSTANCES, RUNTIME_UPDATE_PENDING_MESSAGE,
+};
 use super::widgets::{self, popups::import_modpack, popups::new_instance};
 use crate::feedback::errors as error_buffer;
 use crate::feedback::progress;
@@ -43,6 +46,7 @@ impl App {
             // every content type has its own pending queue because they each
             // get scanned/loaded on separate tokio tasks
             self.drain_pending_instances();
+            self.drain_completed_instance_settings_updates();
             self.drain_failed_instance_settings_updates();
             self.instances_state.drain_modpack_updates();
             self.drain_pending_last_played();
@@ -619,7 +623,7 @@ impl App {
     ) {
         let instances_dir = self.instance_manager.instances_dir.clone();
         let meta_dir = self.instance_manager.meta_dir.clone();
-        let pending_instances = PENDING_INSTANCES.clone();
+        let completed_updates = COMPLETED_INSTANCE_SETTINGS_UPDATES.clone();
 
         tokio::spawn(async move {
             progress::set_action(format!("Updating instance '{}'...", updated.name));
@@ -642,11 +646,7 @@ impl App {
                 }
             };
 
-            let shortcut_result = if desktop {
-                crate::instance::desktop::create(&updated).map(|_| ())
-            } else {
-                crate::instance::desktop::remove(&updated.name)
-            };
+            let shortcut_result = crate::instance::desktop::set_enabled(&updated, desktop);
             if let Err(error) = shortcut_result {
                 error_buffer::push_error(error_buffer::ErrorEvent {
                     id: 0,
@@ -655,7 +655,7 @@ impl App {
                     pushed_at: std::time::Instant::now(),
                 });
             }
-            if let Ok(mut pending) = pending_instances.lock() {
+            if let Ok(mut pending) = completed_updates.lock() {
                 pending.push(updated);
             }
             progress::clear();
@@ -834,6 +834,14 @@ impl App {
         use crate::instance::launch;
         use crate::instance::runtime;
 
+        if self
+            .pending_instance_settings_updates
+            .contains(&instance.name)
+        {
+            error_buffer::push_message(tracing::Level::WARN, RUNTIME_UPDATE_PENDING_MESSAGE);
+            return;
+        }
+
         let instance = match self.instance_manager.load_one(&instance.name) {
             Ok(config) => config,
             Err(e) => {
@@ -895,42 +903,73 @@ impl App {
     }
 
     fn drain_pending_instances(&mut self) {
-        if let Ok(mut pending) = PENDING_INSTANCES.lock() {
-            for config in pending.drain(..) {
-                let settings_update = self.pending_instance_settings_updates.remove(&config.name);
-                if settings_update
-                    && let Some(state) = self.instance_settings.as_mut()
-                    && state.runtime_update_pending_for(&config.name)
-                {
-                    let desktop = crate::instance::desktop::exists(&config.name);
-                    state.mark_saved(&config, desktop);
-                }
-                self.forget_instance_content(&config.name);
-                widgets::instances::spawn_modpack_update_check(&config);
-                if self
-                    .instances_state
-                    .instances
-                    .iter()
-                    .any(|instance| instance.name == config.name)
-                {
-                    let name = config.name.clone();
-                    self.instances_state.replace_instance(&name, config);
-                } else {
-                    self.instances_state.add_instance(config);
-                }
+        let pending = PENDING_INSTANCES
+            .lock()
+            .map(|mut pending| pending.drain(..).collect::<Vec<_>>())
+            .unwrap_or_default();
+        for config in pending {
+            self.apply_pending_instance(config, false);
+        }
+    }
+
+    fn drain_completed_instance_settings_updates(&mut self) {
+        let completed = COMPLETED_INSTANCE_SETTINGS_UPDATES
+            .lock()
+            .map(|mut pending| pending.drain(..).collect::<Vec<_>>())
+            .unwrap_or_default();
+        for config in completed {
+            self.apply_pending_instance(config, true);
+        }
+    }
+
+    fn apply_pending_instance(
+        &mut self,
+        config: crate::instance::InstanceConfig,
+        settings_update: bool,
+    ) {
+        let config = self
+            .instance_manager
+            .load_one(&config.name)
+            .unwrap_or(config);
+        if settings_update {
+            self.pending_instance_settings_updates.remove(&config.name);
+            if let Some(state) = self.instance_settings.as_mut()
+                && state.runtime_update_pending_for(&config.name)
+            {
+                let desktop = crate::instance::desktop::exists(&config.name);
+                state.mark_saved(&config, desktop);
             }
+        }
+        self.forget_instance_content(&config.name);
+        widgets::instances::spawn_modpack_update_check(&config);
+        if self
+            .instances_state
+            .instances
+            .iter()
+            .any(|instance| instance.name == config.name)
+        {
+            let name = config.name.clone();
+            self.instances_state.replace_instance(&name, config);
+        } else {
+            self.instances_state.add_instance(config);
         }
     }
 
     fn drain_failed_instance_settings_updates(&mut self) {
-        if let Ok(mut failed) = FAILED_INSTANCE_SETTINGS_UPDATES.lock() {
-            for name in failed.drain(..) {
-                self.pending_instance_settings_updates.remove(&name);
-                if let Some(state) = self.instance_settings.as_mut()
-                    && state.runtime_update_pending_for(&name)
-                {
-                    state.cancel_runtime_change();
-                }
+        let failed = FAILED_INSTANCE_SETTINGS_UPDATES
+            .lock()
+            .map(|mut failed| failed.drain(..).collect::<Vec<_>>())
+            .unwrap_or_default();
+        for name in failed {
+            self.pending_instance_settings_updates.remove(&name);
+            let remaining = self.instance_settings.as_mut().and_then(|state| {
+                state
+                    .runtime_update_pending_for(&name)
+                    .then(|| state.cancel_runtime_change())
+                    .flatten()
+            });
+            if let Some((updated, desktop)) = remaining {
+                self.apply_instance_settings(*updated, desktop);
             }
         }
     }
@@ -987,33 +1026,47 @@ async fn apply_instance_settings_update(
 ) -> color_eyre::Result<crate::instance::InstanceConfig> {
     manager.repair_runtime_cache(&updated).await?;
 
-    let profile_changed = previous.config_sync_profile != updated.config_sync_profile;
-    if profile_changed {
-        updated.config_sync_profile = crate::instance::config_sync::switch_profile(
-            &previous.name,
-            previous.config_sync_profile.as_deref(),
-            updated.config_sync_profile.as_deref(),
-            &manager.meta_dir,
-            &manager.instances_dir.join(&previous.name),
-        )?;
+    if crate::instance::runtime::is_active(&previous.name) {
+        color_eyre::eyre::bail!("instance started while its runtime was being updated");
     }
 
-    if let Err(error) = manager.save(&updated) {
-        if profile_changed
-            && let Err(rollback_error) = crate::instance::config_sync::switch_profile(
-                &previous.name,
-                updated.config_sync_profile.as_deref(),
-                previous.config_sync_profile.as_deref(),
-                &manager.meta_dir,
-                &manager.instances_dir.join(&previous.name),
-            )
-        {
-            tracing::error!("Failed to roll back config profile: {rollback_error}");
-        }
-        return Err(error.into());
-    }
+    let current = manager.load_one(&previous.name)?;
+    updated = merge_instance_settings(previous, &updated, current);
+    manager.save(&updated)?;
 
     Ok(updated)
+}
+
+pub(super) fn merge_instance_settings(
+    previous: &crate::instance::InstanceConfig,
+    updated: &crate::instance::InstanceConfig,
+    mut current: crate::instance::InstanceConfig,
+) -> crate::instance::InstanceConfig {
+    macro_rules! apply_changed {
+        ($field:ident) => {
+            if previous.$field != updated.$field {
+                current.$field.clone_from(&updated.$field);
+            }
+        };
+    }
+
+    apply_changed!(game_version);
+    apply_changed!(loader);
+    apply_changed!(loader_version);
+    apply_changed!(java_path);
+    apply_changed!(memory_max);
+    apply_changed!(memory_min);
+    apply_changed!(jvm_args);
+    apply_changed!(environment);
+    apply_changed!(window_mode);
+    apply_changed!(inherit_window_mode);
+    apply_changed!(resolution);
+    apply_changed!(inherit_resolution);
+    apply_changed!(preferred_account);
+    apply_changed!(pre_launch_command);
+    apply_changed!(post_exit_command);
+    apply_changed!(glfw_path);
+    current
 }
 
 fn mark_terminal_images(buffer: &mut Buffer, alternate: bool) {

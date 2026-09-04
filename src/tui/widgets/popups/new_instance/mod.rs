@@ -4,7 +4,6 @@
 mod render;
 mod state;
 
-pub use super::LoadState;
 pub use render::{popup_rect, render};
 pub use state::{WizardParams, WizardState, WizardStep, handle_key, take_result};
 

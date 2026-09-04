@@ -22,7 +22,8 @@ use crate::{
     },
     instance::loader::GameVersion,
     instance::models::{
-        InstanceConfig, LaunchCommand, ModLoader, normalize_memory_value, parse_resolution,
+        InstanceConfig, LaunchCommand, ModLoader, memory_kib, normalize_memory_value,
+        parse_resolution,
     },
     tui::widgets::{
         popups::{
@@ -32,11 +33,11 @@ use crate::{
                 ResolutionChoice, ResolutionPickerAction, SettingsPicker, SettingsPickerAction,
                 SettingsPickerBadge, SettingsPickerOption, adjust_memory, auto_label,
                 bundled_glfw_version, bundled_label as bundled_badge, default_label,
-                default_resolution, display_resolutions, environment_labels,
+                default_resolution, display_resolutions, environment_labels, format_tag_values,
                 handle_resolution_picker_key, handle_text_area_input, is_default_resolution,
-                memory_kib, parse_environment, render_memory_gauge, render_settings_picker,
+                parse_environment, parse_tag_values, render_memory_gauge, render_settings_picker,
                 resolution_choices, resolution_items, settings_text_area, tagged_row_count,
-                tagged_value_lines, toggle_window_mode,
+                tagged_value_lines, toggle_window_mode, window_mode_title,
             },
         },
         search::SearchState,
@@ -95,6 +96,7 @@ pub struct State {
     meta_dir: std::path::PathBuf,
     display_resolutions: Vec<DisplayResolution>,
     runtime_update_pending: bool,
+    save_retry_pending: bool,
 }
 
 pub enum Action {
@@ -131,14 +133,15 @@ impl State {
             .unwrap_or_else(crate::instance::java::detect_java_path);
         let java_cache = crate::storage::MetadataPaths::new(meta_dir).java_installations();
         let mut java_picker = JavaPicker::with_cache(auto_java_path, Some(java_cache));
-        java_picker.open(instance.java_path.as_deref());
+        java_picker.set_current(instance.java_path.as_deref());
+        let desktop = crate::instance::desktop::exists(&instance.name);
         Self {
             original: instance.clone(),
             draft: instance.clone(),
             selected: 0,
             editing: None,
-            desktop: crate::instance::desktop::exists(&instance.name),
-            original_desktop: crate::instance::desktop::exists(&instance.name),
+            desktop,
+            original_desktop: desktop,
             error: None,
             picker: None,
             picker_index: 0,
@@ -159,6 +162,7 @@ impl State {
             meta_dir: meta_dir.to_path_buf(),
             display_resolutions: display_resolutions(),
             runtime_update_pending: false,
+            save_retry_pending: false,
         }
     }
 
@@ -221,18 +225,13 @@ impl State {
             3 => self.draft.java_path.clone().unwrap_or_default(),
             4 => self.draft.memory_min.clone().unwrap_or_default(),
             5 => self.draft.memory_max.clone().unwrap_or_default(),
-            6 => self.draft.jvm_args.join(" "),
-            7 => self
-                .draft
-                .environment
-                .iter()
-                .map(|(key, value)| format!("{key}={value}"))
-                .collect::<Vec<_>>()
-                .join(" "),
-            8 => self
-                .draft
-                .effective_window_mode(SETTINGS.read().defaults.window_mode)
-                .to_string(),
+            6 => format_tag_values(&self.draft.jvm_args),
+            7 => format_tag_values(&environment_labels(&self.draft.environment)),
+            8 => window_mode_title(
+                self.draft
+                    .effective_window_mode(SETTINGS.read().defaults.window_mode),
+            )
+            .to_owned(),
             9 => self
                 .draft
                 .effective_resolution(SETTINGS.read().defaults.resolution)
@@ -494,7 +493,7 @@ impl State {
         let count = self.choice_values().len();
         match key.code {
             KeyCode::Esc | KeyCode::Char('h') | KeyCode::Left => self.choice_picker = None,
-            KeyCode::Char('j') | KeyCode::Down | KeyCode::Right if count > 0 => {
+            KeyCode::Char('j') | KeyCode::Down if count > 0 => {
                 self.choice_index = (self.choice_index + 1).min(count - 1);
             }
             KeyCode::Char('k') | KeyCode::Up => {
@@ -526,8 +525,7 @@ impl State {
                 let selected = self
                     .resolution_choices()
                     .get(self.choice_index)
-                    .cloned()
-                    .and_then(|choice| choice.resolution());
+                    .and_then(ResolutionChoice::resolution);
                 if let Some(resolution) = selected {
                     self.draft.resolution = Some(resolution);
                     self.draft.inherit_resolution = false;
@@ -564,22 +562,26 @@ impl State {
             *load = LoadState::Loading;
             let target = self.game_versions.clone();
             let loader = self.draft.loader;
-            tokio::spawn(async move {
-                let result = super::version_lists::game_versions(loader).await;
-                *target
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner) = match result {
-                    Ok(versions) => LoadState::Loaded(versions),
-                    Err(error) => {
-                        crate::feedback::errors::push_message(
-                            tracing::Level::ERROR,
-                            format!("Failed to load game versions: {error}"),
-                        );
-                        LoadState::Error(error)
-                    }
-                };
-                crate::feedback::request_redraw();
-            });
+            if let Ok(runtime) = tokio::runtime::Handle::try_current() {
+                runtime.spawn(async move {
+                    let result = super::version_lists::game_versions(loader).await;
+                    *target
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner) = match result {
+                        Ok(versions) => LoadState::Loaded(versions),
+                        Err(error) => {
+                            crate::feedback::errors::push_message(
+                                tracing::Level::ERROR,
+                                format!("Failed to load game versions: {error}"),
+                            );
+                            LoadState::Error(error)
+                        }
+                    };
+                    crate::feedback::request_redraw();
+                });
+            } else {
+                *load = LoadState::Idle;
+            }
         }
     }
 
@@ -830,7 +832,7 @@ impl State {
         self.picker = None;
         self.picker_search.deactivate();
         if cancel_runtime_change {
-            self.cancel_runtime_change();
+            let _ = self.cancel_runtime_change();
         }
     }
 
@@ -932,9 +934,10 @@ impl State {
             ),
             4 => self.set_memory(4, normalize_memory_value(value)),
             5 => self.set_memory(5, normalize_memory_value(value)),
-            6 => {
-                self.draft.jvm_args = value.split_whitespace().map(str::to_owned).collect();
-            }
+            6 => match parse_tag_values(value) {
+                Ok(arguments) => self.draft.jvm_args = arguments,
+                Err(error) => invalid(self, error),
+            },
             7 => match parse_environment(value) {
                 Ok(environment) => self.draft.environment = environment,
                 Err(error) => invalid(self, error),
@@ -980,7 +983,9 @@ impl State {
         if let Some(error) = self.error.take() {
             return Action::Error(error);
         }
-        if before == self.draft && desktop_before == self.desktop || !self.dirty() {
+        if (before == self.draft && desktop_before == self.desktop && !self.save_retry_pending)
+            || !self.dirty()
+        {
             return Action::None;
         }
         if self.runtime_changed() {
@@ -1005,6 +1010,7 @@ impl State {
             };
         }
         if self.validate_before_save() {
+            self.save_retry_pending = false;
             Action::Save(Box::new(self.draft.clone()), self.desktop)
         } else {
             Action::Error(
@@ -1092,10 +1098,19 @@ impl State {
         self.glfw_picker
             .set_bundled_version(bundled_glfw_version(&self.meta_dir, &saved.game_version));
         self.runtime_update_pending = false;
+        self.save_retry_pending = false;
         self.error = None;
     }
 
-    pub fn cancel_runtime_change(&mut self) {
+    pub fn mark_save_failed(&mut self) {
+        self.save_retry_pending = true;
+    }
+
+    pub fn invalidate_java_cache(&mut self) {
+        self.java_picker.invalidate_cache();
+    }
+
+    pub fn cancel_runtime_change(&mut self) -> Option<(Box<InstanceConfig>, bool)> {
         self.draft.game_version = self.original.game_version.clone();
         self.draft.loader = self.original.loader;
         self.draft.loader_version = self.original.loader_version.clone();
@@ -1104,6 +1119,8 @@ impl State {
         self.picker_initialized = false;
         self.runtime_update_pending = false;
         self.error = None;
+        (self.dirty() && self.validate_before_save())
+            .then(|| (Box::new(self.draft.clone()), self.desktop))
     }
 }
 
@@ -1965,6 +1982,46 @@ mod tests {
     }
 
     #[test]
+    fn right_arrow_selects_loader_without_moving_down() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut state = State::new(&instance(), temp.path());
+        state.selected = 1;
+        state.handle_key(&KeyEvent::from(KeyCode::Enter));
+        assert_eq!(state.choice_picker, Some(ChoicePicker::Loader));
+
+        state.handle_key(&KeyEvent::from(KeyCode::Right));
+
+        assert!(state.choice_picker.is_none());
+        assert_eq!(state.draft.loader, ModLoader::Fabric);
+    }
+
+    #[test]
+    fn failed_instance_save_retries_without_another_edit() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut state = State::new(&instance(), temp.path());
+        state.draft.jvm_args.push("-Xretry".to_owned());
+        state.mark_save_failed();
+
+        assert!(matches!(
+            state.handle_key(&KeyEvent::from(KeyCode::Down)),
+            Action::Save(..)
+        ));
+    }
+
+    #[test]
+    fn cancelling_runtime_change_keeps_other_edits_ready_to_save() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut state = State::new(&instance(), temp.path());
+        state.draft.game_version = "1.21.2".to_owned();
+        state.draft.jvm_args.push("-Xkeep".to_owned());
+
+        let (saved, _) = state.cancel_runtime_change().expect("remaining edit");
+
+        assert_eq!(saved.game_version, state.original.game_version);
+        assert_eq!(saved.jvm_args, ["-Xkeep"]);
+    }
+
+    #[test]
     fn java_and_resolution_defaults_are_direct_actions_not_list_rows() {
         let temp = tempfile::tempdir().unwrap();
         let mut state = State::new(&instance(), temp.path());
@@ -2093,7 +2150,7 @@ mod tests {
         assert!(state.draft.inherit_window_mode);
         assert_eq!(
             state.display_value(8),
-            SETTINGS.read().defaults.window_mode.to_string()
+            window_mode_title(SETTINGS.read().defaults.window_mode)
         );
 
         state.selected = 9;
