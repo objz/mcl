@@ -95,7 +95,7 @@ impl ConfirmTarget {
                 .collect::<Vec<_>>()
                 .join("\n"),
             ConfirmTarget::InstanceRuntime { to, .. } => {
-                format!("Target: {to}\nSome installed mods may be incompatible.")
+                format!("Target: {to}\nSome installed mods may be incompatible")
             }
         }
     }
@@ -183,6 +183,7 @@ pub struct ConfirmPopup {
     body: String,
     confirm_label: &'static str,
     accent_border: bool,
+    runtime_confirmation: bool,
 }
 
 impl ConfirmPopup {
@@ -192,6 +193,7 @@ impl ConfirmPopup {
             body: target.body(),
             confirm_label: target.confirm_label(),
             accent_border: matches!(target, ConfirmTarget::InstanceRuntime { .. }),
+            runtime_confirmation: matches!(target, ConfirmTarget::InstanceRuntime { .. }),
         }
     }
 }
@@ -219,7 +221,9 @@ impl Widget for ConfirmPopup {
         let text = theme.text();
         let text_dim = theme.text_dim();
         let error = theme.error();
+        let warning = theme.warning();
         let body = self.body;
+        let runtime_confirmation = self.runtime_confirmation;
         let styled_list = body.contains("• ");
         let popup = PopupFrame {
             title,
@@ -236,6 +240,8 @@ impl Widget for ConfirmPopup {
                                 Span::styled("• ", Style::default().fg(accent)),
                                 Span::styled(value.to_owned(), Style::default().fg(text)),
                             ])
+                        } else if runtime_confirmation && line.starts_with("Some installed mods") {
+                            Line::styled(line.to_owned(), Style::default().fg(warning))
                         } else if line.starts_with('!') {
                             Line::styled(line.to_owned(), Style::default().fg(error))
                         } else {

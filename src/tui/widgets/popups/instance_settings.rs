@@ -228,7 +228,7 @@ impl State {
                 self.editing = Some(new_text_area(vec![self.effective_memory(self.selected)]));
             }
             6 => self.editing = Some(new_text_area(vec![self.value(self.selected)])),
-            7 => self.editing = Some(new_text_area(vec![self.value(7)])),
+            7 => self.open_choice_picker(ChoicePicker::Resolution),
             8 => self.desktop = !self.desktop,
             field => self.editing = Some(new_text_area(vec![self.value(field)])),
         }
@@ -289,10 +289,6 @@ impl State {
             KeyCode::Char('c') if self.choice_picker == Some(ChoicePicker::Java) => {
                 self.choice_picker = None;
                 self.editing = Some(new_text_area(vec![self.value(3)]));
-            }
-            KeyCode::Char('c') if self.choice_picker == Some(ChoicePicker::Resolution) => {
-                self.choice_picker = None;
-                self.editing = Some(new_text_area(vec![self.value(7)]));
             }
             KeyCode::Char('d') if self.choice_picker == Some(ChoicePicker::Resolution) => {
                 self.apply_default_resolution();
@@ -738,14 +734,14 @@ impl State {
             KeyCode::Char('l') | KeyCode::Right if matches!(self.selected, 4 | 5) => {
                 self.adjust_selected_memory(true);
             }
-            KeyCode::Char('p') if self.selected == 7 => {
-                self.open_choice_picker(ChoicePicker::Resolution);
-            }
             KeyCode::Enter => self.begin_edit(),
             KeyCode::Char('d') if matches!(self.selected, 4 | 5) => {
                 self.apply_default_memory();
             }
             KeyCode::Char('d') if self.selected == 7 => self.apply_default_resolution(),
+            KeyCode::Char('c') if self.selected == 7 => {
+                self.editing = Some(new_text_area(vec![self.value(7)]));
+            }
             KeyCode::Char('a') if self.selected == 3 => self.toggle_auto_java(),
             KeyCode::Char('c') if self.selected == 3 => {
                 self.editing = Some(new_text_area(vec![self.value(3)]));
@@ -894,12 +890,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &mut State) {
             ("Enter", " select"),
         ])
     } else if state.choice_picker == Some(ChoicePicker::Resolution) {
-        super::keybind_line(&[
-            ("d", " default"),
-            ("c", " custom"),
-            ("h", " back"),
-            ("Enter", " select"),
-        ])
+        super::keybind_line(&[("d", " default"), ("h", " back"), ("Enter", " select")])
     } else if state.choice_picker.is_some() {
         super::keybind_line(&[("h", " back"), ("Enter", " select")])
     } else if matches!(state.selected, 4 | 5) {
@@ -918,8 +909,8 @@ pub fn render(frame: &mut Frame, area: Rect, state: &mut State) {
         ])
     } else if state.selected == 7 {
         super::keybind_line(&[
-            ("p", " presets"),
-            ("Enter", " custom"),
+            ("Enter", " presets"),
+            ("c", " custom"),
             ("d", " default"),
             ("Esc", " back"),
         ])
@@ -1503,9 +1494,7 @@ mod tests {
 
         state.selected = 7;
         state.begin_edit();
-        assert!(state.editing.is_some());
-        state.editing = None;
-        state.handle_key(&KeyEvent::from(KeyCode::Char('p')));
+        assert!(state.editing.is_none());
         assert_eq!(state.choice_picker, Some(ChoicePicker::Resolution));
         state.choice_index = state
             .resolution_choices()
@@ -1547,9 +1536,13 @@ mod tests {
         state.draft.resolution = Some((1920, 1080));
         state.handle_key(&KeyEvent::from(KeyCode::Char('d')));
         assert_eq!(state.draft.resolution, Some((2560, 1440)));
-        state.handle_key(&KeyEvent::from(KeyCode::Char('p')));
+        state.handle_key(&KeyEvent::from(KeyCode::Enter));
         assert!(!state.choice_values().iter().any(|value| value == "Default"));
         assert!(!state.choice_values().iter().any(|value| value == "Custom…"));
+
+        state.handle_key(&KeyEvent::from(KeyCode::Esc));
+        state.handle_key(&KeyEvent::from(KeyCode::Char('c')));
+        assert!(state.editing.is_some());
     }
 
     #[test]

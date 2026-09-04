@@ -662,6 +662,7 @@ fn runtime_settings_use_the_shared_confirmation_popup() {
         ui.screen()
             .contains("Some installed mods may be incompatible")
     );
+    assert!(!ui.screen().contains("incompatible."));
 
     ui.key(KeyCode::Esc);
     assert_eq!(ui.app.focused, FocusedArea::InstanceSettings);
@@ -735,13 +736,13 @@ fn settings_use_java_memory_and_resolution_controls() {
     for _ in 0..3 {
         ui.key(KeyCode::Char('j'));
     }
-    ui.key(KeyCode::Char('p'));
+    ui.key(KeyCode::Enter);
     ui.draw();
     assert!(ui.screen().contains("Resolution"));
     assert!(ui.screen().contains("1920x1080"));
     assert!(!ui.screen().contains("Preset"));
     assert!(!ui.screen().contains("Inherit"));
-    assert!(ui.screen().contains("custom"));
+    assert!(!ui.screen().contains("custom"));
     ui.key(KeyCode::Esc);
     ui.key(KeyCode::Esc);
 
