@@ -20,7 +20,7 @@ use ratatui::{
 use ratatui_textarea::{CursorMove, TextArea};
 
 use crate::{
-    config::theme::THEME,
+    config::{settings::DEFAULT_RESOLUTION, theme::THEME},
     instance::{WindowMode, java::JavaInstallation},
     tui::widgets::{popups::LoadState, status_badge},
 };
@@ -1084,17 +1084,12 @@ pub(crate) fn display_resolutions() -> Vec<DisplayResolution> {
     resolutions
 }
 
-pub(crate) fn default_resolution(displays: &[DisplayResolution]) -> Option<(u32, u32)> {
-    displays
-        .first()
-        .map(|display| (display.width, display.height))
+pub(crate) fn default_resolution() -> (u32, u32) {
+    DEFAULT_RESOLUTION
 }
 
-pub(crate) fn is_default_resolution(
-    resolution: Option<(u32, u32)>,
-    displays: &[DisplayResolution],
-) -> bool {
-    default_resolution(displays).is_some_and(|default| resolution == Some(default))
+pub(crate) fn is_default_resolution(resolution: Option<(u32, u32)>) -> bool {
+    resolution == Some(default_resolution())
 }
 
 pub(crate) fn resolution_choices(
@@ -1189,17 +1184,10 @@ mod tests {
     }
 
     #[test]
-    fn first_detected_display_is_the_default_resolution() {
-        let displays = vec![DisplayResolution {
-            width: 1440,
-            height: 2560,
-            name: "DP-1".to_owned(),
-            primary: true,
-        }];
-
-        assert_eq!(default_resolution(&displays), Some((1440, 2560)));
-        assert!(is_default_resolution(Some((1440, 2560)), &displays));
-        assert!(!is_default_resolution(Some((854, 480)), &displays));
+    fn minecraft_window_size_is_the_default_resolution() {
+        assert_eq!(default_resolution(), (854, 480));
+        assert!(is_default_resolution(Some((854, 480))));
+        assert!(!is_default_resolution(Some((1440, 2560))));
     }
 
     #[test]

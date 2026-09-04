@@ -749,13 +749,9 @@ impl State {
     }
 
     fn apply_default_resolution(&mut self) {
-        if let Some(resolution) = default_resolution(&self.display_resolutions) {
-            self.draft.resolution = Some(resolution);
-            self.draft.inherit_resolution = false;
-            self.error = None;
-        } else {
-            self.error = Some("Display resolution could not be detected.".to_owned());
-        }
+        self.draft.resolution = Some(default_resolution());
+        self.draft.inherit_resolution = false;
+        self.error = None;
     }
 
     fn toggle_global_window_default(&mut self) {
@@ -1495,7 +1491,7 @@ fn field_line(state: &State, index: usize, label: &str) -> Line<'static> {
     if index == 9
         && !editing
         && !state.draft.inherit_resolution
-        && is_default_resolution(state.draft.resolution, &state.display_resolutions)
+        && is_default_resolution(state.draft.resolution)
     {
         spans.extend([Span::raw("  "), default_label()]);
     }
@@ -2004,7 +2000,7 @@ mod tests {
         }];
         state.draft.resolution = Some((1920, 1080));
         state.handle_key(&KeyEvent::from(KeyCode::Char('d')));
-        assert_eq!(state.draft.resolution, Some((2560, 1440)));
+        assert_eq!(state.draft.resolution, Some((854, 480)));
         assert!(
             field_line(&state, 9, field_label(9))
                 .to_string()

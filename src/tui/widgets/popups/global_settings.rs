@@ -460,13 +460,9 @@ impl State {
     }
 
     fn apply_default_resolution(&mut self) {
-        if let Some(resolution) = default_resolution(&self.display_resolutions) {
-            self.config.defaults.resolution = Some(resolution);
-            self.save_pending = true;
-            self.error = None;
-        } else {
-            self.error = Some("Display resolution could not be detected.".to_owned());
-        }
+        self.config.defaults.resolution = Some(default_resolution());
+        self.save_pending = true;
+        self.error = None;
     }
 
     fn enable_auto_image_protocol(&mut self) {
@@ -1110,10 +1106,7 @@ fn global_field_line(state: &State, index: usize, label: &str) -> Line<'static> 
     if index == 2 && state.config.ui.image_protocol == ImageProtocol::Auto && !editing {
         spans.extend([Span::raw("  "), auto_label()]);
     }
-    if index == 7
-        && !editing
-        && is_default_resolution(state.config.defaults.resolution, &state.display_resolutions)
-    {
+    if index == 7 && !editing && is_default_resolution(state.config.defaults.resolution) {
         spans.extend([Span::raw("  "), default_label()]);
     }
     if index == 10 && !editing {
@@ -1369,7 +1362,7 @@ mod tests {
             state.handle_key(&KeyEvent::from(KeyCode::Char('d'))),
             Action::Save(..)
         ));
-        assert_eq!(state.config.defaults.resolution, Some((2560, 1440)));
+        assert_eq!(state.config.defaults.resolution, Some((854, 480)));
         assert!(
             global_field_line(&state, 7, field_label(7))
                 .to_string()
