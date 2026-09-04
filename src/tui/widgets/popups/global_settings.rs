@@ -7,7 +7,7 @@ use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     Frame,
     layout::Rect,
-    style::{Modifier, Style},
+    style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Clear, ListItem, Paragraph},
 };
@@ -33,6 +33,9 @@ use crate::{
 };
 
 const FIELD_COUNT: usize = 24;
+const MODRINTH_COLOR: Color = Color::Rgb(0x1B, 0xD9, 0x6A);
+const CURSEFORGE_COLOR: Color = Color::Rgb(0xF1, 0x64, 0x36);
+const PROVIDER_BADGE_TEXT: Color = Color::Rgb(0x10, 0x10, 0x10);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ChoicePicker {
@@ -1111,10 +1114,7 @@ fn global_field_line(state: &State, index: usize, label: &str) -> Line<'static> 
     }
     if index == 10 && !editing {
         spans.push(Span::raw("  "));
-        spans.push(match state.config.content.preferred_provider {
-            ContentProvider::Modrinth => status_badge("Modrinth", theme.success()),
-            ContentProvider::CurseForge => status_badge("CurseForge", theme.warning()),
-        });
+        spans.push(provider_badge(state.config.content.preferred_provider));
     }
     if restart_required_for(state, index) {
         spans.extend([
@@ -1136,6 +1136,20 @@ fn border_preview(style: &BorderStyle) -> &'static str {
         BorderStyle::Double => "╔═",
         BorderStyle::Thick => "┏━",
     }
+}
+
+fn provider_badge(provider: ContentProvider) -> Span<'static> {
+    let (label, color) = match provider {
+        ContentProvider::Modrinth => ("Modrinth", MODRINTH_COLOR),
+        ContentProvider::CurseForge => ("CurseForge", CURSEFORGE_COLOR),
+    };
+    Span::styled(
+        format!(" {label} "),
+        Style::default()
+            .fg(PROVIDER_BADGE_TEXT)
+            .bg(color)
+            .add_modifier(Modifier::BOLD),
+    )
 }
 
 fn border_style_title(style: &BorderStyle) -> &'static str {
@@ -1320,6 +1334,18 @@ mod tests {
         );
         assert_eq!(state.display_value(2), "Halfblocks");
         assert_eq!(state.display_value(6), "Fullscreen");
+    }
+
+    #[test]
+    fn provider_badges_use_fixed_brand_colors() {
+        assert_eq!(
+            provider_badge(ContentProvider::Modrinth).style.bg,
+            Some(MODRINTH_COLOR)
+        );
+        assert_eq!(
+            provider_badge(ContentProvider::CurseForge).style.bg,
+            Some(CURSEFORGE_COLOR)
+        );
     }
 
     #[test]

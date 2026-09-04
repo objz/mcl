@@ -1048,7 +1048,7 @@ pub(crate) fn bundled_label() -> Span<'static> {
 }
 
 pub(crate) fn default_label() -> Span<'static> {
-    status_badge("Default", THEME.as_ref().success())
+    status_badge("Default", THEME.as_ref().warning())
 }
 
 pub(crate) fn render_settings_picker(
@@ -1140,6 +1140,9 @@ pub(crate) fn resolution_items(
                     theme.text()
                 }),
             )];
+            if is_default_resolution(choice.resolution()) {
+                spans.extend([Span::raw("  "), default_label()]);
+            }
             match choice {
                 ResolutionChoice::Preset(_, _) => {}
                 ResolutionChoice::Display(display) => {
@@ -1188,6 +1191,20 @@ mod tests {
         assert_eq!(default_resolution(), (854, 480));
         assert!(is_default_resolution(Some((854, 480))));
         assert!(!is_default_resolution(Some((1440, 2560))));
+        assert_eq!(default_label().style.bg, Some(THEME.as_ref().warning()));
+
+        let choices = resolution_choices(Some((854, 480)), &[]);
+        let backend = ratatui::backend::TestBackend::new(40, 6);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| {
+                frame.render_widget(
+                    ratatui::widgets::List::new(resolution_items(&choices, 0)),
+                    frame.area(),
+                );
+            })
+            .unwrap();
+        assert!(terminal.backend().to_string().contains("Default"));
     }
 
     #[test]
