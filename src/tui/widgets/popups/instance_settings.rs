@@ -25,8 +25,8 @@ use crate::{
         popups::{
             LoadState,
             settings_controls::{
-                DisplayResolution, JavaChoice, JavaPicker, adjust_memory, display_resolutions,
-                handle_text_area_input, memory_kib, render_memory_gauge, subtle_tag,
+                DisplayResolution, JavaChoice, JavaPicker, adjust_memory, auto_label,
+                display_resolutions, handle_text_area_input, memory_kib, render_memory_gauge,
             },
         },
         search::SearchState,
@@ -106,7 +106,7 @@ pub enum Action {
     None,
     Save(Box<InstanceConfig>, bool),
     Error(String),
-    ConfirmRuntime { name: String, to: String },
+    ConfirmRuntime { name: String },
     OpenRaw,
     Close,
 }
@@ -285,10 +285,6 @@ impl State {
             KeyCode::Char('a') if self.choice_picker == Some(ChoicePicker::Java) => {
                 self.toggle_auto_java();
                 self.choice_picker = None;
-            }
-            KeyCode::Char('c') if self.choice_picker == Some(ChoicePicker::Java) => {
-                self.choice_picker = None;
-                self.editing = Some(new_text_area(vec![self.value(3)]));
             }
             KeyCode::Char('d') if self.choice_picker == Some(ChoicePicker::Resolution) => {
                 self.apply_default_resolution();
@@ -691,7 +687,6 @@ impl State {
             }
             return Action::ConfirmRuntime {
                 name: self.draft.name.clone(),
-                to: runtime_label(&self.draft),
             };
         }
         if self.validate_before_save() {
@@ -774,19 +769,6 @@ impl State {
         self.loader_versions = Arc::new(Mutex::new(LoadState::Idle));
         self.picker_initialized = false;
         self.error = None;
-    }
-}
-
-fn runtime_label(config: &InstanceConfig) -> String {
-    if config.loader == ModLoader::Vanilla {
-        format!("{} / Vanilla", config.game_version)
-    } else {
-        format!(
-            "{} / {} {}",
-            config.game_version,
-            config.loader,
-            config.loader_version.as_deref().unwrap_or("unknown")
-        )
     }
 }
 
@@ -883,12 +865,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &mut State) {
     } else if state.picker.is_some() {
         super::keybind_line(&[("/", " search"), ("h", " back"), ("Enter", " select")])
     } else if state.choice_picker == Some(ChoicePicker::Java) {
-        super::keybind_line(&[
-            ("a", " auto"),
-            ("c", " custom"),
-            ("h", " back"),
-            ("Enter", " select"),
-        ])
+        super::keybind_line(&[("a", " auto"), ("h", " back"), ("Enter", " select")])
     } else if state.choice_picker == Some(ChoicePicker::Resolution) {
         super::keybind_line(&[("d", " default"), ("h", " back"), ("Enter", " select")])
     } else if state.choice_picker.is_some() {
@@ -1047,8 +1024,12 @@ fn field_line(state: &State, index: usize, label: &str) -> Line<'static> {
         Span::styled(
             value,
             Style::default()
-                .fg(if index == 8 && state.desktop {
-                    theme.success()
+                .fg(if index == 8 {
+                    if state.desktop {
+                        theme.text()
+                    } else {
+                        theme.text_dim()
+                    }
                 } else if selected {
                     theme.accent()
                 } else {
@@ -1062,7 +1043,7 @@ fn field_line(state: &State, index: usize, label: &str) -> Line<'static> {
         ),
     ];
     if index == 3 && state.draft.java_path.is_none() && !editing {
-        spans.extend([Span::raw("  "), subtle_tag("Auto", theme.info())]);
+        spans.extend([Span::raw("  "), auto_label()]);
     }
     Line::from(spans)
 }
@@ -1508,6 +1489,10 @@ mod tests {
         state.begin_edit();
         assert_eq!(state.choice_picker, Some(ChoicePicker::Java));
         state.handle_choice_key(&KeyEvent::from(KeyCode::Char('c')));
+        assert_eq!(state.choice_picker, Some(ChoicePicker::Java));
+        assert!(state.editing.is_none());
+        state.handle_choice_key(&KeyEvent::from(KeyCode::Esc));
+        state.handle_key(&KeyEvent::from(KeyCode::Char('c')));
         assert!(state.editing.is_some());
     }
 

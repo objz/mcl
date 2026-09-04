@@ -20,8 +20,8 @@ use crate::{
     },
     instance::models::normalize_memory_value,
     tui::widgets::popups::settings_controls::{
-        JavaChoice, JavaPicker, adjust_memory, handle_text_area_input, memory_kib,
-        render_memory_gauge, subtle_tag,
+        JavaChoice, JavaPicker, adjust_memory, auto_label, handle_text_area_input, memory_kib,
+        render_memory_gauge,
     },
 };
 
@@ -217,10 +217,6 @@ impl State {
                 self.toggle_auto_java();
                 self.java_picker_open = false;
             }
-            KeyCode::Char('c') => {
-                self.java_picker_open = false;
-                self.editing = Some(new_text_area(vec![self.value(4)]));
-            }
             KeyCode::Char('j') | KeyCode::Down if count > 0 => {
                 self.java_picker.selected = (self.java_picker.selected + 1).min(count - 1);
             }
@@ -408,12 +404,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &mut State) {
     let keybinds = if state.editing.is_some() {
         super::keybind_line(&[("Enter", " apply"), ("Esc", " cancel")])
     } else if state.java_picker_open {
-        super::keybind_line(&[
-            ("a", " auto"),
-            ("c", " custom"),
-            ("h", " back"),
-            ("Enter", " select"),
-        ])
+        super::keybind_line(&[("a", " auto"), ("h", " back"), ("Enter", " select")])
     } else if state.theme_picker {
         super::keybind_line(&[("h", " back"), ("Enter", " select")])
     } else if matches!(state.selected, 2 | 3) {
@@ -580,7 +571,7 @@ fn global_field_line(state: &State, index: usize, label: &str) -> Line<'static> 
         ),
     ];
     if index == 4 && state.config.paths.java_path.is_none() && !editing {
-        spans.extend([Span::raw("  "), subtle_tag("Auto", theme.info())]);
+        spans.extend([Span::raw("  "), auto_label()]);
     }
     Line::from(spans).style(Style::default().bg(if selected {
         theme.stripe()

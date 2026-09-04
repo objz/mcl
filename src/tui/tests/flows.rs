@@ -657,7 +657,7 @@ fn runtime_settings_use_the_shared_confirmation_popup() {
     ));
     ui.draw();
     assert!(ui.screen().contains("Change runtime"));
-    assert!(ui.screen().contains("Target:"));
+    assert!(!ui.screen().contains("Target:"));
     assert!(
         ui.screen()
             .contains("Some installed mods may be incompatible")
@@ -705,7 +705,7 @@ fn settings_use_java_memory_and_resolution_controls() {
     ui.draw();
     assert!(ui.screen().contains("Java Runtime"));
     assert!(ui.screen().contains("auto"));
-    assert!(ui.screen().contains("custom"));
+    assert!(!ui.screen().contains("custom"));
     assert!(!ui.screen().contains("Automatic"));
     assert!(!ui.screen().contains("Custom path"));
     assert!(!ui.screen().contains("Manual"));

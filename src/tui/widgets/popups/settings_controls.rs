@@ -160,7 +160,7 @@ impl JavaPicker {
                         Span::styled(format!("  {path}"), Style::default().fg(theme.text_dim())),
                     ];
                     if self.current.is_none() && path == self.detected {
-                        spans.extend([Span::raw("  "), subtle_tag("Auto", theme.info())]);
+                        spans.extend([Span::raw("  "), auto_label()]);
                     }
                     ListItem::new(Line::from(spans))
                 }
@@ -288,7 +288,7 @@ pub(crate) fn render_memory_gauge(
         Style::default().fg(theme.text())
     };
     frame.render_widget(
-        Paragraph::new(Line::from(Span::styled(format!(" {label} "), value_style))),
+        Paragraph::new(Line::from(Span::styled(label, value_style))),
         value_area,
     );
 
@@ -336,10 +336,12 @@ pub(crate) fn handle_text_area_input(input: &mut TextArea<'_>, key: &KeyEvent) {
     }
 }
 
-pub(crate) fn subtle_tag(label: impl Into<String>, color: ratatui::style::Color) -> Span<'static> {
+pub(crate) fn auto_label() -> Span<'static> {
     Span::styled(
-        format!(" {} ", label.into()),
-        Style::default().fg(color).bg(THEME.as_ref().stripe()),
+        "Auto",
+        Style::default()
+            .fg(THEME.as_ref().text_dim())
+            .add_modifier(Modifier::ITALIC),
     )
 }
 
