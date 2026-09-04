@@ -717,7 +717,7 @@ fn available_themes() -> Vec<String> {
 
 pub fn popup_rect(area: Rect, state: &State) -> Rect {
     let form_width = (area.width * 86 / 100).saturating_sub(2);
-    let form_height = 38
+    let form_height = 37
         + tagged_row_count(&state.config.defaults.jvm_args, form_width).saturating_sub(1) as u16
         + tagged_row_count(
             &environment_labels(&state.config.defaults.environment),
@@ -1030,25 +1030,18 @@ fn border_field_lines(state: &State) -> Vec<Line<'static>> {
         } else {
             Modifier::empty()
         });
-    let (top, bottom) = border_preview(&state.theme.border_style);
-    vec![
-        Line::from(vec![
-            Span::styled(
-                if selected { "▌ " } else { "  " },
-                Style::default().fg(theme.accent()),
-            ),
-            Span::styled(
-                format!("{:<18}", field_label(1)),
-                Style::default().fg(theme.text_dim()),
-            ),
-            Span::styled(top, value_style),
-        ]),
-        Line::from(vec![
-            Span::raw(" ".repeat(20)),
-            Span::styled(bottom, value_style),
-            Span::styled(format!("  {}", state.display_value(1)), value_style),
-        ]),
-    ]
+    vec![Line::from(vec![
+        Span::styled(
+            if selected { "▌ " } else { "  " },
+            Style::default().fg(theme.accent()),
+        ),
+        Span::styled(
+            format!("{:<18}", field_label(1)),
+            Style::default().fg(theme.text_dim()),
+        ),
+        Span::styled(border_preview(&state.theme.border_style), value_style),
+        Span::styled(format!("  {}", state.display_value(1)), value_style),
+    ])]
 }
 
 fn section_line(title: &str) -> Line<'static> {
@@ -1150,12 +1143,12 @@ fn global_field_line(state: &State, index: usize, label: &str) -> Line<'static> 
     }))
 }
 
-fn border_preview(style: &BorderStyle) -> (&'static str, &'static str) {
+fn border_preview(style: &BorderStyle) -> &'static str {
     match style {
-        BorderStyle::Plain => ("┌──┐", "└──┘"),
-        BorderStyle::Rounded => ("╭──╮", "╰──╯"),
-        BorderStyle::Double => ("╔══╗", "╚══╝"),
-        BorderStyle::Thick => ("┏━━┓", "┗━━┛"),
+        BorderStyle::Plain => "┌ ─ │ ┘",
+        BorderStyle::Rounded => "╭ ─ │ ╯",
+        BorderStyle::Double => "╔ ═ ║ ╝",
+        BorderStyle::Thick => "┏ ━ ┃ ┛",
     }
 }
 
@@ -1354,7 +1347,7 @@ mod tests {
         let mut state = State::new();
         assert!(matches!(
             border_preview(&state.theme.border_style),
-            ("┌──┐", "└──┘") | ("╭──╮", "╰──╯") | ("╔══╗", "╚══╝") | ("┏━━┓", "┗━━┛")
+            "┌ ─ │ ┘" | "╭ ─ │ ╯" | "╔ ═ ║ ╝" | "┏ ━ ┃ ┛"
         ));
 
         state.selected = 0;
@@ -1394,7 +1387,7 @@ mod tests {
         assert!(screen.contains("Clear caches"));
         assert!(screen.contains("Rebuild provider and Java metadata"));
         assert!(
-            ["┌──┐", "╭──╮", "╔══╗", "┏━━┓"]
+            ["┌ ─ │ ┘", "╭ ─ │ ╯", "╔ ═ ║ ╝", "┏ ━ ┃ ┛"]
                 .iter()
                 .any(|preview| screen.contains(preview))
         );
