@@ -641,6 +641,8 @@ fn settings_panel_routes_legacy_edit_keys_to_tui_popups() {
     assert_eq!(ui.app.focused, FocusedArea::GlobalSettings);
     ui.draw();
     assert!(ui.screen().contains("Launcher Settings"));
+    assert!(ui.screen().contains("Appearance"));
+    assert!(ui.screen().contains("Image rendering"));
     assert!(ui.screen().contains("Memory max"));
     assert!(ui.screen().contains('◆'));
     assert!(!ui.screen().contains('█'));
@@ -651,6 +653,35 @@ fn settings_panel_routes_legacy_edit_keys_to_tui_popups() {
     ui.key(KeyCode::Esc);
     ui.key(KeyCode::Esc);
     assert_eq!(ui.app.focused, FocusedArea::Settings);
+}
+
+#[test]
+fn launcher_settings_scroll_to_storage_and_confirm_cache_cleanup() {
+    let mut ui = UiHarness::new();
+    ui.add_instance("global-settings-test");
+    ui.key(KeyCode::Char('G'));
+
+    for _ in 0..18 {
+        ui.key(KeyCode::Char('j'));
+    }
+    ui.draw();
+    assert!(ui.screen().contains("Storage"));
+    assert!(ui.screen().contains("Instances"));
+    assert!(ui.screen().contains("Metadata"));
+
+    for _ in 18..23 {
+        ui.key(KeyCode::Char('j'));
+    }
+    ui.key(KeyCode::Enter);
+    assert_eq!(ui.app.focused, FocusedArea::ConfirmDelete);
+    assert!(matches!(
+        confirm::pending_target(),
+        Some(confirm::ConfirmTarget::LauncherCache)
+    ));
+    ui.draw();
+    assert!(ui.screen().contains("Clear caches"));
+    ui.key(KeyCode::Esc);
+    assert_eq!(ui.app.focused, FocusedArea::GlobalSettings);
 }
 
 #[test]
@@ -953,7 +984,7 @@ fn settings_use_java_memory_and_resolution_controls() {
     ui.key(KeyCode::Esc);
 
     ui.key(KeyCode::Char('G'));
-    for _ in 0..4 {
+    for _ in 0..5 {
         ui.key(KeyCode::Char('j'));
     }
     ui.key(KeyCode::Enter);

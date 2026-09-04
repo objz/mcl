@@ -50,6 +50,7 @@ pub async fn show() -> color_eyre::Result<()> {
             .unwrap_or_else(|_| ratatui_image::picker::Picker::halfblocks());
         let detected_protocol = picker.protocol_type();
         let requested_protocol = match crate::config::SETTINGS.read().ui.image_protocol {
+            crate::config::settings::ImageProtocol::Auto => detected_protocol,
             crate::config::settings::ImageProtocol::Halfblocks
             | crate::config::settings::ImageProtocol::Quadrants => {
                 ratatui_image::picker::ProtocolType::Halfblocks

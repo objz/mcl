@@ -4,29 +4,84 @@
 // all the config structs that map to sections in config.toml.
 // everything has sane defaults so a blank file (or no file) still works.
 
-use std::path::PathBuf;
+use std::{collections::BTreeMap, fmt, path::PathBuf};
 
 use serde::{Deserialize, Serialize};
+
+use crate::instance::models::{WindowMode, memory_kib, normalize_memory_value};
 
 #[derive(Debug, Serialize, Deserialize, Default, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum ImageProtocol {
+    #[default]
+    Auto,
     Halfblocks,
     Quadrants,
-    #[default]
     Kitty,
     Iterm2,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct General {}
+impl fmt::Display for ImageProtocol {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Auto => formatter.write_str("auto"),
+            Self::Halfblocks => formatter.write_str("halfblocks"),
+            Self::Quadrants => formatter.write_str("quadrants"),
+            Self::Kitty => formatter.write_str("kitty"),
+            Self::Iterm2 => formatter.write_str("iterm2"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct General {
+    #[serde(default = "default_true")]
+    pub check_modpack_updates: bool,
+    #[serde(default = "default_true")]
+    pub check_content_updates: bool,
+}
+
+impl Default for General {
+    fn default() -> Self {
+        Self {
+            check_modpack_updates: true,
+            check_content_updates: true,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ContentProvider {
+    #[default]
+    Modrinth,
+    CurseForge,
+}
+
+impl ContentProvider {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Modrinth => "modrinth",
+            Self::CurseForge => "curseforge",
+        }
+    }
+}
+
+impl fmt::Display for ContentProvider {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Modrinth => formatter.write_str("Modrinth"),
+            Self::CurseForge => formatter.write_str("CurseForge"),
+        }
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Content {
     #[serde(default = "default_true")]
     pub ask_on_provider_conflict: bool,
-    #[serde(default = "default_provider")]
-    pub preferred_provider: String,
+    #[serde(default, deserialize_with = "deserialize_content_provider")]
+    pub preferred_provider: ContentProvider,
     #[serde(default)]
     pub preferred_provider_only: bool,
     #[serde(default = "default_unmatched_retry_hours")]
@@ -39,8 +94,16 @@ fn default_true() -> bool {
     true
 }
 
-fn default_provider() -> String {
-    "modrinth".to_owned()
+fn deserialize_content_provider<'de, D>(deserializer: D) -> Result<ContentProvider, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = String::deserialize(deserializer)?;
+    Ok(if value.eq_ignore_ascii_case("curseforge") {
+        ContentProvider::CurseForge
+    } else {
+        ContentProvider::Modrinth
+    })
 }
 
 fn default_unmatched_retry_hours() -> u64 {
@@ -55,7 +118,7 @@ impl Default for Content {
     fn default() -> Self {
         Self {
             ask_on_provider_conflict: true,
-            preferred_provider: default_provider(),
+            preferred_provider: ContentProvider::default(),
             preferred_provider_only: false,
             unmatched_retry_hours: default_unmatched_retry_hours(),
             max_fingerprint_size_mib: default_max_fingerprint_size_mib(),
@@ -80,7 +143,7 @@ impl Content {
     }
 
     fn preferred_provider_with_curseforge(&self, curseforge_available: bool) -> &'static str {
-        if self.preferred_provider.eq_ignore_ascii_case("curseforge") && curseforge_available {
+        if self.preferred_provider == ContentProvider::CurseForge && curseforge_available {
             "curseforge"
         } else {
             "modrinth"
@@ -122,10 +185,13 @@ impl Content {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Paths {
     #[serde(default = "default_instances_dir")]
+    #[serde(skip_serializing_if = "is_default_instances_dir")]
     pub instances_dir: String,
     #[serde(default = "default_meta_dir")]
+    #[serde(skip_serializing_if = "is_default_meta_dir")]
     pub meta_dir: String,
     #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub java_path: Option<String>,
 }
 
@@ -138,6 +204,10 @@ fn default_instances_dir() -> String {
         .into_owned()
 }
 
+fn is_default_instances_dir(path: &str) -> bool {
+    path == default_instances_dir()
+}
+
 fn default_meta_dir() -> String {
     dirs_next::data_dir()
         .unwrap_or_else(|| PathBuf::from("."))
@@ -145,6 +215,10 @@ fn default_meta_dir() -> String {
         .join("meta")
         .to_string_lossy()
         .into_owned()
+}
+
+fn is_default_meta_dir(path: &str) -> bool {
+    path == default_meta_dir()
 }
 
 impl Default for Paths {
@@ -191,6 +265,15 @@ pub struct Defaults {
     pub memory_min: String,
     #[serde(default = "default_memory_max")]
     pub memory_max: String,
+    #[serde(default)]
+    pub jvm_args: Vec<String>,
+    #[serde(default)]
+    pub environment: BTreeMap<String, String>,
+    #[serde(default)]
+    pub window_mode: WindowMode,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resolution: Option<(u32, u32)>,
 }
 
 fn default_memory_min() -> String {
@@ -205,6 +288,10 @@ impl Default for Defaults {
         Self {
             memory_min: default_memory_min(),
             memory_max: default_memory_max(),
+            jvm_args: Vec::new(),
+            environment: BTreeMap::new(),
+            window_mode: WindowMode::default(),
+            resolution: None,
         }
     }
 }
@@ -250,7 +337,7 @@ impl Default for Ui {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Config {
     #[serde(default)]
     pub general: General,
@@ -262,6 +349,39 @@ pub struct Config {
     pub ui: Ui,
     #[serde(default)]
     pub content: Content,
+}
+
+impl Config {
+    pub fn normalize(mut self) -> Self {
+        if self.paths.instances_dir.trim().is_empty() {
+            self.paths.instances_dir = default_instances_dir();
+        }
+        if self.paths.meta_dir.trim().is_empty() {
+            self.paths.meta_dir = default_meta_dir();
+        }
+        self.paths.java_path = self
+            .paths
+            .java_path
+            .take()
+            .and_then(|path| (!path.trim().is_empty()).then(|| path.trim().to_owned()));
+        self.defaults.memory_min =
+            normalize_memory_value(&self.defaults.memory_min).unwrap_or_else(default_memory_min);
+        self.defaults.memory_max =
+            normalize_memory_value(&self.defaults.memory_max).unwrap_or_else(default_memory_max);
+        if memory_kib(&self.defaults.memory_min) > memory_kib(&self.defaults.memory_max) {
+            self.defaults
+                .memory_max
+                .clone_from(&self.defaults.memory_min);
+        }
+        self.ui.error_auto_dismiss_ms = self.ui.error_auto_dismiss_ms.max(1);
+        self.ui.error_slide_start_ms = self
+            .ui
+            .error_slide_start_ms
+            .min(self.ui.error_auto_dismiss_ms);
+        self.ui.error_fly_out_ms = self.ui.error_fly_out_ms.min(self.ui.error_auto_dismiss_ms);
+        self.ui.max_error_events = self.ui.max_error_events.max(1);
+        self
+    }
 }
 
 #[cfg(test)]

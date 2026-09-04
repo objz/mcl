@@ -386,6 +386,13 @@ pub async fn build_launch_invocation(
 ) -> Result<LaunchInvocation, LaunchError> {
     let instance_dir = instances_dir.join(&config.name);
     let minecraft_dir = instance_dir.join(crate::storage::MINECRAFT_DIR_NAME);
+    let (window_mode, resolution) = {
+        let defaults = &crate::config::SETTINGS.read().defaults;
+        (
+            config.effective_window_mode(defaults.window_mode),
+            config.effective_resolution(defaults.resolution),
+        )
+    };
 
     let metadata_paths = crate::storage::MetadataPaths::new(meta_dir);
     let meta_path = metadata_paths
@@ -407,7 +414,7 @@ pub async fn build_launch_invocation(
 
     let current_features = FeatureSet {
         is_quick_play_singleplayer: quick_play_world.map(|_| true),
-        has_custom_resolution: config.resolution.map(|_| true),
+        has_custom_resolution: resolution.map(|_| true),
         ..Default::default()
     };
     let host_os_version = system::mojang_os_version();
@@ -585,8 +592,8 @@ pub async fn build_launch_invocation(
         .join(&config.game_version)
         .join("natives");
     let version_type = merged_profile.type_.as_deref().unwrap_or("release");
-    let resolution_width = config.resolution.map(|(width, _)| width.to_string());
-    let resolution_height = config.resolution.map(|(_, height)| height.to_string());
+    let resolution_width = resolution.map(|(width, _)| width.to_string());
+    let resolution_height = resolution.map(|(_, height)| height.to_string());
     let template_ctx = TemplateContext {
         library_directory,
         classpath_separator: sep,
@@ -615,10 +622,10 @@ pub async fn build_launch_invocation(
         build_game_args(&merged_profile, &rule_ctx, &template_ctx)?;
     // Modern Mojang profiles include feature-gated resolution arguments.
     // Older and third-party profiles may not, so add them when absent.
-    apply_custom_resolution(&mut game_args, config.resolution);
-    apply_window_mode(&mut game_args, config.window_mode);
+    apply_custom_resolution(&mut game_args, resolution);
+    apply_window_mode(&mut game_args, window_mode);
 
-    let (memory_min, memory_max) = {
+    let (memory_min, memory_max, global_jvm_args, global_environment) = {
         let settings = crate::config::SETTINGS.read();
         (
             config
@@ -629,15 +636,21 @@ pub async fn build_launch_invocation(
                 .memory_max
                 .clone()
                 .unwrap_or_else(|| settings.defaults.memory_max.clone()),
+            settings.defaults.jvm_args.clone(),
+            settings.defaults.environment.clone(),
         )
     };
     let mut jvm_args: Vec<String> = vec![format!("-Xms{memory_min}"), format!("-Xmx{memory_max}")];
     jvm_args.extend(patch_jvm_args);
     jvm_args.extend(upstream_jvm_args);
+    jvm_args.extend(global_jvm_args);
     jvm_args.extend(config.jvm_args.clone());
     if let Some(glfw_path) = config.glfw_path.as_deref() {
         jvm_args.push(format!("-Dorg.lwjgl.glfw.libname={glfw_path}"));
     }
+
+    let mut environment = global_environment;
+    environment.extend(config.environment.clone());
 
     Ok(LaunchInvocation {
         java,
@@ -647,7 +660,7 @@ pub async fn build_launch_invocation(
         main_class,
         extra_args,
         game_args,
-        environment: config.environment.clone(),
+        environment,
         working_dir: minecraft_dir,
     })
 }

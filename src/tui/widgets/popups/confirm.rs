@@ -48,6 +48,7 @@ pub enum ConfirmTarget {
     InstanceRuntime {
         name: String,
     },
+    LauncherCache,
     AutomaticSelection {
         setting: AutomaticSetting,
         instance: Option<String>,
@@ -81,6 +82,7 @@ impl ConfirmTarget {
         match self {
             Self::OrphanDependencies { .. } => " Remove unused dependencies ".to_owned(),
             Self::InstanceRuntime { .. } => " Change runtime ".to_owned(),
+            Self::LauncherCache => " Clear caches ".to_owned(),
             Self::AutomaticSelection { setting, .. } => setting.title().to_owned(),
             _ => format!(" Delete '{}' ", self.name()),
         }
@@ -123,6 +125,9 @@ impl ConfirmTarget {
             ConfirmTarget::InstanceRuntime { .. } => {
                 "Some installed mods may be incompatible".to_owned()
             }
+            ConfirmTarget::LauncherCache => {
+                "Provider metadata and Java detection will be rebuilt".to_owned()
+            }
             ConfirmTarget::AutomaticSelection { setting, .. } => setting.description().to_owned(),
         }
     }
@@ -135,6 +140,7 @@ impl ConfirmTarget {
             ConfirmTarget::Content { name, .. } => name,
             ConfirmTarget::OrphanDependencies { .. } => "unused dependencies",
             ConfirmTarget::InstanceRuntime { name, .. } => name,
+            ConfirmTarget::LauncherCache => "launcher caches",
             ConfirmTarget::AutomaticSelection { instance, .. } => {
                 instance.as_deref().unwrap_or("launcher")
             }
@@ -146,6 +152,7 @@ impl ConfirmTarget {
             Self::Content { dependents, .. } if !dependents.is_empty() => " delete anyway",
             Self::OrphanDependencies { .. } => " remove all",
             Self::InstanceRuntime { .. } => " change",
+            Self::LauncherCache => " clear",
             Self::AutomaticSelection { .. } => " enable",
             _ => " confirm",
         }

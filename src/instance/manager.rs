@@ -262,6 +262,7 @@ impl InstanceManager {
                 }
             })?;
 
+        let defaults = crate::config::SETTINGS.read().defaults.clone();
         let config = InstanceConfig {
             name: name.to_string(),
             game_version: game_version.to_string(),
@@ -274,8 +275,10 @@ impl InstanceManager {
             memory_min: None,
             jvm_args: vec![],
             environment: Default::default(),
-            window_mode: Default::default(),
-            resolution: None,
+            window_mode: defaults.window_mode,
+            inherit_window_mode: true,
+            resolution: defaults.resolution,
+            inherit_resolution: true,
             preferred_account: None,
             pre_launch_command: Default::default(),
             post_exit_command: Default::default(),

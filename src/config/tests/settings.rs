@@ -66,6 +66,11 @@ fn content_provider_settings_are_normalized() {
         merged.discovery_provider_label_with_curseforge(true),
         "providers"
     );
+
+    let legacy: Content = toml::from_str("preferred_provider = \"CurseForge\"").unwrap();
+    assert_eq!(legacy.preferred_provider, ContentProvider::CurseForge);
+    let unknown: Content = toml::from_str("preferred_provider = \"unknown\"").unwrap();
+    assert_eq!(unknown.preferred_provider, ContentProvider::Modrinth);
 }
 
 #[test]

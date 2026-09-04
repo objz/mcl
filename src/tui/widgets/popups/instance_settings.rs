@@ -12,10 +12,7 @@ use ratatui::{
     widgets::{Block, Borders, Clear, ListItem, Paragraph},
 };
 use ratatui_textarea::TextArea;
-use std::{
-    collections::BTreeMap,
-    sync::{Arc, Mutex},
-};
+use std::sync::{Arc, Mutex};
 
 use crate::{
     auth::{Account, AccountType},
@@ -35,11 +32,13 @@ use crate::{
                 DisplayResolution, GlfwChoice, GlfwPicker, JavaChoice, JavaPicker, SettingsPicker,
                 SettingsPickerAction, SettingsPickerBadge, SettingsPickerOption, adjust_memory,
                 auto_label, bundled_glfw_version, bundled_label as bundled_badge,
-                display_resolutions, handle_text_area_input, memory_kib, render_memory_gauge,
-                render_settings_picker, settings_text_area,
+                display_resolutions, environment_labels, handle_text_area_input, memory_kib,
+                parse_environment, render_memory_gauge, render_settings_picker, settings_text_area,
+                tagged_row_count, tagged_value_lines,
             },
         },
         search::SearchState,
+        status_badge,
     },
 };
 
@@ -252,10 +251,13 @@ impl State {
                 .map(|(key, value)| format!("{key}={value}"))
                 .collect::<Vec<_>>()
                 .join(" "),
-            8 => self.draft.window_mode.to_string(),
+            8 => self
+                .draft
+                .effective_window_mode(SETTINGS.read().defaults.window_mode)
+                .to_string(),
             9 => self
                 .draft
-                .resolution
+                .effective_resolution(SETTINGS.read().defaults.resolution)
                 .map(|(w, h)| format!("{w}x{h}"))
                 .unwrap_or_default(),
             10 => self.draft.preferred_account.clone().unwrap_or_default(),
@@ -282,10 +284,11 @@ impl State {
             6 => self.draft.jvm_args.join(" "),
             7 if self.draft.environment.is_empty() => "no variables".to_owned(),
             7 => self.value(7),
-            9 if self.draft.resolution.is_none() => self.default_resolution().map_or_else(
-                || "not detected".to_owned(),
+            9 if self.draft.inherit_resolution => SETTINGS.read().defaults.resolution.map_or_else(
+                || "game default".to_owned(),
                 |(width, height)| format!("{width}x{height}"),
             ),
+            9 if self.draft.resolution.is_none() => "game default".to_owned(),
             10 => self.preferred_account_label(),
             11 if self.desktop => "enabled".to_owned(),
             11 => "disabled".to_owned(),
@@ -400,7 +403,11 @@ impl State {
             6 => self.editing = Some(settings_text_area(vec![self.value(self.selected)])),
             7 => self.editing = Some(settings_text_area(vec![self.value(7)])),
             8 => {
-                self.draft.window_mode = match self.draft.window_mode {
+                let current = self
+                    .draft
+                    .effective_window_mode(SETTINGS.read().defaults.window_mode);
+                self.draft.inherit_window_mode = false;
+                self.draft.window_mode = match current {
                     WindowMode::Windowed => WindowMode::Fullscreen,
                     WindowMode::Fullscreen => WindowMode::Windowed,
                 };
@@ -430,10 +437,13 @@ impl State {
                 self.java_picker.initialize();
             }
             ChoicePicker::Resolution => {
+                let resolution = self
+                    .draft
+                    .effective_resolution(SETTINGS.read().defaults.resolution);
                 self.choice_index = self
                     .resolution_choices()
                     .iter()
-                    .position(|choice| choice.resolution() == self.draft.resolution)
+                    .position(|choice| choice.resolution() == resolution)
                     .unwrap_or(0);
             }
             ChoicePicker::Account => {
@@ -536,6 +546,7 @@ impl State {
                     .and_then(|choice| choice.resolution());
                 if let Some(resolution) = selected {
                     self.draft.resolution = Some(resolution);
+                    self.draft.inherit_resolution = false;
                 }
             }
             Some(ChoicePicker::Account) => {
@@ -736,7 +747,11 @@ impl State {
     }
 
     fn resolution_choices(&self) -> Vec<ResolutionChoice> {
-        resolution_choices(self.draft.resolution, &self.display_resolutions)
+        resolution_choices(
+            self.draft
+                .effective_resolution(SETTINGS.read().defaults.resolution),
+            &self.display_resolutions,
+        )
     }
 
     fn default_resolution(&self) -> Option<(u32, u32)> {
@@ -758,10 +773,26 @@ impl State {
     fn apply_default_resolution(&mut self) {
         if let Some(resolution) = self.default_resolution() {
             self.draft.resolution = Some(resolution);
+            self.draft.inherit_resolution = false;
             self.error = None;
         } else {
             self.error = Some("Display resolution could not be detected.".to_owned());
         }
+    }
+
+    fn toggle_global_window_default(&mut self) {
+        if self.selected == 8 {
+            if self.draft.inherit_window_mode {
+                self.draft.window_mode = SETTINGS.read().defaults.window_mode;
+            }
+            self.draft.inherit_window_mode = !self.draft.inherit_window_mode;
+        } else if self.selected == 9 {
+            if self.draft.inherit_resolution {
+                self.draft.resolution = SETTINGS.read().defaults.resolution;
+            }
+            self.draft.inherit_resolution = !self.draft.inherit_resolution;
+        }
+        self.error = None;
     }
 
     fn toggle_auto_java(&mut self) -> Action {
@@ -934,9 +965,15 @@ impl State {
                 Ok(environment) => self.draft.environment = environment,
                 Err(error) => invalid(self, error),
             },
-            9 if value.is_empty() => self.draft.resolution = None,
+            9 if value.is_empty() => {
+                self.draft.resolution = None;
+                self.draft.inherit_resolution = false;
+            }
             9 => match parse_resolution(value) {
-                Ok(resolution) => self.draft.resolution = Some(resolution),
+                Ok(resolution) => {
+                    self.draft.resolution = Some(resolution);
+                    self.draft.inherit_resolution = false;
+                }
                 Err(error) => invalid(self, error),
             },
             12 | 13 => {
@@ -1036,6 +1073,9 @@ impl State {
                 self.apply_default_memory();
             }
             KeyCode::Char('d') if self.selected == 9 => self.apply_default_resolution(),
+            KeyCode::Char('i') if matches!(self.selected, 8 | 9) => {
+                self.toggle_global_window_default();
+            }
             KeyCode::Char('c') if self.selected == 9 => {
                 self.editing = Some(settings_text_area(vec![self.value(9)]));
             }
@@ -1122,27 +1162,6 @@ fn resolution_choices(
         choices.push(ResolutionChoice::Configured(width, height));
     }
     choices
-}
-
-fn parse_environment(value: &str) -> Result<BTreeMap<String, String>, String> {
-    let mut environment = BTreeMap::new();
-    for assignment in value.split_whitespace() {
-        let Some((key, value)) = assignment.split_once('=') else {
-            return Err(format!(
-                "Environment variable '{assignment}' must use KEY=value."
-            ));
-        };
-        if key.is_empty() || key.contains('\0') || value.contains('\0') {
-            return Err("Environment variable names cannot be empty.".to_owned());
-        }
-        if environment
-            .insert(key.to_owned(), value.to_owned())
-            .is_some()
-        {
-            return Err(format!("Environment variable '{key}' is repeated."));
-        }
-    }
-    Ok(environment)
 }
 
 pub fn popup_rect(area: Rect, state: &State) -> Rect {
@@ -1232,6 +1251,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &mut State) {
             ("Enter", " presets"),
             ("c", " custom"),
             ("d", " default"),
+            ("i", " global"),
             ("Esc", " back"),
         ])
     } else if state.selected == 10 {
@@ -1248,7 +1268,15 @@ pub fn render(frame: &mut Frame, area: Rect, state: &mut State) {
             ("E", " raw"),
             ("Esc", " back"),
         ])
-    } else if matches!(state.selected, 8 | 11) {
+    } else if state.selected == 8 {
+        super::keybind_line(&[
+            ("j/k", ""),
+            ("Enter", " toggle"),
+            ("i", " global"),
+            ("E", " raw"),
+            ("Esc", " back"),
+        ])
+    } else if state.selected == 11 {
         super::keybind_line(&[
             ("j/k", ""),
             ("Enter", " toggle"),
@@ -1517,6 +1545,11 @@ fn field_line(state: &State, index: usize, label: &str) -> Line<'static> {
     if index == 14 && state.draft.glfw_path.is_none() && !editing {
         spans.extend([Span::raw("  "), bundled_badge()]);
     }
+    if (index == 8 && state.draft.inherit_window_mode)
+        || (index == 9 && state.draft.inherit_resolution)
+    {
+        spans.extend([Span::raw("  "), status_badge("Global", theme.accent())]);
+    }
     Line::from(spans)
 }
 
@@ -1587,77 +1620,15 @@ fn tagged_field_lines(
     empty: &str,
     width: u16,
 ) -> Vec<Line<'static>> {
-    let theme = THEME.as_ref();
     let selected = state.selected == index;
-    let mut prefix = field_line(state, index, label).spans;
-    if selected && state.editing.is_some() {
-        return vec![Line::from(prefix)];
-    }
-    if values.is_empty() {
-        prefix.push(Span::styled(
-            empty.to_owned(),
-            Style::default().fg(theme.text_dim()),
-        ));
-        return vec![Line::from(prefix)];
-    }
-
-    let available = width.saturating_sub(20) as usize;
-    let mut lines = Vec::new();
-    let mut spans = prefix;
-    let mut used = 0usize;
-    for argument in values {
-        let badge_width = argument.chars().count() + 2;
-        let separator = usize::from(used > 0);
-        if used > 0 && used + separator + badge_width > available {
-            lines.push(Line::from(spans));
-            spans = vec![Span::raw(" ".repeat(20))];
-            used = 0;
-        }
-        if used > 0 {
-            spans.push(Span::raw(" "));
-            used += 1;
-        }
-        spans.push(Span::styled(
-            format!(" {argument} "),
-            Style::default()
-                .fg(if selected {
-                    theme.accent()
-                } else {
-                    theme.text()
-                })
-                .bg(theme.background())
-                .add_modifier(Modifier::BOLD),
-        ));
-        used += badge_width;
-    }
-    lines.push(Line::from(spans));
-    lines
-}
-
-fn tagged_row_count(values: &[String], width: u16) -> usize {
-    if values.is_empty() {
-        return 1;
-    }
-    let available = width.saturating_sub(20) as usize;
-    let mut rows = 1;
-    let mut used = 0usize;
-    for argument in values {
-        let badge_width = argument.chars().count() + 2;
-        let separator = usize::from(used > 0);
-        if used > 0 && used + separator + badge_width > available {
-            rows += 1;
-            used = 0;
-        }
-        used += usize::from(used > 0) + badge_width;
-    }
-    rows
-}
-
-fn environment_labels(environment: &BTreeMap<String, String>) -> Vec<String> {
-    environment
-        .iter()
-        .map(|(key, value)| format!("{key}={value}"))
-        .collect()
+    tagged_value_lines(
+        field_line(state, index, label).spans,
+        selected,
+        state.editing.is_some(),
+        values,
+        empty,
+        width,
+    )
 }
 
 fn render_choice_picker(frame: &mut Frame, area: Rect, state: &mut State) {
@@ -1861,7 +1832,9 @@ mod tests {
             jvm_args: Vec::new(),
             environment: Default::default(),
             window_mode: Default::default(),
+            inherit_window_mode: false,
             resolution: None,
+            inherit_resolution: false,
             preferred_account: None,
             pre_launch_command: Default::default(),
             post_exit_command: Default::default(),
@@ -2186,7 +2159,7 @@ mod tests {
     }
 
     #[test]
-    fn inherited_resolution_displays_the_detected_primary_size() {
+    fn explicit_game_default_resolution_is_labeled_clearly() {
         let temp = tempfile::tempdir().unwrap();
         let mut state = State::new(&instance(), temp.path());
         state.display_resolutions = vec![DisplayResolution {
@@ -2196,7 +2169,31 @@ mod tests {
             primary: true,
         }];
 
-        assert_eq!(state.display_value(9), "2560x1440");
+        assert_eq!(state.display_value(9), "game default");
+    }
+
+    #[test]
+    fn window_settings_can_explicitly_inherit_launcher_defaults() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut state = State::new(&instance(), temp.path());
+
+        state.selected = 8;
+        state.handle_key(&KeyEvent::from(KeyCode::Char('i')));
+        assert!(state.draft.inherit_window_mode);
+        assert_eq!(
+            state.display_value(8),
+            SETTINGS.read().defaults.window_mode.to_string()
+        );
+
+        state.selected = 9;
+        state.handle_key(&KeyEvent::from(KeyCode::Char('i')));
+        assert!(state.draft.inherit_resolution);
+        assert_eq!(
+            state
+                .draft
+                .effective_resolution(SETTINGS.read().defaults.resolution),
+            SETTINGS.read().defaults.resolution
+        );
     }
 
     #[test]

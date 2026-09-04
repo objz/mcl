@@ -43,6 +43,24 @@ fn metadata_paths_separate_state_and_cache() {
 }
 
 #[test]
+fn disposable_cache_cleanup_preserves_runtime_metadata() {
+    let temp = tempfile::tempdir().unwrap();
+    let paths = MetadataPaths::new(temp.path());
+    std::fs::create_dir_all(paths.provider_icons("modrinth")).unwrap();
+    std::fs::create_dir_all(paths.java_installations().parent().unwrap()).unwrap();
+    std::fs::create_dir_all(paths.temporary()).unwrap();
+    std::fs::create_dir_all(paths.versions()).unwrap();
+    std::fs::write(paths.java_installations(), "[]").unwrap();
+
+    clear_disposable_caches(temp.path()).unwrap();
+
+    assert!(!paths.cache().join("providers").exists());
+    assert!(!paths.cache().join("java").exists());
+    assert!(paths.temporary().exists());
+    assert!(paths.versions().exists());
+}
+
+#[test]
 fn atomic_write_replaces_existing_file() {
     let temp = tempfile::tempdir().unwrap();
     let path = temp.path().join("state.json");

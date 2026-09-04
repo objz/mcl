@@ -418,7 +418,7 @@ impl App {
             cached.map(|snapshot| (result.instance_name.clone(), snapshot));
         self.content_manifest = Some((result.instance_name.clone(), result.manifest.clone()));
         self.apply_content_update_snapshot();
-        if stale {
+        if stale && crate::config::SETTINGS.read().general.check_content_updates {
             crate::instance::content::updates::spawn(
                 selected,
                 result.manifest,
@@ -756,13 +756,28 @@ impl App {
         match path.file_name().and_then(|name| name.to_str()) {
             Some("config.toml") => {
                 match crate::config::SETTINGS.reload() {
-                    Ok(true) => error_buffer::push_error(error_buffer::ErrorEvent {
-                        id: 0,
-                        level: tracing::Level::INFO,
-                        message: "Path and image protocol changes apply after restart".to_owned(),
-                        pushed_at: std::time::Instant::now(),
-                    }),
-                    Ok(false) => {}
+                    Ok(outcome) => {
+                        if outcome.provider_changed {
+                            self.reset_discovery_states();
+                        }
+                        if outcome.modpack_updates_enabled {
+                            widgets::instances::spawn_modpack_update_checks(
+                                &self.instances_state.instances,
+                            );
+                        }
+                        if outcome.content_updates_enabled {
+                            self.spawn_selected_content_update_check();
+                        }
+                        if outcome.restart_required {
+                            error_buffer::push_error(error_buffer::ErrorEvent {
+                                id: 0,
+                                level: tracing::Level::INFO,
+                                message: "Path and image protocol changes apply after restart"
+                                    .to_owned(),
+                                pushed_at: std::time::Instant::now(),
+                            });
+                        }
+                    }
                     Err(error) => error_buffer::push_error(error_buffer::ErrorEvent {
                         id: 0,
                         level: tracing::Level::ERROR,

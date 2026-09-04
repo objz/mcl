@@ -296,6 +296,23 @@ impl App {
                             }
                             self.focused
                         }
+                        Some(confirm_popup::ConfirmTarget::LauncherCache) => {
+                            let meta_dir = crate::config::SETTINGS.read().paths.resolve_meta_dir();
+                            match crate::storage::clear_disposable_caches(&meta_dir) {
+                                Ok(()) => {
+                                    self.reset_discovery_states();
+                                    error_buffer::push_message(
+                                        tracing::Level::INFO,
+                                        "Cleared launcher caches",
+                                    );
+                                }
+                                Err(error) => error_buffer::push_message(
+                                    tracing::Level::ERROR,
+                                    format!("Failed to clear launcher caches: {error}"),
+                                ),
+                            }
+                            FocusedArea::GlobalSettings
+                        }
                         Some(confirm_popup::ConfirmTarget::AutomaticSelection {
                             setting,
                             instance,
@@ -362,6 +379,9 @@ impl App {
                                 state.cancel_runtime_change();
                             }
                             FocusedArea::InstanceSettings
+                        }
+                        Some(confirm_popup::ConfirmTarget::LauncherCache) => {
+                            FocusedArea::GlobalSettings
                         }
                         Some(confirm_popup::ConfirmTarget::AutomaticSelection {
                             instance, ..
@@ -745,6 +765,10 @@ impl App {
                         setting: confirm_popup::AutomaticSetting::Java,
                         instance: None,
                     });
+                    self.focused = FocusedArea::ConfirmDelete;
+                }
+                widgets::popups::global_settings::Action::ClearCache => {
+                    confirm_popup::set_pending(confirm_popup::ConfirmTarget::LauncherCache);
                     self.focused = FocusedArea::ConfirmDelete;
                 }
                 widgets::popups::global_settings::Action::Close => {
@@ -2137,11 +2161,32 @@ impl App {
         theme: String,
         border: crate::config::theme::BorderStyle,
     ) {
-        let result = crate::config::SETTINGS
-            .save_launcher_settings(config)
-            .and_then(|()| crate::config::theme::apply_theme(theme, border));
+        let result = crate::config::SETTINGS.save_launcher_settings(config);
         match result {
-            Ok(()) => crate::feedback::request_redraw(),
+            Ok(outcome) => {
+                if let Err(error) = crate::config::theme::apply_theme(theme, border) {
+                    error_buffer::push_message(tracing::Level::ERROR, error.to_string());
+                    return;
+                }
+                if outcome.provider_changed {
+                    self.reset_discovery_states();
+                }
+                if outcome.modpack_updates_enabled {
+                    widgets::instances::spawn_modpack_update_checks(
+                        &self.instances_state.instances,
+                    );
+                }
+                if outcome.content_updates_enabled {
+                    self.spawn_selected_content_update_check();
+                }
+                if outcome.restart_required && outcome.restart_changed {
+                    error_buffer::push_message(
+                        tracing::Level::INFO,
+                        "Restart rmcl to apply storage and image changes",
+                    );
+                }
+                crate::feedback::request_redraw();
+            }
             Err(error) => error_buffer::push_message(tracing::Level::ERROR, error.to_string()),
         }
     }
@@ -2211,6 +2256,34 @@ impl App {
                 pushed_at: std::time::Instant::now(),
             }),
         }
+    }
+
+    pub(super) fn reset_discovery_states(&mut self) {
+        self.mods_discovery_state =
+            widgets::content::DiscoveryState::new(crate::instance::ContentKind::Mod);
+        self.resource_packs_discovery_state =
+            widgets::content::DiscoveryState::new(crate::instance::ContentKind::ResourcePack);
+        self.shaders_discovery_state =
+            widgets::content::DiscoveryState::new(crate::instance::ContentKind::Shader);
+        self.datapacks_discovery_state =
+            widgets::content::DiscoveryState::new(crate::instance::ContentKind::DataPack);
+    }
+
+    pub(super) fn spawn_selected_content_update_check(&self) {
+        let Some(instance) = self.instances_state.selected_instance().cloned() else {
+            return;
+        };
+        let Some((name, manifest)) = self.content_manifest.as_ref() else {
+            return;
+        };
+        if name != &instance.name {
+            return;
+        }
+        let path = crate::storage::InstancePaths::new(
+            self.instance_manager.instances_dir.join(&instance.name),
+        )
+        .content_updates();
+        crate::instance::content::updates::spawn(instance, manifest.clone(), path);
     }
 }
 

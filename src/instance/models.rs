@@ -89,8 +89,12 @@ pub struct InstanceConfig {
     pub environment: BTreeMap<String, String>,
     #[serde(default, skip_serializing_if = "WindowMode::is_windowed")]
     pub window_mode: WindowMode,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub inherit_window_mode: bool,
     #[serde(default)]
     pub resolution: Option<(u32, u32)>,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub inherit_resolution: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub preferred_account: Option<String>,
     #[serde(default, skip_serializing_if = "LaunchCommand::is_default")]
@@ -103,6 +107,28 @@ pub struct InstanceConfig {
     pub config_sync_profile: Option<String>,
     #[serde(default)]
     pub modpack_source: Option<crate::instance::ProviderProject>,
+}
+
+impl InstanceConfig {
+    pub fn effective_window_mode(&self, global: WindowMode) -> WindowMode {
+        if self.inherit_window_mode {
+            global
+        } else {
+            self.window_mode
+        }
+    }
+
+    pub fn effective_resolution(&self, global: Option<(u32, u32)>) -> Option<(u32, u32)> {
+        if self.inherit_resolution {
+            global
+        } else {
+            self.resolution
+        }
+    }
+}
+
+fn is_false(value: &bool) -> bool {
+    !value
 }
 
 pub fn parse_resolution(input: &str) -> Result<(u32, u32), String> {
@@ -149,6 +175,18 @@ pub fn normalize_memory_value(raw: &str) -> Option<String> {
         Some(unit @ ('K' | 'M' | 'G')) => Some(format!("{value}{unit}")),
         Some(_) => None,
         None => memory_number_to_string(value),
+    }
+}
+
+pub fn memory_kib(value: &str) -> Option<u64> {
+    let normalized = normalize_memory_value(value)?;
+    let (number, suffix) = normalized.split_at(normalized.len().saturating_sub(1));
+    let number = number.parse::<u64>().ok()?;
+    match suffix {
+        "K" => Some(number),
+        "M" => number.checked_mul(1024),
+        "G" => number.checked_mul(1024 * 1024),
+        _ => None,
     }
 }
 

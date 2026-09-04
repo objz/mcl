@@ -4,7 +4,7 @@
 // Reusable interactive controls shared by instance and launcher settings.
 
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeMap, BTreeSet},
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
 };
@@ -763,15 +763,7 @@ fn java_title(version: &str) -> String {
 }
 
 pub(crate) fn memory_kib(value: &str) -> Option<u64> {
-    let normalized = crate::instance::models::normalize_memory_value(value)?;
-    let (number, suffix) = normalized.split_at(normalized.len().saturating_sub(1));
-    let number = number.parse::<u64>().ok()?;
-    match suffix {
-        "K" => Some(number),
-        "M" => number.checked_mul(1024),
-        "G" => number.checked_mul(1024 * 1024),
-        _ => None,
-    }
+    crate::instance::models::memory_kib(value)
 }
 
 pub(crate) fn adjust_memory(value: &str, forward: bool) -> String {
@@ -885,6 +877,106 @@ pub(crate) fn settings_text_area(lines: Vec<String>) -> TextArea<'static> {
     editor.move_cursor(CursorMove::Bottom);
     editor.move_cursor(CursorMove::End);
     editor
+}
+
+pub(crate) fn parse_environment(value: &str) -> Result<BTreeMap<String, String>, String> {
+    let mut environment = BTreeMap::new();
+    for assignment in value.split_whitespace() {
+        let Some((key, value)) = assignment.split_once('=') else {
+            return Err(format!(
+                "Environment variable '{assignment}' must use KEY=value."
+            ));
+        };
+        if key.is_empty() || key.contains('\0') || value.contains('\0') {
+            return Err("Environment variable names cannot be empty.".to_owned());
+        }
+        if environment
+            .insert(key.to_owned(), value.to_owned())
+            .is_some()
+        {
+            return Err(format!("Environment variable '{key}' is repeated."));
+        }
+    }
+    Ok(environment)
+}
+
+pub(crate) fn environment_labels(environment: &BTreeMap<String, String>) -> Vec<String> {
+    environment
+        .iter()
+        .map(|(key, value)| format!("{key}={value}"))
+        .collect()
+}
+
+pub(crate) fn tagged_value_lines(
+    mut prefix: Vec<Span<'static>>,
+    selected: bool,
+    editing: bool,
+    values: &[String],
+    empty: &str,
+    width: u16,
+) -> Vec<Line<'static>> {
+    let theme = THEME.as_ref();
+    if selected && editing {
+        return vec![Line::from(prefix)];
+    }
+    if values.is_empty() {
+        prefix.push(Span::styled(
+            empty.to_owned(),
+            Style::default().fg(theme.text_dim()),
+        ));
+        return vec![Line::from(prefix)];
+    }
+
+    let available = width.saturating_sub(20) as usize;
+    let mut lines = Vec::new();
+    let mut spans = prefix;
+    let mut used = 0usize;
+    for value in values {
+        let badge_width = value.chars().count() + 2;
+        let separator = usize::from(used > 0);
+        if used > 0 && used + separator + badge_width > available {
+            lines.push(Line::from(spans));
+            spans = vec![Span::raw(" ".repeat(20))];
+            used = 0;
+        }
+        if used > 0 {
+            spans.push(Span::raw(" "));
+            used += 1;
+        }
+        spans.push(Span::styled(
+            format!(" {value} "),
+            Style::default()
+                .fg(if selected {
+                    theme.accent()
+                } else {
+                    theme.text()
+                })
+                .bg(theme.background())
+                .add_modifier(Modifier::BOLD),
+        ));
+        used += badge_width;
+    }
+    lines.push(Line::from(spans));
+    lines
+}
+
+pub(crate) fn tagged_row_count(values: &[String], width: u16) -> usize {
+    if values.is_empty() {
+        return 1;
+    }
+    let available = width.saturating_sub(20) as usize;
+    let mut rows = 1;
+    let mut used = 0usize;
+    for value in values {
+        let badge_width = value.chars().count() + 2;
+        let separator = usize::from(used > 0);
+        if used > 0 && used + separator + badge_width > available {
+            rows += 1;
+            used = 0;
+        }
+        used += usize::from(used > 0) + badge_width;
+    }
+    rows
 }
 
 pub(crate) fn auto_label() -> Span<'static> {

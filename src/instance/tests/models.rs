@@ -18,7 +18,9 @@ fn instance_config_roundtrips_through_json() {
         jvm_args: vec![],
         environment: Default::default(),
         window_mode: Default::default(),
+        inherit_window_mode: false,
         resolution: Some((1920, 1080)),
+        inherit_resolution: false,
         preferred_account: None,
         pre_launch_command: Default::default(),
         post_exit_command: Default::default(),
@@ -55,10 +57,55 @@ fn instance_config_accepts_numeric_memory() {
     assert_eq!(parsed.memory_min.as_deref(), Some("512M"));
     assert!(parsed.environment.is_empty());
     assert_eq!(parsed.window_mode, WindowMode::Windowed);
+    assert!(!parsed.inherit_window_mode);
+    assert!(!parsed.inherit_resolution);
     assert_eq!(parsed.preferred_account, None);
     assert_eq!(parsed.pre_launch_command, LaunchCommand::default());
     assert_eq!(parsed.post_exit_command, LaunchCommand::default());
     assert_eq!(parsed.glfw_path, None);
+}
+
+#[test]
+fn window_defaults_are_inherited_only_when_explicitly_enabled() {
+    let mut config = InstanceConfig {
+        name: "test".to_owned(),
+        game_version: "1.21.1".to_owned(),
+        loader: ModLoader::Vanilla,
+        loader_version: None,
+        created: Utc::now(),
+        last_played: None,
+        java_path: None,
+        memory_max: None,
+        memory_min: None,
+        jvm_args: Vec::new(),
+        environment: Default::default(),
+        window_mode: WindowMode::Windowed,
+        inherit_window_mode: false,
+        resolution: None,
+        inherit_resolution: false,
+        preferred_account: None,
+        pre_launch_command: Default::default(),
+        post_exit_command: Default::default(),
+        glfw_path: None,
+        config_sync_profile: None,
+        modpack_source: None,
+    };
+    assert_eq!(
+        config.effective_window_mode(WindowMode::Fullscreen),
+        WindowMode::Windowed
+    );
+    assert_eq!(config.effective_resolution(Some((1920, 1080))), None);
+
+    config.inherit_window_mode = true;
+    config.inherit_resolution = true;
+    assert_eq!(
+        config.effective_window_mode(WindowMode::Fullscreen),
+        WindowMode::Fullscreen
+    );
+    assert_eq!(
+        config.effective_resolution(Some((1920, 1080))),
+        Some((1920, 1080))
+    );
 }
 
 #[test]
