@@ -10,6 +10,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::instance::models::{WindowMode, memory_kib, normalize_memory_value};
 
+pub const DEFAULT_RESOLUTION: (u32, u32) = (854, 480);
+
 #[derive(Debug, Serialize, Deserialize, Default, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum ImageProtocol {
@@ -271,7 +273,7 @@ pub struct Defaults {
     pub environment: BTreeMap<String, String>,
     #[serde(default)]
     pub window_mode: WindowMode,
-    #[serde(default)]
+    #[serde(default = "default_resolution")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub resolution: Option<(u32, u32)>,
 }
@@ -283,6 +285,10 @@ fn default_memory_max() -> String {
     "2G".to_owned()
 }
 
+fn default_resolution() -> Option<(u32, u32)> {
+    Some(DEFAULT_RESOLUTION)
+}
+
 impl Default for Defaults {
     fn default() -> Self {
         Self {
@@ -291,7 +297,7 @@ impl Default for Defaults {
             jvm_args: Vec::new(),
             environment: BTreeMap::new(),
             window_mode: WindowMode::default(),
-            resolution: None,
+            resolution: default_resolution(),
         }
     }
 }
@@ -372,6 +378,9 @@ impl Config {
             self.defaults
                 .memory_max
                 .clone_from(&self.defaults.memory_min);
+        }
+        if self.defaults.resolution.is_none() {
+            self.defaults.resolution = default_resolution();
         }
         self.ui.error_auto_dismiss_ms = self.ui.error_auto_dismiss_ms.max(1);
         self.ui.error_slide_start_ms = self

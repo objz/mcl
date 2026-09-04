@@ -19,7 +19,7 @@ jvm_args = []
 environment = {}
 # inherited by instances that use launcher window defaults
 window_mode = "windowed"
-# resolution = [1920, 1080] # omitted = Minecraft default
+resolution = [854, 480]
 
 [ui]
 # image protocol: auto, halfblocks, quadrants, kitty, or iterm2

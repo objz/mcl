@@ -147,7 +147,7 @@ memory_max = "2G"
 jvm_args = []
 environment = {}
 window_mode = "windowed"
-# resolution = [1920, 1080]
+resolution = [854, 480]
 
 [ui]
 image_protocol = "auto"

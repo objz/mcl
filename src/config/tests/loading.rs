@@ -68,6 +68,10 @@ fn bundled_config_uses_platform_paths_and_automatic_java() {
     assert_eq!(config.paths.meta_dir, settings::Paths::default().meta_dir);
     assert!(config.paths.java_path.is_none());
     assert_eq!(config.ui.image_protocol, settings::ImageProtocol::Auto);
+    assert_eq!(
+        config.defaults.resolution,
+        Some(settings::DEFAULT_RESOLUTION)
+    );
 }
 
 #[test]
@@ -81,6 +85,7 @@ fn config_normalizes_memory_java_and_notification_bounds() {
         defaults: settings::Defaults {
             memory_min: "invalid".to_owned(),
             memory_max: "1G".to_owned(),
+            resolution: None,
             ..Default::default()
         },
         ui: settings::Ui {
@@ -101,6 +106,10 @@ fn config_normalizes_memory_java_and_notification_bounds() {
     assert!(config.paths.java_path.is_none());
     assert_eq!(config.defaults.memory_min, "512M");
     assert_eq!(config.defaults.memory_max, "1G");
+    assert_eq!(
+        config.defaults.resolution,
+        Some(settings::DEFAULT_RESOLUTION)
+    );
     assert_eq!(config.ui.error_slide_start_ms, 100);
     assert_eq!(config.ui.error_fly_out_ms, 100);
     assert_eq!(config.ui.max_error_events, 1);

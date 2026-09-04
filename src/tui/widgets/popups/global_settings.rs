@@ -16,7 +16,7 @@ use ratatui_textarea::TextArea;
 use crate::{
     config::{
         Config,
-        settings::{ContentProvider, ImageProtocol},
+        settings::{ContentProvider, DEFAULT_RESOLUTION, ImageProtocol},
         theme::{BORDER_STYLE, BorderStyle, THEME, ThemeConfig},
     },
     instance::models::{WindowMode, normalize_memory_value, parse_resolution},
@@ -166,7 +166,9 @@ impl State {
                     .unwrap_or_else(|| self.java_picker.detected_path()),
             ),
             6 => window_mode_title(self.config.defaults.window_mode).to_owned(),
-            7 if self.config.defaults.resolution.is_none() => "game default".to_owned(),
+            7 if self.config.defaults.resolution.is_none() => {
+                format!("{}x{}", DEFAULT_RESOLUTION.0, DEFAULT_RESOLUTION.1)
+            }
             16 if self.config.content.max_fingerprint_size_mib == 0 => "unlimited".to_owned(),
             23 => "provider and Java metadata".to_owned(),
             _ => self.value(field),
@@ -1346,6 +1348,8 @@ mod tests {
     #[test]
     fn launcher_resolution_reuses_display_and_preset_choices() {
         let mut state = State::new();
+        state.config.defaults.resolution = None;
+        assert_eq!(state.display_value(7), "854x480");
         state.display_resolutions = vec![DisplayResolution {
             width: 2560,
             height: 1440,
