@@ -1047,6 +1047,10 @@ pub(crate) fn bundled_label() -> Span<'static> {
     status_badge("Bundled", THEME.as_ref().success())
 }
 
+pub(crate) fn default_label() -> Span<'static> {
+    status_badge("Default", THEME.as_ref().success())
+}
+
 pub(crate) fn render_settings_picker(
     picker: &SettingsPicker,
     area: Rect,
@@ -1078,6 +1082,19 @@ pub(crate) fn display_resolutions() -> Vec<DisplayResolution> {
         .collect::<Vec<_>>();
     resolutions.sort_by_key(|resolution| !resolution.primary);
     resolutions
+}
+
+pub(crate) fn default_resolution(displays: &[DisplayResolution]) -> Option<(u32, u32)> {
+    displays
+        .first()
+        .map(|display| (display.width, display.height))
+}
+
+pub(crate) fn is_default_resolution(
+    resolution: Option<(u32, u32)>,
+    displays: &[DisplayResolution],
+) -> bool {
+    default_resolution(displays).is_some_and(|default| resolution == Some(default))
 }
 
 pub(crate) fn resolution_choices(
@@ -1169,6 +1186,20 @@ mod tests {
         assert_eq!(adjust_memory("2G", false), "1G");
         assert_eq!(adjust_memory("64G", true), "64G");
         assert_eq!(adjust_memory("512M", false), "512M");
+    }
+
+    #[test]
+    fn first_detected_display_is_the_default_resolution() {
+        let displays = vec![DisplayResolution {
+            width: 1440,
+            height: 2560,
+            name: "DP-1".to_owned(),
+            primary: true,
+        }];
+
+        assert_eq!(default_resolution(&displays), Some((1440, 2560)));
+        assert!(is_default_resolution(Some((1440, 2560)), &displays));
+        assert!(!is_default_resolution(Some((854, 480)), &displays));
     }
 
     #[test]

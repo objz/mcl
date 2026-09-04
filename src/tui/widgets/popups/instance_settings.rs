@@ -31,8 +31,9 @@ use crate::{
                 DisplayResolution, GlfwChoice, GlfwPicker, JavaChoice, JavaPicker,
                 ResolutionChoice, ResolutionPickerAction, SettingsPicker, SettingsPickerAction,
                 SettingsPickerBadge, SettingsPickerOption, adjust_memory, auto_label,
-                bundled_glfw_version, bundled_label as bundled_badge, display_resolutions,
-                environment_labels, handle_resolution_picker_key, handle_text_area_input,
+                bundled_glfw_version, bundled_label as bundled_badge, default_label,
+                default_resolution, display_resolutions, environment_labels,
+                handle_resolution_picker_key, handle_text_area_input, is_default_resolution,
                 memory_kib, parse_environment, render_memory_gauge, render_settings_picker,
                 resolution_choices, resolution_items, settings_text_area, tagged_row_count,
                 tagged_value_lines, toggle_window_mode,
@@ -737,12 +738,6 @@ impl State {
         )
     }
 
-    fn default_resolution(&self) -> Option<(u32, u32)> {
-        self.display_resolutions
-            .first()
-            .map(|display| (display.width, display.height))
-    }
-
     fn apply_default_memory(&mut self) {
         let settings = SETTINGS.read();
         if self.selected == 4 {
@@ -754,7 +749,7 @@ impl State {
     }
 
     fn apply_default_resolution(&mut self) {
-        if let Some(resolution) = self.default_resolution() {
+        if let Some(resolution) = default_resolution(&self.display_resolutions) {
             self.draft.resolution = Some(resolution);
             self.draft.inherit_resolution = false;
             self.error = None;
@@ -1497,6 +1492,13 @@ fn field_line(state: &State, index: usize, label: &str) -> Line<'static> {
     if index == 14 && state.draft.glfw_path.is_none() && !editing {
         spans.extend([Span::raw("  "), bundled_badge()]);
     }
+    if index == 9
+        && !editing
+        && !state.draft.inherit_resolution
+        && is_default_resolution(state.draft.resolution, &state.display_resolutions)
+    {
+        spans.extend([Span::raw("  "), default_label()]);
+    }
     if (index == 8 && state.draft.inherit_window_mode)
         || (index == 9 && state.draft.inherit_resolution)
     {
@@ -2003,6 +2005,11 @@ mod tests {
         state.draft.resolution = Some((1920, 1080));
         state.handle_key(&KeyEvent::from(KeyCode::Char('d')));
         assert_eq!(state.draft.resolution, Some((2560, 1440)));
+        assert!(
+            field_line(&state, 9, field_label(9))
+                .to_string()
+                .contains("Default")
+        );
         state.handle_key(&KeyEvent::from(KeyCode::Enter));
         assert!(!state.choice_values().iter().any(|value| value == "Default"));
         assert!(!state.choice_values().iter().any(|value| value == "Custom…"));

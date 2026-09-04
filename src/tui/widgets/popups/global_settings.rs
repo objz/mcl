@@ -23,10 +23,11 @@ use crate::{
     tui::widgets::popups::settings_controls::{
         DisplayResolution, JavaChoice, JavaPicker, ResolutionChoice, ResolutionPickerAction,
         SettingsPicker, SettingsPickerAction, SettingsPickerOption, adjust_memory, auto_label,
-        display_resolutions, environment_labels, handle_resolution_picker_key,
-        handle_text_area_input, memory_kib, parse_environment, render_memory_gauge,
-        render_settings_picker, resolution_choices, resolution_items, settings_text_area,
-        tagged_row_count, tagged_value_lines, toggle_window_mode,
+        default_label, default_resolution, display_resolutions, environment_labels,
+        handle_resolution_picker_key, handle_text_area_input, is_default_resolution, memory_kib,
+        parse_environment, render_memory_gauge, render_settings_picker, resolution_choices,
+        resolution_items, settings_text_area, tagged_row_count, tagged_value_lines,
+        toggle_window_mode,
     },
     tui::widgets::status_badge,
 };
@@ -459,8 +460,8 @@ impl State {
     }
 
     fn apply_default_resolution(&mut self) {
-        if let Some(display) = self.display_resolutions.first() {
-            self.config.defaults.resolution = Some((display.width, display.height));
+        if let Some(resolution) = default_resolution(&self.display_resolutions) {
+            self.config.defaults.resolution = Some(resolution);
             self.save_pending = true;
             self.error = None;
         } else {
@@ -1109,6 +1110,12 @@ fn global_field_line(state: &State, index: usize, label: &str) -> Line<'static> 
     if index == 2 && state.config.ui.image_protocol == ImageProtocol::Auto && !editing {
         spans.extend([Span::raw("  "), auto_label()]);
     }
+    if index == 7
+        && !editing
+        && is_default_resolution(state.config.defaults.resolution, &state.display_resolutions)
+    {
+        spans.extend([Span::raw("  "), default_label()]);
+    }
     if index == 10 && !editing {
         spans.push(Span::raw("  "));
         spans.push(match state.config.content.preferred_provider {
@@ -1363,6 +1370,11 @@ mod tests {
             Action::Save(..)
         ));
         assert_eq!(state.config.defaults.resolution, Some((2560, 1440)));
+        assert!(
+            global_field_line(&state, 7, field_label(7))
+                .to_string()
+                .contains("Default")
+        );
         state.handle_key(&KeyEvent::from(KeyCode::Enter));
         assert_eq!(state.choice_picker, Some(ChoicePicker::Resolution));
         assert!(matches!(
