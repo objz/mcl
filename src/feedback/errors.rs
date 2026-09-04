@@ -20,7 +20,13 @@ static NEXT_ERROR_ID: AtomicU64 = AtomicU64::new(1);
 static MAX_ERROR_EVENTS: AtomicUsize = AtomicUsize::new(50);
 
 pub(crate) fn set_max_error_events(max_events: usize) {
-    MAX_ERROR_EVENTS.store(max_events.max(1), Ordering::Relaxed);
+    let max_events = max_events.max(1);
+    MAX_ERROR_EVENTS.store(max_events, Ordering::Relaxed);
+    if let Ok(mut events) = ERROR_EVENTS.lock() {
+        while events.len() > max_events {
+            events.pop_front();
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

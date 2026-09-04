@@ -16,6 +16,18 @@ fn returns_none_after_dismiss_timeout() {
 }
 
 #[test]
+fn returns_none_after_slide_out_finishes() {
+    let settings = SETTINGS.read();
+    let after_slide = settings
+        .ui
+        .error_slide_start_ms
+        .saturating_add(settings.ui.error_fly_out_ms) as u128;
+    drop(settings);
+
+    assert!(popup_area(frame(), "msg", 0, after_slide).is_none());
+}
+
+#[test]
 fn returns_some_inside_dismiss_window() {
     assert!(popup_area(frame(), "msg", 0, 0).is_some());
 }

@@ -88,3 +88,21 @@ fn overflow_drops_oldest() {
     assert!(all.iter().any(|e| e.message == "overflow_10"));
     assert!(all.iter().any(|e| e.message == "overflow_59"));
 }
+
+#[test]
+fn lowering_limit_trims_existing_events_immediately() {
+    let _guard = TEST_LOCK.lock().unwrap();
+    clear_errors_for_test();
+    set_max_error_events(5);
+    for i in 0..5 {
+        push_error(make_event(&format!("trim_{i}")));
+    }
+
+    set_max_error_events(2);
+    let all = peek_all_errors();
+
+    assert_eq!(all.len(), 2);
+    assert_eq!(all[0].message, "trim_4");
+    assert_eq!(all[1].message, "trim_3");
+    set_max_error_events(50);
+}

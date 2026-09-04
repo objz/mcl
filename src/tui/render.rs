@@ -344,7 +344,7 @@ impl App {
     }
 
     // drives the slide-in / idle / slide-out state machine for each error toast.
-    // transitions to FadingOut once it's within fly_out_ms of auto-dismiss time
+    // transitions to FadingOut at the configured slide-start time
     fn render_error_effect(
         &mut self,
         frame: &mut Frame,
@@ -356,9 +356,13 @@ impl App {
         use crate::config::theme::THEME;
         let theme = THEME.as_ref();
         let bg = theme.background();
-        let fly_out_ms = SETTINGS.read().ui.error_fly_out_ms as u128;
-        let fly_start_ms = SETTINGS.read().ui.error_auto_dismiss_ms as u128
-            - fly_out_ms.min(SETTINGS.read().ui.error_auto_dismiss_ms as u128);
+        let (fly_out_ms, fly_start_ms) = {
+            let settings = SETTINGS.read();
+            (
+                settings.ui.error_fly_out_ms as u128,
+                settings.ui.error_slide_start_ms as u128,
+            )
+        };
 
         if elapsed_ms >= fly_start_ms {
             let entry = self
