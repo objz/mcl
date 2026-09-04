@@ -495,7 +495,7 @@ fn render_java_picker(frame: &mut Frame, area: Rect, state: &mut State) {
             Err(error) => crate::feedback::errors::push_message(tracing::Level::ERROR, error),
         }
     }
-    super::select_list::render(
+    super::select_list::render_styled(
         state.java_picker.items(),
         state.java_picker.selected,
         list_area,

@@ -16,7 +16,9 @@ use ratatui::{
 use ratatui_textarea::TextArea;
 
 use crate::{
-    config::theme::THEME, instance::java::JavaInstallation, tui::widgets::popups::LoadState,
+    config::theme::THEME,
+    instance::java::JavaInstallation,
+    tui::widgets::{popups::LoadState, status_badge},
 };
 
 const MEMORY_STEPS: [&str; 12] = [
@@ -147,7 +149,8 @@ impl JavaPicker {
         };
         self.choices()
             .into_iter()
-            .map(|choice| match choice {
+            .enumerate()
+            .map(|(index, choice)| match choice {
                 JavaChoice::Installation(path) => {
                     let installation = installations
                         .iter()
@@ -155,9 +158,24 @@ impl JavaPicker {
                     let version = installation
                         .and_then(|installation| installation.version.as_deref())
                         .map_or_else(|| "Java".to_owned(), |version| format!("Java {version}"));
+                    let selected = index == self.selected;
                     let mut spans = vec![
-                        Span::styled(version, Style::default().fg(theme.text())),
-                        Span::styled(format!("  {path}"), Style::default().fg(theme.text_dim())),
+                        Span::styled(
+                            version,
+                            Style::default().fg(if selected {
+                                theme.accent()
+                            } else {
+                                theme.text()
+                            }),
+                        ),
+                        Span::styled(
+                            format!("  {path}"),
+                            Style::default().fg(if selected {
+                                theme.accent()
+                            } else {
+                                theme.text_dim()
+                            }),
+                        ),
                     ];
                     if self.current.is_none() && path == self.detected {
                         spans.extend([Span::raw("  "), auto_label()]);
@@ -341,13 +359,7 @@ pub(crate) fn handle_text_area_input(input: &mut TextArea<'_>, key: &KeyEvent) {
 }
 
 pub(crate) fn auto_label() -> Span<'static> {
-    Span::styled(
-        " Auto ",
-        Style::default()
-            .fg(THEME.as_ref().text_bright())
-            .bg(THEME.as_ref().info())
-            .add_modifier(Modifier::BOLD),
-    )
+    status_badge("Auto", THEME.as_ref().success())
 }
 
 pub(crate) fn display_resolutions() -> Vec<DisplayResolution> {

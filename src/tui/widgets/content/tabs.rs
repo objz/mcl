@@ -248,10 +248,7 @@ pub fn render(
     let mut content_titles = vec![
         Span::styled(
             mode_label(mode),
-            Style::default()
-                .fg(theme.background())
-                .bg(mode_background)
-                .add_modifier(Modifier::BOLD),
+            crate::tui::widgets::status_badge_style(mode_background),
         ),
         Span::raw(" "),
     ];

@@ -1165,7 +1165,9 @@ fn render_choice_picker(frame: &mut Frame, area: Rect, state: &mut State) {
     }
     let items = match state.choice_picker {
         Some(ChoicePicker::Java) => state.java_picker.items(),
-        Some(ChoicePicker::Resolution) => resolution_items(&state.resolution_choices()),
+        Some(ChoicePicker::Resolution) => {
+            resolution_items(&state.resolution_choices(), state.choice_index)
+        }
         _ => state
             .choice_values()
             .iter()
@@ -1177,17 +1179,29 @@ fn render_choice_picker(frame: &mut Frame, area: Rect, state: &mut State) {
             })
             .collect(),
     };
-    super::select_list::render(items, state.choice_index, list_area, frame.buffer_mut());
+    if matches!(
+        state.choice_picker,
+        Some(ChoicePicker::Java | ChoicePicker::Resolution)
+    ) {
+        super::select_list::render_styled(items, state.choice_index, list_area, frame.buffer_mut());
+    } else {
+        super::select_list::render(items, state.choice_index, list_area, frame.buffer_mut());
+    }
 }
 
-fn resolution_items(choices: &[ResolutionChoice]) -> Vec<ListItem<'static>> {
+fn resolution_items(choices: &[ResolutionChoice], selected: usize) -> Vec<ListItem<'static>> {
     let theme = THEME.as_ref();
     choices
         .iter()
-        .map(|choice| {
+        .enumerate()
+        .map(|(index, choice)| {
             let mut spans = vec![Span::styled(
                 choice.label(),
-                Style::default().fg(theme.text()),
+                Style::default().fg(if index == selected {
+                    theme.accent()
+                } else {
+                    theme.text()
+                }),
             )];
             match choice {
                 ResolutionChoice::Preset(_, _) => {}
