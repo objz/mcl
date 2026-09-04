@@ -111,10 +111,10 @@ impl State {
             choice_index: 0,
             display_resolutions: display_resolutions(),
             detected_image_protocol: match detected_image_protocol {
-                ratatui_image::picker::ProtocolType::Halfblocks => "halfblocks",
-                ratatui_image::picker::ProtocolType::Sixel => "sixel",
-                ratatui_image::picker::ProtocolType::Kitty => "kitty",
-                ratatui_image::picker::ProtocolType::Iterm2 => "iterm2",
+                ratatui_image::picker::ProtocolType::Halfblocks => "Halfblocks",
+                ratatui_image::picker::ProtocolType::Sixel => "Sixel",
+                ratatui_image::picker::ProtocolType::Kitty => "Kitty",
+                ratatui_image::picker::ProtocolType::Iterm2 => "iTerm2",
             },
         }
     }
@@ -1339,7 +1339,7 @@ mod tests {
         let screen = terminal.backend().to_string();
         assert!(screen.contains("Appearance"));
         assert!(screen.contains("Maintenance"));
-        assert!(screen.contains("kitty"));
+        assert!(screen.contains("Kitty"));
         assert!(screen.contains("Auto"));
         assert!(screen.contains("Clear caches"));
         assert!(screen.contains("Rebuild provider and Java metadata"));
