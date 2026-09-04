@@ -19,7 +19,7 @@ use crate::{
         settings::{ContentProvider, ImageProtocol},
         theme::{BORDER_STYLE, BorderStyle, THEME, ThemeConfig},
     },
-    instance::models::{normalize_memory_value, parse_resolution},
+    instance::models::{WindowMode, normalize_memory_value, parse_resolution},
     tui::widgets::popups::settings_controls::{
         DisplayResolution, JavaChoice, JavaPicker, ResolutionChoice, ResolutionPickerAction,
         SettingsPicker, SettingsPickerAction, SettingsPickerOption, adjust_memory, auto_label,
@@ -155,6 +155,8 @@ impl State {
 
     fn display_value(&self, field: usize) -> String {
         match field {
+            1 => border_style_title(&self.theme.border_style).to_owned(),
+            2 => image_protocol_title(self.config.ui.image_protocol).to_owned(),
             5 => self.java_picker.display_label(
                 self.config
                     .paths
@@ -163,6 +165,7 @@ impl State {
                     .filter(|path| !path.is_empty())
                     .unwrap_or_else(|| self.java_picker.detected_path()),
             ),
+            6 => window_mode_title(self.config.defaults.window_mode).to_owned(),
             7 if self.config.defaults.resolution.is_none() => "game default".to_owned(),
             16 if self.config.content.max_fingerprint_size_mib == 0 => "unlimited".to_owned(),
             23 => "provider and Java metadata".to_owned(),
@@ -355,20 +358,24 @@ impl State {
             active: false,
         };
         [
-            ("kitty", "Kitty", "Use Kitty graphics when supported"),
+            (
+                "kitty",
+                image_protocol_title(ImageProtocol::Kitty),
+                "Use Kitty graphics when supported",
+            ),
             (
                 "iterm2",
-                "iTerm2",
+                image_protocol_title(ImageProtocol::Iterm2),
                 "Use the iTerm2 image protocol when supported",
             ),
             (
                 "quadrants",
-                "Quadrants",
+                image_protocol_title(ImageProtocol::Quadrants),
                 "Render images with quadrant characters",
             ),
             (
                 "halfblocks",
-                "Halfblocks",
+                image_protocol_title(ImageProtocol::Halfblocks),
                 "Render images with half-block characters",
             ),
         ]
@@ -1129,6 +1136,32 @@ fn border_preview(style: &BorderStyle) -> &'static str {
     }
 }
 
+fn border_style_title(style: &BorderStyle) -> &'static str {
+    match style {
+        BorderStyle::Plain => "Plain",
+        BorderStyle::Rounded => "Rounded",
+        BorderStyle::Double => "Double",
+        BorderStyle::Thick => "Thick",
+    }
+}
+
+fn image_protocol_title(protocol: ImageProtocol) -> &'static str {
+    match protocol {
+        ImageProtocol::Auto => "Auto",
+        ImageProtocol::Halfblocks => "Halfblocks",
+        ImageProtocol::Quadrants => "Quadrants",
+        ImageProtocol::Kitty => "Kitty",
+        ImageProtocol::Iterm2 => "iTerm2",
+    }
+}
+
+fn window_mode_title(mode: WindowMode) -> &'static str {
+    match mode {
+        WindowMode::Windowed => "Windowed",
+        WindowMode::Fullscreen => "Fullscreen",
+    }
+}
+
 fn restart_required_for(state: &State, index: usize) -> bool {
     let current = crate::config::SETTINGS.read();
     match index {
@@ -1242,6 +1275,7 @@ mod tests {
             Action::Save(..)
         ));
         assert_eq!(state.config.ui.image_protocol, ImageProtocol::Kitty);
+        assert_eq!(state.display_value(2), "Kitty");
         assert!(matches!(
             state.handle_key(&KeyEvent::from(KeyCode::Char('a'))),
             Action::Save(..)
@@ -1270,6 +1304,20 @@ mod tests {
             state.handle_key(&KeyEvent::from(KeyCode::Enter)),
             Action::ClearCache
         ));
+    }
+
+    #[test]
+    fn choice_values_use_their_display_titles() {
+        let mut state = State::new();
+        state.config.ui.image_protocol = ImageProtocol::Halfblocks;
+        state.config.defaults.window_mode = WindowMode::Fullscreen;
+
+        assert_eq!(
+            state.display_value(1),
+            border_style_title(&state.theme.border_style)
+        );
+        assert_eq!(state.display_value(2), "Halfblocks");
+        assert_eq!(state.display_value(6), "Fullscreen");
     }
 
     #[test]
