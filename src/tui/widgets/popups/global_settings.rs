@@ -904,7 +904,6 @@ fn render_settings_list(frame: &mut Frame, area: Rect, state: &State) {
         for index in *fields {
             let label = field_label(*index);
             let lines = match index {
-                1 => border_field_lines(state),
                 8 => tagged_value_lines(
                     global_field_line(state, *index, label).spans,
                     state.selected == *index,
@@ -1016,34 +1015,6 @@ fn maintenance_line(state: &State) -> Line<'static> {
     ])
 }
 
-fn border_field_lines(state: &State) -> Vec<Line<'static>> {
-    let theme = THEME.as_ref();
-    let selected = state.selected == 1;
-    let value_style = Style::default()
-        .fg(if selected {
-            theme.accent()
-        } else {
-            theme.text()
-        })
-        .add_modifier(if selected {
-            Modifier::BOLD
-        } else {
-            Modifier::empty()
-        });
-    vec![Line::from(vec![
-        Span::styled(
-            if selected { "▌ " } else { "  " },
-            Style::default().fg(theme.accent()),
-        ),
-        Span::styled(
-            format!("{:<18}", field_label(1)),
-            Style::default().fg(theme.text_dim()),
-        ),
-        Span::styled(border_preview(&state.theme.border_style), value_style),
-        Span::styled(format!("  {}", state.display_value(1)), value_style),
-    ])]
-}
-
 fn section_line(title: &str) -> Line<'static> {
     Line::from(Span::styled(
         format!("  {title}"),
@@ -1141,15 +1112,6 @@ fn global_field_line(state: &State, index: usize, label: &str) -> Line<'static> 
     } else {
         theme.surface()
     }))
-}
-
-fn border_preview(style: &BorderStyle) -> &'static str {
-    match style {
-        BorderStyle::Plain => "┌ ─ │ ┘",
-        BorderStyle::Rounded => "╭ ─ │ ╯",
-        BorderStyle::Double => "╔ ═ ║ ╝",
-        BorderStyle::Thick => "┏ ━ ┃ ┛",
-    }
 }
 
 fn restart_required_for(state: &State, index: usize) -> bool {
@@ -1343,13 +1305,8 @@ mod tests {
     }
 
     #[test]
-    fn appearance_rows_use_inline_controls_and_previews() {
+    fn appearance_rows_use_inline_controls() {
         let mut state = State::new();
-        assert!(matches!(
-            border_preview(&state.theme.border_style),
-            "┌ ─ │ ┘" | "╭ ─ │ ╯" | "╔ ═ ║ ╝" | "┏ ━ ┃ ┛"
-        ));
-
         state.selected = 0;
         state.handle_key(&KeyEvent::from(KeyCode::Enter));
         assert!(state.theme_picker);
@@ -1386,11 +1343,6 @@ mod tests {
         assert!(screen.contains("Auto"));
         assert!(screen.contains("Clear caches"));
         assert!(screen.contains("Rebuild provider and Java metadata"));
-        assert!(
-            ["┌ ─ │ ┘", "╭ ─ │ ╯", "╔ ═ ║ ╝", "┏ ━ ┃ ┛"]
-                .iter()
-                .any(|preview| screen.contains(preview))
-        );
         assert_eq!(screen.matches("-Xfoo").count(), 1);
         assert_eq!(screen.matches("FOO=bar").count(), 1);
     }
