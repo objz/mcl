@@ -1070,6 +1070,12 @@ fn global_field_line(state: &State, index: usize, label: &str) -> Line<'static> 
         Span::styled(
             if editing || matches!(index, 3 | 4 | 8 | 9 | 10) {
                 String::new()
+            } else if index == 1 {
+                format!(
+                    "{}  {}",
+                    border_preview(&state.theme.border_style),
+                    state.display_value(index)
+                )
             } else if index == 2 && state.config.ui.image_protocol == ImageProtocol::Auto {
                 state.detected_image_protocol.to_owned()
             } else {
@@ -1112,6 +1118,15 @@ fn global_field_line(state: &State, index: usize, label: &str) -> Line<'static> 
     } else {
         theme.surface()
     }))
+}
+
+fn border_preview(style: &BorderStyle) -> &'static str {
+    match style {
+        BorderStyle::Plain => "┌─",
+        BorderStyle::Rounded => "╭─",
+        BorderStyle::Double => "╔═",
+        BorderStyle::Thick => "┏━",
+    }
 }
 
 fn restart_required_for(state: &State, index: usize) -> bool {
@@ -1307,6 +1322,11 @@ mod tests {
     #[test]
     fn appearance_rows_use_inline_controls() {
         let mut state = State::new();
+        assert!(matches!(
+            border_preview(&state.theme.border_style),
+            "┌─" | "╭─" | "╔═" | "┏━"
+        ));
+
         state.selected = 0;
         state.handle_key(&KeyEvent::from(KeyCode::Enter));
         assert!(state.theme_picker);
@@ -1343,6 +1363,11 @@ mod tests {
         assert!(screen.contains("Auto"));
         assert!(screen.contains("Clear caches"));
         assert!(screen.contains("Rebuild provider and Java metadata"));
+        assert!(
+            ["┌─", "╭─", "╔═", "┏━"]
+                .iter()
+                .any(|preview| screen.contains(preview))
+        );
         assert_eq!(screen.matches("-Xfoo").count(), 1);
         assert_eq!(screen.matches("FOO=bar").count(), 1);
     }
