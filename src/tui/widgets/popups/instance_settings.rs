@@ -25,8 +25,8 @@ use crate::{
         popups::{
             LoadState,
             settings_controls::{
-                DisplayResolution, JavaChoice, JavaPicker, adjust_memory, badge,
-                display_resolutions, memory_kib, render_memory_gauge,
+                DisplayResolution, JavaChoice, JavaPicker, adjust_memory, display_resolutions,
+                memory_kib, render_memory_gauge,
             },
         },
         search::SearchState,
@@ -739,7 +739,9 @@ pub fn popup_rect(area: Rect, state: &State) -> Rect {
     } else if state.choice_picker.is_some() {
         10
     } else {
-        11 + u16::from(state.error.is_some())
+        let form_width = (area.width * 58 / 100).saturating_sub(2);
+        11 + jvm_row_count(state, form_width).saturating_sub(1) as u16
+            + u16::from(state.error.is_some())
     };
     let width = match state.choice_picker {
         Some(ChoicePicker::Java) => 72,
@@ -838,48 +840,73 @@ fn render_settings_list(frame: &mut Frame, area: Rect, state: &State) {
         "Resolution",
         "Desktop shortcut",
     ];
-    let lines = labels
-        .iter()
-        .enumerate()
-        .map(|(index, label)| field_line(state, index, label))
-        .chain(state.error.iter().map(|error| {
-            Line::from(Span::styled(
-                format!("  {error}"),
-                Style::default().fg(theme.error()),
-            ))
-        }))
-        .collect::<Vec<_>>();
-    frame.render_widget(Paragraph::new(lines), area);
-
-    for field in [4, 5] {
-        let value = state.effective_memory(field);
-        let gauge_area = Rect {
-            x: area.x.saturating_add(20),
-            y: area.y.saturating_add(field as u16),
-            width: area.width.saturating_sub(21),
-            height: 1,
+    let mut y = area.y;
+    for (index, label) in labels.iter().enumerate() {
+        let lines = if index == 6 {
+            jvm_field_lines(state, area.width)
+        } else {
+            vec![field_line(state, index, label)]
         };
-        render_memory_gauge(
-            frame,
-            gauge_area,
-            &value,
-            state.display_value(field),
-            state.selected == field,
+        let height = lines.len() as u16;
+        let row_area = Rect { y, height, ..area };
+        frame.render_widget(
+            Paragraph::new(lines).style(Style::default().bg(if state.selected == index {
+                theme.stripe()
+            } else {
+                theme.surface()
+            })),
+            row_area,
         );
+
+        if matches!(index, 4 | 5) {
+            let value = state.effective_memory(index);
+            render_memory_gauge(
+                frame,
+                Rect {
+                    x: area.x.saturating_add(20),
+                    y,
+                    width: area.width.saturating_sub(21),
+                    height: 1,
+                },
+                &value,
+                state.display_value(index),
+                state.selected == index,
+            );
+        }
+        if state.selected == index
+            && let Some(editor) = state.editing.as_ref()
+        {
+            frame.render_widget(
+                editor,
+                Rect {
+                    x: area.x.saturating_add(20),
+                    y,
+                    width: area.width.saturating_sub(20),
+                    height: 1,
+                },
+            );
+        }
+        y = y.saturating_add(height);
     }
 
-    if let Some(editor) = state.editing.as_ref() {
-        let edit_area = Rect {
-            x: area.x.saturating_add(20),
-            y: area.y.saturating_add(state.selected as u16),
-            width: area.width.saturating_sub(20),
-            height: 1,
-        };
-        frame.render_widget(editor, edit_area);
+    if let Some(error) = &state.error
+        && y < area.bottom()
+    {
+        frame.render_widget(
+            Paragraph::new(Span::styled(
+                format!("  {error}"),
+                Style::default().fg(theme.error()),
+            )),
+            Rect {
+                y,
+                height: 1,
+                ..area
+            },
+        );
     }
 }
 
-fn field_line<'a>(state: &'a State, index: usize, label: &str) -> Line<'a> {
+fn field_line(state: &State, index: usize, label: &str) -> Line<'static> {
     let theme = THEME.as_ref();
     let selected = index == state.selected;
     let editing = selected && state.editing.is_some();
@@ -889,7 +916,7 @@ fn field_line<'a>(state: &'a State, index: usize, label: &str) -> Line<'a> {
         state.display_value(index)
     };
     let dirty = field_dirty(state, index);
-    let mut spans = vec![
+    Line::from(vec![
         Span::styled(
             if selected { "▶ " } else { "  " },
             Style::default().fg(theme.accent()),
@@ -918,37 +945,74 @@ fn field_line<'a>(state: &'a State, index: usize, label: &str) -> Line<'a> {
                     Modifier::empty()
                 }),
         ),
-    ];
-    if index == 6 && !editing {
-        if state.draft.jvm_args.is_empty() {
-            spans.push(Span::styled(
-                "no arguments",
-                Style::default().fg(theme.text_dim()),
-            ));
-        } else {
-            for (argument_index, argument) in state.draft.jvm_args.iter().enumerate() {
-                if argument_index > 0 {
-                    spans.push(Span::raw(" "));
-                }
-                spans.push(Span::styled(
-                    format!(" {argument} "),
-                    Style::default()
-                        .fg(if selected {
-                            theme.accent()
-                        } else {
-                            theme.text()
-                        })
-                        .bg(theme.background())
-                        .add_modifier(Modifier::BOLD),
-                ));
-            }
-        }
+    ])
+}
+
+fn jvm_field_lines(state: &State, width: u16) -> Vec<Line<'static>> {
+    let theme = THEME.as_ref();
+    let selected = state.selected == 6;
+    let mut prefix = field_line(state, 6, "JVM args").spans;
+    if selected && state.editing.is_some() {
+        return vec![Line::from(prefix)];
     }
-    Line::from(spans).style(Style::default().bg(if selected {
-        theme.stripe()
-    } else {
-        theme.surface()
-    }))
+    if state.draft.jvm_args.is_empty() {
+        prefix.push(Span::styled(
+            "no arguments",
+            Style::default().fg(theme.text_dim()),
+        ));
+        return vec![Line::from(prefix)];
+    }
+
+    let available = width.saturating_sub(20) as usize;
+    let mut lines = Vec::new();
+    let mut spans = prefix;
+    let mut used = 0usize;
+    for argument in &state.draft.jvm_args {
+        let badge_width = argument.chars().count() + 2;
+        let separator = usize::from(used > 0);
+        if used > 0 && used + separator + badge_width > available {
+            lines.push(Line::from(spans));
+            spans = vec![Span::raw(" ".repeat(20))];
+            used = 0;
+        }
+        if used > 0 {
+            spans.push(Span::raw(" "));
+            used += 1;
+        }
+        spans.push(Span::styled(
+            format!(" {argument} "),
+            Style::default()
+                .fg(if selected {
+                    theme.accent()
+                } else {
+                    theme.text()
+                })
+                .bg(theme.background())
+                .add_modifier(Modifier::BOLD),
+        ));
+        used += badge_width;
+    }
+    lines.push(Line::from(spans));
+    lines
+}
+
+fn jvm_row_count(state: &State, width: u16) -> usize {
+    if state.draft.jvm_args.is_empty() || state.selected == 6 && state.editing.is_some() {
+        return 1;
+    }
+    let available = width.saturating_sub(20) as usize;
+    let mut rows = 1;
+    let mut used = 0usize;
+    for argument in &state.draft.jvm_args {
+        let badge_width = argument.chars().count() + 2;
+        let separator = usize::from(used > 0);
+        if used > 0 && used + separator + badge_width > available {
+            rows += 1;
+            used = 0;
+        }
+        used += usize::from(used > 0) + badge_width;
+    }
+    rows
 }
 
 fn field_dirty(state: &State, index: usize) -> bool {
@@ -1010,40 +1074,36 @@ fn resolution_items(choices: &[ResolutionChoice]) -> Vec<ListItem<'static>> {
                 Style::default().fg(theme.text()),
             )];
             match choice {
-                ResolutionChoice::Default => {
-                    spans.extend([Span::raw("  "), badge(" Inherit ", theme.info())]);
-                }
+                ResolutionChoice::Default | ResolutionChoice::Preset(_, _) => {}
                 ResolutionChoice::Display(display) => {
-                    spans.extend([
-                        Span::raw("  "),
-                        badge(
-                            if display.primary {
-                                " Primary "
-                            } else {
-                                " Current "
-                            },
-                            if display.primary {
-                                theme.success()
-                            } else {
-                                theme.info()
-                            },
-                        ),
-                    ]);
                     if !display.name.is_empty() {
-                        spans.push(Span::styled(
-                            format!("  {}", display.name),
-                            Style::default().fg(theme.text_dim()),
-                        ));
+                        spans.extend([
+                            Span::raw("  "),
+                            Span::styled(
+                                format!(" {} ", display.name),
+                                Style::default()
+                                    .fg(if display.primary {
+                                        theme.success()
+                                    } else {
+                                        theme.info()
+                                    })
+                                    .bg(theme.stripe()),
+                            ),
+                        ]);
                     }
                 }
-                ResolutionChoice::Preset(_, _) => {
-                    spans.extend([Span::raw("  "), badge(" Preset ", theme.info())]);
-                }
                 ResolutionChoice::Configured(_, _) => {
-                    spans.extend([Span::raw("  "), badge(" Configured ", theme.success())]);
+                    spans.push(Span::styled(
+                        "  configured",
+                        Style::default().fg(theme.text_dim()),
+                    ));
                 }
                 ResolutionChoice::Custom => {
-                    spans.extend([Span::raw("  "), badge(" Manual ", theme.warning())]);
+                    spans.clear();
+                    spans.push(Span::styled(
+                        choice.label(),
+                        Style::default().fg(theme.warning()),
+                    ));
                 }
             }
             ListItem::new(Line::from(spans))
@@ -1347,5 +1407,27 @@ mod tests {
                 .count(),
             1
         );
+    }
+
+    #[test]
+    fn jvm_argument_badges_wrap_without_hiding_following_fields() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut config = instance();
+        config.jvm_args = [
+            "-Xmx4G",
+            "-XX:+UseG1GC",
+            "-Dexample.first=true",
+            "-Dexample.second=true",
+        ]
+        .into_iter()
+        .map(str::to_owned)
+        .collect();
+        let state = State::new(&config, temp.path());
+
+        let lines = jvm_field_lines(&state, 48);
+
+        assert!(lines.len() > 1);
+        assert_eq!(jvm_row_count(&state, 48), lines.len());
+        assert!(lines.iter().any(|line| line.to_string().contains("second")));
     }
 }

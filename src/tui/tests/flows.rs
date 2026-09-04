@@ -679,6 +679,7 @@ fn settings_use_java_memory_and_resolution_controls() {
     assert!(ui.screen().contains("Java Runtime"));
     assert!(ui.screen().contains("Automatic"));
     assert!(ui.screen().contains("Custom path"));
+    assert!(!ui.screen().contains("Manual"));
     ui.key(KeyCode::Esc);
 
     ui.key(KeyCode::Char('j'));
@@ -701,6 +702,8 @@ fn settings_use_java_memory_and_resolution_controls() {
     ui.draw();
     assert!(ui.screen().contains("Resolution"));
     assert!(ui.screen().contains("1920x1080"));
+    assert!(!ui.screen().contains("Preset"));
+    assert!(!ui.screen().contains("Inherit"));
     for _ in 0..20 {
         ui.key(KeyCode::Char('j'));
     }

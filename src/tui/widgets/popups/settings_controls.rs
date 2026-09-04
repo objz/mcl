@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex};
 use ratatui::{
     Frame,
     layout::Rect,
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::{LineGauge, ListItem, Paragraph},
 };
@@ -149,9 +149,12 @@ impl JavaPicker {
             .into_iter()
             .map(|choice| match choice {
                 JavaChoice::Automatic => ListItem::new(Line::from(vec![
-                    Span::styled("Automatic", Style::default().fg(theme.text())),
-                    Span::raw("  "),
-                    badge(" Auto ", theme.info()),
+                    Span::styled(
+                        "Automatic",
+                        Style::default()
+                            .fg(theme.info())
+                            .add_modifier(Modifier::BOLD),
+                    ),
                     Span::styled(
                         format!("  {}", self.detected),
                         Style::default().fg(theme.text_dim()),
@@ -164,26 +167,15 @@ impl JavaPicker {
                     let version = installation
                         .and_then(|installation| installation.version.as_deref())
                         .map_or_else(|| "Java".to_owned(), |version| format!("Java {version}"));
-                    let current = self.current.as_deref() == Some(path.as_str());
                     ListItem::new(Line::from(vec![
                         Span::styled(version, Style::default().fg(theme.text())),
-                        Span::raw("  "),
-                        badge(
-                            if current { " Current " } else { " Detected " },
-                            if current {
-                                theme.success()
-                            } else {
-                                theme.info()
-                            },
-                        ),
                         Span::styled(format!("  {path}"), Style::default().fg(theme.text_dim())),
                     ]))
                 }
-                JavaChoice::Custom => ListItem::new(Line::from(vec![
-                    Span::styled("Custom path…", Style::default().fg(theme.text())),
-                    Span::raw("  "),
-                    badge(" Manual ", theme.warning()),
-                ])),
+                JavaChoice::Custom => ListItem::new(Line::from(Span::styled(
+                    "Custom path…",
+                    Style::default().fg(theme.warning()),
+                ))),
             })
             .collect()
     }
@@ -323,7 +315,11 @@ pub(crate) fn render_memory_gauge(
         let thumb_offset = ((line_area.width.saturating_sub(1)) as f64 * ratio).round() as u16;
         frame.render_widget(
             Paragraph::new(Span::styled(
-                "◆",
+                if thumb_offset + 1 < line_area.width {
+                    "◆ "
+                } else {
+                    "◆"
+                },
                 Style::default().fg(if selected {
                     theme.accent()
                 } else {
@@ -332,7 +328,7 @@ pub(crate) fn render_memory_gauge(
             )),
             Rect {
                 x: line_area.x.saturating_add(thumb_offset),
-                width: 1,
+                width: 2.min(line_area.width.saturating_sub(thumb_offset)),
                 ..line_area
             },
         );
@@ -343,41 +339,25 @@ pub(crate) fn display_resolutions() -> Vec<DisplayResolution> {
     let Ok(displays) = display_info::DisplayInfo::all() else {
         return Vec::new();
     };
-    let mut resolutions = Vec::<DisplayResolution>::new();
-    for display in displays {
-        if display.width == 0 || display.height == 0 {
-            continue;
-        }
-        if let Some(existing) = resolutions.iter_mut().find(|resolution| {
-            resolution.width == display.width && resolution.height == display.height
-        }) {
-            existing.primary |= display.is_primary;
-            continue;
-        }
-        let name = if display.friendly_name.is_empty() {
-            display.name
-        } else {
-            display.friendly_name
-        };
-        resolutions.push(DisplayResolution {
-            width: display.width,
-            height: display.height,
-            name,
-            primary: display.is_primary,
-        });
-    }
+    let mut resolutions = displays
+        .into_iter()
+        .filter(|display| display.width > 0 && display.height > 0)
+        .map(|display| {
+            let name = if display.name.is_empty() {
+                display.friendly_name
+            } else {
+                display.name
+            };
+            DisplayResolution {
+                width: display.width,
+                height: display.height,
+                name,
+                primary: display.is_primary,
+            }
+        })
+        .collect::<Vec<_>>();
     resolutions.sort_by_key(|resolution| !resolution.primary);
     resolutions
-}
-
-pub(crate) fn badge(text: &'static str, color: Color) -> Span<'static> {
-    Span::styled(
-        text,
-        Style::default()
-            .fg(THEME.as_ref().background())
-            .bg(color)
-            .add_modifier(Modifier::BOLD),
-    )
 }
 
 #[cfg(test)]
@@ -406,5 +386,20 @@ mod tests {
         picker.initialize();
 
         assert_eq!(picker.selected_choice(), JavaChoice::Custom);
+    }
+
+    #[test]
+    fn memory_thumb_clears_the_first_unfilled_cell() {
+        let backend = ratatui::backend::TestBackend::new(40, 1);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| render_memory_gauge(frame, frame.area(), "8G", "8G".to_owned(), true))
+            .unwrap();
+        let buffer = terminal.backend().buffer();
+        let thumb = (0..40)
+            .find(|x| buffer[(*x, 0)].symbol() == "◆")
+            .expect("slider thumb");
+
+        assert_eq!(buffer[(thumb + 1, 0)].symbol(), " ");
     }
 }
