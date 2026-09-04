@@ -234,7 +234,6 @@ pub fn render(
             SettingsPane::Info => &[
                 ("e", " instance"),
                 ("g", " launcher"),
-                ("d", " desk"),
                 ("h/l", " tab"),
                 ("Esc", " back"),
             ],
@@ -477,7 +476,6 @@ pub enum SettingsAction {
     None,
     OpenInstance,
     OpenGlobal,
-    ToggleDesktop,
     SelectProfile(Option<String>),
     ConfirmDeleteProfile(String),
     Error(String),
@@ -579,7 +577,6 @@ pub fn handle_key(
             }
         }
         KeyCode::Char('g') if state.pane == SettingsPane::Info => SettingsAction::OpenGlobal,
-        KeyCode::Char('d') if state.pane == SettingsPane::Info => SettingsAction::ToggleDesktop,
         _ => SettingsAction::None,
     }
 }

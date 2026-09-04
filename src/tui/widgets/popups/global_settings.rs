@@ -9,7 +9,7 @@ use ratatui::{
     layout::Rect,
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Clear, Paragraph, Wrap},
+    widgets::{Block, Borders, Clear, Paragraph},
 };
 use ratatui_textarea::{CursorMove, TextArea};
 
@@ -21,12 +21,6 @@ use crate::{
     instance::models::normalize_memory_value,
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum PresetPicker {
-    Border,
-    Java,
-}
-
 pub struct State {
     pub config: Config,
     pub theme: ThemeConfig,
@@ -34,18 +28,15 @@ pub struct State {
     editing: Option<TextArea<'static>>,
     error: Option<String>,
     config_dirty: bool,
-    confirm_close: bool,
     themes: Vec<String>,
     theme_picker: bool,
     theme_index: usize,
-    preset_picker: Option<PresetPicker>,
-    preset_index: usize,
-    detected_java: String,
 }
 
 pub enum Action {
     None,
     Save(Box<Config>, String, BorderStyle),
+    ConfirmClose,
     OpenRaw(std::path::PathBuf),
     Close,
 }
@@ -65,13 +56,9 @@ impl State {
             editing: None,
             error: None,
             config_dirty: false,
-            confirm_close: false,
             themes,
             theme_picker: false,
             theme_index,
-            preset_picker: None,
-            preset_index: 0,
-            detected_java: crate::instance::java::detect_java_path(),
         }
     }
 
@@ -88,12 +75,7 @@ impl State {
 
     fn display_value(&self, field: usize) -> String {
         match field {
-            1 => match &self.theme.border_style {
-                BorderStyle::Rounded => "╭─╮ rounded".to_owned(),
-                BorderStyle::Plain => "┌─┐ plain".to_owned(),
-                BorderStyle::Double => "╔═╗ double".to_owned(),
-                BorderStyle::Thick => "┏━┓ thick".to_owned(),
-            },
+            1 => format!("{:?}", self.theme.border_style).to_lowercase(),
             4 if self
                 .config
                 .paths
@@ -154,14 +136,14 @@ impl State {
 
     fn handle_theme_picker_key(&mut self, key: &KeyEvent) {
         match key.code {
-            KeyCode::Esc => self.theme_picker = false,
+            KeyCode::Esc | KeyCode::Char('h') | KeyCode::Left => self.theme_picker = false,
             KeyCode::Char('j') | KeyCode::Down => {
                 self.theme_index = (self.theme_index + 1).min(self.themes.len() - 1);
             }
             KeyCode::Char('k') | KeyCode::Up => {
                 self.theme_index = self.theme_index.saturating_sub(1);
             }
-            KeyCode::Enter => {
+            KeyCode::Enter | KeyCode::Char('l') | KeyCode::Right => {
                 self.select_theme();
                 if self.error.is_none() {
                     self.theme_picker = false;
@@ -169,174 +151,6 @@ impl State {
             }
             _ => {}
         }
-    }
-
-    fn preset_values_for(&self, picker: PresetPicker) -> Vec<String> {
-        match picker {
-            PresetPicker::Border => vec![
-                "╭─╮ rounded".to_owned(),
-                "┌─┐ plain".to_owned(),
-                "╔═╗ double".to_owned(),
-                "┏━┓ thick".to_owned(),
-            ],
-            PresetPicker::Java => {
-                let mut values = vec!["automatic detection".to_owned()];
-                if !self.detected_java.is_empty() {
-                    values.push(self.detected_java.clone());
-                }
-                if let Some(current) = &self.config.paths.java_path
-                    && !values.contains(current)
-                {
-                    values.push(current.clone());
-                }
-                values.push("custom path…".to_owned());
-                values
-            }
-        }
-    }
-
-    fn preset_values(&self) -> Vec<String> {
-        self.preset_picker
-            .map_or_else(Vec::new, |picker| self.preset_values_for(picker))
-    }
-
-    fn open_preset_picker(&mut self, picker: PresetPicker) {
-        self.preset_picker = Some(picker);
-        let current = match picker {
-            PresetPicker::Border => None,
-            PresetPicker::Java => self.config.paths.java_path.as_deref(),
-        };
-        self.preset_index = self
-            .preset_values_for(picker)
-            .iter()
-            .position(|value| match (picker, current) {
-                (PresetPicker::Border, _) => value == &self.display_value(1),
-                (PresetPicker::Java, None) => value == "automatic detection",
-                (_, Some(current)) => value == current,
-            })
-            .unwrap_or(0);
-    }
-
-    fn apply_preset(&mut self) {
-        let selected = self
-            .preset_values()
-            .get(self.preset_index)
-            .cloned()
-            .unwrap_or_default();
-        match self.preset_picker {
-            Some(PresetPicker::Border) => {
-                let previous = self.theme.border_style.clone();
-                self.theme.border_style = match self.preset_index {
-                    0 => BorderStyle::Rounded,
-                    1 => BorderStyle::Plain,
-                    2 => BorderStyle::Double,
-                    _ => BorderStyle::Thick,
-                };
-                self.error = None;
-                if let Err(error) = crate::config::theme::apply_theme(
-                    self.theme.theme.clone(),
-                    self.theme.border_style.clone(),
-                ) {
-                    self.error = Some(error.to_string());
-                    self.theme.border_style = previous;
-                }
-            }
-            Some(PresetPicker::Java) if selected == "custom path…" => {
-                self.editing = Some(new_text_area(vec![self.value(4)]));
-            }
-            Some(PresetPicker::Java) => {
-                self.config.paths.java_path =
-                    (selected != "automatic detection").then_some(selected);
-                self.config_dirty = true;
-            }
-            None => {}
-        }
-        self.preset_picker = None;
-    }
-
-    fn handle_preset_key(&mut self, key: &KeyEvent) {
-        let count = self.preset_values().len();
-        match key.code {
-            KeyCode::Esc => self.preset_picker = None,
-            KeyCode::Char('j') | KeyCode::Down | KeyCode::Right if count > 0 => {
-                self.preset_index = (self.preset_index + 1).min(count - 1);
-            }
-            KeyCode::Char('k') | KeyCode::Up | KeyCode::Left => {
-                self.preset_index = self.preset_index.saturating_sub(1);
-            }
-            KeyCode::Enter => self.apply_preset(),
-            _ => {}
-        }
-    }
-
-    fn rotate_preset(&mut self, picker: PresetPicker, forward: bool) {
-        self.open_preset_picker(picker);
-        let count = self.preset_values().len().saturating_sub(1);
-        if count > 0 {
-            self.preset_index = if forward {
-                (self.preset_index + 1) % count
-            } else {
-                (self.preset_index + count - 1) % count
-            };
-            self.apply_preset();
-        }
-    }
-
-    fn adjust_memory(&mut self, field: usize, forward: bool) {
-        let values = ["512M", "1G", "2G", "4G", "6G", "8G", "12G", "16G"];
-        let current = if field == 2 {
-            &self.config.defaults.memory_min
-        } else {
-            &self.config.defaults.memory_max
-        };
-        let exact = values.iter().position(|value| *value == current);
-        let next = if let Some(index) = exact {
-            if forward {
-                (index + 1) % values.len()
-            } else {
-                (index + values.len() - 1) % values.len()
-            }
-        } else {
-            let current_kib = memory_kib(current).unwrap_or_default();
-            if forward {
-                values
-                    .iter()
-                    .position(|value| memory_kib(value).is_some_and(|kib| kib > current_kib))
-                    .unwrap_or(0)
-            } else {
-                values
-                    .iter()
-                    .rposition(|value| memory_kib(value).is_some_and(|kib| kib < current_kib))
-                    .unwrap_or(values.len() - 1)
-            }
-        };
-        let value = values[next].to_owned();
-        if field == 2 {
-            self.config.defaults.memory_min = value.clone();
-            if memory_kib(&value) > memory_kib(&self.config.defaults.memory_max) {
-                self.config.defaults.memory_max = value;
-            }
-        } else {
-            self.config.defaults.memory_max = value.clone();
-            if memory_kib(&value) < memory_kib(&self.config.defaults.memory_min) {
-                self.config.defaults.memory_min = value;
-            }
-        }
-        self.config_dirty = true;
-        self.error = None;
-    }
-
-    fn cycle_theme(&mut self, forward: bool) {
-        let count = self.themes.len();
-        if count == 0 {
-            return;
-        }
-        self.theme_index = if forward {
-            (self.theme_index + 1) % count
-        } else {
-            (self.theme_index + count - 1) % count
-        };
-        self.select_theme();
     }
 
     fn cycle_border(&mut self, forward: bool) {
@@ -368,20 +182,8 @@ impl State {
     }
 
     pub fn handle_key(&mut self, key: &KeyEvent) -> Action {
-        if self.preset_picker.is_some() {
-            self.handle_preset_key(key);
-            return Action::None;
-        }
         if self.theme_picker {
             self.handle_theme_picker_key(key);
-            return Action::None;
-        }
-        if self.confirm_close {
-            match key.code {
-                KeyCode::Char('y') | KeyCode::Enter => return Action::Close,
-                KeyCode::Char('n') | KeyCode::Esc => self.confirm_close = false,
-                _ => {}
-            }
             return Action::None;
         }
         if let Some(input) = &mut self.editing {
@@ -397,30 +199,13 @@ impl State {
         match key.code {
             KeyCode::Char('j') | KeyCode::Down => self.selected = (self.selected + 1).min(4),
             KeyCode::Char('k') | KeyCode::Up => self.selected = self.selected.saturating_sub(1),
-            KeyCode::Left => match self.selected {
-                0 => self.cycle_theme(false),
-                1 => self.cycle_border(false),
-                2 | 3 => self.adjust_memory(self.selected, false),
-                4 => self.rotate_preset(PresetPicker::Java, false),
-                _ => {}
-            },
-            KeyCode::Right => match self.selected {
-                0 => self.cycle_theme(true),
-                1 => self.cycle_border(true),
-                2 | 3 => self.adjust_memory(self.selected, true),
-                4 => self.rotate_preset(PresetPicker::Java, true),
-                _ => {}
-            },
+            KeyCode::Char('h') | KeyCode::Left if self.selected == 1 => self.cycle_border(false),
+            KeyCode::Char('l') | KeyCode::Right if self.selected == 1 => self.cycle_border(true),
             KeyCode::Enter => match self.selected {
                 0 => self.theme_picker = true,
-                1 => self.open_preset_picker(PresetPicker::Border),
-                2 | 3 => self.adjust_memory(self.selected, true),
-                4 => self.open_preset_picker(PresetPicker::Java),
-                _ => {}
+                1 => self.cycle_border(true),
+                field => self.editing = Some(new_text_area(vec![self.value(field)])),
             },
-            KeyCode::Char('c') if matches!(self.selected, 2 | 3) => {
-                self.editing = Some(new_text_area(vec![self.value(self.selected)]));
-            }
             KeyCode::Char('s') => {
                 if self.validate_before_save() {
                     return Action::Save(
@@ -443,7 +228,7 @@ impl State {
                 };
                 return Action::OpenRaw(crate::config::get_config_path().join(file));
             }
-            KeyCode::Esc if self.config_dirty => self.confirm_close = true,
+            KeyCode::Esc if self.config_dirty => return Action::ConfirmClose,
             KeyCode::Esc => return Action::Close,
             _ => {}
         }
@@ -509,13 +294,13 @@ fn new_text_area(lines: Vec<String>) -> TextArea<'static> {
 }
 
 pub fn popup_rect(area: Rect, state: &State) -> Rect {
-    let height = if state.theme_picker || state.preset_picker.is_some() || state.editing.is_some() {
-        14
+    let height = if state.theme_picker {
+        (area.height * 2 / 3).max(10)
     } else {
-        12
+        7 + u16::from(state.error.is_some())
     };
     area.centered(
-        ratatui::layout::Constraint::Percentage(68),
+        ratatui::layout::Constraint::Percentage(52),
         ratatui::layout::Constraint::Length(height.min(area.height.saturating_sub(4))),
     )
 }
@@ -523,149 +308,43 @@ pub fn popup_rect(area: Rect, state: &State) -> Rect {
 pub fn render(frame: &mut Frame, area: Rect, state: &State) {
     let theme = THEME.as_ref();
     frame.render_widget(Clear, area);
-    let keybinds = if state.theme_picker || state.preset_picker.is_some() {
-        super::keybind_line(&[("j/k", " move"), ("Enter", " apply"), ("Esc", " back")])
-    } else if matches!(state.selected, 2 | 3) {
-        super::keybind_line(&[
-            ("j/k", ""),
-            ("←/→", " memory"),
-            ("c", " custom"),
-            ("s", " save"),
-            ("E", " raw"),
-            ("Esc", " back"),
-        ])
+    let keybinds = if state.editing.is_some() {
+        super::keybind_line(&[("Enter", " apply"), ("Esc", " cancel")])
+    } else if state.theme_picker {
+        super::keybind_line(&[("h", " back"), ("Enter", " select")])
     } else {
         super::keybind_line(&[
             ("j/k", ""),
-            ("Enter", " open"),
-            ("←/→", " switch"),
+            ("Enter", " edit"),
             ("s", " save"),
             ("E", " raw"),
             ("Esc", " back"),
         ])
     };
-    let mut title = vec![Span::styled(
-        " Launcher Settings ",
-        Style::default()
-            .fg(theme.text())
-            .add_modifier(Modifier::BOLD),
-    )];
-    if state.config_dirty {
-        title.push(Span::styled(
-            "● modified ",
-            Style::default().fg(theme.warning()),
-        ));
-    }
+    let title = if state.config_dirty {
+        " Launcher Settings * "
+    } else {
+        " Launcher Settings "
+    };
     let block = Block::default()
-        .title(Line::from(title))
+        .title(title)
         .borders(Borders::ALL)
         .border_type(BORDER_STYLE.to_border_type())
         .border_style(Style::default().fg(theme.text_dim()))
         .style(Style::default().bg(theme.surface()))
-        .title_bottom(keybinds);
+        .title_bottom(keybinds.right_aligned());
     let inner = block.inner(area);
     frame.render_widget(block, area);
     if state.theme_picker {
-        render_picker(frame, inner, " Themes ", &state.themes, state.theme_index);
+        render_picker(frame, inner, &state.themes, state.theme_index);
         return;
     }
-    if let Some(picker) = state.preset_picker {
-        let title = match picker {
-            PresetPicker::Border => " Border Style ",
-            PresetPicker::Java => " Java Runtime ",
-        };
-        render_picker(
-            frame,
-            inner,
-            title,
-            &state.preset_values(),
-            state.preset_index,
-        );
-        return;
-    }
-
-    let sections = ratatui::layout::Layout::default()
-        .direction(ratatui::layout::Direction::Vertical)
-        .constraints([
-            ratatui::layout::Constraint::Length(4),
-            ratatui::layout::Constraint::Length(5),
-            ratatui::layout::Constraint::Min(1),
-        ])
-        .split(inner);
-    render_global_card(
-        frame,
-        sections[0],
-        " Appearance ",
-        state,
-        &[(0, "Theme"), (1, "Borders")],
-    );
-    render_global_card(
-        frame,
-        sections[1],
-        " Launch Defaults ",
-        state,
-        &[(2, "Min memory"), (3, "Max memory"), (4, "Java")],
-    );
-
-    if let Some(editor) = state.editing.as_ref() {
-        let editor_block = Block::default()
-            .title(match state.selected {
-                2 => " Custom minimum memory (K/M/G) · Enter apply ",
-                3 => " Custom maximum memory (K/M/G) · Enter apply ",
-                4 => " Custom Java executable path · Enter apply ",
-                _ => " Custom value · Enter apply ",
-            })
-            .borders(Borders::ALL)
-            .border_type(BORDER_STYLE.to_border_type())
-            .border_style(Style::default().fg(theme.accent()))
-            .style(Style::default().bg(theme.surface()));
-        let editor_inner = editor_block.inner(sections[2]);
-        frame.render_widget(editor_block, sections[2]);
-        frame.render_widget(editor, editor_inner);
-    } else {
-        let status = if let Some(error) = &state.error {
-            Line::from(Span::styled(
-                format!("  × {error}"),
-                Style::default().fg(theme.error()),
-            ))
-        } else if state.confirm_close {
-            Line::from(Span::styled(
-                "  ! Discard unsaved launcher defaults?  [y] yes  [n] no",
-                Style::default().fg(theme.warning()),
-            ))
-        } else {
-            Line::from(vec![
-                Span::styled("  ◇ Live preview  ", Style::default().fg(theme.info())),
-                Span::styled(
-                    "theme and border changes apply immediately",
-                    Style::default().fg(theme.text_dim()),
-                ),
-            ])
-        };
-        frame.render_widget(
-            Paragraph::new(status).wrap(Wrap { trim: true }),
-            sections[2],
-        );
-    }
+    render_settings_list(frame, inner, state);
 }
 
-fn render_picker(
-    frame: &mut Frame,
-    area: Rect,
-    title: &'static str,
-    values: &[String],
-    selected: usize,
-) {
+fn render_picker(frame: &mut Frame, area: Rect, values: &[String], selected: usize) {
     let theme = THEME.as_ref();
-    let block = Block::default()
-        .title(Span::styled(title, Style::default().fg(theme.accent())))
-        .borders(Borders::ALL)
-        .border_type(BORDER_STYLE.to_border_type())
-        .border_style(Style::default().fg(theme.accent()))
-        .style(Style::default().bg(theme.surface()));
-    let inner = block.inner(area);
-    frame.render_widget(block, area);
-    let visible_rows = inner.height as usize;
+    let visible_rows = area.height as usize;
     let start = selected.saturating_sub(visible_rows.saturating_sub(1));
     let lines = values
         .iter()
@@ -694,119 +373,70 @@ fn render_picker(
                         }),
                 ),
             ])
-            .style(Style::default().bg(if focused {
-                theme.stripe()
-            } else {
-                theme.surface()
-            }))
         })
         .collect::<Vec<_>>();
-    frame.render_widget(Paragraph::new(lines), inner);
+    frame.render_widget(Paragraph::new(lines), area);
 }
 
-fn render_global_card(
-    frame: &mut Frame,
-    area: Rect,
-    title: &'static str,
-    state: &State,
-    fields: &[(usize, &str)],
-) {
+fn render_settings_list(frame: &mut Frame, area: Rect, state: &State) {
     let theme = THEME.as_ref();
-    let active = fields.iter().any(|(index, _)| *index == state.selected);
-    let block = Block::default()
-        .title(Span::styled(
-            title,
-            Style::default().fg(if active {
-                theme.accent()
-            } else {
-                theme.text_dim()
-            }),
-        ))
-        .borders(Borders::ALL)
-        .border_type(BORDER_STYLE.to_border_type())
-        .border_style(Style::default().fg(if active {
-            theme.accent()
-        } else {
-            theme.border()
-        }))
-        .style(Style::default().bg(theme.surface()));
-    let inner = block.inner(area);
-    frame.render_widget(block, area);
-    let lines = fields
+    let labels = ["Theme", "Border style", "Memory min", "Memory max", "Java"];
+    let lines = labels
         .iter()
-        .map(|(index, label)| global_field_line(state, *index, label))
+        .enumerate()
+        .map(|(index, label)| global_field_line(state, index, label))
+        .chain(state.error.iter().map(|error| {
+            Line::from(Span::styled(
+                format!("  {error}"),
+                Style::default().fg(theme.error()),
+            ))
+        }))
         .collect::<Vec<_>>();
-    frame.render_widget(Paragraph::new(lines), inner);
+    frame.render_widget(Paragraph::new(lines), area);
+
+    if let Some(editor) = state.editing.as_ref() {
+        let edit_area = Rect {
+            x: area.x.saturating_add(20),
+            y: area.y.saturating_add(state.selected as u16),
+            width: area.width.saturating_sub(20),
+            height: 1,
+        };
+        frame.render_widget(editor, edit_area);
+    }
 }
 
 fn global_field_line<'a>(state: &'a State, index: usize, label: &str) -> Line<'a> {
     let theme = THEME.as_ref();
     let selected = index == state.selected;
-    let displayed = state.display_value(index);
-    let mut spans = vec![
+    let editing = selected && state.editing.is_some();
+    Line::from(vec![
         Span::styled(
             if selected { "▶ " } else { "  " },
             Style::default().fg(theme.accent()),
         ),
         Span::styled(
-            format!("{label:<13}"),
+            format!("{label:<18}"),
             Style::default().fg(theme.text_dim()),
         ),
-    ];
-    if matches!(index, 2 | 3) {
-        spans.push(global_memory_slider(&displayed, selected));
-    } else {
-        spans.push(Span::styled(
-            format!(" ‹ {displayed} › "),
+        Span::styled(
+            if editing {
+                String::new()
+            } else {
+                state.display_value(index)
+            },
             Style::default()
                 .fg(if selected {
                     theme.accent()
                 } else {
                     theme.text()
                 })
-                .bg(theme.background())
                 .add_modifier(if selected {
                     Modifier::BOLD
                 } else {
                     Modifier::empty()
                 }),
-        ));
-    }
-    Line::from(spans).style(Style::default().bg(if selected {
-        theme.stripe()
-    } else {
-        theme.surface()
-    }))
-}
-
-fn global_memory_slider(value: &str, selected: bool) -> Span<'static> {
-    let theme = THEME.as_ref();
-    let thresholds = ["512M", "1G", "2G", "4G", "6G", "8G", "12G", "16G"];
-    let value_kib = memory_kib(value).unwrap_or_default();
-    let step = thresholds
-        .iter()
-        .position(|threshold| memory_kib(threshold).is_some_and(|limit| value_kib <= limit))
-        .unwrap_or(thresholds.len() - 1);
-    let filled = step + 1;
-    Span::styled(
-        format!(
-            " ◀ {}{} {value} ▶ ",
-            "▰".repeat(filled),
-            "▱".repeat(thresholds.len() - filled)
         ),
-        Style::default()
-            .fg(if selected {
-                theme.accent()
-            } else {
-                theme.text()
-            })
-            .bg(theme.background())
-            .add_modifier(if selected {
-                Modifier::BOLD
-            } else {
-                Modifier::empty()
-            }),
-    )
+    ])
 }
 
 #[cfg(test)]
@@ -814,18 +444,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn launcher_defaults_use_memory_sliders_and_java_picker() {
+    fn launcher_memory_and_java_use_inline_editors() {
         let mut state = State::new();
         state.selected = 2;
-        let original = state.config.defaults.memory_min.clone();
-        state.handle_key(&KeyEvent::from(KeyCode::Right));
-        assert_ne!(state.config.defaults.memory_min, original);
-        assert!(state.preset_picker.is_none());
-        assert!(state.editing.is_none());
+        state.handle_key(&KeyEvent::from(KeyCode::Enter));
+        assert!(state.editing.is_some());
 
+        state.editing = None;
         state.selected = 4;
         state.handle_key(&KeyEvent::from(KeyCode::Enter));
-        assert_eq!(state.preset_picker, Some(PresetPicker::Java));
-        assert!(state.preset_values().contains(&"custom path…".to_owned()));
+        assert!(state.editing.is_some());
     }
 }

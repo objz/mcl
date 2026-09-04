@@ -261,6 +261,25 @@ impl App {
                             }
                             FocusedArea::Content
                         }
+                        Some(confirm_popup::ConfirmTarget::InstanceRuntime { .. }) => {
+                            self.focused = FocusedArea::InstanceSettings;
+                            let confirmed = self
+                                .instance_settings
+                                .as_mut()
+                                .and_then(|state| state.confirmed_save());
+                            if let Some((updated, desktop)) = confirmed {
+                                self.apply_instance_settings(*updated, desktop);
+                            }
+                            self.focused
+                        }
+                        Some(confirm_popup::ConfirmTarget::DiscardInstanceSettings) => {
+                            self.instance_settings = None;
+                            self.pre_overlay_focused
+                        }
+                        Some(confirm_popup::ConfirmTarget::DiscardLauncherSettings) => {
+                            self.global_settings = None;
+                            self.pre_overlay_focused
+                        }
                         None => FocusedArea::Instances,
                     };
                     confirm_popup::clear_pending();
@@ -276,6 +295,13 @@ impl App {
                         Some(confirm_popup::ConfirmTarget::Account { .. }) => FocusedArea::Account,
                         Some(confirm_popup::ConfirmTarget::ConfigProfile { .. }) => {
                             FocusedArea::Settings
+                        }
+                        Some(confirm_popup::ConfirmTarget::InstanceRuntime { .. })
+                        | Some(confirm_popup::ConfirmTarget::DiscardInstanceSettings) => {
+                            FocusedArea::InstanceSettings
+                        }
+                        Some(confirm_popup::ConfirmTarget::DiscardLauncherSettings) => {
+                            FocusedArea::GlobalSettings
                         }
                         _ => FocusedArea::Instances,
                     };
@@ -582,29 +608,6 @@ impl App {
                     self.focused = FocusedArea::GlobalSettings;
                     return Ok(());
                 }
-                widgets::settings::SettingsAction::ToggleDesktop => {
-                    if let Some(instance) = self.instances_state.selected_instance() {
-                        let name = instance.name.clone();
-                        match crate::instance::desktop::toggle(instance) {
-                            Ok(true) => error_buffer::push_error(error_buffer::ErrorEvent {
-                                id: 0,
-                                level: tracing::Level::INFO,
-                                message: format!("Desktop shortcut created for '{name}'"),
-                                pushed_at: std::time::Instant::now(),
-                            }),
-                            Ok(false) => error_buffer::push_error(error_buffer::ErrorEvent {
-                                id: 0,
-                                level: tracing::Level::INFO,
-                                message: format!("Desktop shortcut removed for '{name}'"),
-                                pushed_at: std::time::Instant::now(),
-                            }),
-                            Err(error) => {
-                                tracing::error!("Failed to toggle desktop shortcut: {error}");
-                            }
-                        }
-                    }
-                    return Ok(());
-                }
                 widgets::settings::SettingsAction::SelectProfile(profile) => {
                     if let Some(instance) = self.instances_state.selected_instance().cloned() {
                         let instance_dir = self.instance_manager.instances_dir.join(&instance.name);
@@ -672,6 +675,12 @@ impl App {
                     self.global_settings = None;
                     self.focused = self.pre_overlay_focused;
                 }
+                widgets::popups::global_settings::Action::ConfirmClose => {
+                    confirm_popup::set_pending(
+                        confirm_popup::ConfirmTarget::DiscardLauncherSettings,
+                    );
+                    self.focused = FocusedArea::ConfirmDelete;
+                }
                 widgets::popups::global_settings::Action::OpenRaw(path) => {
                     self.pending_editor = Some(path);
                     self.global_settings = None;
@@ -723,104 +732,21 @@ impl App {
                     self.focused = self.pre_overlay_focused;
                 }
                 widgets::popups::instance_settings::Action::Save(updated, desktop) => {
-                    let mut updated = *updated;
-                    if let Some(previous) = self.instances_state.selected_instance().cloned() {
-                        let structural_change = previous.game_version != updated.game_version
-                            || previous.loader != updated.loader
-                            || previous.loader_version != updated.loader_version;
-                        if structural_change {
-                            if crate::instance::runtime::is_active(&previous.name) {
-                                error_buffer::push_error(error_buffer::ErrorEvent {
-                                    id: 0,
-                                    level: tracing::Level::ERROR,
-                                    message: "Stop the instance before changing its runtime"
-                                        .to_owned(),
-                                    pushed_at: std::time::Instant::now(),
-                                });
-                                return Ok(());
-                            }
-                            self.spawn_instance_settings_update(previous, updated, desktop);
-                            self.instance_settings = None;
-                            self.focused = self.pre_overlay_focused;
-                            return Ok(());
-                        }
-                        if previous.config_sync_profile != updated.config_sync_profile {
-                            let instance_dir =
-                                self.instance_manager.instances_dir.join(&previous.name);
-                            match crate::instance::config_sync::switch_profile(
-                                &previous.name,
-                                previous.config_sync_profile.as_deref(),
-                                updated.config_sync_profile.as_deref(),
-                                &self.instance_manager.meta_dir,
-                                &instance_dir,
-                            ) {
-                                Ok(profile) => updated.config_sync_profile = profile,
-                                Err(error) => {
-                                    error_buffer::push_error(error_buffer::ErrorEvent {
-                                        id: 0,
-                                        level: tracing::Level::ERROR,
-                                        message: error.to_string(),
-                                        pushed_at: std::time::Instant::now(),
-                                    });
-                                    return Ok(());
-                                }
-                            }
-                        }
-                        match self.instance_manager.save(&updated) {
-                            Ok(()) => {
-                                let shortcut_result = if desktop {
-                                    crate::instance::desktop::create(&updated).map(|_| ())
-                                } else {
-                                    crate::instance::desktop::remove(&updated.name)
-                                };
-                                if let Err(error) = shortcut_result {
-                                    error_buffer::push_error(error_buffer::ErrorEvent {
-                                        id: 0,
-                                        level: tracing::Level::ERROR,
-                                        message: format!(
-                                            "Instance saved, but shortcut update failed: {error}"
-                                        ),
-                                        pushed_at: std::time::Instant::now(),
-                                    });
-                                }
-                                self.instances_state
-                                    .replace_instance(&previous.name, updated);
-                                error_buffer::push_error(error_buffer::ErrorEvent {
-                                    id: 0,
-                                    level: tracing::Level::INFO,
-                                    message: format!("Updated instance '{}'", previous.name),
-                                    pushed_at: std::time::Instant::now(),
-                                });
-                                self.instance_settings = None;
-                                self.focused = self.pre_overlay_focused;
-                            }
-                            Err(error) => {
-                                if previous.config_sync_profile != updated.config_sync_profile {
-                                    let instance_dir =
-                                        self.instance_manager.instances_dir.join(&previous.name);
-                                    if let Err(rollback_error) =
-                                        crate::instance::config_sync::switch_profile(
-                                            &previous.name,
-                                            updated.config_sync_profile.as_deref(),
-                                            previous.config_sync_profile.as_deref(),
-                                            &self.instance_manager.meta_dir,
-                                            &instance_dir,
-                                        )
-                                    {
-                                        tracing::error!(
-                                            "Failed to roll back config profile: {rollback_error}"
-                                        );
-                                    }
-                                }
-                                error_buffer::push_error(error_buffer::ErrorEvent {
-                                    id: 0,
-                                    level: tracing::Level::ERROR,
-                                    message: error.to_string(),
-                                    pushed_at: std::time::Instant::now(),
-                                });
-                            }
-                        }
-                    }
+                    self.apply_instance_settings(*updated, desktop);
+                }
+                widgets::popups::instance_settings::Action::ConfirmRuntime { name, from, to } => {
+                    confirm_popup::set_pending(confirm_popup::ConfirmTarget::InstanceRuntime {
+                        name,
+                        from,
+                        to,
+                    });
+                    self.focused = FocusedArea::ConfirmDelete;
+                }
+                widgets::popups::instance_settings::Action::ConfirmClose => {
+                    confirm_popup::set_pending(
+                        confirm_popup::ConfirmTarget::DiscardInstanceSettings,
+                    );
+                    self.focused = FocusedArea::ConfirmDelete;
                 }
             }
             return Ok(());
@@ -2117,6 +2043,68 @@ impl App {
                 relative_path.display(),
                 error
             );
+        }
+    }
+
+    fn apply_instance_settings(
+        &mut self,
+        updated: crate::instance::models::InstanceConfig,
+        desktop: bool,
+    ) {
+        let Some(previous) = self.instances_state.selected_instance().cloned() else {
+            return;
+        };
+        let structural_change = previous.game_version != updated.game_version
+            || previous.loader != updated.loader
+            || previous.loader_version != updated.loader_version;
+        if structural_change {
+            if crate::instance::runtime::is_active(&previous.name) {
+                error_buffer::push_error(error_buffer::ErrorEvent {
+                    id: 0,
+                    level: tracing::Level::ERROR,
+                    message: "Stop the instance before changing its runtime".to_owned(),
+                    pushed_at: std::time::Instant::now(),
+                });
+                return;
+            }
+            self.spawn_instance_settings_update(previous, updated, desktop);
+            self.instance_settings = None;
+            self.focused = self.pre_overlay_focused;
+            return;
+        }
+
+        match self.instance_manager.save(&updated) {
+            Ok(()) => {
+                let shortcut_result = if desktop {
+                    crate::instance::desktop::create(&updated).map(|_| ())
+                } else {
+                    crate::instance::desktop::remove(&updated.name)
+                };
+                if let Err(error) = shortcut_result {
+                    error_buffer::push_error(error_buffer::ErrorEvent {
+                        id: 0,
+                        level: tracing::Level::ERROR,
+                        message: format!("Instance saved, but shortcut update failed: {error}"),
+                        pushed_at: std::time::Instant::now(),
+                    });
+                }
+                self.instances_state
+                    .replace_instance(&previous.name, updated);
+                error_buffer::push_error(error_buffer::ErrorEvent {
+                    id: 0,
+                    level: tracing::Level::INFO,
+                    message: format!("Updated instance '{}'", previous.name),
+                    pushed_at: std::time::Instant::now(),
+                });
+                self.instance_settings = None;
+                self.focused = self.pre_overlay_focused;
+            }
+            Err(error) => error_buffer::push_error(error_buffer::ErrorEvent {
+                id: 0,
+                level: tracing::Level::ERROR,
+                message: error.to_string(),
+                pushed_at: std::time::Instant::now(),
+            }),
         }
     }
 }

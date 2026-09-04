@@ -582,44 +582,81 @@ fn settings_panel_routes_legacy_edit_keys_to_tui_popups() {
     ui.draw();
     assert!(ui.screen().contains("Instance Settings"));
     assert!(ui.screen().contains("settings-test"));
-    assert!(ui.screen().contains("Runtime"));
-    assert!(ui.screen().contains("Version"));
+    assert!(ui.screen().contains("Game version"));
+    assert!(ui.screen().contains("Memory min"));
     assert!(ui.screen().contains("Desktop"));
     assert!(!ui.screen().contains("Integration"));
-    assert!(ui.screen().contains('▰'));
-    assert!(ui.screen().contains('‹'));
-    assert!(ui.screen().contains('›'));
+    assert!(!ui.screen().contains('▰'));
     ui.key(KeyCode::Down);
     ui.key(KeyCode::Enter);
     ui.draw();
-    assert!(ui.screen().contains("Loader"));
     assert!(ui.screen().contains("Fabric"));
+    assert!(ui.screen().contains("Forge"));
     ui.key(KeyCode::Esc);
     for _ in 0..5 {
         ui.key(KeyCode::Down);
     }
     ui.key(KeyCode::Enter);
+    for character in "-Xfoo".chars() {
+        ui.key(KeyCode::Char(character));
+    }
     ui.draw();
-    assert!(ui.screen().contains("JVM Arguments"));
-    assert!(ui.screen().contains("No custom JVM arguments"));
+    assert!(ui.screen().contains("-Xfoo"));
+    ui.key(KeyCode::Enter);
     ui.key(KeyCode::Esc);
-    ui.key(KeyCode::Esc);
+    assert_eq!(ui.app.focused, FocusedArea::ConfirmDelete);
+    ui.draw();
+    assert!(ui.screen().contains("Discard changes"));
+    ui.key(KeyCode::Enter);
     assert_eq!(ui.app.focused, FocusedArea::Settings);
 
     ui.key(KeyCode::Char('g'));
     assert_eq!(ui.app.focused, FocusedArea::GlobalSettings);
     ui.draw();
     assert!(ui.screen().contains("Launcher Settings"));
-    assert!(ui.screen().contains("Launch Defaults"));
-    assert!(ui.screen().contains("Max memory"));
-    assert!(ui.screen().contains('▰'));
-    assert!(ui.screen().contains('‹'));
-    assert!(ui.screen().contains('›'));
+    assert!(ui.screen().contains("Memory max"));
+    assert!(!ui.screen().contains('▰'));
     ui.key(KeyCode::Enter);
     ui.draw();
-    assert!(ui.screen().contains("Themes"));
+    assert!(ui.screen().contains("green"));
     ui.key(KeyCode::Esc);
     ui.key(KeyCode::Esc);
+    assert_eq!(ui.app.focused, FocusedArea::Settings);
+}
+
+#[test]
+fn runtime_settings_use_the_shared_confirmation_popup() {
+    let mut ui = UiHarness::new();
+    ui.add_instance("runtime-test");
+    ui.app.focused = FocusedArea::Settings;
+    ui.key(KeyCode::Right);
+    ui.key(KeyCode::Char('e'));
+    ui.app
+        .instance_settings
+        .as_mut()
+        .unwrap()
+        .draft
+        .game_version = "1.21.2".to_owned();
+
+    ui.key(KeyCode::Char('s'));
+
+    assert_eq!(ui.app.focused, FocusedArea::ConfirmDelete);
+    assert!(matches!(
+        confirm::pending_target(),
+        Some(confirm::ConfirmTarget::InstanceRuntime { name, .. }) if name == "runtime-test"
+    ));
+    ui.draw();
+    assert!(ui.screen().contains("Change runtime"));
+    assert!(ui.screen().contains("Runtime files will be downloaded"));
+
+    ui.key(KeyCode::Esc);
+    assert_eq!(ui.app.focused, FocusedArea::InstanceSettings);
+    ui.key(KeyCode::Esc);
+    assert!(matches!(
+        confirm::pending_target(),
+        Some(confirm::ConfirmTarget::DiscardInstanceSettings)
+    ));
+    ui.key(KeyCode::Enter);
     assert_eq!(ui.app.focused, FocusedArea::Settings);
 }
 

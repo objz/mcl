@@ -6,10 +6,10 @@
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     Frame,
-    layout::{Constraint, Direction, Layout, Rect},
+    layout::{Constraint, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Clear, Paragraph, Wrap},
+    widgets::{Block, Borders, Clear, Paragraph},
 };
 use ratatui_textarea::{CursorMove, TextArea};
 use std::sync::{Arc, Mutex};
@@ -36,8 +36,6 @@ enum VersionPicker {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ChoicePicker {
     Loader,
-    Java,
-    Resolution,
 }
 
 enum PickerLoad {
@@ -53,14 +51,9 @@ pub struct State {
     pub draft: InstanceConfig,
     selected: usize,
     editing: Option<TextArea<'static>>,
-    jvm_args_open: bool,
-    jvm_arg_index: usize,
-    jvm_arg_input: Option<(Option<usize>, TextArea<'static>)>,
     pub desktop: bool,
     original_desktop: bool,
     error: Option<String>,
-    confirm_close: bool,
-    confirm_runtime_change: bool,
     picker: Option<VersionPicker>,
     picker_index: usize,
     picker_initialized: bool,
@@ -71,12 +64,17 @@ pub struct State {
     loader_versions: SharedLoad<Vec<String>>,
     choice_picker: Option<ChoicePicker>,
     choice_index: usize,
-    detected_java: String,
 }
 
 pub enum Action {
     None,
     Save(Box<InstanceConfig>, bool),
+    ConfirmRuntime {
+        name: String,
+        from: String,
+        to: String,
+    },
+    ConfirmClose,
     OpenRaw,
     Close,
 }
@@ -88,14 +86,9 @@ impl State {
             draft: instance.clone(),
             selected: 0,
             editing: None,
-            jvm_args_open: false,
-            jvm_arg_index: 0,
-            jvm_arg_input: None,
             desktop: crate::instance::desktop::exists(&instance.name),
             original_desktop: crate::instance::desktop::exists(&instance.name),
             error: None,
-            confirm_close: false,
-            confirm_runtime_change: false,
             picker: None,
             picker_index: 0,
             picker_initialized: false,
@@ -106,7 +99,6 @@ impl State {
             loader_versions: Arc::new(Mutex::new(LoadState::Idle)),
             choice_picker: None,
             choice_index: 0,
-            detected_java: crate::instance::java::detect_java_path(),
         }
     }
 
@@ -183,7 +175,7 @@ impl State {
                 format!("default ({})", SETTINGS.read().defaults.memory_max)
             }
             6 if self.draft.jvm_args.is_empty() => "no arguments".to_owned(),
-            6 => format!("{} argument(s)", self.draft.jvm_args.len()),
+            6 => self.draft.jvm_args.join(" "),
             7 if self.draft.resolution.is_none() => "default".to_owned(),
             8 if self.desktop => "● enabled".to_owned(),
             8 => "○ disabled".to_owned(),
@@ -199,15 +191,7 @@ impl State {
                 self.error = Some("Vanilla does not use a loader version".to_owned());
             }
             2 => self.open_loader_picker(),
-            3 => self.open_choice_picker(ChoicePicker::Java),
-            4 | 5 => self.adjust_memory(self.selected, true),
-            6 => {
-                self.jvm_args_open = true;
-                self.jvm_arg_index = self
-                    .jvm_arg_index
-                    .min(self.draft.jvm_args.len().saturating_sub(1));
-            }
-            7 => self.open_choice_picker(ChoicePicker::Resolution),
+            3..=7 => self.editing = Some(new_text_area(vec![self.value(self.selected)])),
             8 => self.desktop = !self.desktop,
             field => self.editing = Some(new_text_area(vec![self.value(field)])),
         }
@@ -220,26 +204,6 @@ impl State {
                 .iter()
                 .position(|loader| *loader == self.draft.loader)
                 .unwrap_or(0),
-            ChoicePicker::Java => self
-                .choice_values_for(picker)
-                .iter()
-                .position(|value| {
-                    self.draft.java_path.as_deref().map_or_else(
-                        || value == "automatic / launcher default",
-                        |current| value == current,
-                    )
-                })
-                .unwrap_or(0),
-            ChoicePicker::Resolution => self
-                .choice_values_for(picker)
-                .iter()
-                .position(|value| {
-                    self.draft.resolution.map_or_else(
-                        || value == "window default",
-                        |(width, height)| value == &format!("{width}x{height}"),
-                    )
-                })
-                .unwrap_or(0),
         };
     }
 
@@ -251,61 +215,25 @@ impl State {
     fn choice_values_for(&self, picker: ChoicePicker) -> Vec<String> {
         match picker {
             ChoicePicker::Loader => loaders().iter().map(ToString::to_string).collect(),
-            ChoicePicker::Java => {
-                let mut values = vec!["automatic / launcher default".to_owned()];
-                if !self.detected_java.is_empty() {
-                    values.push(self.detected_java.clone());
-                }
-                if let Some(current) = &self.draft.java_path
-                    && !values.contains(current)
-                {
-                    values.push(current.clone());
-                }
-                values.push("custom path…".to_owned());
-                values
-            }
-            ChoicePicker::Resolution => {
-                let mut values = vec![
-                    "window default".to_owned(),
-                    "854x480".to_owned(),
-                    "1280x720".to_owned(),
-                    "1600x900".to_owned(),
-                    "1920x1080".to_owned(),
-                    "2560x1440".to_owned(),
-                ];
-                if let Some((width, height)) = self.draft.resolution {
-                    let current = format!("{width}x{height}");
-                    if !values.contains(&current) {
-                        values.push(current);
-                    }
-                }
-                values.push("custom resolution…".to_owned());
-                values
-            }
         }
     }
 
     fn handle_choice_key(&mut self, key: &KeyEvent) {
         let count = self.choice_values().len();
         match key.code {
-            KeyCode::Esc => self.choice_picker = None,
+            KeyCode::Esc | KeyCode::Char('h') | KeyCode::Left => self.choice_picker = None,
             KeyCode::Char('j') | KeyCode::Down | KeyCode::Right if count > 0 => {
                 self.choice_index = (self.choice_index + 1).min(count - 1);
             }
-            KeyCode::Char('k') | KeyCode::Up | KeyCode::Left => {
+            KeyCode::Char('k') | KeyCode::Up => {
                 self.choice_index = self.choice_index.saturating_sub(1);
             }
-            KeyCode::Enter => self.apply_choice(),
+            KeyCode::Enter | KeyCode::Char('l') | KeyCode::Right => self.apply_choice(),
             _ => {}
         }
     }
 
     fn apply_choice(&mut self) {
-        let selected = self
-            .choice_values()
-            .get(self.choice_index)
-            .cloned()
-            .unwrap_or_default();
         match self.choice_picker {
             Some(ChoicePicker::Loader) => {
                 let available = loaders();
@@ -317,183 +245,9 @@ impl State {
                     self.game_versions = Arc::new(Mutex::new(LoadState::Idle));
                 }
             }
-            Some(ChoicePicker::Java) if selected == "custom path…" => {
-                self.editing = Some(new_text_area(vec![self.value(3)]));
-            }
-            Some(ChoicePicker::Java) => {
-                self.draft.java_path =
-                    (selected != "automatic / launcher default").then_some(selected);
-            }
-            Some(ChoicePicker::Resolution) if selected == "custom resolution…" => {
-                self.editing = Some(new_text_area(vec![self.value(7)]));
-            }
-            Some(ChoicePicker::Resolution) => {
-                self.draft.resolution = (selected != "window default")
-                    .then(|| parse_resolution(&selected).ok())
-                    .flatten();
-            }
             None => {}
         }
         self.choice_picker = None;
-    }
-
-    fn rotate_choice(&mut self, picker: ChoicePicker, forward: bool) {
-        self.open_choice_picker(picker);
-        let count = self
-            .choice_values()
-            .len()
-            .saturating_sub(usize::from(matches!(
-                picker,
-                ChoicePicker::Java | ChoicePicker::Resolution
-            )));
-        if count > 0 {
-            self.choice_index = if forward {
-                (self.choice_index + 1) % count
-            } else {
-                (self.choice_index + count - 1) % count
-            };
-            self.apply_choice();
-        }
-    }
-
-    fn adjust_memory(&mut self, field: usize, forward: bool) {
-        let settings = SETTINGS.read();
-        let current = if field == 4 {
-            self.draft
-                .memory_min
-                .as_deref()
-                .unwrap_or(&settings.defaults.memory_min)
-        } else {
-            self.draft
-                .memory_max
-                .as_deref()
-                .unwrap_or(&settings.defaults.memory_max)
-        };
-        let values = ["512M", "1G", "2G", "4G", "6G", "8G", "12G", "16G"];
-        let exact = values.iter().position(|value| *value == current);
-        let next = if let Some(index) = exact {
-            if forward {
-                (index + 1) % values.len()
-            } else {
-                (index + values.len() - 1) % values.len()
-            }
-        } else {
-            let current_kib = memory_kib(current).unwrap_or_default();
-            if forward {
-                values
-                    .iter()
-                    .position(|value| memory_kib(value).is_some_and(|kib| kib > current_kib))
-                    .unwrap_or(0)
-            } else {
-                values
-                    .iter()
-                    .rposition(|value| memory_kib(value).is_some_and(|kib| kib < current_kib))
-                    .unwrap_or(values.len() - 1)
-            }
-        };
-        drop(settings);
-        self.set_memory(field, Some(values[next].to_owned()));
-    }
-
-    fn set_memory(&mut self, field: usize, value: Option<String>) {
-        if field == 4 {
-            self.draft.memory_min = value.clone();
-        } else {
-            self.draft.memory_max = value.clone();
-        }
-
-        let settings = SETTINGS.read();
-        let min = self
-            .draft
-            .memory_min
-            .as_deref()
-            .unwrap_or(&settings.defaults.memory_min);
-        let max = self
-            .draft
-            .memory_max
-            .as_deref()
-            .unwrap_or(&settings.defaults.memory_max);
-        if memory_kib(min)
-            .zip(memory_kib(max))
-            .is_some_and(|(min, max)| min > max)
-        {
-            if field == 4 {
-                self.draft.memory_max = value;
-            } else {
-                self.draft.memory_min = value;
-            }
-        }
-    }
-
-    fn handle_jvm_args_key(&mut self, key: &KeyEvent) {
-        if let Some((target, input)) = &mut self.jvm_arg_input {
-            match key.code {
-                KeyCode::Enter => {
-                    let value = input.lines().join(" ").trim().to_owned();
-                    let target = *target;
-                    self.jvm_arg_input = None;
-                    if value.is_empty() {
-                        return;
-                    }
-                    if let Some(index) = target {
-                        if let Some(argument) = self.draft.jvm_args.get_mut(index) {
-                            *argument = value;
-                        }
-                    } else {
-                        self.draft.jvm_args.push(value);
-                        self.jvm_arg_index = self.draft.jvm_args.len() - 1;
-                    }
-                }
-                KeyCode::Esc => self.jvm_arg_input = None,
-                _ => {
-                    input.input(*key);
-                }
-            }
-            return;
-        }
-
-        match key.code {
-            KeyCode::Esc => self.jvm_args_open = false,
-            KeyCode::Char('j') | KeyCode::Down if !self.draft.jvm_args.is_empty() => {
-                self.jvm_arg_index = (self.jvm_arg_index + 1).min(self.draft.jvm_args.len() - 1);
-            }
-            KeyCode::Char('k') | KeyCode::Up => {
-                self.jvm_arg_index = self.jvm_arg_index.saturating_sub(1);
-            }
-            KeyCode::Left if self.jvm_arg_index > 0 => {
-                self.draft
-                    .jvm_args
-                    .swap(self.jvm_arg_index, self.jvm_arg_index - 1);
-                self.jvm_arg_index -= 1;
-            }
-            KeyCode::Right if self.jvm_arg_index + 1 < self.draft.jvm_args.len() => {
-                self.draft
-                    .jvm_args
-                    .swap(self.jvm_arg_index, self.jvm_arg_index + 1);
-                self.jvm_arg_index += 1;
-            }
-            KeyCode::Char('a') => {
-                self.jvm_arg_input = Some((None, new_text_area(vec![String::new()])));
-            }
-            KeyCode::Enter if self.draft.jvm_args.is_empty() => {
-                self.jvm_arg_input = Some((None, new_text_area(vec![String::new()])));
-            }
-            KeyCode::Enter if !self.draft.jvm_args.is_empty() => {
-                let index = self.jvm_arg_index.min(self.draft.jvm_args.len() - 1);
-                self.jvm_arg_input = Some((
-                    Some(index),
-                    new_text_area(vec![self.draft.jvm_args[index].clone()]),
-                ));
-            }
-            KeyCode::Char('d') if !self.draft.jvm_args.is_empty() => {
-                let index = self.jvm_arg_index.min(self.draft.jvm_args.len() - 1);
-                self.draft.jvm_args.remove(index);
-                self.jvm_arg_index = self
-                    .jvm_arg_index
-                    .min(self.draft.jvm_args.len().saturating_sub(1));
-            }
-            _ => {}
-        }
     }
 
     fn open_game_picker(&mut self) {
@@ -636,7 +390,7 @@ impl State {
             None => 0,
         };
         match key.code {
-            KeyCode::Esc => self.picker = None,
+            KeyCode::Esc | KeyCode::Char('h') | KeyCode::Left => self.picker = None,
             KeyCode::Char('/') => self.picker_search = true,
             KeyCode::Char('s') if self.picker == Some(VersionPicker::Game) => {
                 self.show_snapshots = !self.show_snapshots;
@@ -649,7 +403,7 @@ impl State {
             KeyCode::Char('k') | KeyCode::Up => {
                 self.picker_index = self.picker_index.saturating_sub(1);
             }
-            KeyCode::Enter => match self.picker {
+            KeyCode::Enter | KeyCode::Char('l') | KeyCode::Right => match self.picker {
                 Some(VersionPicker::Game) => {
                     if let Some(version) = self.visible_game_versions().get(self.picker_index) {
                         if self.draft.game_version != version.id {
@@ -694,6 +448,9 @@ impl State {
             ),
             4 => self.draft.memory_min = normalize_memory_value(value),
             5 => self.draft.memory_max = normalize_memory_value(value),
+            6 => {
+                self.draft.jvm_args = value.split_whitespace().map(str::to_owned).collect();
+            }
             7 if value.is_empty() => self.draft.resolution = None,
             7 => match parse_resolution(value) {
                 Ok(resolution) => self.draft.resolution = Some(resolution),
@@ -704,37 +461,12 @@ impl State {
     }
 
     pub fn handle_key(&mut self, key: &KeyEvent) -> Action {
-        if self.jvm_args_open {
-            self.handle_jvm_args_key(key);
-            return Action::None;
-        }
         if self.choice_picker.is_some() {
             self.handle_choice_key(key);
             return Action::None;
         }
         if self.picker.is_some() {
             self.handle_picker_key(key);
-            return Action::None;
-        }
-        if self.confirm_close {
-            match key.code {
-                KeyCode::Char('y') | KeyCode::Enter => return Action::Close,
-                KeyCode::Char('n') | KeyCode::Esc => self.confirm_close = false,
-                _ => {}
-            }
-            return Action::None;
-        }
-        if self.confirm_runtime_change {
-            match key.code {
-                KeyCode::Char('y') | KeyCode::Enter => {
-                    if self.validate_before_save() {
-                        return Action::Save(Box::new(self.draft.clone()), self.desktop);
-                    }
-                    self.confirm_runtime_change = false;
-                }
-                KeyCode::Char('n') | KeyCode::Esc => self.confirm_runtime_change = false,
-                _ => {}
-            }
             return Action::None;
         }
         if let Some(input) = &mut self.editing {
@@ -753,33 +485,15 @@ impl State {
                 self.selected = (self.selected + 1).min(FIELD_COUNT - 1)
             }
             KeyCode::Char('k') | KeyCode::Up => self.selected = self.selected.saturating_sub(1),
-            KeyCode::Left => match self.selected {
-                1 => self.rotate_choice(ChoicePicker::Loader, false),
-                3 => self.rotate_choice(ChoicePicker::Java, false),
-                4 | 5 => self.adjust_memory(self.selected, false),
-                7 => self.rotate_choice(ChoicePicker::Resolution, false),
-                8 => self.desktop = !self.desktop,
-                _ => {}
-            },
-            KeyCode::Right => match self.selected {
-                1 => self.rotate_choice(ChoicePicker::Loader, true),
-                3 => self.rotate_choice(ChoicePicker::Java, true),
-                4 | 5 => self.adjust_memory(self.selected, true),
-                7 => self.rotate_choice(ChoicePicker::Resolution, true),
-                8 => self.desktop = !self.desktop,
-                _ => {}
-            },
             KeyCode::Enter => self.begin_edit(),
-            KeyCode::Char('c') if matches!(self.selected, 4 | 5 | 7) => {
-                self.editing = Some(new_text_area(vec![self.value(self.selected)]));
-            }
-            KeyCode::Char('r') if matches!(self.selected, 4 | 5) => {
-                self.set_memory(self.selected, None);
-            }
             KeyCode::Char('s') if self.dirty() => {
                 if self.validate_before_save() {
                     if self.runtime_changed() {
-                        self.confirm_runtime_change = true;
+                        return Action::ConfirmRuntime {
+                            name: self.draft.name.clone(),
+                            from: runtime_label(&self.original),
+                            to: runtime_label(&self.draft),
+                        };
                     } else {
                         return Action::Save(Box::new(self.draft.clone()), self.desktop);
                     }
@@ -790,11 +504,29 @@ impl State {
                     Some("save or discard draft changes before opening the raw file".to_owned());
             }
             KeyCode::Char('E') => return Action::OpenRaw,
-            KeyCode::Esc if self.dirty() => self.confirm_close = true,
+            KeyCode::Esc if self.dirty() => return Action::ConfirmClose,
             KeyCode::Esc => return Action::Close,
             _ => {}
         }
         Action::None
+    }
+
+    pub fn confirmed_save(&mut self) -> Option<(Box<InstanceConfig>, bool)> {
+        self.validate_before_save()
+            .then(|| (Box::new(self.draft.clone()), self.desktop))
+    }
+}
+
+fn runtime_label(config: &InstanceConfig) -> String {
+    if config.loader == ModLoader::Vanilla {
+        format!("{} / Vanilla", config.game_version)
+    } else {
+        format!(
+            "{} / {} {}",
+            config.game_version,
+            config.loader,
+            config.loader_version.as_deref().unwrap_or("unknown")
+        )
     }
 }
 
@@ -836,17 +568,15 @@ fn new_text_area(lines: Vec<String>) -> TextArea<'static> {
 }
 
 pub fn popup_rect(area: Rect, state: &State) -> Rect {
-    let height = if state.picker.is_some() || state.choice_picker.is_some() {
-        19
-    } else if state.jvm_args_open {
-        18
-    } else if state.editing.is_some() {
-        14
+    let height = if state.picker.is_some() {
+        (area.height * 2 / 3).max(10)
+    } else if state.choice_picker.is_some() {
+        7
     } else {
-        12
+        11 + u16::from(state.error.is_some())
     };
     area.centered(
-        Constraint::Percentage(76),
+        Constraint::Percentage(58),
         Constraint::Length(height.min(area.height.saturating_sub(4))),
     )
 }
@@ -854,97 +584,41 @@ pub fn popup_rect(area: Rect, state: &State) -> Rect {
 pub fn render(frame: &mut Frame, area: Rect, state: &State) {
     let theme = THEME.as_ref();
     frame.render_widget(Clear, area);
-    let mut title = vec![
-        Span::styled(
-            " Instance Settings ",
-            Style::default()
-                .fg(theme.text())
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::styled(
-            format!("· {} ", state.draft.name),
-            Style::default().fg(theme.text_dim()),
-        ),
-    ];
-    if state.dirty() {
-        title.push(Span::styled(
-            "● modified ",
-            Style::default().fg(theme.warning()),
-        ));
-    }
-    let keybinds = if state.jvm_args_open {
-        if state.jvm_arg_input.is_some() {
-            super::keybind_line(&[("Enter", " apply"), ("Esc", " cancel")])
-        } else {
-            super::keybind_line(&[
-                ("j/k", ""),
-                ("←/→", ""),
-                ("Enter", " edit"),
-                ("a", " add"),
-                ("d", " delete"),
-                ("Esc", " back"),
-            ])
-        }
+    let title = if state.dirty() {
+        " Instance Settings * "
+    } else {
+        " Instance Settings "
+    };
+    let keybinds = if state.editing.is_some() {
+        super::keybind_line(&[("Enter", " apply"), ("Esc", " cancel")])
     } else if state.picker.is_some() {
         super::keybind_line(&[
-            ("j/k", " move"),
-            ("Enter", " select"),
             ("/", " search"),
-            ("s", " snapshots"),
-            ("Esc", " back"),
+            ("s", " snap"),
+            ("h", " back"),
+            ("Enter", " select"),
         ])
     } else if state.choice_picker.is_some() {
-        super::keybind_line(&[("j/k", " move"), ("Enter", " select"), ("Esc", " back")])
-    } else if matches!(state.selected, 4 | 5) {
-        super::keybind_line(&[
-            ("j/k", ""),
-            ("←/→", " memory"),
-            ("c", " custom"),
-            ("r", " default"),
-            ("s", ""),
-            ("E", ""),
-            ("Esc", ""),
-        ])
-    } else if state.selected == 6 {
-        super::keybind_line(&[
-            ("j/k", ""),
-            ("Enter", " manage args"),
-            ("s", " save"),
-            ("E", " raw"),
-            ("Esc", " back"),
-        ])
-    } else if state.selected == 8 {
-        super::keybind_line(&[
-            ("j/k", ""),
-            ("Enter", " toggle"),
-            ("←/→", " toggle"),
-            ("s", " save"),
-            ("Esc", " back"),
-        ])
+        super::keybind_line(&[("h", " back"), ("Enter", " select")])
     } else {
         super::keybind_line(&[
             ("j/k", ""),
-            ("Enter", " open"),
-            ("←/→", " switch"),
+            ("Enter", " edit"),
             ("s", " save"),
             ("E", " raw"),
             ("Esc", " back"),
         ])
     };
     let block = Block::default()
-        .title(Line::from(title))
+        .title(title)
         .borders(Borders::ALL)
         .border_type(BORDER_STYLE.to_border_type())
         .border_style(Style::default().fg(theme.text_dim()))
         .style(Style::default().bg(theme.surface()))
-        .title_bottom(keybinds);
+        .title_bottom(keybinds.right_aligned());
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    if state.jvm_args_open {
-        render_jvm_args(frame, inner, state);
-        return;
-    }
     if state.picker.is_some() {
         render_version_picker(frame, inner, state);
         return;
@@ -954,402 +628,139 @@ pub fn render(frame: &mut Frame, area: Rect, state: &State) {
         return;
     }
 
-    render_settings_form(frame, inner, state);
+    render_settings_list(frame, inner, state);
 }
 
-fn render_settings_form(frame: &mut Frame, area: Rect, state: &State) {
-    let sections = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(6),
-            Constraint::Length(3),
-            Constraint::Min(1),
-        ])
-        .split(area);
-    let top = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
-        .split(sections[0]);
-
-    render_field_card(
-        frame,
-        top[0],
-        " Runtime ",
-        state,
-        &[
-            (0, "Version"),
-            (1, "Loader"),
-            (2, "Loader ver."),
-            (3, "Java"),
-        ],
-    );
-    render_field_card(
-        frame,
-        top[1],
-        " Launch ",
-        state,
-        &[
-            (4, "Min memory"),
-            (5, "Max memory"),
-            (6, "JVM args"),
-            (7, "Resolution"),
-        ],
-    );
-
-    let desktop_block = settings_card(" Desktop ", state.selected == 8);
-    let desktop_inner = desktop_block.inner(sections[1]);
-    frame.render_widget(desktop_block, sections[1]);
-    frame.render_widget(
-        Paragraph::new(field_line(state, 8, "Shortcut", 12)),
-        desktop_inner,
-    );
+fn render_settings_list(frame: &mut Frame, area: Rect, state: &State) {
+    let theme = THEME.as_ref();
+    let labels = [
+        "Game version",
+        "Loader",
+        "Loader version",
+        "Java",
+        "Memory min",
+        "Memory max",
+        "JVM args",
+        "Resolution",
+        "Desktop shortcut",
+    ];
+    let lines = labels
+        .iter()
+        .enumerate()
+        .map(|(index, label)| field_line(state, index, label))
+        .chain(state.error.iter().map(|error| {
+            Line::from(Span::styled(
+                format!("  {error}"),
+                Style::default().fg(theme.error()),
+            ))
+        }))
+        .collect::<Vec<_>>();
+    frame.render_widget(Paragraph::new(lines), area);
 
     if let Some(editor) = state.editing.as_ref() {
-        let theme = THEME.as_ref();
-        let editor_block = Block::default()
-            .title(match state.selected {
-                3 => " Custom Java executable path · Enter apply ",
-                4 => " Custom minimum memory (K/M/G) · Enter apply ",
-                5 => " Custom maximum memory (K/M/G) · Enter apply ",
-                7 => " Custom resolution (WIDTHxHEIGHT) · Enter apply ",
-                _ => " Value · Enter apply ",
-            })
-            .borders(Borders::ALL)
-            .border_type(BORDER_STYLE.to_border_type())
-            .border_style(Style::default().fg(theme.accent()))
-            .style(Style::default().bg(theme.surface()));
-        let editor_inner = editor_block.inner(sections[2]);
-        frame.render_widget(editor_block, sections[2]);
-        frame.render_widget(editor, editor_inner);
-    } else {
-        frame.render_widget(
-            Paragraph::new(status_line(state)).wrap(Wrap { trim: true }),
-            sections[2],
-        );
+        let edit_area = Rect {
+            x: area.x.saturating_add(20),
+            y: area.y.saturating_add(state.selected as u16),
+            width: area.width.saturating_sub(20),
+            height: 1,
+        };
+        frame.render_widget(editor, edit_area);
     }
 }
 
-fn settings_card(title: &'static str, active: bool) -> Block<'static> {
-    let theme = THEME.as_ref();
-    Block::default()
-        .title(Span::styled(
-            title,
-            Style::default().fg(if active {
-                theme.accent()
-            } else {
-                theme.text_dim()
-            }),
-        ))
-        .borders(Borders::ALL)
-        .border_type(BORDER_STYLE.to_border_type())
-        .border_style(Style::default().fg(if active {
-            theme.accent()
-        } else {
-            theme.border()
-        }))
-        .style(Style::default().bg(theme.surface()))
-}
-
-fn render_field_card(
-    frame: &mut Frame,
-    area: Rect,
-    title: &'static str,
-    state: &State,
-    fields: &[(usize, &str)],
-) {
-    let active = fields.iter().any(|(index, _)| *index == state.selected);
-    let block = settings_card(title, active);
-    let inner = block.inner(area);
-    frame.render_widget(block, area);
-    let lines = fields
-        .iter()
-        .map(|(index, label)| field_line(state, *index, label, 12))
-        .collect::<Vec<_>>();
-    frame.render_widget(Paragraph::new(lines), inner);
-}
-
-fn field_line<'a>(state: &'a State, index: usize, label: &str, label_width: usize) -> Line<'a> {
+fn field_line<'a>(state: &'a State, index: usize, label: &str) -> Line<'a> {
     let theme = THEME.as_ref();
     let selected = index == state.selected;
-    let displayed = state.display_value(index);
-    let value_color = if index == 8 && state.desktop {
-        theme.success()
-    } else if selected {
-        theme.accent()
+    let editing = selected && state.editing.is_some();
+    let value = if editing {
+        String::new()
     } else {
-        theme.text()
+        state.display_value(index)
     };
-    let mut spans = vec![
+    let dirty = field_dirty(state, index);
+    Line::from(vec![
         Span::styled(
             if selected { "▶ " } else { "  " },
             Style::default().fg(theme.accent()),
         ),
         Span::styled(
-            format!("{label:<label_width$}"),
+            format!("{label:<18}"),
             Style::default().fg(theme.text_dim()),
         ),
-    ];
-    if matches!(index, 4 | 5) {
-        spans.push(memory_slider(state, index, selected));
-    } else if matches!(index, 1 | 3 | 7 | 8) && state.editing.is_none() {
-        spans.push(Span::styled(
-            format!(" ‹ {displayed} › "),
+        Span::styled(
+            value,
             Style::default()
-                .fg(value_color)
-                .bg(theme.background())
+                .fg(if index == 8 && state.desktop {
+                    theme.success()
+                } else if selected {
+                    theme.accent()
+                } else {
+                    theme.text()
+                })
                 .add_modifier(if selected {
                     Modifier::BOLD
                 } else {
                     Modifier::empty()
                 }),
-        ));
-    } else {
-        spans.push(Span::styled(
-            displayed,
-            Style::default().fg(value_color).add_modifier(if selected {
-                Modifier::BOLD
-            } else {
-                Modifier::empty()
-            }),
-        ));
-    }
-    Line::from(spans).style(Style::default().bg(if selected {
-        theme.stripe()
-    } else {
-        theme.surface()
-    }))
+        ),
+        Span::styled(
+            if dirty { " *" } else { "" },
+            Style::default().fg(theme.accent()),
+        ),
+    ])
 }
 
-fn memory_slider(state: &State, index: usize, selected: bool) -> Span<'static> {
-    let theme = THEME.as_ref();
-    let settings = SETTINGS.read();
-    let configured = if index == 4 {
-        state.draft.memory_min.as_deref()
-    } else {
-        state.draft.memory_max.as_deref()
-    };
-    let effective = configured.unwrap_or_else(|| {
-        if index == 4 {
-            &settings.defaults.memory_min
-        } else {
-            &settings.defaults.memory_max
-        }
-    });
-    let thresholds = ["512M", "1G", "2G", "4G", "6G", "8G", "12G", "16G"];
-    let effective_kib = memory_kib(effective).unwrap_or(0);
-    let step = thresholds
-        .iter()
-        .position(|value| memory_kib(value).is_some_and(|limit| effective_kib <= limit))
-        .unwrap_or(thresholds.len() - 1);
-    let filled = ((step + 1) * 6).div_ceil(thresholds.len()).max(1);
-    let bar = format!("{}{}", "▰".repeat(filled), "▱".repeat(6 - filled));
-    let label = if configured.is_none() {
-        format!("default {effective}")
-    } else {
-        effective.to_owned()
-    };
-    Span::styled(
-        format!(" ◀ {bar} {label} ▶ "),
-        Style::default()
-            .fg(if selected {
-                theme.accent()
-            } else {
-                theme.text()
-            })
-            .bg(theme.background())
-            .add_modifier(if selected {
-                Modifier::BOLD
-            } else {
-                Modifier::empty()
-            }),
-    )
-}
-
-fn render_jvm_args(frame: &mut Frame, area: Rect, state: &State) {
-    let theme = THEME.as_ref();
-    let block = settings_card(" JVM Arguments ", true);
-    let inner = block.inner(area);
-    frame.render_widget(block, area);
-
-    if let Some((target, editor)) = &state.jvm_arg_input {
-        let editor_block = Block::default()
-            .title(if target.is_some() {
-                " Edit argument · Enter apply "
-            } else {
-                " Add argument · Enter apply "
-            })
-            .borders(Borders::ALL)
-            .border_type(BORDER_STYLE.to_border_type())
-            .border_style(Style::default().fg(theme.accent()))
-            .style(Style::default().bg(theme.surface()));
-        let editor_inner = editor_block.inner(inner);
-        frame.render_widget(editor_block, inner);
-        frame.render_widget(editor, editor_inner);
-        return;
-    }
-
-    if state.draft.jvm_args.is_empty() {
-        frame.render_widget(
-            Paragraph::new(vec![
-                Line::from(""),
-                Line::from(Span::styled(
-                    "  No custom JVM arguments.",
-                    Style::default().fg(theme.text_dim()),
-                )),
-                Line::from(vec![
-                    Span::styled(
-                        "  [a] ",
-                        Style::default()
-                            .fg(theme.accent())
-                            .add_modifier(Modifier::BOLD),
-                    ),
-                    Span::styled("add an argument", Style::default().fg(theme.text())),
-                ]),
-            ]),
-            inner,
-        );
-        return;
-    }
-
-    let visible_rows = inner.height as usize;
-    let start = state
-        .jvm_arg_index
-        .saturating_sub(visible_rows.saturating_sub(1));
-    let lines = state
-        .draft
-        .jvm_args
-        .iter()
-        .enumerate()
-        .skip(start)
-        .take(visible_rows)
-        .map(|(index, argument)| {
-            let selected = index == state.jvm_arg_index;
-            Line::from(vec![
-                Span::styled(
-                    if selected { "▶ " } else { "  " },
-                    Style::default().fg(theme.accent()),
-                ),
-                Span::styled(
-                    format!("{:02}  ", index + 1),
-                    Style::default().fg(theme.text_dim()),
-                ),
-                Span::styled(
-                    argument.clone(),
-                    Style::default()
-                        .fg(if selected {
-                            theme.accent()
-                        } else {
-                            theme.text()
-                        })
-                        .add_modifier(if selected {
-                            Modifier::BOLD
-                        } else {
-                            Modifier::empty()
-                        }),
-                ),
-            ])
-            .style(Style::default().bg(if selected {
-                theme.stripe()
-            } else {
-                theme.surface()
-            }))
-        })
-        .collect::<Vec<_>>();
-    frame.render_widget(Paragraph::new(lines), inner);
-}
-
-fn status_line(state: &State) -> Line<'_> {
-    let theme = THEME.as_ref();
-    if let Some(error) = &state.error {
-        Line::from(Span::styled(
-            format!("  × {error}"),
-            Style::default().fg(theme.error()),
-        ))
-    } else if state.confirm_runtime_change {
-        Line::from(Span::styled(
-            "  ! Runtime changes download files and may break mods.  [y] continue  [n] cancel",
-            Style::default().fg(theme.warning()),
-        ))
-    } else if state.confirm_close {
-        Line::from(Span::styled(
-            "  ! Discard unsaved changes?  [y] yes  [n] no",
-            Style::default().fg(theme.warning()),
-        ))
-    } else {
-        let settings = SETTINGS.read();
-        Line::from(vec![
-            Span::styled("  ◇ Defaults  ", Style::default().fg(theme.info())),
-            Span::styled(
-                format!(
-                    "empty Java or memory values inherit {} → {}",
-                    settings.defaults.memory_min, settings.defaults.memory_max
-                ),
-                Style::default().fg(theme.text_dim()),
-            ),
-        ])
+fn field_dirty(state: &State, index: usize) -> bool {
+    match index {
+        0 => state.draft.game_version != state.original.game_version,
+        1 => state.draft.loader != state.original.loader,
+        2 => state.draft.loader_version != state.original.loader_version,
+        3 => state.draft.java_path != state.original.java_path,
+        4 => state.draft.memory_min != state.original.memory_min,
+        5 => state.draft.memory_max != state.original.memory_max,
+        6 => state.draft.jvm_args != state.original.jvm_args,
+        7 => state.draft.resolution != state.original.resolution,
+        8 => state.desktop != state.original_desktop,
+        _ => false,
     }
 }
 
 fn render_choice_picker(frame: &mut Frame, area: Rect, state: &State) {
     let theme = THEME.as_ref();
-    let title = match state.choice_picker {
-        Some(ChoicePicker::Loader) => " Loader ",
-        Some(ChoicePicker::Java) => " Java Runtime ",
-        Some(ChoicePicker::Resolution) => " Window Resolution ",
-        None => return,
-    };
-    let block = settings_card(title, true);
-    let inner = block.inner(area);
-    frame.render_widget(block, area);
-    let mut lines = Vec::new();
     let values = state.choice_values();
-    let visible_rows = inner.height as usize;
+    let visible_rows = area.height as usize;
     let start = state
         .choice_index
         .saturating_sub(visible_rows.saturating_sub(1));
+    let mut lines = Vec::new();
     for (index, value) in values.iter().enumerate().skip(start).take(visible_rows) {
         let selected = index == state.choice_index;
-        lines.push(
-            Line::from(vec![
-                Span::styled(
-                    if selected { "▶ " } else { "  " },
-                    Style::default().fg(theme.accent()),
-                ),
-                Span::styled(
-                    value.clone(),
-                    Style::default()
-                        .fg(if selected {
-                            theme.accent()
-                        } else {
-                            theme.text()
-                        })
-                        .add_modifier(if selected {
-                            Modifier::BOLD
-                        } else {
-                            Modifier::empty()
-                        }),
-                ),
-            ])
-            .style(Style::default().bg(if selected {
-                theme.stripe()
-            } else {
-                theme.surface()
-            })),
-        );
+        lines.push(Line::from(vec![
+            Span::styled(
+                if selected { "▶ " } else { "  " },
+                Style::default().fg(theme.accent()),
+            ),
+            Span::styled(
+                value.clone(),
+                Style::default()
+                    .fg(if selected {
+                        theme.accent()
+                    } else {
+                        theme.text()
+                    })
+                    .add_modifier(if selected {
+                        Modifier::BOLD
+                    } else {
+                        Modifier::empty()
+                    }),
+            ),
+        ]));
     }
-    frame.render_widget(Paragraph::new(lines), inner);
+    frame.render_widget(Paragraph::new(lines), area);
 }
 
 fn render_version_picker(frame: &mut Frame, area: Rect, state: &State) {
     let theme = THEME.as_ref();
-    let title = match state.picker {
-        Some(VersionPicker::Game) => " Minecraft Version ",
-        Some(VersionPicker::Loader) => " Loader Version ",
-        None => return,
-    };
-    let block = settings_card(title, true);
-    let inner = block.inner(area);
-    frame.render_widget(block, area);
     let status = match state.picker {
         Some(VersionPicker::Game) => match &*state
             .game_versions
@@ -1411,44 +822,37 @@ fn render_version_picker(frame: &mut Frame, area: Rect, state: &State) {
             if versions.is_empty() {
                 lines.push(Line::from("No matching versions."));
             } else {
-                let visible_rows = inner.height.saturating_sub(1) as usize;
+                let visible_rows = area.height.saturating_sub(1) as usize;
                 let start = state
                     .picker_index
                     .saturating_sub(visible_rows.saturating_sub(1));
                 for (index, version) in versions.iter().enumerate().skip(start).take(visible_rows) {
                     let selected = index == state.picker_index;
-                    lines.push(
-                        Line::from(vec![
-                            Span::styled(
-                                if selected { "▶ " } else { "  " },
-                                Style::default().fg(theme.accent()),
-                            ),
-                            Span::styled(
-                                version.clone(),
-                                Style::default()
-                                    .fg(if selected {
-                                        theme.accent()
-                                    } else {
-                                        theme.text()
-                                    })
-                                    .add_modifier(if selected {
-                                        Modifier::BOLD
-                                    } else {
-                                        Modifier::empty()
-                                    }),
-                            ),
-                        ])
-                        .style(Style::default().bg(if selected {
-                            theme.stripe()
-                        } else {
-                            theme.surface()
-                        })),
-                    );
+                    lines.push(Line::from(vec![
+                        Span::styled(
+                            if selected { "▶ " } else { "  " },
+                            Style::default().fg(theme.accent()),
+                        ),
+                        Span::styled(
+                            version.clone(),
+                            Style::default()
+                                .fg(if selected {
+                                    theme.accent()
+                                } else {
+                                    theme.text()
+                                })
+                                .add_modifier(if selected {
+                                    Modifier::BOLD
+                                } else {
+                                    Modifier::empty()
+                                }),
+                        ),
+                    ]));
                 }
             }
         }
     }
-    frame.render_widget(Paragraph::new(lines), inner);
+    frame.render_widget(Paragraph::new(lines), area);
 }
 
 #[cfg(test)]
@@ -1490,13 +894,13 @@ mod tests {
     }
 
     #[test]
-    fn custom_memory_editor_and_jvm_argument_manager_preserve_values() {
+    fn memory_and_jvm_arguments_are_edited_inline() {
         let temp = tempfile::tempdir().unwrap();
         let mut config = instance();
         config.memory_min = Some("512M".to_owned());
         let mut state = State::new(&config, temp.path());
         state.selected = 4;
-        state.handle_key(&KeyEvent::from(KeyCode::Char('c')));
+        state.handle_key(&KeyEvent::from(KeyCode::Enter));
         state.handle_key(&KeyEvent::from(KeyCode::Left));
         state.handle_key(&KeyEvent::from(KeyCode::Char('0')));
         state.handle_key(&KeyEvent::from(KeyCode::Enter));
@@ -1504,26 +908,11 @@ mod tests {
 
         state.selected = 6;
         state.begin_edit();
-        state.handle_key(&KeyEvent::from(KeyCode::Char('a')));
-        for character in "-Xfoo".chars() {
-            state.handle_key(&KeyEvent::from(KeyCode::Char(character)));
-        }
-        state.handle_key(&KeyEvent::from(KeyCode::Enter));
-        state.handle_key(&KeyEvent::from(KeyCode::Char('a')));
-        for character in "-Xbar".chars() {
+        for character in "-Xfoo -Xbar".chars() {
             state.handle_key(&KeyEvent::from(KeyCode::Char(character)));
         }
         state.handle_key(&KeyEvent::from(KeyCode::Enter));
         assert_eq!(state.draft.jvm_args, ["-Xfoo", "-Xbar"]);
-
-        state.handle_key(&KeyEvent::from(KeyCode::Left));
-        assert_eq!(state.draft.jvm_args, ["-Xbar", "-Xfoo"]);
-        state.handle_key(&KeyEvent::from(KeyCode::Enter));
-        state.handle_key(&KeyEvent::from(KeyCode::Char('2')));
-        state.handle_key(&KeyEvent::from(KeyCode::Enter));
-        assert_eq!(state.draft.jvm_args, ["-Xbar2", "-Xfoo"]);
-        state.handle_key(&KeyEvent::from(KeyCode::Char('d')));
-        assert_eq!(state.draft.jvm_args, ["-Xfoo"]);
     }
 
     #[test]
@@ -1534,13 +923,9 @@ mod tests {
 
         assert!(matches!(
             state.handle_key(&KeyEvent::from(KeyCode::Char('s'))),
-            Action::None
+            Action::ConfirmRuntime { .. }
         ));
-        assert!(state.confirm_runtime_change);
-        assert!(matches!(
-            state.handle_key(&KeyEvent::from(KeyCode::Char('y'))),
-            Action::Save(_, _)
-        ));
+        assert!(state.confirmed_save().is_some());
     }
 
     #[test]
@@ -1597,48 +982,31 @@ mod tests {
     }
 
     #[test]
-    fn arrow_keys_rotate_badged_choices() {
+    fn loader_picker_and_desktop_toggle_use_enter() {
         let temp = tempfile::tempdir().unwrap();
         let mut state = State::new(&instance(), temp.path());
 
         state.selected = 1;
-        state.handle_key(&KeyEvent::from(KeyCode::Right));
+        state.handle_key(&KeyEvent::from(KeyCode::Enter));
+        state.handle_key(&KeyEvent::from(KeyCode::Char('j')));
+        state.handle_key(&KeyEvent::from(KeyCode::Enter));
         assert_eq!(state.draft.loader, ModLoader::Forge);
-        state.handle_key(&KeyEvent::from(KeyCode::Left));
-        assert_eq!(state.draft.loader, ModLoader::Fabric);
 
         state.selected = 8;
         let desktop = state.desktop;
-        state.handle_key(&KeyEvent::from(KeyCode::Right));
+        state.handle_key(&KeyEvent::from(KeyCode::Enter));
         assert_ne!(state.desktop, desktop);
     }
 
     #[test]
-    fn memory_slider_and_resolution_picker_use_structured_values() {
+    fn text_fields_open_inline_editors() {
         let temp = tempfile::tempdir().unwrap();
         let mut state = State::new(&instance(), temp.path());
 
         state.selected = 4;
         state.begin_edit();
-        assert!(state.draft.memory_min.is_some());
+        assert!(state.editing.is_some());
         assert!(state.choice_picker.is_none());
-        assert!(state.editing.is_none());
-
-        state.draft.memory_min = Some("4G".to_owned());
-        state.draft.memory_max = Some("4G".to_owned());
-        state.handle_key(&KeyEvent::from(KeyCode::Right));
-        assert_eq!(state.draft.memory_min.as_deref(), Some("6G"));
-        assert_eq!(state.draft.memory_max.as_deref(), Some("6G"));
-
-        state.selected = 7;
-        state.begin_edit();
-        state.choice_index = state
-            .choice_values()
-            .iter()
-            .position(|value| value == "1920x1080")
-            .unwrap();
-        state.handle_key(&KeyEvent::from(KeyCode::Enter));
-        assert_eq!(state.draft.resolution, Some((1920, 1080)));
-        assert!(state.editing.is_none());
+        assert!(state.picker.is_none());
     }
 }
