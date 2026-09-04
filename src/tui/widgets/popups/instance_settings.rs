@@ -106,11 +106,7 @@ pub enum Action {
     None,
     Save(Box<InstanceConfig>, bool),
     Error(String),
-    ConfirmRuntime {
-        name: String,
-        from: String,
-        to: String,
-    },
+    ConfirmRuntime { name: String, to: String },
     OpenRaw,
     Close,
 }
@@ -153,7 +149,7 @@ impl State {
         self.error = None;
         let settings = SETTINGS.read();
         if self.draft.game_version.trim().is_empty() {
-            self.error = Some("game version cannot be empty".to_owned());
+            self.error = Some("Game version is required.".to_owned());
         } else if self.draft.loader != ModLoader::Vanilla
             && self
                 .draft
@@ -161,7 +157,7 @@ impl State {
                 .as_deref()
                 .is_none_or(str::is_empty)
         {
-            self.error = Some("the selected loader requires a loader version".to_owned());
+            self.error = Some("Select a loader version.".to_owned());
         } else if let (Some(min), Some(max)) = (
             memory_kib(
                 self.draft
@@ -177,7 +173,7 @@ impl State {
             ),
         ) && min > max
         {
-            self.error = Some("minimum memory cannot exceed maximum memory".to_owned());
+            self.error = Some("Minimum memory cannot exceed maximum memory.".to_owned());
         }
         self.error.is_none()
     }
@@ -533,7 +529,7 @@ impl State {
             self.draft.resolution = Some(resolution);
             self.error = None;
         } else {
-            self.error = Some("could not detect a default display resolution".to_owned());
+            self.error = Some("Display resolution could not be detected.".to_owned());
         }
     }
 
@@ -544,6 +540,17 @@ impl State {
             None
         };
         self.error = None;
+    }
+
+    fn close_version_picker(&mut self) {
+        let cancel_runtime_change = self.picker == Some(VersionPicker::Loader)
+            && self.runtime_changed()
+            && self.draft.loader_version.is_none();
+        self.picker = None;
+        self.picker_search.deactivate();
+        if cancel_runtime_change {
+            self.cancel_runtime_change();
+        }
     }
 
     fn handle_picker_key(&mut self, key: &KeyEvent) {
@@ -574,8 +581,10 @@ impl State {
             None => 0,
         };
         match key.code {
-            KeyCode::Esc => self.picker = None,
-            KeyCode::Char('h') | KeyCode::Left if !self.picker_search.active => self.picker = None,
+            KeyCode::Esc => self.close_version_picker(),
+            KeyCode::Char('h') | KeyCode::Left if !self.picker_search.active => {
+                self.close_version_picker();
+            }
             KeyCode::Char('/') if !self.picker_search.active => {
                 self.picker_search.activate();
                 self.picker_index = 0;
@@ -632,13 +641,13 @@ impl State {
             state.editing = Some(new_text_area(editor.lines().to_vec()));
         };
         match self.selected {
-            0 if value.is_empty() => invalid(self, "game version cannot be empty".to_owned()),
+            0 if value.is_empty() => invalid(self, "Game version is required.".to_owned()),
             0 => self.draft.game_version = value.to_owned(),
             2 => self.draft.loader_version = (!value.is_empty()).then(|| value.to_owned()),
             3 => self.draft.java_path = (!value.is_empty()).then(|| value.to_owned()),
             4 | 5 if !value.is_empty() && normalize_memory_value(value).is_none() => invalid(
                 self,
-                "memory must be a positive number with K, M, or G".to_owned(),
+                "Use a positive memory value ending in K, M, or G.".to_owned(),
             ),
             4 => self.set_memory(4, normalize_memory_value(value)),
             5 => self.set_memory(5, normalize_memory_value(value)),
@@ -686,7 +695,6 @@ impl State {
             }
             return Action::ConfirmRuntime {
                 name: self.draft.name.clone(),
-                from: runtime_label(&self.original),
                 to: runtime_label(&self.draft),
             };
         }
@@ -766,6 +774,9 @@ impl State {
         self.draft.game_version = self.original.game_version.clone();
         self.draft.loader = self.original.loader;
         self.draft.loader_version = self.original.loader_version.clone();
+        self.game_versions = Arc::new(Mutex::new(LoadState::Idle));
+        self.loader_versions = Arc::new(Mutex::new(LoadState::Idle));
+        self.picker_initialized = false;
         self.error = None;
     }
 }
@@ -837,7 +848,6 @@ pub fn popup_rect(area: Rect, state: &State) -> Rect {
     } else {
         let form_width = (area.width * 58 / 100).saturating_sub(2);
         11 + jvm_row_count(state, form_width).saturating_sub(1) as u16
-            + u16::from(state.runtime_changed())
     };
     let width = match state.choice_picker {
         Some(ChoicePicker::Java) => 72,
@@ -1022,20 +1032,6 @@ fn render_settings_list(frame: &mut Frame, area: Rect, state: &State) {
             );
         }
         y = y.saturating_add(height);
-    }
-
-    if state.runtime_changed() && y < area.bottom() {
-        frame.render_widget(
-            Paragraph::new(Span::styled(
-                "  ! Runtime change may break installed mods.",
-                Style::default().fg(theme.warning()),
-            )),
-            Rect {
-                y,
-                height: 1,
-                ..area
-            },
-        );
     }
 }
 
@@ -1625,7 +1621,7 @@ mod tests {
     }
 
     #[test]
-    fn runtime_changes_show_an_inline_compatibility_warning() {
+    fn runtime_changes_do_not_render_an_inline_notification() {
         let temp = tempfile::tempdir().unwrap();
         let mut state = State::new(&instance(), temp.path());
         state.draft.game_version = "1.21.2".to_owned();
@@ -1639,12 +1635,30 @@ mod tests {
             })
             .unwrap();
 
-        assert!(
-            terminal
-                .backend()
-                .to_string()
-                .contains("Runtime change may break installed mods")
-        );
+        assert!(!terminal.backend().to_string().contains("installed mods"));
+    }
+
+    #[test]
+    fn cancelling_chained_loader_version_restores_the_original_runtime() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut state = State::new(&instance(), temp.path());
+        let original = state.original.clone();
+        *state.game_versions.lock().unwrap() = LoadState::Loaded(vec![GameVersion {
+            id: "1.21.2".to_owned(),
+            stable: true,
+        }]);
+        state.picker = Some(VersionPicker::Game);
+        state.picker_initialized = true;
+
+        state.handle_key(&KeyEvent::from(KeyCode::Enter));
+        assert_eq!(state.picker, Some(VersionPicker::Loader));
+        assert_eq!(state.draft.loader_version, None);
+
+        state.handle_key(&KeyEvent::from(KeyCode::Esc));
+        assert_eq!(state.draft.game_version, original.game_version);
+        assert_eq!(state.draft.loader, original.loader);
+        assert_eq!(state.draft.loader_version, original.loader_version);
+        assert_eq!(state.picker, None);
     }
 
     #[test]

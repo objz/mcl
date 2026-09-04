@@ -47,7 +47,6 @@ pub enum ConfirmTarget {
     },
     InstanceRuntime {
         name: String,
-        from: String,
         to: String,
     },
 }
@@ -95,9 +94,9 @@ impl ConfirmTarget {
                 })
                 .collect::<Vec<_>>()
                 .join("\n"),
-            ConfirmTarget::InstanceRuntime { from, to, .. } => format!(
-                "{from} → {to}\nRuntime files will be downloaded before applying the change.\n! Installed mods may not load and can be incompatible with the new runtime."
-            ),
+            ConfirmTarget::InstanceRuntime { to, .. } => {
+                format!("Target: {to}\nSome installed mods may be incompatible.")
+            }
         }
     }
 
@@ -183,6 +182,7 @@ pub struct ConfirmPopup {
     title: String,
     body: String,
     confirm_label: &'static str,
+    accent_border: bool,
 }
 
 impl ConfirmPopup {
@@ -191,6 +191,7 @@ impl ConfirmPopup {
             title: target.title(),
             body: target.body(),
             confirm_label: target.confirm_label(),
+            accent_border: matches!(target, ConfirmTarget::InstanceRuntime { .. }),
         }
     }
 }
@@ -208,7 +209,11 @@ impl Widget for ConfirmPopup {
         )]);
         let kb = keybind_line(&[("Esc", " cancel"), ("Enter", self.confirm_label)]);
 
-        let border_color = theme.text_dim();
+        let border_color = if self.accent_border {
+            theme.accent()
+        } else {
+            theme.text_dim()
+        };
         let bg_color = theme.surface();
         let accent = theme.accent();
         let text = theme.text();

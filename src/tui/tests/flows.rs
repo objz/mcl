@@ -657,8 +657,11 @@ fn runtime_settings_use_the_shared_confirmation_popup() {
     ));
     ui.draw();
     assert!(ui.screen().contains("Change runtime"));
-    assert!(ui.screen().contains("downloaded before applying"));
-    assert!(ui.screen().contains("Installed mods may not load"));
+    assert!(ui.screen().contains("Target:"));
+    assert!(
+        ui.screen()
+            .contains("Some installed mods may be incompatible")
+    );
 
     ui.key(KeyCode::Esc);
     assert_eq!(ui.app.focused, FocusedArea::InstanceSettings);

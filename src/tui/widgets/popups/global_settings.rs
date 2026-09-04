@@ -111,7 +111,7 @@ impl State {
         match self.selected {
             2 | 3 if normalize_memory_value(value).is_none() => invalid(
                 self,
-                "memory must be a positive number with K, M, or G".to_owned(),
+                "Use a positive memory value ending in K, M, or G.".to_owned(),
             ),
             2 => {
                 let value = normalize_memory_value(value).unwrap();

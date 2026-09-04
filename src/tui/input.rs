@@ -734,10 +734,9 @@ impl App {
                 widgets::popups::instance_settings::Action::Save(updated, desktop) => {
                     self.apply_instance_settings(*updated, desktop, false);
                 }
-                widgets::popups::instance_settings::Action::ConfirmRuntime { name, from, to } => {
+                widgets::popups::instance_settings::Action::ConfirmRuntime { name, to } => {
                     confirm_popup::set_pending(confirm_popup::ConfirmTarget::InstanceRuntime {
                         name,
-                        from,
                         to,
                     });
                     self.focused = FocusedArea::ConfirmDelete;
