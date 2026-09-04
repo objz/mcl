@@ -22,19 +22,20 @@ use crate::{
     },
     instance::loader::GameVersion,
     instance::models::{
-        InstanceConfig, LaunchCommand, ModLoader, WindowMode, normalize_memory_value,
-        parse_resolution,
+        InstanceConfig, LaunchCommand, ModLoader, normalize_memory_value, parse_resolution,
     },
     tui::widgets::{
         popups::{
             LoadState,
             settings_controls::{
-                DisplayResolution, GlfwChoice, GlfwPicker, JavaChoice, JavaPicker, SettingsPicker,
-                SettingsPickerAction, SettingsPickerBadge, SettingsPickerOption, adjust_memory,
-                auto_label, bundled_glfw_version, bundled_label as bundled_badge,
-                display_resolutions, environment_labels, handle_text_area_input, memory_kib,
-                parse_environment, render_memory_gauge, render_settings_picker, settings_text_area,
-                tagged_row_count, tagged_value_lines,
+                DisplayResolution, GlfwChoice, GlfwPicker, JavaChoice, JavaPicker,
+                ResolutionChoice, ResolutionPickerAction, SettingsPicker, SettingsPickerAction,
+                SettingsPickerBadge, SettingsPickerOption, adjust_memory, auto_label,
+                bundled_glfw_version, bundled_label as bundled_badge, display_resolutions,
+                environment_labels, handle_resolution_picker_key, handle_text_area_input,
+                memory_kib, parse_environment, render_memory_gauge, render_settings_picker,
+                resolution_choices, resolution_items, settings_text_area, tagged_row_count,
+                tagged_value_lines, toggle_window_mode,
             },
         },
         search::SearchState,
@@ -59,30 +60,6 @@ enum ChoicePicker {
     Resolution,
     Account,
     Glfw,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum ResolutionChoice {
-    Display(DisplayResolution),
-    Preset(u32, u32),
-    Configured(u32, u32),
-}
-
-impl ResolutionChoice {
-    fn resolution(&self) -> Option<(u32, u32)> {
-        match self {
-            Self::Display(display) => Some((display.width, display.height)),
-            Self::Preset(width, height) | Self::Configured(width, height) => {
-                Some((*width, *height))
-            }
-        }
-    }
-
-    fn label(&self) -> String {
-        self.resolution()
-            .map(|(width, height)| format!("{width}x{height}"))
-            .unwrap_or_default()
-    }
 }
 
 enum PickerLoad {
@@ -407,10 +384,7 @@ impl State {
                     .draft
                     .effective_window_mode(SETTINGS.read().defaults.window_mode);
                 self.draft.inherit_window_mode = false;
-                self.draft.window_mode = match current {
-                    WindowMode::Windowed => WindowMode::Fullscreen,
-                    WindowMode::Fullscreen => WindowMode::Windowed,
-                };
+                self.draft.window_mode = toggle_window_mode(current);
             }
             9 => self.open_choice_picker(ChoicePicker::Resolution),
             10 => self.open_choice_picker(ChoicePicker::Account),
@@ -480,6 +454,19 @@ impl State {
     }
 
     fn handle_choice_key(&mut self, key: &KeyEvent) {
+        if self.choice_picker == Some(ChoicePicker::Resolution) {
+            let count = self.resolution_choices().len();
+            match handle_resolution_picker_key(&mut self.choice_index, count, key) {
+                ResolutionPickerAction::Back => self.choice_picker = None,
+                ResolutionPickerAction::Default => {
+                    self.apply_default_resolution();
+                    self.choice_picker = None;
+                }
+                ResolutionPickerAction::Select => self.apply_choice(),
+                ResolutionPickerAction::None => {}
+            }
+            return;
+        }
         let picker_action = match self.choice_picker {
             Some(ChoicePicker::Java) => {
                 self.java_picker.initialize();
@@ -506,10 +493,6 @@ impl State {
         let count = self.choice_values().len();
         match key.code {
             KeyCode::Esc | KeyCode::Char('h') | KeyCode::Left => self.choice_picker = None,
-            KeyCode::Char('d') if self.choice_picker == Some(ChoicePicker::Resolution) => {
-                self.apply_default_resolution();
-                self.choice_picker = None;
-            }
             KeyCode::Char('j') | KeyCode::Down | KeyCode::Right if count > 0 => {
                 self.choice_index = (self.choice_index + 1).min(count - 1);
             }
@@ -1133,37 +1116,6 @@ impl State {
     }
 }
 
-fn resolution_choices(
-    current: Option<(u32, u32)>,
-    displays: &[DisplayResolution],
-) -> Vec<ResolutionChoice> {
-    let mut choices = Vec::new();
-    choices.extend(displays.iter().cloned().map(ResolutionChoice::Display));
-    for (width, height) in [
-        (854, 480),
-        (1280, 720),
-        (1600, 900),
-        (1920, 1080),
-        (2560, 1440),
-        (3840, 2160),
-    ] {
-        if !choices
-            .iter()
-            .any(|choice| choice.resolution() == Some((width, height)))
-        {
-            choices.push(ResolutionChoice::Preset(width, height));
-        }
-    }
-    if let Some((width, height)) = current
-        && !choices
-            .iter()
-            .any(|choice| choice.resolution() == Some((width, height)))
-    {
-        choices.push(ResolutionChoice::Configured(width, height));
-    }
-    choices
-}
-
 pub fn popup_rect(area: Rect, state: &State) -> Rect {
     let height = if state.picker.is_some()
         || matches!(
@@ -1697,51 +1649,6 @@ fn render_choice_picker(frame: &mut Frame, area: Rect, state: &mut State) {
     }
 }
 
-fn resolution_items(choices: &[ResolutionChoice], selected: usize) -> Vec<ListItem<'static>> {
-    let theme = THEME.as_ref();
-    choices
-        .iter()
-        .enumerate()
-        .map(|(index, choice)| {
-            let mut spans = vec![Span::styled(
-                choice.label(),
-                Style::default().fg(if index == selected {
-                    theme.accent()
-                } else {
-                    theme.text()
-                }),
-            )];
-            match choice {
-                ResolutionChoice::Preset(_, _) => {}
-                ResolutionChoice::Display(display) => {
-                    if !display.name.is_empty() {
-                        spans.extend([
-                            Span::raw("  "),
-                            Span::styled(
-                                format!(" {} ", display.name),
-                                Style::default()
-                                    .fg(if display.primary {
-                                        theme.success()
-                                    } else {
-                                        theme.info()
-                                    })
-                                    .bg(theme.stripe()),
-                            ),
-                        ]);
-                    }
-                }
-                ResolutionChoice::Configured(_, _) => {
-                    spans.push(Span::styled(
-                        "  configured",
-                        Style::default().fg(theme.text_dim()),
-                    ));
-                }
-            }
-            ListItem::new(Line::from(spans))
-        })
-        .collect()
-}
-
 fn render_version_picker(frame: &mut Frame, area: Rect, state: &State) {
     let theme = THEME.as_ref();
     let status = match state.picker {
@@ -1816,6 +1723,7 @@ fn render_version_picker(frame: &mut Frame, area: Rect, state: &State) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::instance::WindowMode;
     use chrono::Utc;
 
     fn instance() -> InstanceConfig {

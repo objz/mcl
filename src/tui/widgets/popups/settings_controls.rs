@@ -21,13 +21,20 @@ use ratatui_textarea::{CursorMove, TextArea};
 
 use crate::{
     config::theme::THEME,
-    instance::java::JavaInstallation,
+    instance::{WindowMode, java::JavaInstallation},
     tui::widgets::{popups::LoadState, status_badge},
 };
 
 const MEMORY_STEPS: [&str; 12] = [
     "512M", "1G", "2G", "3G", "4G", "6G", "8G", "12G", "16G", "24G", "32G", "64G",
 ];
+
+pub(crate) fn toggle_window_mode(mode: WindowMode) -> WindowMode {
+    match mode {
+        WindowMode::Windowed => WindowMode::Fullscreen,
+        WindowMode::Fullscreen => WindowMode::Windowed,
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SettingsPickerBadge {
@@ -218,6 +225,59 @@ pub(crate) struct DisplayResolution {
     pub height: u32,
     pub name: String,
     pub primary: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum ResolutionChoice {
+    Display(DisplayResolution),
+    Preset(u32, u32),
+    Configured(u32, u32),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ResolutionPickerAction {
+    None,
+    Back,
+    Default,
+    Select,
+}
+
+pub(crate) fn handle_resolution_picker_key(
+    selected: &mut usize,
+    count: usize,
+    key: &KeyEvent,
+) -> ResolutionPickerAction {
+    match key.code {
+        KeyCode::Esc | KeyCode::Char('h') | KeyCode::Left => ResolutionPickerAction::Back,
+        KeyCode::Char('d') => ResolutionPickerAction::Default,
+        KeyCode::Char('j') | KeyCode::Down | KeyCode::Right if count > 0 => {
+            *selected = (*selected + 1).min(count - 1);
+            ResolutionPickerAction::None
+        }
+        KeyCode::Char('k') | KeyCode::Up => {
+            *selected = selected.saturating_sub(1);
+            ResolutionPickerAction::None
+        }
+        KeyCode::Enter | KeyCode::Char('l') | KeyCode::Right => ResolutionPickerAction::Select,
+        _ => ResolutionPickerAction::None,
+    }
+}
+
+impl ResolutionChoice {
+    pub(crate) fn resolution(&self) -> Option<(u32, u32)> {
+        match self {
+            Self::Display(display) => Some((display.width, display.height)),
+            Self::Preset(width, height) | Self::Configured(width, height) => {
+                Some((*width, *height))
+            }
+        }
+    }
+
+    pub(crate) fn label(&self) -> String {
+        self.resolution()
+            .map(|(width, height)| format!("{width}x{height}"))
+            .unwrap_or_default()
+    }
 }
 
 impl JavaPicker {
@@ -1018,6 +1078,85 @@ pub(crate) fn display_resolutions() -> Vec<DisplayResolution> {
         .collect::<Vec<_>>();
     resolutions.sort_by_key(|resolution| !resolution.primary);
     resolutions
+}
+
+pub(crate) fn resolution_choices(
+    current: Option<(u32, u32)>,
+    displays: &[DisplayResolution],
+) -> Vec<ResolutionChoice> {
+    let mut choices = Vec::new();
+    choices.extend(displays.iter().cloned().map(ResolutionChoice::Display));
+    for (width, height) in [
+        (854, 480),
+        (1280, 720),
+        (1600, 900),
+        (1920, 1080),
+        (2560, 1440),
+        (3840, 2160),
+    ] {
+        if !choices
+            .iter()
+            .any(|choice| choice.resolution() == Some((width, height)))
+        {
+            choices.push(ResolutionChoice::Preset(width, height));
+        }
+    }
+    if let Some((width, height)) = current
+        && !choices
+            .iter()
+            .any(|choice| choice.resolution() == Some((width, height)))
+    {
+        choices.push(ResolutionChoice::Configured(width, height));
+    }
+    choices
+}
+
+pub(crate) fn resolution_items(
+    choices: &[ResolutionChoice],
+    selected: usize,
+) -> Vec<ListItem<'static>> {
+    let theme = THEME.as_ref();
+    choices
+        .iter()
+        .enumerate()
+        .map(|(index, choice)| {
+            let mut spans = vec![Span::styled(
+                choice.label(),
+                Style::default().fg(if index == selected {
+                    theme.accent()
+                } else {
+                    theme.text()
+                }),
+            )];
+            match choice {
+                ResolutionChoice::Preset(_, _) => {}
+                ResolutionChoice::Display(display) => {
+                    if !display.name.is_empty() {
+                        spans.extend([
+                            Span::raw("  "),
+                            Span::styled(
+                                format!(" {} ", display.name),
+                                Style::default()
+                                    .fg(if display.primary {
+                                        theme.success()
+                                    } else {
+                                        theme.info()
+                                    })
+                                    .bg(theme.stripe()),
+                            ),
+                        ]);
+                    }
+                }
+                ResolutionChoice::Configured(_, _) => {
+                    spans.push(Span::styled(
+                        "  configured",
+                        Style::default().fg(theme.text_dim()),
+                    ));
+                }
+            }
+            ListItem::new(Line::from(spans))
+        })
+        .collect()
 }
 
 #[cfg(test)]

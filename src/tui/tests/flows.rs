@@ -656,7 +656,7 @@ fn settings_panel_routes_legacy_edit_keys_to_tui_popups() {
 }
 
 #[test]
-fn launcher_settings_scroll_to_storage_and_confirm_cache_cleanup() {
+fn launcher_settings_expand_to_storage_and_confirm_cache_cleanup() {
     let mut ui = UiHarness::new();
     ui.add_instance("global-settings-test");
     ui.key(KeyCode::Char('G'));

@@ -19,12 +19,14 @@ use crate::{
         settings::{ContentProvider, ImageProtocol},
         theme::{BORDER_STYLE, BorderStyle, THEME, ThemeConfig},
     },
-    instance::models::{WindowMode, normalize_memory_value, parse_resolution},
+    instance::models::{normalize_memory_value, parse_resolution},
     tui::widgets::popups::settings_controls::{
-        JavaChoice, JavaPicker, SettingsPicker, SettingsPickerAction, SettingsPickerOption,
-        adjust_memory, auto_label, display_resolutions, environment_labels, handle_text_area_input,
-        memory_kib, parse_environment, render_memory_gauge, render_settings_picker,
-        settings_text_area, tagged_value_lines,
+        DisplayResolution, JavaChoice, JavaPicker, ResolutionChoice, ResolutionPickerAction,
+        SettingsPicker, SettingsPickerAction, SettingsPickerOption, adjust_memory, auto_label,
+        display_resolutions, environment_labels, handle_resolution_picker_key,
+        handle_text_area_input, memory_kib, parse_environment, render_memory_gauge,
+        render_settings_picker, resolution_choices, resolution_items, settings_text_area,
+        tagged_row_count, tagged_value_lines, toggle_window_mode,
     },
     tui::widgets::status_badge,
 };
@@ -34,9 +36,7 @@ const FIELD_COUNT: usize = 24;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ChoicePicker {
     ImageProtocol,
-    WindowMode,
     Resolution,
-    Provider,
 }
 
 pub struct State {
@@ -53,7 +53,8 @@ pub struct State {
     java_picker: JavaPicker,
     choice_picker: Option<ChoicePicker>,
     settings_picker: SettingsPicker,
-    resolutions: Vec<(u32, u32)>,
+    choice_index: usize,
+    display_resolutions: Vec<DisplayResolution>,
 }
 
 pub enum Action {
@@ -86,22 +87,6 @@ impl State {
         let mut java_picker =
             JavaPicker::with_cache(crate::instance::java::detect_java_path(), Some(java_cache));
         java_picker.open(config.paths.java_path.as_deref());
-        let mut resolutions = display_resolutions()
-            .into_iter()
-            .map(|display| (display.width, display.height))
-            .collect::<Vec<_>>();
-        resolutions.extend([
-            (854, 480),
-            (1280, 720),
-            (1920, 1080),
-            (2560, 1440),
-            (3840, 2160),
-        ]);
-        if let Some(resolution) = config.defaults.resolution {
-            resolutions.push(resolution);
-        }
-        resolutions.sort_unstable();
-        resolutions.dedup();
         Self {
             config,
             theme,
@@ -116,7 +101,8 @@ impl State {
             java_picker,
             choice_picker: None,
             settings_picker: SettingsPicker::default(),
-            resolutions,
+            choice_index: 0,
+            display_resolutions: display_resolutions(),
         }
     }
 
@@ -175,7 +161,7 @@ impl State {
         let Some(editor) = self.editing.take() else {
             return;
         };
-        let raw = editor.lines().join("");
+        let raw = editor.lines().join("\n");
         let value = raw.trim();
         self.error = None;
         let invalid = |state: &mut Self, message: String| {
@@ -293,6 +279,20 @@ impl State {
         }
     }
 
+    fn cycle_theme(&mut self, forward: bool) {
+        if self.themes.is_empty() {
+            return;
+        }
+        self.theme_index = if forward {
+            (self.theme_index + 1) % self.themes.len()
+        } else {
+            self.theme_index
+                .checked_sub(1)
+                .unwrap_or(self.themes.len() - 1)
+        };
+        self.select_theme();
+    }
+
     fn handle_theme_picker_key(&mut self, key: &KeyEvent) {
         match key.code {
             KeyCode::Esc | KeyCode::Char('h') | KeyCode::Left => self.theme_picker = false,
@@ -332,7 +332,7 @@ impl State {
         }
     }
 
-    fn choice_options(&self, picker: ChoicePicker) -> Vec<SettingsPickerOption> {
+    fn image_protocol_options(&self) -> Vec<SettingsPickerOption> {
         let option = |key: &str, title: &str, description: &str| SettingsPickerOption {
             key: key.to_owned(),
             title: title.to_owned(),
@@ -341,86 +341,72 @@ impl State {
             badge: None,
             active: false,
         };
-        match picker {
-            ChoicePicker::ImageProtocol => [
-                (
-                    "auto",
-                    "Auto",
-                    "Use the protocol detected for this terminal",
-                ),
-                ("kitty", "Kitty", "Use Kitty graphics when supported"),
-                (
-                    "iterm2",
-                    "iTerm2",
-                    "Use the iTerm2 image protocol when supported",
-                ),
-                (
-                    "quadrants",
-                    "Quadrants",
-                    "Render images with quadrant characters",
-                ),
-                (
-                    "halfblocks",
-                    "Halfblocks",
-                    "Render images with half-block characters",
-                ),
-            ]
-            .into_iter()
-            .map(|(key, title, description)| option(key, title, description))
-            .collect(),
-            ChoicePicker::WindowMode => [
-                ("windowed", "windowed", "Launch new instances in a window"),
-                (
-                    "fullscreen",
-                    "fullscreen",
-                    "Launch new instances in fullscreen",
-                ),
-            ]
-            .into_iter()
-            .map(|(key, title, description)| option(key, title, description))
-            .collect(),
-            ChoicePicker::Resolution => std::iter::once(option(
-                "default",
-                "Game default",
-                "Let Minecraft choose the initial window size",
-            ))
-            .chain(self.resolutions.iter().map(|(width, height)| {
-                let value = format!("{width}x{height}");
-                option(&value, &value, "Use this size for newly created instances")
-            }))
-            .collect(),
-            ChoicePicker::Provider => {
-                let mut options = vec![option(
-                    "modrinth",
-                    "Modrinth",
-                    "Prefer Modrinth when projects exist on multiple providers",
-                )];
-                if crate::net::curseforge::api_key().is_some() {
-                    options.push(option(
-                        "curseforge",
-                        "CurseForge",
-                        "Prefer CurseForge when projects exist on multiple providers",
-                    ));
-                }
-                options
-            }
-        }
+        [
+            ("kitty", "Kitty", "Use Kitty graphics when supported"),
+            (
+                "iterm2",
+                "iTerm2",
+                "Use the iTerm2 image protocol when supported",
+            ),
+            (
+                "quadrants",
+                "Quadrants",
+                "Render images with quadrant characters",
+            ),
+            (
+                "halfblocks",
+                "Halfblocks",
+                "Render images with half-block characters",
+            ),
+        ]
+        .into_iter()
+        .map(|(key, title, description)| option(key, title, description))
+        .collect()
     }
 
     fn open_choice_picker(&mut self, picker: ChoicePicker) {
-        let preferred = match picker {
-            ChoicePicker::ImageProtocol => self.config.ui.image_protocol.to_string(),
-            ChoicePicker::WindowMode => self.config.defaults.window_mode.to_string(),
-            ChoicePicker::Resolution => self.value(7),
-            ChoicePicker::Provider => self.config.content.preferred_provider.as_str().to_owned(),
-        };
-        self.settings_picker.reset();
-        self.settings_picker
-            .sync(self.choice_options(picker), Some(&preferred));
+        match picker {
+            ChoicePicker::ImageProtocol => {
+                let preferred = self.config.ui.image_protocol.to_string();
+                self.settings_picker.reset();
+                self.settings_picker
+                    .sync(self.image_protocol_options(), Some(&preferred));
+            }
+            ChoicePicker::Resolution => {
+                self.choice_index = self
+                    .resolution_choices()
+                    .iter()
+                    .position(|choice| choice.resolution() == self.config.defaults.resolution)
+                    .unwrap_or(0);
+            }
+        }
         self.choice_picker = Some(picker);
     }
 
     fn handle_choice_picker_key(&mut self, key: &KeyEvent) {
+        if self.choice_picker == Some(ChoicePicker::Resolution) {
+            let count = self.resolution_choices().len();
+            match handle_resolution_picker_key(&mut self.choice_index, count, key) {
+                ResolutionPickerAction::Back => self.choice_picker = None,
+                ResolutionPickerAction::Default => {
+                    self.apply_default_resolution();
+                    self.choice_picker = None;
+                }
+                ResolutionPickerAction::Select => {
+                    if let Some(resolution) = self
+                        .resolution_choices()
+                        .get(self.choice_index)
+                        .and_then(|choice| choice.resolution())
+                    {
+                        self.config.defaults.resolution = Some(resolution);
+                        self.save_pending = true;
+                    }
+                    self.choice_picker = None;
+                }
+                ResolutionPickerAction::None => {}
+            }
+            return;
+        }
         match self.settings_picker.handle_key(key) {
             SettingsPickerAction::Back => self.choice_picker = None,
             SettingsPickerAction::Select => {
@@ -430,43 +416,57 @@ impl State {
                 let Some(value) = self.settings_picker.selected_key().map(str::to_owned) else {
                     return;
                 };
-                match picker {
-                    ChoicePicker::ImageProtocol => {
-                        self.config.ui.image_protocol = match value.as_str() {
-                            "kitty" => ImageProtocol::Kitty,
-                            "iterm2" => ImageProtocol::Iterm2,
-                            "quadrants" => ImageProtocol::Quadrants,
-                            "halfblocks" => ImageProtocol::Halfblocks,
-                            _ => ImageProtocol::Auto,
-                        };
-                    }
-                    ChoicePicker::WindowMode => {
-                        self.config.defaults.window_mode = if value == "fullscreen" {
-                            WindowMode::Fullscreen
-                        } else {
-                            WindowMode::Windowed
-                        };
-                    }
-                    ChoicePicker::Resolution => {
-                        self.config.defaults.resolution = if value == "default" {
-                            None
-                        } else {
-                            parse_resolution(&value).ok()
-                        };
-                    }
-                    ChoicePicker::Provider => {
-                        self.config.content.preferred_provider = if value == "curseforge" {
-                            ContentProvider::CurseForge
-                        } else {
-                            ContentProvider::Modrinth
-                        };
-                    }
+                if picker == ChoicePicker::ImageProtocol {
+                    self.config.ui.image_protocol = match value.as_str() {
+                        "kitty" => ImageProtocol::Kitty,
+                        "iterm2" => ImageProtocol::Iterm2,
+                        "quadrants" => ImageProtocol::Quadrants,
+                        "halfblocks" => ImageProtocol::Halfblocks,
+                        _ => ImageProtocol::Kitty,
+                    };
                 }
                 self.save_pending = true;
                 self.choice_picker = None;
             }
             SettingsPickerAction::None => {}
         }
+    }
+
+    fn resolution_choices(&self) -> Vec<ResolutionChoice> {
+        resolution_choices(self.config.defaults.resolution, &self.display_resolutions)
+    }
+
+    fn apply_default_resolution(&mut self) {
+        if let Some(display) = self.display_resolutions.first() {
+            self.config.defaults.resolution = Some((display.width, display.height));
+            self.save_pending = true;
+            self.error = None;
+        } else {
+            self.error = Some("Display resolution could not be detected.".to_owned());
+        }
+    }
+
+    fn enable_auto_image_protocol(&mut self) {
+        if self.config.ui.image_protocol != ImageProtocol::Auto {
+            self.config.ui.image_protocol = ImageProtocol::Auto;
+            self.save_pending = true;
+        }
+        self.error = None;
+    }
+
+    fn cycle_provider(&mut self) {
+        self.config.content.preferred_provider = match self.config.content.preferred_provider {
+            ContentProvider::Modrinth => ContentProvider::CurseForge,
+            ContentProvider::CurseForge => ContentProvider::Modrinth,
+        };
+        self.save_pending = true;
+        self.error = None;
+    }
+
+    fn cycle_window_mode(&mut self) {
+        self.config.defaults.window_mode = toggle_window_mode(self.config.defaults.window_mode);
+        self.save_pending = true;
+        self.error = None;
     }
 
     fn open_java_picker(&mut self) {
@@ -617,6 +617,8 @@ impl State {
                 self.selected = (self.selected + 1).min(FIELD_COUNT - 1);
             }
             KeyCode::Char('k') | KeyCode::Up => self.selected = self.selected.saturating_sub(1),
+            KeyCode::Char('h') | KeyCode::Left if self.selected == 0 => self.cycle_theme(false),
+            KeyCode::Char('l') | KeyCode::Right if self.selected == 0 => self.cycle_theme(true),
             KeyCode::Char('h') | KeyCode::Left if self.selected == 1 => self.cycle_border(false),
             KeyCode::Char('l') | KeyCode::Right if self.selected == 1 => self.cycle_border(true),
             KeyCode::Char('h') | KeyCode::Left if matches!(self.selected, 3 | 4) => {
@@ -625,6 +627,10 @@ impl State {
             KeyCode::Char('l') | KeyCode::Right if matches!(self.selected, 3 | 4) => {
                 self.adjust_selected_memory(true);
             }
+            KeyCode::Char('h') | KeyCode::Left if self.selected == 6 => self.cycle_window_mode(),
+            KeyCode::Char('l') | KeyCode::Right if self.selected == 6 => self.cycle_window_mode(),
+            KeyCode::Char('h') | KeyCode::Left if self.selected == 10 => self.cycle_provider(),
+            KeyCode::Char('l') | KeyCode::Right if self.selected == 10 => self.cycle_provider(),
             KeyCode::Enter => match self.selected {
                 0 => self.theme_picker = true,
                 1 => self.cycle_border(true),
@@ -633,13 +639,14 @@ impl State {
                     self.editing = Some(settings_text_area(vec![self.value(self.selected)]));
                 }
                 5 => self.open_java_picker(),
-                6 => self.open_choice_picker(ChoicePicker::WindowMode),
+                6 => self.cycle_window_mode(),
                 7 => self.open_choice_picker(ChoicePicker::Resolution),
-                10 => self.open_choice_picker(ChoicePicker::Provider),
+                10 => self.cycle_provider(),
                 11..=14 => self.toggle_selected(),
                 23 => return Action::ClearCache,
                 field => self.editing = Some(settings_text_area(vec![self.value(field)])),
             },
+            KeyCode::Char('a') if self.selected == 2 => self.enable_auto_image_protocol(),
             KeyCode::Char('a') if self.selected == 5 => return self.toggle_auto_java(),
             KeyCode::Char('c') if self.selected == 5 => {
                 self.editing = Some(settings_text_area(vec![self.value(5)]));
@@ -648,8 +655,7 @@ impl State {
                 self.editing = Some(settings_text_area(vec![self.value(7)]));
             }
             KeyCode::Char('d') if self.selected == 7 => {
-                self.config.defaults.resolution = None;
-                self.save_pending = true;
+                self.apply_default_resolution();
             }
             KeyCode::Char('E') => {
                 let file = if self.selected <= 1 {
@@ -697,19 +703,33 @@ fn available_themes() -> Vec<String> {
 }
 
 pub fn popup_rect(area: Rect, state: &State) -> Rect {
-    let height = if state.theme_picker || state.java_picker_open || state.choice_picker.is_some() {
+    let form_width = (area.width * 86 / 100).saturating_sub(2);
+    let form_height = 37
+        + tagged_row_count(&state.config.defaults.jvm_args, form_width).saturating_sub(1) as u16
+        + tagged_row_count(
+            &environment_labels(&state.config.defaults.environment),
+            form_width,
+        )
+        .saturating_sub(1) as u16;
+    let height = if state.theme_picker || state.java_picker_open {
         (area.height * 2 / 3).max(10)
+    } else if state.choice_picker == Some(ChoicePicker::Resolution) {
+        10
+    } else if state.choice_picker.is_some() {
+        (area.height / 2).max(10)
     } else {
-        26
+        form_height
     };
-    let width = if state.java_picker_open || state.choice_picker.is_some() {
-        72
-    } else {
-        68
+    let width = match state.choice_picker {
+        Some(ChoicePicker::Resolution) => 64,
+        Some(ChoicePicker::ImageProtocol) => 60,
+        None if state.java_picker_open => 72,
+        None if state.theme_picker => 52,
+        None => 86,
     };
     area.centered(
         ratatui::layout::Constraint::Percentage(width),
-        ratatui::layout::Constraint::Length(height.min(area.height.saturating_sub(4))),
+        ratatui::layout::Constraint::Length(height.min(area.height.saturating_sub(2))),
     )
 }
 
@@ -721,6 +741,8 @@ pub fn render(frame: &mut Frame, area: Rect, state: &mut State) {
     frame.render_widget(Clear, area);
     let keybinds = if state.editing.is_some() {
         super::keybind_line(&[("Enter", " apply"), ("Esc", " cancel")])
+    } else if state.choice_picker == Some(ChoicePicker::Resolution) {
+        super::keybind_line(&[("d", " default"), ("h", " back"), ("Enter", " select")])
     } else if state.java_picker_open || state.theme_picker || state.choice_picker.is_some() {
         super::keybind_line(&[("h", " back"), ("Enter", " select")])
     } else if matches!(state.selected, 3 | 4) {
@@ -732,8 +754,15 @@ pub fn render(frame: &mut Frame, area: Rect, state: &mut State) {
             ("c", " custom"),
             ("Esc", " back"),
         ])
-    } else if matches!(state.selected, 2 | 6 | 10) {
-        super::keybind_line(&[("Enter", " select"), ("E", " raw"), ("Esc", " back")])
+    } else if state.selected == 2 {
+        super::keybind_line(&[
+            ("Enter", " protocols"),
+            ("a", " auto"),
+            ("E", " raw"),
+            ("Esc", " back"),
+        ])
+    } else if matches!(state.selected, 6 | 10) {
+        super::keybind_line(&[("h/l", " adjust"), ("Enter", " next"), ("Esc", " back")])
     } else if state.selected == 7 {
         super::keybind_line(&[
             ("Enter", " presets"),
@@ -747,8 +776,8 @@ pub fn render(frame: &mut Frame, area: Rect, state: &mut State) {
         super::keybind_line(&[("Enter", " clear"), ("Esc", " back")])
     } else if state.selected == 0 {
         super::keybind_line(&[
-            ("j/k", ""),
-            ("Enter", " select"),
+            ("h/l", " adjust"),
+            ("Enter", " themes"),
             ("E", " raw"),
             ("Esc", " back"),
         ])
@@ -774,9 +803,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &mut State) {
     } else if let Some(picker) = state.choice_picker {
         match picker {
             ChoicePicker::ImageProtocol => " Image Rendering ",
-            ChoicePicker::WindowMode => " Default Window Mode ",
             ChoicePicker::Resolution => " Default Resolution ",
-            ChoicePicker::Provider => " Preferred Provider ",
         }
     } else {
         " Launcher Settings "
@@ -799,7 +826,12 @@ pub fn render(frame: &mut Frame, area: Rect, state: &mut State) {
         return;
     }
     if state.choice_picker.is_some() {
-        render_settings_picker(&state.settings_picker, inner, frame.buffer_mut());
+        if state.choice_picker == Some(ChoicePicker::Resolution) {
+            let items = resolution_items(&state.resolution_choices(), state.choice_index);
+            super::select_list::render_styled(items, state.choice_index, inner, frame.buffer_mut());
+        } else {
+            render_settings_picker(&state.settings_picker, inner, frame.buffer_mut());
+        }
         return;
     }
     render_settings_list(frame, inner, state);
@@ -875,41 +907,26 @@ fn render_settings_list(frame: &mut Frame, area: Rect, state: &State) {
                     "no variables",
                     area.width,
                 ),
+                23 => vec![maintenance_line(state)],
                 _ => vec![global_field_line(state, *index, label)],
             };
             rows.push((Some(*index), lines));
         }
     }
 
-    let mut selected_end = 0u16;
-    let mut cursor = 0u16;
-    for (field, lines) in &rows {
-        let height = lines.len() as u16;
-        if *field == Some(state.selected) {
-            selected_end = cursor.saturating_add(height);
-        }
-        cursor = cursor.saturating_add(height);
-    }
-    let scroll = selected_end.saturating_sub(area.height);
     let mut row_start = 0u16;
     for (field, lines) in rows {
         let height = lines.len() as u16;
-        let row_end = row_start.saturating_add(height);
-        if row_end <= scroll || row_start >= scroll.saturating_add(area.height) {
-            row_start = row_end;
-            continue;
+        if row_start >= area.height {
+            break;
         }
-        let skip = scroll.saturating_sub(row_start) as usize;
-        let y = area.y.saturating_add(row_start.saturating_sub(scroll));
-        let visible_height = height
-            .saturating_sub(skip as u16)
-            .min(area.y.saturating_add(area.height).saturating_sub(y));
+        let y = area.y.saturating_add(row_start);
+        let visible_height = height.min(area.height.saturating_sub(row_start));
         let selected = field == Some(state.selected);
         frame.render_widget(
             Paragraph::new(
                 lines
                     .into_iter()
-                    .skip(skip)
                     .take(visible_height as usize)
                     .collect::<Vec<_>>(),
             )
@@ -924,15 +941,13 @@ fn render_settings_list(frame: &mut Frame, area: Rect, state: &State) {
                 ..area
             },
         );
-        if let Some(field @ (3 | 4)) = field
-            && row_start >= scroll
-        {
+        if let Some(field @ (3 | 4)) = field {
             let value = state.value(field);
             render_memory_gauge(
                 frame,
                 Rect {
                     x: area.x.saturating_add(20),
-                    y: area.y.saturating_add(row_start.saturating_sub(scroll)),
+                    y: area.y.saturating_add(row_start),
                     width: area.width.saturating_sub(21),
                     height: 1,
                 },
@@ -942,21 +957,40 @@ fn render_settings_list(frame: &mut Frame, area: Rect, state: &State) {
             );
         }
         if field == Some(state.selected)
-            && row_start >= scroll
             && let Some(editor) = state.editing.as_ref()
         {
             frame.render_widget(
                 editor,
                 Rect {
                     x: area.x.saturating_add(20),
-                    y: area.y.saturating_add(row_start.saturating_sub(scroll)),
+                    y: area.y.saturating_add(row_start),
                     width: area.width.saturating_sub(20),
                     height: 1,
                 },
             );
         }
-        row_start = row_end;
+        row_start = row_start.saturating_add(height);
     }
+}
+
+fn maintenance_line(state: &State) -> Line<'static> {
+    let theme = THEME.as_ref();
+    let selected = state.selected == 23;
+    Line::from(vec![
+        Span::styled(
+            if selected { "▌ " } else { "  " },
+            Style::default().fg(theme.accent()),
+        ),
+        status_badge("Clear caches", theme.warning()),
+        Span::styled(
+            "  Rebuild provider and Java metadata",
+            Style::default().fg(if selected {
+                theme.text()
+            } else {
+                theme.text_dim()
+            }),
+        ),
+    ])
 }
 
 fn section_line(title: &str) -> Line<'static> {
@@ -980,7 +1014,7 @@ fn field_label(index: usize) -> &'static str {
         7 => "Resolution",
         8 => "JVM arguments",
         9 => "Environment",
-        10 => "Provider",
+        10 => "Preferred provider",
         11 => "Provider only",
         12 => "Ask on conflict",
         13 => "Modpack updates",
@@ -993,7 +1027,7 @@ fn field_label(index: usize) -> &'static str {
         20 => "Slide start ms",
         21 => "Fly-out ms",
         22 => "Max notifications",
-        23 => "Clear caches",
+        23 => "",
         _ => "",
     }
 }
@@ -1012,8 +1046,16 @@ fn global_field_line(state: &State, index: usize, label: &str) -> Line<'static> 
             Style::default().fg(theme.text_dim()),
         ),
         Span::styled(
-            if editing || matches!(index, 3 | 4) {
+            if editing || matches!(index, 3 | 4 | 8 | 9 | 10) {
                 String::new()
+            } else if index == 1 {
+                format!(
+                    "{}  {}",
+                    border_preview(&state.theme.border_style),
+                    state.display_value(index)
+                )
+            } else if index == 2 && state.config.ui.image_protocol == ImageProtocol::Auto {
+                "terminal detected".to_owned()
             } else {
                 state.display_value(index)
             },
@@ -1033,6 +1075,15 @@ fn global_field_line(state: &State, index: usize, label: &str) -> Line<'static> 
     if index == 5 && state.config.paths.java_path.is_none() && !editing {
         spans.extend([Span::raw("  "), auto_label()]);
     }
+    if index == 2 && state.config.ui.image_protocol == ImageProtocol::Auto && !editing {
+        spans.extend([Span::raw("  "), auto_label()]);
+    }
+    if index == 10 && !editing {
+        spans.push(match state.config.content.preferred_provider {
+            ContentProvider::Modrinth => status_badge("Modrinth", theme.success()),
+            ContentProvider::CurseForge => status_badge("CurseForge", theme.warning()),
+        });
+    }
     if restart_required_for(state, index) {
         spans.extend([
             Span::raw("  "),
@@ -1044,6 +1095,15 @@ fn global_field_line(state: &State, index: usize, label: &str) -> Line<'static> 
     } else {
         theme.surface()
     }))
+}
+
+fn border_preview(style: &BorderStyle) -> &'static str {
+    match style {
+        BorderStyle::Plain => "┌──┐",
+        BorderStyle::Rounded => "╭──╮",
+        BorderStyle::Double => "╔══╗",
+        BorderStyle::Thick => "┏━━┓",
+    }
 }
 
 fn restart_required_for(state: &State, index: usize) -> bool {
@@ -1147,12 +1207,32 @@ mod tests {
         state.selected = 2;
         state.handle_key(&KeyEvent::from(KeyCode::Enter));
         assert_eq!(state.choice_picker, Some(ChoicePicker::ImageProtocol));
-        state.handle_key(&KeyEvent::from(KeyCode::Char('j')));
+        assert!(
+            !state
+                .settings_picker
+                .labels()
+                .iter()
+                .any(|label| label == "Auto")
+        );
         assert!(matches!(
             state.handle_key(&KeyEvent::from(KeyCode::Enter)),
             Action::Save(..)
         ));
         assert_eq!(state.config.ui.image_protocol, ImageProtocol::Kitty);
+        assert!(matches!(
+            state.handle_key(&KeyEvent::from(KeyCode::Char('a'))),
+            Action::Save(..)
+        ));
+        assert_eq!(state.config.ui.image_protocol, ImageProtocol::Auto);
+
+        state.selected = 10;
+        let provider = state.config.content.preferred_provider;
+        assert!(matches!(
+            state.handle_key(&KeyEvent::from(KeyCode::Enter)),
+            Action::Save(..)
+        ));
+        assert!(state.choice_picker.is_none());
+        assert_ne!(state.config.content.preferred_provider, provider);
 
         state.selected = 11;
         let previous = state.config.content.preferred_provider_only;
@@ -1190,5 +1270,79 @@ mod tests {
             state.config.defaults.environment.get("FOO"),
             Some(&"bar".to_owned())
         );
+    }
+
+    #[test]
+    fn launcher_resolution_reuses_display_and_preset_choices() {
+        let mut state = State::new();
+        state.display_resolutions = vec![DisplayResolution {
+            width: 2560,
+            height: 1440,
+            name: "DP-4".to_owned(),
+            primary: true,
+        }];
+        state.selected = 7;
+
+        assert!(matches!(
+            state.handle_key(&KeyEvent::from(KeyCode::Char('d'))),
+            Action::Save(..)
+        ));
+        assert_eq!(state.config.defaults.resolution, Some((2560, 1440)));
+        state.handle_key(&KeyEvent::from(KeyCode::Enter));
+        assert_eq!(state.choice_picker, Some(ChoicePicker::Resolution));
+        assert!(matches!(
+            state.resolution_choices().first(),
+            Some(ResolutionChoice::Display(display)) if display.name == "DP-4"
+        ));
+    }
+
+    #[test]
+    fn appearance_rows_use_inline_controls_and_previews() {
+        let mut state = State::new();
+        assert!(matches!(
+            border_preview(&state.theme.border_style),
+            "┌──┐" | "╭──╮" | "╔══╗" | "┏━━┓"
+        ));
+
+        state.selected = 0;
+        state.handle_key(&KeyEvent::from(KeyCode::Enter));
+        assert!(state.theme_picker);
+        state.handle_key(&KeyEvent::from(KeyCode::Esc));
+        assert!(!state.theme_picker);
+    }
+
+    #[test]
+    fn expanded_form_keeps_all_sections_visible_without_scrolling() {
+        let mut state = State::new();
+        state.selected = 23;
+        state.config.defaults.jvm_args = vec!["-Xfoo".to_owned()];
+        state
+            .config
+            .defaults
+            .environment
+            .insert("FOO".to_owned(), "bar".to_owned());
+        let backend = ratatui::backend::TestBackend::new(120, 45);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+
+        terminal
+            .draw(|frame| {
+                let area = popup_rect(frame.area(), &state);
+                assert!(area.height >= 37);
+                render(frame, area, &mut state);
+            })
+            .unwrap();
+
+        let screen = terminal.backend().to_string();
+        assert!(screen.contains("Appearance"));
+        assert!(screen.contains("Maintenance"));
+        assert!(screen.contains("Clear caches"));
+        assert!(screen.contains("Rebuild provider and Java metadata"));
+        assert!(
+            ["┌──┐", "╭──╮", "╔══╗", "┏━━┓"]
+                .iter()
+                .any(|preview| screen.contains(preview))
+        );
+        assert_eq!(screen.matches("-Xfoo").count(), 1);
+        assert_eq!(screen.matches("FOO=bar").count(), 1);
     }
 }
