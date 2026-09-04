@@ -55,6 +55,7 @@ pub struct State {
     settings_picker: SettingsPicker,
     choice_index: usize,
     display_resolutions: Vec<DisplayResolution>,
+    detected_image_protocol: &'static str,
 }
 
 pub enum Action {
@@ -69,6 +70,12 @@ pub enum Action {
 
 impl State {
     pub fn new() -> Self {
+        Self::with_detected_image_protocol(ratatui_image::picker::ProtocolType::Halfblocks)
+    }
+
+    pub fn with_detected_image_protocol(
+        detected_image_protocol: ratatui_image::picker::ProtocolType,
+    ) -> Self {
         let theme = crate::config::theme::current_theme_config();
         let themes = available_themes();
         let theme_index = themes
@@ -103,6 +110,12 @@ impl State {
             settings_picker: SettingsPicker::default(),
             choice_index: 0,
             display_resolutions: display_resolutions(),
+            detected_image_protocol: match detected_image_protocol {
+                ratatui_image::picker::ProtocolType::Halfblocks => "halfblocks",
+                ratatui_image::picker::ProtocolType::Sixel => "sixel",
+                ratatui_image::picker::ProtocolType::Kitty => "kitty",
+                ratatui_image::picker::ProtocolType::Iterm2 => "iterm2",
+            },
         }
     }
 
@@ -704,7 +717,7 @@ fn available_themes() -> Vec<String> {
 
 pub fn popup_rect(area: Rect, state: &State) -> Rect {
     let form_width = (area.width * 86 / 100).saturating_sub(2);
-    let form_height = 37
+    let form_height = 38
         + tagged_row_count(&state.config.defaults.jvm_args, form_width).saturating_sub(1) as u16
         + tagged_row_count(
             &environment_labels(&state.config.defaults.environment),
@@ -729,7 +742,7 @@ pub fn popup_rect(area: Rect, state: &State) -> Rect {
     };
     area.centered(
         ratatui::layout::Constraint::Percentage(width),
-        ratatui::layout::Constraint::Length(height.min(area.height.saturating_sub(2))),
+        ratatui::layout::Constraint::Length(height.min(area.height)),
     )
 }
 
@@ -891,6 +904,7 @@ fn render_settings_list(frame: &mut Frame, area: Rect, state: &State) {
         for index in *fields {
             let label = field_label(*index);
             let lines = match index {
+                1 => border_field_lines(state),
                 8 => tagged_value_lines(
                     global_field_line(state, *index, label).spans,
                     state.selected == *index,
@@ -981,9 +995,18 @@ fn maintenance_line(state: &State) -> Line<'static> {
             if selected { "▌ " } else { "  " },
             Style::default().fg(theme.accent()),
         ),
-        status_badge("Clear caches", theme.warning()),
         Span::styled(
-            "  Rebuild provider and Java metadata",
+            "Clear caches",
+            Style::default()
+                .fg(if selected {
+                    theme.accent()
+                } else {
+                    theme.warning()
+                })
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            "   Rebuild provider and Java metadata",
             Style::default().fg(if selected {
                 theme.text()
             } else {
@@ -991,6 +1014,41 @@ fn maintenance_line(state: &State) -> Line<'static> {
             }),
         ),
     ])
+}
+
+fn border_field_lines(state: &State) -> Vec<Line<'static>> {
+    let theme = THEME.as_ref();
+    let selected = state.selected == 1;
+    let value_style = Style::default()
+        .fg(if selected {
+            theme.accent()
+        } else {
+            theme.text()
+        })
+        .add_modifier(if selected {
+            Modifier::BOLD
+        } else {
+            Modifier::empty()
+        });
+    let (top, bottom) = border_preview(&state.theme.border_style);
+    vec![
+        Line::from(vec![
+            Span::styled(
+                if selected { "▌ " } else { "  " },
+                Style::default().fg(theme.accent()),
+            ),
+            Span::styled(
+                format!("{:<18}", field_label(1)),
+                Style::default().fg(theme.text_dim()),
+            ),
+            Span::styled(top, value_style),
+        ]),
+        Line::from(vec![
+            Span::raw(" ".repeat(20)),
+            Span::styled(bottom, value_style),
+            Span::styled(format!("  {}", state.display_value(1)), value_style),
+        ]),
+    ]
 }
 
 fn section_line(title: &str) -> Line<'static> {
@@ -1048,14 +1106,8 @@ fn global_field_line(state: &State, index: usize, label: &str) -> Line<'static> 
         Span::styled(
             if editing || matches!(index, 3 | 4 | 8 | 9 | 10) {
                 String::new()
-            } else if index == 1 {
-                format!(
-                    "{}  {}",
-                    border_preview(&state.theme.border_style),
-                    state.display_value(index)
-                )
             } else if index == 2 && state.config.ui.image_protocol == ImageProtocol::Auto {
-                "terminal detected".to_owned()
+                state.detected_image_protocol.to_owned()
             } else {
                 state.display_value(index)
             },
@@ -1079,6 +1131,7 @@ fn global_field_line(state: &State, index: usize, label: &str) -> Line<'static> 
         spans.extend([Span::raw("  "), auto_label()]);
     }
     if index == 10 && !editing {
+        spans.push(Span::raw("  "));
         spans.push(match state.config.content.preferred_provider {
             ContentProvider::Modrinth => status_badge("Modrinth", theme.success()),
             ContentProvider::CurseForge => status_badge("CurseForge", theme.warning()),
@@ -1097,12 +1150,12 @@ fn global_field_line(state: &State, index: usize, label: &str) -> Line<'static> 
     }))
 }
 
-fn border_preview(style: &BorderStyle) -> &'static str {
+fn border_preview(style: &BorderStyle) -> (&'static str, &'static str) {
     match style {
-        BorderStyle::Plain => "┌──┐",
-        BorderStyle::Rounded => "╭──╮",
-        BorderStyle::Double => "╔══╗",
-        BorderStyle::Thick => "┏━━┓",
+        BorderStyle::Plain => ("┌──┐", "└──┘"),
+        BorderStyle::Rounded => ("╭──╮", "╰──╯"),
+        BorderStyle::Double => ("╔══╗", "╚══╝"),
+        BorderStyle::Thick => ("┏━━┓", "┗━━┛"),
     }
 }
 
@@ -1301,7 +1354,7 @@ mod tests {
         let mut state = State::new();
         assert!(matches!(
             border_preview(&state.theme.border_style),
-            "┌──┐" | "╭──╮" | "╔══╗" | "┏━━┓"
+            ("┌──┐", "└──┘") | ("╭──╮", "╰──╯") | ("╔══╗", "╚══╝") | ("┏━━┓", "┗━━┛")
         ));
 
         state.selected = 0;
@@ -1313,7 +1366,8 @@ mod tests {
 
     #[test]
     fn expanded_form_keeps_all_sections_visible_without_scrolling() {
-        let mut state = State::new();
+        let mut state =
+            State::with_detected_image_protocol(ratatui_image::picker::ProtocolType::Kitty);
         state.selected = 23;
         state.config.defaults.jvm_args = vec!["-Xfoo".to_owned()];
         state
@@ -1335,6 +1389,8 @@ mod tests {
         let screen = terminal.backend().to_string();
         assert!(screen.contains("Appearance"));
         assert!(screen.contains("Maintenance"));
+        assert!(screen.contains("kitty"));
+        assert!(screen.contains("Auto"));
         assert!(screen.contains("Clear caches"));
         assert!(screen.contains("Rebuild provider and Java metadata"));
         assert!(

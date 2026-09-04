@@ -91,6 +91,7 @@ impl UiHarness {
             pending_instance_settings_updates: Default::default(),
             global_settings: None,
             picker,
+            detected_image_protocol: ratatui_image::picker::ProtocolType::Halfblocks,
             instance_manager,
             log_overlay_scroll: 0,
             log_overlay_max_scroll: 0,

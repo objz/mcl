@@ -685,7 +685,11 @@ impl App {
                 }
                 widgets::settings::SettingsAction::OpenGlobal => {
                     self.pre_overlay_focused = FocusedArea::Settings;
-                    self.global_settings = Some(widgets::popups::global_settings::State::new());
+                    self.global_settings = Some(
+                        widgets::popups::global_settings::State::with_detected_image_protocol(
+                            self.detected_image_protocol,
+                        ),
+                    );
                     self.focused = FocusedArea::GlobalSettings;
                     return Ok(());
                 }
@@ -937,7 +941,11 @@ impl App {
                     }
                     KeyCode::Char('G') => {
                         self.pre_overlay_focused = self.focused;
-                        self.global_settings = Some(widgets::popups::global_settings::State::new());
+                        self.global_settings = Some(
+                            widgets::popups::global_settings::State::with_detected_image_protocol(
+                                self.detected_image_protocol,
+                            ),
+                        );
                         self.focused = FocusedArea::GlobalSettings;
                     }
                     KeyCode::Char('O') => {

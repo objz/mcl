@@ -69,14 +69,14 @@ pub async fn show() -> color_eyre::Result<()> {
         };
         picker.set_protocol_type(requested_protocol);
 
-        let mut app = app::App::new(picker);
+        let mut app = app::App::new(picker, detected_protocol);
         match run_layout_migration_screen(&mut terminal, &mut app).await? {
             MigrationScreenOutcome::NotNeeded => {}
             MigrationScreenOutcome::Migrated => {
                 // the modal uses pre-migration state as its background. rebuild the
                 // app after confirmation so no instance or profile data stays stale
                 let picker = app.into_picker();
-                app = app::App::new(picker);
+                app = app::App::new(picker, detected_protocol);
             }
             MigrationScreenOutcome::Quit => return Ok(()),
         }

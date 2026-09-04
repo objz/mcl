@@ -48,6 +48,7 @@ pub struct App {
     pub(super) pending_instance_settings_updates: HashSet<String>,
     pub(super) global_settings: Option<widgets::popups::global_settings::State>,
     pub(super) picker: ratatui_image::picker::Picker,
+    pub(super) detected_image_protocol: ratatui_image::picker::ProtocolType,
     pub(super) instance_manager: InstanceManager,
     pub(super) log_overlay_scroll: usize,
     pub(super) log_overlay_max_scroll: usize,
@@ -121,7 +122,10 @@ impl App {
         supported
     }
 
-    pub fn new(picker: ratatui_image::picker::Picker) -> Self {
+    pub fn new(
+        picker: ratatui_image::picker::Picker,
+        detected_image_protocol: ratatui_image::picker::ProtocolType,
+    ) -> Self {
         let instances_dir = crate::config::SETTINGS.read().paths.resolve_instances_dir();
         let meta_dir = crate::config::SETTINGS.read().paths.resolve_meta_dir();
 
@@ -188,6 +192,7 @@ impl App {
                 s
             },
             picker,
+            detected_image_protocol,
             instance_manager: manager,
             log_overlay_scroll: 0,
             log_overlay_max_scroll: 0,
