@@ -120,7 +120,9 @@ impl ConfirmTarget {
                 })
                 .collect::<Vec<_>>()
                 .join("\n"),
-            ConfirmTarget::InstanceRuntime { .. } => "Apply this runtime change".to_owned(),
+            ConfirmTarget::InstanceRuntime { .. } => {
+                "Some installed mods may be incompatible".to_owned()
+            }
             ConfirmTarget::AutomaticSelection { setting, .. } => setting.description().to_owned(),
         }
     }

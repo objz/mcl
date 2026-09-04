@@ -680,14 +680,13 @@ fn runtime_settings_use_the_shared_confirmation_popup() {
     ui.draw();
     assert!(ui.screen().contains("Change runtime"));
     assert!(!ui.screen().contains("Target:"));
-    assert!(ui.screen().contains("Apply this runtime change"));
     assert!(
-        !ui.screen()
+        ui.screen()
             .contains("Some installed mods may be incompatible")
     );
     assert!(!ui.screen().contains("incompatible."));
     assert!(
-        crate::feedback::errors::ERROR_EVENTS
+        !crate::feedback::errors::ERROR_EVENTS
             .lock()
             .unwrap()
             .iter()

@@ -802,10 +802,6 @@ impl App {
                     self.apply_instance_settings(*updated, desktop);
                 }
                 widgets::popups::instance_settings::Action::ConfirmRuntime { name } => {
-                    error_buffer::push_message(
-                        tracing::Level::WARN,
-                        "Some installed mods may be incompatible",
-                    );
                     confirm_popup::set_pending(confirm_popup::ConfirmTarget::InstanceRuntime {
                         name,
                     });
