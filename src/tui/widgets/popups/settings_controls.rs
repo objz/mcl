@@ -5,6 +5,7 @@
 
 use std::sync::{Arc, Mutex};
 
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
     Frame,
     layout::Rect,
@@ -12,6 +13,7 @@ use ratatui::{
     text::{Line, Span},
     widgets::{LineGauge, ListItem, Paragraph},
 };
+use ratatui_textarea::TextArea;
 
 use crate::{
     config::theme::THEME, instance::java::JavaInstallation, tui::widgets::popups::LoadState,
@@ -32,9 +34,7 @@ pub(crate) struct JavaPicker {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum JavaChoice {
-    Automatic,
     Installation(String),
-    Custom,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -88,25 +88,27 @@ impl JavaPicker {
     }
 
     pub(crate) fn choices(&self) -> Vec<JavaChoice> {
-        let mut choices = vec![JavaChoice::Automatic];
+        let mut paths = Vec::new();
         if let LoadState::Loaded(installations) = &*self
             .load
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
         {
-            choices.extend(installations.iter().map(|installation| {
-                JavaChoice::Installation(installation.path.to_string_lossy().into_owned())
-            }));
+            paths.extend(
+                installations
+                    .iter()
+                    .map(|installation| installation.path.to_string_lossy().into_owned()),
+            );
+        }
+        if !paths.contains(&self.detected) {
+            paths.insert(0, self.detected.clone());
         }
         if let Some(current) = &self.current
-            && !choices
-                .iter()
-                .any(|choice| matches!(choice, JavaChoice::Installation(path) if path == current))
+            && !paths.contains(current)
         {
-            choices.push(JavaChoice::Installation(current.clone()));
+            paths.push(current.clone());
         }
-        choices.push(JavaChoice::Custom);
-        choices
+        paths.into_iter().map(JavaChoice::Installation).collect()
     }
 
     pub(crate) fn labels(&self) -> Vec<String> {
@@ -121,7 +123,6 @@ impl JavaPicker {
         self.choices()
             .into_iter()
             .map(|choice| match choice {
-                JavaChoice::Automatic => format!("Automatic  {}", self.detected),
                 JavaChoice::Installation(path) => installations
                     .as_ref()
                     .and_then(|items| {
@@ -130,7 +131,6 @@ impl JavaPicker {
                             .find(|item| item.path.to_string_lossy() == path)
                     })
                     .map_or_else(|| format!("Java  {path}"), JavaInstallation::label),
-                JavaChoice::Custom => "Custom path…".to_owned(),
             })
             .collect()
     }
@@ -148,18 +148,6 @@ impl JavaPicker {
         self.choices()
             .into_iter()
             .map(|choice| match choice {
-                JavaChoice::Automatic => ListItem::new(Line::from(vec![
-                    Span::styled(
-                        "Automatic",
-                        Style::default()
-                            .fg(theme.info())
-                            .add_modifier(Modifier::BOLD),
-                    ),
-                    Span::styled(
-                        format!("  {}", self.detected),
-                        Style::default().fg(theme.text_dim()),
-                    ),
-                ])),
                 JavaChoice::Installation(path) => {
                     let installation = installations
                         .iter()
@@ -167,15 +155,15 @@ impl JavaPicker {
                     let version = installation
                         .and_then(|installation| installation.version.as_deref())
                         .map_or_else(|| "Java".to_owned(), |version| format!("Java {version}"));
-                    ListItem::new(Line::from(vec![
+                    let mut spans = vec![
                         Span::styled(version, Style::default().fg(theme.text())),
                         Span::styled(format!("  {path}"), Style::default().fg(theme.text_dim())),
-                    ]))
+                    ];
+                    if self.current.is_none() && path == self.detected {
+                        spans.extend([Span::raw("  "), subtle_tag("Auto", theme.info())]);
+                    }
+                    ListItem::new(Line::from(spans))
                 }
-                JavaChoice::Custom => ListItem::new(Line::from(Span::styled(
-                    "Custom path…",
-                    Style::default().fg(theme.warning()),
-                ))),
             })
             .collect()
     }
@@ -206,11 +194,13 @@ impl JavaPicker {
             .get(self.selected)
             .cloned()
             .or_else(|| {
-                self.current
-                    .as_ref()
-                    .map(|current| JavaChoice::Installation(current.clone()))
+                Some(JavaChoice::Installation(
+                    self.current
+                        .clone()
+                        .unwrap_or_else(|| self.detected.clone()),
+                ))
             })
-            .unwrap_or(JavaChoice::Automatic);
+            .unwrap_or_else(|| JavaChoice::Installation(self.detected.clone()));
         self.selected = choices
             .iter()
             .position(|choice| choice == &selected)
@@ -222,7 +212,11 @@ impl JavaPicker {
         self.choices()
             .get(self.selected)
             .cloned()
-            .unwrap_or(JavaChoice::Automatic)
+            .unwrap_or_else(|| JavaChoice::Installation(self.detected.clone()))
+    }
+
+    pub(crate) fn detected_path(&self) -> &str {
+        &self.detected
     }
 }
 
@@ -288,11 +282,10 @@ pub(crate) fn render_memory_gauge(
     };
     let value_style = if selected {
         Style::default()
-            .fg(theme.background())
-            .bg(theme.accent())
+            .fg(theme.accent())
             .add_modifier(Modifier::BOLD)
     } else {
-        Style::default().fg(theme.text()).bg(theme.background())
+        Style::default().fg(theme.text())
     };
     frame.render_widget(
         Paragraph::new(Line::from(Span::styled(format!(" {label} "), value_style))),
@@ -335,6 +328,21 @@ pub(crate) fn render_memory_gauge(
     }
 }
 
+pub(crate) fn handle_text_area_input(input: &mut TextArea<'_>, key: &KeyEvent) {
+    if key.code == KeyCode::Backspace && key.modifiers.contains(KeyModifiers::CONTROL) {
+        input.delete_word();
+    } else {
+        input.input(*key);
+    }
+}
+
+pub(crate) fn subtle_tag(label: impl Into<String>, color: ratatui::style::Color) -> Span<'static> {
+    Span::styled(
+        format!(" {} ", label.into()),
+        Style::default().fg(color).bg(THEME.as_ref().stripe()),
+    )
+}
+
 pub(crate) fn display_resolutions() -> Vec<DisplayResolution> {
     let Ok(displays) = display_info::DisplayInfo::all() else {
         return Vec::new();
@@ -375,9 +383,8 @@ mod tests {
     #[test]
     fn java_picker_preserves_semantic_selection_when_results_arrive() {
         let mut picker = JavaPicker::new();
-        picker.current = None;
+        picker.current = Some("/opt/jdk/bin/java".to_owned());
         picker.initialize();
-        picker.selected = picker.choices().len() - 1;
         *picker.load.lock().unwrap() = LoadState::Loaded(vec![JavaInstallation {
             path: "/opt/jdk/bin/java".into(),
             version: Some("21".to_owned()),
@@ -385,7 +392,23 @@ mod tests {
 
         picker.initialize();
 
-        assert_eq!(picker.selected_choice(), JavaChoice::Custom);
+        assert_eq!(
+            picker.selected_choice(),
+            JavaChoice::Installation("/opt/jdk/bin/java".to_owned())
+        );
+    }
+
+    #[test]
+    fn settings_text_input_deletes_the_previous_word() {
+        let mut input = TextArea::from(["one two"]);
+        input.move_cursor(ratatui_textarea::CursorMove::End);
+
+        handle_text_area_input(
+            &mut input,
+            &KeyEvent::new(KeyCode::Backspace, KeyModifiers::CONTROL),
+        );
+
+        assert_eq!(input.lines(), ["one "]);
     }
 
     #[test]
@@ -401,5 +424,23 @@ mod tests {
             .expect("slider thumb");
 
         assert_eq!(buffer[(thumb + 1, 0)].symbol(), " ");
+    }
+
+    #[test]
+    fn memory_value_uses_the_existing_row_background() {
+        let backend = ratatui::backend::TestBackend::new(40, 1);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+        let surface = THEME.as_ref().surface();
+        terminal
+            .draw(|frame| {
+                frame.render_widget(
+                    ratatui::widgets::Block::default().style(Style::default().bg(surface)),
+                    frame.area(),
+                );
+                render_memory_gauge(frame, frame.area(), "6G", "6G".to_owned(), false);
+            })
+            .unwrap();
+
+        assert_eq!(terminal.backend().buffer()[(1, 0)].bg, surface);
     }
 }

@@ -581,6 +581,7 @@ fn settings_panel_routes_legacy_edit_keys_to_tui_popups() {
     assert_eq!(ui.app.focused, FocusedArea::InstanceSettings);
     ui.draw();
     assert!(ui.screen().contains("Instance Settings"));
+    assert!(!ui.screen().contains("Instance Settings *"));
     assert!(ui.screen().contains("settings-test"));
     assert!(ui.screen().contains("Game version"));
     assert!(ui.screen().contains("Memory min"));
@@ -623,7 +624,7 @@ fn settings_panel_routes_legacy_edit_keys_to_tui_popups() {
     assert!(!ui.screen().contains('▰'));
     ui.key(KeyCode::Enter);
     ui.draw();
-    assert!(ui.screen().contains("green"));
+    assert!(ui.screen().contains("Theme"));
     ui.key(KeyCode::Esc);
     ui.key(KeyCode::Esc);
     assert_eq!(ui.app.focused, FocusedArea::Settings);
@@ -653,6 +654,7 @@ fn runtime_settings_use_the_shared_confirmation_popup() {
     ui.draw();
     assert!(ui.screen().contains("Change runtime"));
     assert!(ui.screen().contains("Runtime files will be downloaded"));
+    assert!(ui.screen().contains("Installed mods may not load"));
 
     ui.key(KeyCode::Esc);
     assert_eq!(ui.app.focused, FocusedArea::InstanceSettings);
@@ -677,8 +679,10 @@ fn settings_use_java_memory_and_resolution_controls() {
     ui.key(KeyCode::Enter);
     ui.draw();
     assert!(ui.screen().contains("Java Runtime"));
-    assert!(ui.screen().contains("Automatic"));
-    assert!(ui.screen().contains("Custom path"));
+    assert!(ui.screen().contains("auto"));
+    assert!(ui.screen().contains("custom"));
+    assert!(!ui.screen().contains("Automatic"));
+    assert!(!ui.screen().contains("Custom path"));
     assert!(!ui.screen().contains("Manual"));
     ui.key(KeyCode::Esc);
 
@@ -698,17 +702,13 @@ fn settings_use_java_memory_and_resolution_controls() {
     for _ in 0..3 {
         ui.key(KeyCode::Char('j'));
     }
-    ui.key(KeyCode::Enter);
+    ui.key(KeyCode::Char('l'));
     ui.draw();
     assert!(ui.screen().contains("Resolution"));
     assert!(ui.screen().contains("1920x1080"));
     assert!(!ui.screen().contains("Preset"));
     assert!(!ui.screen().contains("Inherit"));
-    for _ in 0..20 {
-        ui.key(KeyCode::Char('j'));
-    }
-    ui.draw();
-    assert!(ui.screen().contains("Custom"));
+    assert!(ui.screen().contains("custom"));
     ui.key(KeyCode::Esc);
     ui.key(KeyCode::Esc);
     ui.key(KeyCode::Enter);
@@ -720,7 +720,8 @@ fn settings_use_java_memory_and_resolution_controls() {
     ui.key(KeyCode::Enter);
     ui.draw();
     assert!(ui.screen().contains("Java Runtime"));
-    assert!(ui.screen().contains("Automatic"));
+    assert!(ui.screen().contains("auto"));
+    assert!(!ui.screen().contains("Automatic"));
     ui.key(KeyCode::Esc);
     ui.key(KeyCode::Esc);
 }

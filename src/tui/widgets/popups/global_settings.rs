@@ -20,7 +20,8 @@ use crate::{
     },
     instance::models::normalize_memory_value,
     tui::widgets::popups::settings_controls::{
-        JavaChoice, JavaPicker, adjust_memory, memory_kib, render_memory_gauge,
+        JavaChoice, JavaPicker, adjust_memory, handle_text_area_input, memory_kib,
+        render_memory_gauge, subtle_tag,
     },
 };
 
@@ -90,7 +91,7 @@ impl State {
                 .as_deref()
                 .is_none_or(str::is_empty) =>
             {
-                "auto-detect".to_owned()
+                self.java_picker.detected_path().to_owned()
             }
             _ => self.value(field),
         }
@@ -198,6 +199,16 @@ impl State {
         let count = self.java_picker.labels().len();
         match key.code {
             KeyCode::Esc | KeyCode::Char('h') | KeyCode::Left => self.java_picker_open = false,
+            KeyCode::Char('a') => {
+                if self.config.paths.java_path.take().is_some() {
+                    self.config_dirty = true;
+                }
+                self.java_picker_open = false;
+            }
+            KeyCode::Char('c') => {
+                self.java_picker_open = false;
+                self.editing = Some(new_text_area(vec![self.value(4)]));
+            }
             KeyCode::Char('j') | KeyCode::Down if count > 0 => {
                 self.java_picker.selected = (self.java_picker.selected + 1).min(count - 1);
             }
@@ -206,19 +217,11 @@ impl State {
             }
             KeyCode::Enter | KeyCode::Char('l') | KeyCode::Right => {
                 match self.java_picker.selected_choice() {
-                    JavaChoice::Automatic => {
-                        if self.config.paths.java_path.take().is_some() {
-                            self.config_dirty = true;
-                        }
-                    }
                     JavaChoice::Installation(path) => {
                         if self.config.paths.java_path.as_deref() != Some(&path) {
                             self.config.paths.java_path = Some(path);
                             self.config_dirty = true;
                         }
-                    }
-                    JavaChoice::Custom => {
-                        self.editing = Some(new_text_area(vec![self.value(4)]));
                     }
                 }
                 self.java_picker_open = false;
@@ -272,9 +275,7 @@ impl State {
             match key.code {
                 KeyCode::Enter => self.commit_edit(),
                 KeyCode::Esc => self.editing = None,
-                _ => {
-                    input.input(*key);
-                }
+                _ => handle_text_area_input(input, key),
             }
             return Action::None;
         }
@@ -298,6 +299,14 @@ impl State {
                 4 => self.open_java_picker(),
                 field => self.editing = Some(new_text_area(vec![self.value(field)])),
             },
+            KeyCode::Char('a') if self.selected == 4 => {
+                if self.config.paths.java_path.take().is_some() {
+                    self.config_dirty = true;
+                }
+            }
+            KeyCode::Char('c') if self.selected == 4 => {
+                self.editing = Some(new_text_area(vec![self.value(4)]));
+            }
             KeyCode::Char('s') => {
                 if self.validate_before_save() {
                     return Action::Save(
@@ -394,12 +403,27 @@ pub fn render(frame: &mut Frame, area: Rect, state: &mut State) {
     frame.render_widget(Clear, area);
     let keybinds = if state.editing.is_some() {
         super::keybind_line(&[("Enter", " apply"), ("Esc", " cancel")])
-    } else if state.theme_picker || state.java_picker_open {
+    } else if state.java_picker_open {
+        super::keybind_line(&[
+            ("a", " auto"),
+            ("c", " custom"),
+            ("h", " back"),
+            ("Enter", " select"),
+        ])
+    } else if state.theme_picker {
         super::keybind_line(&[("h", " back"), ("Enter", " select")])
     } else if matches!(state.selected, 2 | 3) {
         super::keybind_line(&[
             ("h/l", " adjust"),
             ("Enter", " exact"),
+            ("s", " save"),
+            ("Esc", " back"),
+        ])
+    } else if state.selected == 4 {
+        super::keybind_line(&[
+            ("Enter", " runtimes"),
+            ("a", " auto"),
+            ("c", " custom"),
             ("s", " save"),
             ("Esc", " back"),
         ])
@@ -416,8 +440,6 @@ pub fn render(frame: &mut Frame, area: Rect, state: &mut State) {
         " Theme "
     } else if state.java_picker_open {
         " Java Runtime "
-    } else if state.config_dirty {
-        " Launcher Settings * "
     } else {
         " Launcher Settings "
     };
@@ -521,11 +543,11 @@ fn render_settings_list(frame: &mut Frame, area: Rect, state: &State) {
     }
 }
 
-fn global_field_line<'a>(state: &'a State, index: usize, label: &str) -> Line<'a> {
+fn global_field_line(state: &State, index: usize, label: &str) -> Line<'static> {
     let theme = THEME.as_ref();
     let selected = index == state.selected;
     let editing = selected && state.editing.is_some();
-    Line::from(vec![
+    let mut spans = vec![
         Span::styled(
             if selected { "▶ " } else { "  " },
             Style::default().fg(theme.accent()),
@@ -552,8 +574,11 @@ fn global_field_line<'a>(state: &'a State, index: usize, label: &str) -> Line<'a
                     Modifier::empty()
                 }),
         ),
-    ])
-    .style(Style::default().bg(if selected {
+    ];
+    if index == 4 && state.config.paths.java_path.is_none() && !editing {
+        spans.extend([Span::raw("  "), subtle_tag("Auto", theme.info())]);
+    }
+    Line::from(spans).style(Style::default().bg(if selected {
         theme.stripe()
     } else {
         theme.surface()

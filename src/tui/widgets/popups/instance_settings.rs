@@ -26,7 +26,7 @@ use crate::{
             LoadState,
             settings_controls::{
                 DisplayResolution, JavaChoice, JavaPicker, adjust_memory, display_resolutions,
-                memory_kib, render_memory_gauge,
+                handle_text_area_input, memory_kib, render_memory_gauge, subtle_tag,
             },
         },
         search::SearchState,
@@ -51,11 +51,9 @@ enum ChoicePicker {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum ResolutionChoice {
-    Default,
     Display(DisplayResolution),
     Preset(u32, u32),
     Configured(u32, u32),
-    Custom,
 }
 
 impl ResolutionChoice {
@@ -65,19 +63,13 @@ impl ResolutionChoice {
             Self::Preset(width, height) | Self::Configured(width, height) => {
                 Some((*width, *height))
             }
-            Self::Default | Self::Custom => None,
         }
     }
 
     fn label(&self) -> String {
-        self.resolution().map_or_else(
-            || match self {
-                Self::Default => "Default".to_owned(),
-                Self::Custom => "Custom…".to_owned(),
-                _ => String::new(),
-            },
-            |(width, height)| format!("{width}x{height}"),
-        )
+        self.resolution()
+            .map(|(width, height)| format!("{width}x{height}"))
+            .unwrap_or_default()
     }
 }
 
@@ -212,7 +204,7 @@ impl State {
     fn display_value(&self, field: usize) -> String {
         match field {
             2 if self.draft.loader == ModLoader::Vanilla => "not applicable".to_owned(),
-            3 if self.draft.java_path.is_none() => "auto-detect".to_owned(),
+            3 if self.draft.java_path.is_none() => self.java_picker.detected_path().to_owned(),
             4 if self.draft.memory_min.is_none() => {
                 format!("default ({})", SETTINGS.read().defaults.memory_min)
             }
@@ -221,7 +213,10 @@ impl State {
             }
             6 if self.draft.jvm_args.is_empty() => "no arguments".to_owned(),
             6 => self.draft.jvm_args.join(" "),
-            7 if self.draft.resolution.is_none() => "default".to_owned(),
+            7 if self.draft.resolution.is_none() => self.default_resolution().map_or_else(
+                || "default".to_owned(),
+                |(width, height)| format!("{width}x{height}"),
+            ),
             8 if self.desktop => "enabled".to_owned(),
             8 => "disabled".to_owned(),
             _ => self.value(field).replace('\n', " ↵ "),
@@ -241,7 +236,7 @@ impl State {
                 self.editing = Some(new_text_area(vec![self.effective_memory(self.selected)]));
             }
             6 => self.editing = Some(new_text_area(vec![self.value(self.selected)])),
-            7 => self.open_choice_picker(ChoicePicker::Resolution),
+            7 => self.editing = Some(new_text_area(vec![self.value(7)])),
             8 => self.desktop = !self.desktop,
             field => self.editing = Some(new_text_area(vec![self.value(field)])),
         }
@@ -295,6 +290,22 @@ impl State {
         let count = self.choice_values().len();
         match key.code {
             KeyCode::Esc | KeyCode::Char('h') | KeyCode::Left => self.choice_picker = None,
+            KeyCode::Char('a') if self.choice_picker == Some(ChoicePicker::Java) => {
+                self.draft.java_path = None;
+                self.choice_picker = None;
+            }
+            KeyCode::Char('c') if self.choice_picker == Some(ChoicePicker::Java) => {
+                self.choice_picker = None;
+                self.editing = Some(new_text_area(vec![self.value(3)]));
+            }
+            KeyCode::Char('c') if self.choice_picker == Some(ChoicePicker::Resolution) => {
+                self.choice_picker = None;
+                self.editing = Some(new_text_area(vec![self.value(7)]));
+            }
+            KeyCode::Char('d') if self.choice_picker == Some(ChoicePicker::Resolution) => {
+                self.draft.resolution = None;
+                self.choice_picker = None;
+            }
             KeyCode::Char('j') | KeyCode::Down | KeyCode::Right if count > 0 => {
                 self.choice_index = (self.choice_index + 1).min(count - 1);
             }
@@ -324,11 +335,7 @@ impl State {
             Some(ChoicePicker::Java) => {
                 self.java_picker.selected = self.choice_index;
                 match self.java_picker.selected_choice() {
-                    JavaChoice::Automatic => self.draft.java_path = None,
                     JavaChoice::Installation(path) => self.draft.java_path = Some(path),
-                    JavaChoice::Custom => {
-                        self.editing = Some(new_text_area(vec![self.value(3)]));
-                    }
                 }
             }
             Some(ChoicePicker::Resolution) => {
@@ -336,13 +343,9 @@ impl State {
                     .resolution_choices()
                     .get(self.choice_index)
                     .cloned()
-                    .unwrap_or(ResolutionChoice::Default);
-                match selected {
-                    ResolutionChoice::Default => self.draft.resolution = None,
-                    ResolutionChoice::Custom => {
-                        self.editing = Some(new_text_area(vec![self.value(7)]));
-                    }
-                    choice => self.draft.resolution = choice.resolution(),
+                    .and_then(|choice| choice.resolution());
+                if let Some(resolution) = selected {
+                    self.draft.resolution = Some(resolution);
                 }
             }
             None => {}
@@ -504,6 +507,12 @@ impl State {
         resolution_choices(self.draft.resolution, &self.display_resolutions)
     }
 
+    fn default_resolution(&self) -> Option<(u32, u32)> {
+        self.display_resolutions
+            .first()
+            .map(|display| (display.width, display.height))
+    }
+
     fn handle_picker_key(&mut self, key: &KeyEvent) {
         self.initialize_picker_index();
         if self.picker_search.active {
@@ -620,9 +629,7 @@ impl State {
             match key.code {
                 KeyCode::Enter => self.commit_edit(),
                 KeyCode::Esc => self.editing = None,
-                _ => {
-                    input.input(*key);
-                }
+                _ => handle_text_area_input(input, key),
             }
             return Action::None;
         }
@@ -638,9 +645,17 @@ impl State {
             KeyCode::Char('l') | KeyCode::Right if matches!(self.selected, 4 | 5) => {
                 self.adjust_selected_memory(true);
             }
+            KeyCode::Char('l') | KeyCode::Right if self.selected == 7 => {
+                self.open_choice_picker(ChoicePicker::Resolution);
+            }
             KeyCode::Enter => self.begin_edit(),
-            KeyCode::Char('r') if matches!(self.selected, 4 | 5) => {
+            KeyCode::Char('d') if matches!(self.selected, 4 | 5) => {
                 self.set_memory(self.selected, None);
+            }
+            KeyCode::Char('d') if self.selected == 7 => self.draft.resolution = None,
+            KeyCode::Char('a') if self.selected == 3 => self.draft.java_path = None,
+            KeyCode::Char('c') if self.selected == 3 => {
+                self.editing = Some(new_text_area(vec![self.value(3)]));
             }
             KeyCode::Char('s') if self.dirty() => {
                 if self.validate_before_save() {
@@ -690,7 +705,7 @@ fn resolution_choices(
     current: Option<(u32, u32)>,
     displays: &[DisplayResolution],
 ) -> Vec<ResolutionChoice> {
-    let mut choices = vec![ResolutionChoice::Default];
+    let mut choices = Vec::new();
     choices.extend(displays.iter().cloned().map(ResolutionChoice::Display));
     for (width, height) in [
         (854, 480),
@@ -714,7 +729,6 @@ fn resolution_choices(
     {
         choices.push(ResolutionChoice::Configured(width, height));
     }
-    choices.push(ResolutionChoice::Custom);
     choices
 }
 
@@ -741,6 +755,7 @@ pub fn popup_rect(area: Rect, state: &State) -> Rect {
     } else {
         let form_width = (area.width * 58 / 100).saturating_sub(2);
         11 + jvm_row_count(state, form_width).saturating_sub(1) as u16
+            + u16::from(state.runtime_changed())
             + u16::from(state.error.is_some())
     };
     let width = match state.choice_picker {
@@ -767,7 +782,6 @@ pub fn render(frame: &mut Frame, area: Rect, state: &mut State) {
         (_, Some(ChoicePicker::Loader)) => " Mod Loader ",
         (_, Some(ChoicePicker::Java)) => " Java Runtime ",
         (_, Some(ChoicePicker::Resolution)) => " Resolution ",
-        _ if state.dirty() => " Instance Settings * ",
         _ => " Instance Settings ",
     };
     let keybinds = if state.editing.is_some() {
@@ -781,13 +795,43 @@ pub fn render(frame: &mut Frame, area: Rect, state: &mut State) {
         ])
     } else if state.picker.is_some() {
         super::keybind_line(&[("/", " search"), ("h", " back"), ("Enter", " select")])
+    } else if state.choice_picker == Some(ChoicePicker::Java) {
+        super::keybind_line(&[
+            ("a", " auto"),
+            ("c", " custom"),
+            ("h", " back"),
+            ("Enter", " select"),
+        ])
+    } else if state.choice_picker == Some(ChoicePicker::Resolution) {
+        super::keybind_line(&[
+            ("d", " default"),
+            ("c", " custom"),
+            ("h", " back"),
+            ("Enter", " select"),
+        ])
     } else if state.choice_picker.is_some() {
         super::keybind_line(&[("h", " back"), ("Enter", " select")])
     } else if matches!(state.selected, 4 | 5) {
         super::keybind_line(&[
             ("h/l", " adjust"),
             ("Enter", " exact"),
-            ("r", " default"),
+            ("d", " default"),
+            ("s", " save"),
+            ("Esc", " back"),
+        ])
+    } else if state.selected == 3 {
+        super::keybind_line(&[
+            ("Enter", " runtimes"),
+            ("a", " auto"),
+            ("c", " custom"),
+            ("s", " save"),
+            ("Esc", " back"),
+        ])
+    } else if state.selected == 7 {
+        super::keybind_line(&[
+            ("l", " presets"),
+            ("Enter", " custom"),
+            ("d", " default"),
             ("s", " save"),
             ("Esc", " back"),
         ])
@@ -889,6 +933,21 @@ fn render_settings_list(frame: &mut Frame, area: Rect, state: &State) {
         y = y.saturating_add(height);
     }
 
+    if state.runtime_changed() && y < area.bottom() {
+        frame.render_widget(
+            Paragraph::new(Span::styled(
+                "  ! Runtime change may break installed mods.",
+                Style::default().fg(theme.warning()),
+            )),
+            Rect {
+                y,
+                height: 1,
+                ..area
+            },
+        );
+        y = y.saturating_add(1);
+    }
+
     if let Some(error) = &state.error
         && y < area.bottom()
     {
@@ -916,7 +975,7 @@ fn field_line(state: &State, index: usize, label: &str) -> Line<'static> {
         state.display_value(index)
     };
     let dirty = field_dirty(state, index);
-    Line::from(vec![
+    let mut spans = vec![
         Span::styled(
             if selected { "▶ " } else { "  " },
             Style::default().fg(theme.accent()),
@@ -945,7 +1004,16 @@ fn field_line(state: &State, index: usize, label: &str) -> Line<'static> {
                     Modifier::empty()
                 }),
         ),
-    ])
+    ];
+    if index == 3 && state.draft.java_path.is_none() && !editing {
+        spans.extend([Span::raw("  "), subtle_tag("Auto", theme.info())]);
+    } else if index == 7 && state.draft.resolution.is_none() && !editing {
+        spans.push(Span::styled(
+            "  default",
+            Style::default().fg(theme.text_dim()),
+        ));
+    }
+    Line::from(spans)
 }
 
 fn jvm_field_lines(state: &State, width: u16) -> Vec<Line<'static>> {
@@ -1074,7 +1142,7 @@ fn resolution_items(choices: &[ResolutionChoice]) -> Vec<ListItem<'static>> {
                 Style::default().fg(theme.text()),
             )];
             match choice {
-                ResolutionChoice::Default | ResolutionChoice::Preset(_, _) => {}
+                ResolutionChoice::Preset(_, _) => {}
                 ResolutionChoice::Display(display) => {
                     if !display.name.is_empty() {
                         spans.extend([
@@ -1096,13 +1164,6 @@ fn resolution_items(choices: &[ResolutionChoice]) -> Vec<ListItem<'static>> {
                     spans.push(Span::styled(
                         "  configured",
                         Style::default().fg(theme.text_dim()),
-                    ));
-                }
-                ResolutionChoice::Custom => {
-                    spans.clear();
-                    spans.push(Span::styled(
-                        choice.label(),
-                        Style::default().fg(theme.warning()),
                     ));
                 }
             }
@@ -1354,6 +1415,9 @@ mod tests {
 
         state.selected = 7;
         state.begin_edit();
+        assert!(state.editing.is_some());
+        state.editing = None;
+        state.handle_key(&KeyEvent::from(KeyCode::Char('l')));
         assert_eq!(state.choice_picker, Some(ChoicePicker::Resolution));
         state.choice_index = state
             .resolution_choices()
@@ -1366,9 +1430,27 @@ mod tests {
         state.selected = 3;
         state.begin_edit();
         assert_eq!(state.choice_picker, Some(ChoicePicker::Java));
-        state.choice_index = state.choice_values().len() - 1;
-        state.apply_choice();
+        state.handle_choice_key(&KeyEvent::from(KeyCode::Char('c')));
         assert!(state.editing.is_some());
+    }
+
+    #[test]
+    fn java_and_resolution_defaults_are_direct_actions_not_list_rows() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut state = State::new(&instance(), temp.path());
+
+        state.selected = 3;
+        state.draft.java_path = Some("/custom/java".to_owned());
+        state.handle_key(&KeyEvent::from(KeyCode::Char('a')));
+        assert_eq!(state.draft.java_path, None);
+
+        state.selected = 7;
+        state.draft.resolution = Some((1920, 1080));
+        state.handle_key(&KeyEvent::from(KeyCode::Char('d')));
+        assert_eq!(state.draft.resolution, None);
+        state.handle_key(&KeyEvent::from(KeyCode::Char('l')));
+        assert!(!state.choice_values().iter().any(|value| value == "Default"));
+        assert!(!state.choice_values().iter().any(|value| value == "Custom…"));
     }
 
     #[test]
@@ -1399,13 +1481,50 @@ mod tests {
 
         let choices = resolution_choices(None, &displays);
 
-        assert!(matches!(choices[1], ResolutionChoice::Display(_)));
+        assert!(matches!(choices[0], ResolutionChoice::Display(_)));
         assert_eq!(
             choices
                 .iter()
                 .filter(|choice| choice.resolution() == Some((1920, 1080)))
                 .count(),
             1
+        );
+    }
+
+    #[test]
+    fn inherited_resolution_displays_the_detected_primary_size() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut state = State::new(&instance(), temp.path());
+        state.display_resolutions = vec![DisplayResolution {
+            width: 2560,
+            height: 1440,
+            name: "DP-4".to_owned(),
+            primary: true,
+        }];
+
+        assert_eq!(state.display_value(7), "2560x1440");
+    }
+
+    #[test]
+    fn runtime_changes_show_an_inline_compatibility_warning() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut state = State::new(&instance(), temp.path());
+        state.draft.game_version = "1.21.2".to_owned();
+        let backend = ratatui::backend::TestBackend::new(80, 20);
+        let mut terminal = ratatui::Terminal::new(backend).unwrap();
+
+        terminal
+            .draw(|frame| {
+                let area = popup_rect(frame.area(), &state);
+                render(frame, area, &mut state);
+            })
+            .unwrap();
+
+        assert!(
+            terminal
+                .backend()
+                .to_string()
+                .contains("Runtime change may break installed mods")
         );
     }
 

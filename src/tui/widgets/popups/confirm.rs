@@ -101,7 +101,7 @@ impl ConfirmTarget {
                 .collect::<Vec<_>>()
                 .join("\n"),
             ConfirmTarget::InstanceRuntime { from, to, .. } => format!(
-                "{from} → {to}\nRuntime files will be downloaded before saving.\n! Existing mods may be incompatible."
+                "{from} → {to}\nRuntime files will be downloaded before saving.\n! Installed mods may not load and can be incompatible with the new runtime."
             ),
             ConfirmTarget::DiscardInstanceSettings => {
                 "Unsaved instance settings will be lost.".to_owned()
