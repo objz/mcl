@@ -412,6 +412,7 @@ impl InstanceManager {
     }
 
     pub fn delete(&self, name: &str) -> Result<(), InstanceError> {
+        validate_name(name)?;
         let instance_dir = self.instances_dir.join(name);
         if !instance_dir.exists() {
             tracing::warn!(
@@ -437,6 +438,7 @@ impl InstanceManager {
     }
 
     pub fn rename(&self, old_name: &str, new_name: &str) -> Result<(), InstanceError> {
+        validate_name(old_name)?;
         let new_name = new_name.trim();
         if new_name.is_empty() {
             tracing::warn!("Cannot rename instance '{}': new name is empty", old_name);
@@ -471,6 +473,9 @@ impl InstanceManager {
             );
             return Err(InstanceError::AlreadyExists(new_name.to_string()));
         }
+        let mut config = self.load_one(old_name)?;
+        config.name = new_name.to_owned();
+        let json = serde_json::to_vec_pretty(&config)?;
         tracing::info!("Renaming instance '{}' to '{}'", old_name, new_name);
         if let Err(e) = std::fs::rename(&old_dir, &new_dir) {
             tracing::error!(
@@ -483,21 +488,19 @@ impl InstanceManager {
         }
 
         let config_path = new_dir.join("instance.json");
-        if let Ok(data) = std::fs::read_to_string(&config_path)
-            && let Ok(mut config) = serde_json::from_str::<InstanceConfig>(&data)
-        {
-            config.name = new_name.to_string();
-            if let Ok(json) = serde_json::to_string_pretty(&config) {
-                let _ = std::fs::write(&config_path, json);
+        if let Err(error) = crate::storage::write_atomic(&config_path, &json) {
+            if let Err(rollback_error) = std::fs::rename(&new_dir, &old_dir) {
+                tracing::error!(
+                    "Failed to roll back instance rename from {} to {}: {}",
+                    new_dir.display(),
+                    old_dir.display(),
+                    rollback_error
+                );
             }
-            if let Err(e) = crate::instance::desktop::rename(old_name, &config) {
-                tracing::warn!("Failed to rename desktop shortcut: {}", e);
-            }
-        } else {
-            tracing::warn!(
-                "Renamed instance directory but could not update config at {}",
-                config_path.display()
-            );
+            return Err(error.into());
+        }
+        if let Err(e) = crate::instance::desktop::rename(old_name, &config) {
+            tracing::warn!("Failed to rename desktop shortcut: {}", e);
         }
 
         Ok(())
@@ -589,10 +592,14 @@ impl InstanceManager {
     }
 
     pub fn save(&self, instance: &InstanceConfig) -> Result<(), InstanceError> {
+        validate_name(&instance.name)?;
         let instance_dir = self.instances_dir.join(&instance.name);
+        if !instance_dir.is_dir() {
+            return Err(InstanceError::NotFound(instance.name.clone()));
+        }
         let config_path = instance_dir.join("instance.json");
         let json = serde_json::to_string_pretty(instance)?;
-        std::fs::write(&config_path, &json)?;
+        crate::storage::write_atomic(&config_path, json.as_bytes())?;
         tracing::debug!(
             "Saved instance '{}' config to {}",
             instance.name,
@@ -617,7 +624,11 @@ fn validate_name(name: &str) -> Result<(), InstanceError> {
             name
         )));
     }
-    if name.contains('/') || name.contains('\\') || name.starts_with('.') {
+    if name.contains('/')
+        || name.contains('\\')
+        || name.starts_with('.')
+        || name.chars().any(char::is_control)
+    {
         return Err(InstanceError::InvalidName(format!(
             "Name contains invalid characters: {:?}",
             name

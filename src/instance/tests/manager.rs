@@ -52,6 +52,7 @@ fn validate_name_rejects_empty_traversal_and_hidden() {
     assert!(validate_name("").is_err());
     assert!(validate_name("path/traversal").is_err());
     assert!(validate_name(".hidden").is_err());
+    assert!(validate_name("line\nbreak").is_err());
 }
 
 #[test]
@@ -59,6 +60,23 @@ fn delete_missing_instance_returns_not_found() {
     let (manager, _tmp) = test_manager();
     let result = manager.delete("ghost-instance");
     assert!(matches!(result, Err(InstanceError::NotFound(_))));
+}
+
+#[test]
+fn delete_rejects_path_traversal() {
+    let tmp = tempfile::tempdir().unwrap();
+    let instances = tmp.path().join("instances");
+    let meta = tmp.path().join("meta");
+    std::fs::create_dir_all(&instances).unwrap();
+    std::fs::create_dir_all(&meta).unwrap();
+    let manager = InstanceManager::new(instances, meta);
+    let outside = tmp.path().join("outside-instance");
+    std::fs::create_dir_all(&outside).unwrap();
+
+    let result = manager.delete("../outside-instance");
+
+    assert!(matches!(result, Err(InstanceError::InvalidName(_))));
+    assert!(outside.exists());
 }
 
 #[test]
@@ -167,6 +185,20 @@ fn rename_target_exists_errors() {
     manager.save(&dummy_config("collision")).expect("save dst");
     let err = manager.rename("source", "collision").unwrap_err();
     assert!(matches!(err, InstanceError::AlreadyExists(_)));
+}
+
+#[test]
+fn rename_with_invalid_source_is_rejected() {
+    let (manager, _tmp) = test_manager();
+    let err = manager.rename("../outside", "safe-name").unwrap_err();
+    assert!(matches!(err, InstanceError::InvalidName(_)));
+}
+
+#[test]
+fn save_rejects_invalid_instance_name() {
+    let (manager, _tmp) = test_manager();
+    let err = manager.save(&dummy_config("../outside")).unwrap_err();
+    assert!(matches!(err, InstanceError::InvalidName(_)));
 }
 
 #[test]
