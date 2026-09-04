@@ -42,6 +42,7 @@ pub struct State {
 pub enum Action {
     None,
     Save(Box<Config>, String, BorderStyle),
+    Error(String),
     OpenRaw(std::path::PathBuf),
     Close,
 }
@@ -197,15 +198,23 @@ impl State {
         self.java_picker_open = true;
     }
 
+    fn toggle_auto_java(&mut self) {
+        self.config.paths.java_path = if self.config.paths.java_path.is_none() {
+            Some(self.java_picker.detected_path().to_owned())
+        } else {
+            None
+        };
+        self.save_pending = true;
+        self.error = None;
+    }
+
     fn handle_java_picker_key(&mut self, key: &KeyEvent) {
         self.java_picker.initialize();
         let count = self.java_picker.labels().len();
         match key.code {
             KeyCode::Esc | KeyCode::Char('h') | KeyCode::Left => self.java_picker_open = false,
             KeyCode::Char('a') => {
-                if self.config.paths.java_path.take().is_some() {
-                    self.save_pending = true;
-                }
+                self.toggle_auto_java();
                 self.java_picker_open = false;
             }
             KeyCode::Char('c') => {
@@ -257,7 +266,13 @@ impl State {
 
     pub fn handle_key(&mut self, key: &KeyEvent) -> Action {
         let action = self.handle_key_inner(key);
-        if matches!(action, Action::None) && self.save_pending && self.editing.is_none() {
+        if !matches!(action, Action::None) {
+            return action;
+        }
+        if let Some(error) = self.error.take() {
+            return Action::Error(error);
+        }
+        if self.save_pending && self.editing.is_none() {
             self.save_pending = false;
             return Action::Save(
                 Box::new(self.config.clone()),
@@ -265,7 +280,7 @@ impl State {
                 self.theme.border_style.clone(),
             );
         }
-        action
+        Action::None
     }
 
     fn handle_key_inner(&mut self, key: &KeyEvent) -> Action {
@@ -306,9 +321,7 @@ impl State {
                 field => self.editing = Some(new_text_area(vec![self.value(field)])),
             },
             KeyCode::Char('a') if self.selected == 4 => {
-                if self.config.paths.java_path.take().is_some() {
-                    self.save_pending = true;
-                }
+                self.toggle_auto_java();
             }
             KeyCode::Char('c') if self.selected == 4 => {
                 self.editing = Some(new_text_area(vec![self.value(4)]));
@@ -377,7 +390,7 @@ pub fn popup_rect(area: Rect, state: &State) -> Rect {
     let height = if state.theme_picker || state.java_picker_open {
         (area.height * 2 / 3).max(10)
     } else {
-        7 + u16::from(state.error.is_some())
+        7
     };
     let width = if state.java_picker_open { 72 } else { 52 };
     area.centered(
@@ -410,6 +423,20 @@ pub fn render(frame: &mut Frame, area: Rect, state: &mut State) {
             ("Enter", " runtimes"),
             ("a", " auto"),
             ("c", " custom"),
+            ("Esc", " back"),
+        ])
+    } else if state.selected == 0 {
+        super::keybind_line(&[
+            ("j/k", ""),
+            ("Enter", " select"),
+            ("E", " raw"),
+            ("Esc", " back"),
+        ])
+    } else if state.selected == 1 {
+        super::keybind_line(&[
+            ("h/l", " adjust"),
+            ("Enter", " next"),
+            ("E", " raw"),
             ("Esc", " back"),
         ])
     } else {
@@ -485,18 +512,11 @@ fn render_java_picker(frame: &mut Frame, area: Rect, state: &State) {
 }
 
 fn render_settings_list(frame: &mut Frame, area: Rect, state: &State) {
-    let theme = THEME.as_ref();
     let labels = ["Theme", "Border style", "Memory min", "Memory max", "Java"];
     let lines = labels
         .iter()
         .enumerate()
         .map(|(index, label)| global_field_line(state, index, label))
-        .chain(state.error.iter().map(|error| {
-            Line::from(Span::styled(
-                format!("  {error}"),
-                Style::default().fg(theme.error()),
-            ))
-        }))
         .collect::<Vec<_>>();
     frame.render_widget(Paragraph::new(lines), area);
 
@@ -533,7 +553,7 @@ fn global_field_line(state: &State, index: usize, label: &str) -> Line<'static> 
     let editing = selected && state.editing.is_some();
     let mut spans = vec![
         Span::styled(
-            if selected { "▶ " } else { "  " },
+            if selected { "▌ " } else { "  " },
             Style::default().fg(theme.accent()),
         ),
         Span::styled(
@@ -592,5 +612,27 @@ mod tests {
         state.selected = 4;
         state.handle_key(&KeyEvent::from(KeyCode::Enter));
         assert!(state.java_picker_open);
+    }
+
+    #[test]
+    fn java_auto_mode_toggles_to_and_from_the_detected_path() {
+        let mut state = State::new();
+        state.selected = 4;
+        state.config.paths.java_path = None;
+
+        assert!(matches!(
+            state.handle_key(&KeyEvent::from(KeyCode::Char('a'))),
+            Action::Save(..)
+        ));
+        assert_eq!(
+            state.config.paths.java_path.as_deref(),
+            Some(state.java_picker.detected_path())
+        );
+
+        assert!(matches!(
+            state.handle_key(&KeyEvent::from(KeyCode::Char('a'))),
+            Action::Save(..)
+        ));
+        assert_eq!(state.config.paths.java_path, None);
     }
 }

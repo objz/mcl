@@ -667,6 +667,28 @@ fn runtime_settings_use_the_shared_confirmation_popup() {
 }
 
 #[test]
+fn instance_settings_validation_errors_use_the_toast_buffer() {
+    let mut ui = UiHarness::new();
+    ui.add_instance("toast-test");
+    ui.key(KeyCode::Char('E'));
+    let state = ui.app.instance_settings.as_mut().unwrap();
+    state.draft.loader = crate::instance::ModLoader::Vanilla;
+    state.draft.loader_version = None;
+
+    ui.key(KeyCode::Char('j'));
+    ui.key(KeyCode::Char('j'));
+    ui.key(KeyCode::Enter);
+
+    assert!(
+        crate::feedback::errors::ERROR_EVENTS
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|error| error.message == "Vanilla does not use a loader version")
+    );
+}
+
+#[test]
 fn settings_use_java_memory_and_resolution_controls() {
     let mut ui = UiHarness::new();
     ui.add_instance("controls-test");
@@ -710,7 +732,7 @@ fn settings_use_java_memory_and_resolution_controls() {
     for _ in 0..3 {
         ui.key(KeyCode::Char('j'));
     }
-    ui.key(KeyCode::Char('l'));
+    ui.key(KeyCode::Char('p'));
     ui.draw();
     assert!(ui.screen().contains("Resolution"));
     assert!(ui.screen().contains("1920x1080"));

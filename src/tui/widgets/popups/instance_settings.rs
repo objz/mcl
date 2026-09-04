@@ -105,6 +105,7 @@ pub struct State {
 pub enum Action {
     None,
     Save(Box<InstanceConfig>, bool),
+    Error(String),
     ConfirmRuntime {
         name: String,
         from: String,
@@ -204,16 +205,12 @@ impl State {
         match field {
             2 if self.draft.loader == ModLoader::Vanilla => "not applicable".to_owned(),
             3 if self.draft.java_path.is_none() => self.java_picker.detected_path().to_owned(),
-            4 if self.draft.memory_min.is_none() => {
-                format!("default ({})", SETTINGS.read().defaults.memory_min)
-            }
-            5 if self.draft.memory_max.is_none() => {
-                format!("default ({})", SETTINGS.read().defaults.memory_max)
-            }
+            4 if self.draft.memory_min.is_none() => SETTINGS.read().defaults.memory_min.clone(),
+            5 if self.draft.memory_max.is_none() => SETTINGS.read().defaults.memory_max.clone(),
             6 if self.draft.jvm_args.is_empty() => "no arguments".to_owned(),
             6 => self.draft.jvm_args.join(" "),
             7 if self.draft.resolution.is_none() => self.default_resolution().map_or_else(
-                || "default".to_owned(),
+                || "not detected".to_owned(),
                 |(width, height)| format!("{width}x{height}"),
             ),
             8 if self.desktop => "enabled".to_owned(),
@@ -290,7 +287,7 @@ impl State {
         match key.code {
             KeyCode::Esc | KeyCode::Char('h') | KeyCode::Left => self.choice_picker = None,
             KeyCode::Char('a') if self.choice_picker == Some(ChoicePicker::Java) => {
-                self.draft.java_path = None;
+                self.toggle_auto_java();
                 self.choice_picker = None;
             }
             KeyCode::Char('c') if self.choice_picker == Some(ChoicePicker::Java) => {
@@ -302,7 +299,7 @@ impl State {
                 self.editing = Some(new_text_area(vec![self.value(7)]));
             }
             KeyCode::Char('d') if self.choice_picker == Some(ChoicePicker::Resolution) => {
-                self.draft.resolution = None;
+                self.apply_default_resolution();
                 self.choice_picker = None;
             }
             KeyCode::Char('j') | KeyCode::Down | KeyCode::Right if count > 0 => {
@@ -320,6 +317,7 @@ impl State {
     }
 
     fn apply_choice(&mut self) {
+        let mut open_loader_versions = false;
         match self.choice_picker {
             Some(ChoicePicker::Loader) => {
                 let available = super::select_list::MOD_LOADERS;
@@ -329,6 +327,7 @@ impl State {
                     self.draft.loader_version = None;
                     self.loader_versions = Arc::new(Mutex::new(LoadState::Idle));
                     self.game_versions = Arc::new(Mutex::new(LoadState::Idle));
+                    open_loader_versions = loader != ModLoader::Vanilla;
                 }
             }
             Some(ChoicePicker::Java) => {
@@ -350,6 +349,9 @@ impl State {
             None => {}
         }
         self.choice_picker = None;
+        if open_loader_versions {
+            self.open_loader_picker();
+        }
     }
 
     fn open_game_picker(&mut self) {
@@ -392,16 +394,20 @@ impl State {
             let target = self.loader_versions.clone();
             let loader = self.draft.loader;
             let game_version = self.draft.game_version.clone();
-            tokio::spawn(async move {
-                let result = super::version_lists::loader_versions(loader, &game_version).await;
-                *target
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner) = match result {
-                    Ok(versions) => LoadState::Loaded(versions),
-                    Err(error) => LoadState::Error(error),
-                };
-                crate::feedback::request_redraw();
-            });
+            if let Ok(runtime) = tokio::runtime::Handle::try_current() {
+                runtime.spawn(async move {
+                    let result = super::version_lists::loader_versions(loader, &game_version).await;
+                    *target
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner) = match result {
+                        Ok(versions) => LoadState::Loaded(versions),
+                        Err(error) => LoadState::Error(error),
+                    };
+                    crate::feedback::request_redraw();
+                });
+            } else {
+                *load = LoadState::Idle;
+            }
         }
     }
 
@@ -512,6 +518,34 @@ impl State {
             .map(|display| (display.width, display.height))
     }
 
+    fn apply_default_memory(&mut self) {
+        let settings = SETTINGS.read();
+        if self.selected == 4 {
+            self.draft.memory_min = Some(settings.defaults.memory_min.clone());
+        } else {
+            self.draft.memory_max = Some(settings.defaults.memory_max.clone());
+        }
+        self.error = None;
+    }
+
+    fn apply_default_resolution(&mut self) {
+        if let Some(resolution) = self.default_resolution() {
+            self.draft.resolution = Some(resolution);
+            self.error = None;
+        } else {
+            self.error = Some("could not detect a default display resolution".to_owned());
+        }
+    }
+
+    fn toggle_auto_java(&mut self) {
+        self.draft.java_path = if self.draft.java_path.is_none() {
+            Some(self.java_picker.detected_path().to_owned())
+        } else {
+            None
+        };
+        self.error = None;
+    }
+
     fn handle_picker_key(&mut self, key: &KeyEvent) {
         self.initialize_picker_index();
         if self.picker_search.active {
@@ -565,8 +599,13 @@ impl State {
                             self.draft.game_version = version.id.clone();
                             self.draft.loader_version = None;
                             self.loader_versions = Arc::new(Mutex::new(LoadState::Idle));
+                            self.picker = None;
+                            if self.draft.loader != ModLoader::Vanilla {
+                                self.open_loader_picker();
+                            }
+                        } else {
+                            self.picker = None;
                         }
-                        self.picker = None;
                     }
                 }
                 Some(VersionPicker::Loader) => {
@@ -619,11 +658,14 @@ impl State {
         let before = self.draft.clone();
         let desktop_before = self.desktop;
         let action = self.handle_key_inner(key);
-        if !matches!(action, Action::None)
-            || before == self.draft && desktop_before == self.desktop
-            || !self.dirty()
-        {
+        if !matches!(action, Action::None) {
             return action;
+        }
+        if let Some(error) = self.error.take() {
+            return Action::Error(error);
+        }
+        if before == self.draft && desktop_before == self.desktop || !self.dirty() {
+            return Action::None;
         }
         if self.runtime_changed() {
             if self.draft.loader != ModLoader::Vanilla
@@ -636,7 +678,11 @@ impl State {
                 return Action::None;
             }
             if !self.validate_before_save() {
-                return Action::None;
+                return Action::Error(
+                    self.error
+                        .take()
+                        .unwrap_or_else(|| "invalid instance settings".to_owned()),
+                );
             }
             return Action::ConfirmRuntime {
                 name: self.draft.name.clone(),
@@ -647,7 +693,11 @@ impl State {
         if self.validate_before_save() {
             Action::Save(Box::new(self.draft.clone()), self.desktop)
         } else {
-            Action::None
+            Action::Error(
+                self.error
+                    .take()
+                    .unwrap_or_else(|| "invalid instance settings".to_owned()),
+            )
         }
     }
 
@@ -680,15 +730,15 @@ impl State {
             KeyCode::Char('l') | KeyCode::Right if matches!(self.selected, 4 | 5) => {
                 self.adjust_selected_memory(true);
             }
-            KeyCode::Char('l') | KeyCode::Right if self.selected == 7 => {
+            KeyCode::Char('p') if self.selected == 7 => {
                 self.open_choice_picker(ChoicePicker::Resolution);
             }
             KeyCode::Enter => self.begin_edit(),
             KeyCode::Char('d') if matches!(self.selected, 4 | 5) => {
-                self.set_memory(self.selected, None);
+                self.apply_default_memory();
             }
-            KeyCode::Char('d') if self.selected == 7 => self.draft.resolution = None,
-            KeyCode::Char('a') if self.selected == 3 => self.draft.java_path = None,
+            KeyCode::Char('d') if self.selected == 7 => self.apply_default_resolution(),
+            KeyCode::Char('a') if self.selected == 3 => self.toggle_auto_java(),
             KeyCode::Char('c') if self.selected == 3 => {
                 self.editing = Some(new_text_area(vec![self.value(3)]));
             }
@@ -788,7 +838,6 @@ pub fn popup_rect(area: Rect, state: &State) -> Rect {
         let form_width = (area.width * 58 / 100).saturating_sub(2);
         11 + jvm_row_count(state, form_width).saturating_sub(1) as u16
             + u16::from(state.runtime_changed())
-            + u16::from(state.error.is_some())
     };
     let width = match state.choice_picker {
         Some(ChoicePicker::Java) => 72,
@@ -859,9 +908,23 @@ pub fn render(frame: &mut Frame, area: Rect, state: &mut State) {
         ])
     } else if state.selected == 7 {
         super::keybind_line(&[
-            ("l", " presets"),
+            ("p", " presets"),
             ("Enter", " custom"),
             ("d", " default"),
+            ("Esc", " back"),
+        ])
+    } else if matches!(state.selected, 0..=2) {
+        super::keybind_line(&[
+            ("j/k", ""),
+            ("Enter", " select"),
+            ("E", " raw"),
+            ("Esc", " back"),
+        ])
+    } else if state.selected == 8 {
+        super::keybind_line(&[
+            ("j/k", ""),
+            ("Enter", " toggle"),
+            ("E", " raw"),
             ("Esc", " back"),
         ])
     } else {
@@ -973,23 +1036,6 @@ fn render_settings_list(frame: &mut Frame, area: Rect, state: &State) {
                 ..area
             },
         );
-        y = y.saturating_add(1);
-    }
-
-    if let Some(error) = &state.error
-        && y < area.bottom()
-    {
-        frame.render_widget(
-            Paragraph::new(Span::styled(
-                format!("  {error}"),
-                Style::default().fg(theme.error()),
-            )),
-            Rect {
-                y,
-                height: 1,
-                ..area
-            },
-        );
     }
 }
 
@@ -1004,7 +1050,7 @@ fn field_line(state: &State, index: usize, label: &str) -> Line<'static> {
     };
     let mut spans = vec![
         Span::styled(
-            if selected { "▶ " } else { "  " },
+            if selected { "▌ " } else { "  " },
             Style::default().fg(theme.accent()),
         ),
         Span::styled(
@@ -1030,11 +1076,6 @@ fn field_line(state: &State, index: usize, label: &str) -> Line<'static> {
     ];
     if index == 3 && state.draft.java_path.is_none() && !editing {
         spans.extend([Span::raw("  "), subtle_tag("Auto", theme.info())]);
-    } else if index == 7 && state.draft.resolution.is_none() && !editing {
-        spans.push(Span::styled(
-            "  default",
-            Style::default().fg(theme.text_dim()),
-        ));
     }
     Line::from(spans)
 }
@@ -1384,6 +1425,44 @@ mod tests {
     }
 
     #[test]
+    fn loader_change_selects_a_version_then_requests_confirmation() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut state = State::new(&instance(), temp.path());
+        state.open_choice_picker(ChoicePicker::Loader);
+        state.handle_key(&KeyEvent::from(KeyCode::Char('j')));
+
+        assert!(matches!(
+            state.handle_key(&KeyEvent::from(KeyCode::Enter)),
+            Action::None
+        ));
+        assert_eq!(state.picker, Some(VersionPicker::Loader));
+
+        *state.loader_versions.lock().unwrap() = LoadState::Loaded(vec!["1.0.0".to_owned()]);
+        state.picker_initialized = true;
+        state.picker_index = 0;
+        assert!(matches!(
+            state.handle_key(&KeyEvent::from(KeyCode::Enter)),
+            Action::ConfirmRuntime { .. }
+        ));
+    }
+
+    #[test]
+    fn invalid_field_action_is_returned_for_toast_display() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut config = instance();
+        config.loader = ModLoader::Vanilla;
+        config.loader_version = None;
+        let mut state = State::new(&config, temp.path());
+        state.selected = 2;
+
+        assert!(matches!(
+            state.handle_key(&KeyEvent::from(KeyCode::Enter)),
+            Action::Error(message) if message == "Vanilla does not use a loader version"
+        ));
+        assert!(state.error.is_none());
+    }
+
+    #[test]
     fn loader_picker_and_desktop_toggle_use_enter() {
         let temp = tempfile::tempdir().unwrap();
         let mut state = State::new(&instance(), temp.path());
@@ -1393,7 +1472,9 @@ mod tests {
         state.handle_key(&KeyEvent::from(KeyCode::Char('j')));
         state.handle_key(&KeyEvent::from(KeyCode::Enter));
         assert_eq!(state.draft.loader, ModLoader::Forge);
+        assert_eq!(state.picker, Some(VersionPicker::Loader));
 
+        state.picker = None;
         state.selected = 8;
         let desktop = state.desktop;
         state.handle_key(&KeyEvent::from(KeyCode::Enter));
@@ -1428,7 +1509,7 @@ mod tests {
         state.begin_edit();
         assert!(state.editing.is_some());
         state.editing = None;
-        state.handle_key(&KeyEvent::from(KeyCode::Char('l')));
+        state.handle_key(&KeyEvent::from(KeyCode::Char('p')));
         assert_eq!(state.choice_picker, Some(ChoicePicker::Resolution));
         state.choice_index = state
             .resolution_choices()
@@ -1454,14 +1535,41 @@ mod tests {
         state.draft.java_path = Some("/custom/java".to_owned());
         state.handle_key(&KeyEvent::from(KeyCode::Char('a')));
         assert_eq!(state.draft.java_path, None);
+        state.handle_key(&KeyEvent::from(KeyCode::Char('a')));
+        assert_eq!(
+            state.draft.java_path.as_deref(),
+            Some(state.java_picker.detected_path())
+        );
 
         state.selected = 7;
+        state.display_resolutions = vec![DisplayResolution {
+            width: 2560,
+            height: 1440,
+            name: "DP-4".to_owned(),
+            primary: true,
+        }];
         state.draft.resolution = Some((1920, 1080));
         state.handle_key(&KeyEvent::from(KeyCode::Char('d')));
-        assert_eq!(state.draft.resolution, None);
-        state.handle_key(&KeyEvent::from(KeyCode::Char('l')));
+        assert_eq!(state.draft.resolution, Some((2560, 1440)));
+        state.handle_key(&KeyEvent::from(KeyCode::Char('p')));
         assert!(!state.choice_values().iter().any(|value| value == "Default"));
         assert!(!state.choice_values().iter().any(|value| value == "Custom…"));
+    }
+
+    #[test]
+    fn memory_default_copies_only_the_selected_launcher_value() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut state = State::new(&instance(), temp.path());
+        state.draft.memory_min = Some("6G".to_owned());
+        state.draft.memory_max = Some("42G".to_owned());
+        state.selected = 4;
+        let expected = SETTINGS.read().defaults.memory_min.clone();
+
+        state.handle_key(&KeyEvent::from(KeyCode::Char('d')));
+
+        assert_eq!(state.draft.memory_min.as_deref(), Some(expected.as_str()));
+        assert_eq!(state.draft.memory_max.as_deref(), Some("42G"));
+        assert!(!state.display_value(4).contains("default"));
     }
 
     #[test]

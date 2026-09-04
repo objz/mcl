@@ -662,6 +662,14 @@ impl App {
                 .unwrap_or(widgets::popups::global_settings::Action::Close);
             match action {
                 widgets::popups::global_settings::Action::None => {}
+                widgets::popups::global_settings::Action::Error(message) => {
+                    error_buffer::push_error(error_buffer::ErrorEvent {
+                        id: 0,
+                        level: tracing::Level::ERROR,
+                        message,
+                        pushed_at: std::time::Instant::now(),
+                    });
+                }
                 widgets::popups::global_settings::Action::Close => {
                     self.global_settings = None;
                     self.focused = self.pre_overlay_focused;
@@ -699,6 +707,14 @@ impl App {
                 .unwrap_or(widgets::popups::instance_settings::Action::Close);
             match action {
                 widgets::popups::instance_settings::Action::None => {}
+                widgets::popups::instance_settings::Action::Error(message) => {
+                    error_buffer::push_error(error_buffer::ErrorEvent {
+                        id: 0,
+                        level: tracing::Level::ERROR,
+                        message,
+                        pushed_at: std::time::Instant::now(),
+                    });
+                }
                 widgets::popups::instance_settings::Action::Close => {
                     self.instance_settings = None;
                     self.focused = self.pre_overlay_focused;
