@@ -27,6 +27,7 @@ pub(crate) fn render(items: Vec<ListItem<'_>>, selected: usize, area: Rect, buff
         .highlight_style(
             Style::default()
                 .fg(THEME.as_ref().accent())
+                .bg(THEME.as_ref().stripe())
                 .add_modifier(Modifier::BOLD),
         )
         .highlight_symbol(Span::styled(

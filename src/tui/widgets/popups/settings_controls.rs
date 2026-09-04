@@ -5,7 +5,13 @@
 
 use std::sync::{Arc, Mutex};
 
-use ratatui::{Frame, layout::Rect, style::Style, text::Span, widgets::Gauge};
+use ratatui::{
+    Frame,
+    layout::Rect,
+    style::{Color, Modifier, Style},
+    text::{Line, Span},
+    widgets::{LineGauge, ListItem, Paragraph},
+};
 
 use crate::{
     config::theme::THEME, instance::java::JavaInstallation, tui::widgets::popups::LoadState,
@@ -29,6 +35,14 @@ pub(crate) enum JavaChoice {
     Automatic,
     Installation(String),
     Custom,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct DisplayResolution {
+    pub width: u32,
+    pub height: u32,
+    pub name: String,
+    pub primary: bool,
 }
 
 impl JavaPicker {
@@ -117,6 +131,59 @@ impl JavaPicker {
                     })
                     .map_or_else(|| format!("Java  {path}"), JavaInstallation::label),
                 JavaChoice::Custom => "Custom path…".to_owned(),
+            })
+            .collect()
+    }
+
+    pub(crate) fn items(&self) -> Vec<ListItem<'static>> {
+        let theme = THEME.as_ref();
+        let installations = match &*self
+            .load
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+        {
+            LoadState::Loaded(installations) => installations.clone(),
+            _ => Vec::new(),
+        };
+        self.choices()
+            .into_iter()
+            .map(|choice| match choice {
+                JavaChoice::Automatic => ListItem::new(Line::from(vec![
+                    Span::styled("Automatic", Style::default().fg(theme.text())),
+                    Span::raw("  "),
+                    badge(" Auto ", theme.info()),
+                    Span::styled(
+                        format!("  {}", self.detected),
+                        Style::default().fg(theme.text_dim()),
+                    ),
+                ])),
+                JavaChoice::Installation(path) => {
+                    let installation = installations
+                        .iter()
+                        .find(|installation| installation.path.to_string_lossy() == path);
+                    let version = installation
+                        .and_then(|installation| installation.version.as_deref())
+                        .map_or_else(|| "Java".to_owned(), |version| format!("Java {version}"));
+                    let current = self.current.as_deref() == Some(path.as_str());
+                    ListItem::new(Line::from(vec![
+                        Span::styled(version, Style::default().fg(theme.text())),
+                        Span::raw("  "),
+                        badge(
+                            if current { " Current " } else { " Detected " },
+                            if current {
+                                theme.success()
+                            } else {
+                                theme.info()
+                            },
+                        ),
+                        Span::styled(format!("  {path}"), Style::default().fg(theme.text_dim())),
+                    ]))
+                }
+                JavaChoice::Custom => ListItem::new(Line::from(vec![
+                    Span::styled("Custom path…", Style::default().fg(theme.text())),
+                    Span::raw("  "),
+                    badge(" Manual ", theme.warning()),
+                ])),
             })
             .collect()
     }
@@ -217,27 +284,100 @@ pub(crate) fn render_memory_gauge(
         .position(|step| memory_kib(step).is_some_and(|amount| current <= amount))
         .unwrap_or(MEMORY_STEPS.len() - 1);
     let ratio = (index + 1) as f64 / MEMORY_STEPS.len() as f64;
-    let gauge = Gauge::default()
+    let value_width = 17.min(area.width);
+    let value_area = Rect {
+        width: value_width,
+        ..area
+    };
+    let line_area = Rect {
+        x: area.x.saturating_add(value_width).saturating_add(1),
+        width: area.width.saturating_sub(value_width.saturating_add(1)),
+        ..area
+    };
+    let value_style = if selected {
+        Style::default()
+            .fg(theme.background())
+            .bg(theme.accent())
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(theme.text()).bg(theme.background())
+    };
+    frame.render_widget(
+        Paragraph::new(Line::from(Span::styled(format!(" {label} "), value_style))),
+        value_area,
+    );
+
+    let gauge = LineGauge::default()
         .ratio(ratio)
-        .use_unicode(true)
-        .label(Span::styled(
-            label,
-            Style::default().fg(if selected {
-                theme.text()
-            } else {
-                theme.text_dim()
-            }),
-        ))
-        .gauge_style(
-            Style::default()
-                .fg(if selected {
+        .label("")
+        .filled_symbol("━")
+        .unfilled_symbol("─")
+        .filled_style(Style::default().fg(if selected {
+            theme.accent()
+        } else {
+            theme.text_dim()
+        }))
+        .unfilled_style(Style::default().fg(theme.border()));
+    frame.render_widget(gauge, line_area);
+    if line_area.width > 0 {
+        let thumb_offset = ((line_area.width.saturating_sub(1)) as f64 * ratio).round() as u16;
+        frame.render_widget(
+            Paragraph::new(Span::styled(
+                "◆",
+                Style::default().fg(if selected {
                     theme.accent()
                 } else {
                     theme.text_dim()
-                })
-                .bg(theme.background()),
+                }),
+            )),
+            Rect {
+                x: line_area.x.saturating_add(thumb_offset),
+                width: 1,
+                ..line_area
+            },
         );
-    frame.render_widget(gauge, area);
+    }
+}
+
+pub(crate) fn display_resolutions() -> Vec<DisplayResolution> {
+    let Ok(displays) = display_info::DisplayInfo::all() else {
+        return Vec::new();
+    };
+    let mut resolutions = Vec::<DisplayResolution>::new();
+    for display in displays {
+        if display.width == 0 || display.height == 0 {
+            continue;
+        }
+        if let Some(existing) = resolutions.iter_mut().find(|resolution| {
+            resolution.width == display.width && resolution.height == display.height
+        }) {
+            existing.primary |= display.is_primary;
+            continue;
+        }
+        let name = if display.friendly_name.is_empty() {
+            display.name
+        } else {
+            display.friendly_name
+        };
+        resolutions.push(DisplayResolution {
+            width: display.width,
+            height: display.height,
+            name,
+            primary: display.is_primary,
+        });
+    }
+    resolutions.sort_by_key(|resolution| !resolution.primary);
+    resolutions
+}
+
+pub(crate) fn badge(text: &'static str, color: Color) -> Span<'static> {
+    Span::styled(
+        text,
+        Style::default()
+            .fg(THEME.as_ref().background())
+            .bg(color)
+            .add_modifier(Modifier::BOLD),
+    )
 }
 
 #[cfg(test)]

@@ -292,13 +292,12 @@ impl State {
             KeyCode::Enter => match self.selected {
                 0 => self.theme_picker = true,
                 1 => self.cycle_border(true),
-                2 | 3 => self.adjust_selected_memory(true),
+                2 | 3 => {
+                    self.editing = Some(new_text_area(vec![self.value(self.selected)]));
+                }
                 4 => self.open_java_picker(),
                 field => self.editing = Some(new_text_area(vec![self.value(field)])),
             },
-            KeyCode::Char('c') if matches!(self.selected, 2 | 3) => {
-                self.editing = Some(new_text_area(vec![self.value(self.selected)]));
-            }
             KeyCode::Char('s') => {
                 if self.validate_before_save() {
                     return Action::Save(
@@ -380,8 +379,9 @@ pub fn popup_rect(area: Rect, state: &State) -> Rect {
     } else {
         7 + u16::from(state.error.is_some())
     };
+    let width = if state.java_picker_open { 72 } else { 52 };
     area.centered(
-        ratatui::layout::Constraint::Percentage(52),
+        ratatui::layout::Constraint::Percentage(width),
         ratatui::layout::Constraint::Length(height.min(area.height.saturating_sub(4))),
     )
 }
@@ -399,7 +399,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &mut State) {
     } else if matches!(state.selected, 2 | 3) {
         super::keybind_line(&[
             ("h/l", " adjust"),
-            ("c", " custom"),
+            ("Enter", " exact"),
             ("s", " save"),
             ("Esc", " back"),
         ])
@@ -470,11 +470,11 @@ fn render_java_picker(frame: &mut Frame, area: Rect, state: &State) {
         list_area.y = list_area.y.saturating_add(1);
         list_area.height = list_area.height.saturating_sub(1);
     }
-    render_picker(
-        frame,
-        list_area,
-        &state.java_picker.labels(),
+    super::select_list::render(
+        state.java_picker.items(),
         state.java_picker.selected,
+        list_area,
+        frame.buffer_mut(),
     );
 }
 
@@ -553,6 +553,11 @@ fn global_field_line<'a>(state: &'a State, index: usize, label: &str) -> Line<'a
                 }),
         ),
     ])
+    .style(Style::default().bg(if selected {
+        theme.stripe()
+    } else {
+        theme.surface()
+    }))
 }
 
 #[cfg(test)]
@@ -564,10 +569,14 @@ mod tests {
         let mut state = State::new();
         state.selected = 2;
         let original = state.config.defaults.memory_min.clone();
-        state.handle_key(&KeyEvent::from(KeyCode::Enter));
+        state.handle_key(&KeyEvent::from(KeyCode::Char('l')));
         assert_ne!(state.config.defaults.memory_min, original);
         assert!(state.editing.is_none());
 
+        state.handle_key(&KeyEvent::from(KeyCode::Enter));
+        assert!(state.editing.is_some());
+
+        state.editing = None;
         state.selected = 4;
         state.handle_key(&KeyEvent::from(KeyCode::Enter));
         assert!(state.java_picker_open);

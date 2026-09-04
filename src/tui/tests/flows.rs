@@ -585,7 +585,8 @@ fn settings_panel_routes_legacy_edit_keys_to_tui_popups() {
     assert!(ui.screen().contains("Game version"));
     assert!(ui.screen().contains("Memory min"));
     assert!(ui.screen().contains("Desktop"));
-    assert!(ui.screen().contains('█'));
+    assert!(ui.screen().contains('◆'));
+    assert!(!ui.screen().contains('█'));
     assert!(!ui.screen().contains("● enabled"));
     assert!(!ui.screen().contains("Integration"));
     assert!(!ui.screen().contains('▰'));
@@ -617,7 +618,8 @@ fn settings_panel_routes_legacy_edit_keys_to_tui_popups() {
     ui.draw();
     assert!(ui.screen().contains("Launcher Settings"));
     assert!(ui.screen().contains("Memory max"));
-    assert!(ui.screen().contains('█'));
+    assert!(ui.screen().contains('◆'));
+    assert!(!ui.screen().contains('█'));
     assert!(!ui.screen().contains('▰'));
     ui.key(KeyCode::Enter);
     ui.draw();
@@ -699,6 +701,10 @@ fn settings_use_java_memory_and_resolution_controls() {
     ui.draw();
     assert!(ui.screen().contains("Resolution"));
     assert!(ui.screen().contains("1920x1080"));
+    for _ in 0..20 {
+        ui.key(KeyCode::Char('j'));
+    }
+    ui.draw();
     assert!(ui.screen().contains("Custom"));
     ui.key(KeyCode::Esc);
     ui.key(KeyCode::Esc);
