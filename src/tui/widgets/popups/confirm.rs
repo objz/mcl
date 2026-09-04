@@ -51,6 +51,11 @@ pub enum ConfirmTarget {
     JvmArguments {
         name: String,
     },
+    JavaAuto {
+        instance: Option<String>,
+        from: String,
+        to: String,
+    },
 }
 
 impl ConfirmTarget {
@@ -59,6 +64,7 @@ impl ConfirmTarget {
             Self::OrphanDependencies { .. } => " Remove unused dependencies ".to_owned(),
             Self::InstanceRuntime { .. } => " Change runtime ".to_owned(),
             Self::JvmArguments { .. } => " Clear JVM arguments ".to_owned(),
+            Self::JavaAuto { .. } => " Enable automatic Java ".to_owned(),
             _ => format!(" Delete '{}' ", self.name()),
         }
     }
@@ -99,6 +105,9 @@ impl ConfirmTarget {
                 .join("\n"),
             ConfirmTarget::InstanceRuntime { .. } => "Apply this runtime change".to_owned(),
             ConfirmTarget::JvmArguments { .. } => "Remove all JVM arguments".to_owned(),
+            ConfirmTarget::JavaAuto { from, to, .. } => {
+                format!("Java runtime will change:\n{from} → {to}")
+            }
         }
     }
 
@@ -111,6 +120,7 @@ impl ConfirmTarget {
             ConfirmTarget::OrphanDependencies { .. } => "unused dependencies",
             ConfirmTarget::InstanceRuntime { name, .. } => name,
             ConfirmTarget::JvmArguments { name, .. } => name,
+            ConfirmTarget::JavaAuto { instance, .. } => instance.as_deref().unwrap_or("launcher"),
         }
     }
 
@@ -120,6 +130,7 @@ impl ConfirmTarget {
             Self::OrphanDependencies { .. } => " remove all",
             Self::InstanceRuntime { .. } => " change",
             Self::JvmArguments { .. } => " clear",
+            Self::JavaAuto { .. } => " enable",
             _ => " confirm",
         }
     }

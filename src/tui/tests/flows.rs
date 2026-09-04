@@ -724,6 +724,57 @@ fn clearing_jvm_arguments_requires_confirmation_and_autosaves() {
 }
 
 #[test]
+fn enabling_a_different_automatic_java_requires_confirmation() {
+    let mut ui = UiHarness::new();
+    ui.add_instance("java-auto-test");
+    ui.key(KeyCode::Char('E'));
+    ui.app.instance_settings.as_mut().unwrap().draft.java_path = Some("/custom/java".to_owned());
+
+    for _ in 0..3 {
+        ui.key(KeyCode::Char('j'));
+    }
+    ui.key(KeyCode::Char('a'));
+
+    assert_eq!(ui.app.focused, FocusedArea::ConfirmDelete);
+    assert!(matches!(
+        confirm::pending_target(),
+        Some(confirm::ConfirmTarget::JavaAuto {
+            instance: Some(name),
+            ..
+        }) if name == "java-auto-test"
+    ));
+    ui.draw();
+    assert!(ui.screen().contains("Enable automatic Java"));
+    assert!(ui.screen().contains("Java runtime will change"));
+
+    ui.key(KeyCode::Esc);
+    assert_eq!(ui.app.focused, FocusedArea::InstanceSettings);
+    assert_eq!(
+        ui.app
+            .instance_settings
+            .as_ref()
+            .unwrap()
+            .draft
+            .java_path
+            .as_deref(),
+        Some("/custom/java")
+    );
+    ui.key(KeyCode::Char('a'));
+
+    ui.key(KeyCode::Enter);
+
+    assert_eq!(ui.app.focused, FocusedArea::InstanceSettings);
+    assert_eq!(
+        ui.app
+            .instances_state
+            .selected_instance()
+            .unwrap()
+            .java_path,
+        None
+    );
+}
+
+#[test]
 fn instance_settings_validation_errors_use_the_toast_buffer() {
     let mut ui = UiHarness::new();
     ui.add_instance("toast-test");
@@ -757,7 +808,7 @@ fn settings_use_java_memory_and_resolution_controls() {
     ui.key(KeyCode::Enter);
     ui.draw();
     assert!(ui.screen().contains("Java Runtime"));
-    assert!(ui.screen().contains("auto"));
+    assert!(!ui.screen().contains("auto"));
     assert!(!ui.screen().contains("custom"));
     assert!(!ui.screen().contains("Automatic"));
     assert!(!ui.screen().contains("Custom path"));
@@ -806,7 +857,7 @@ fn settings_use_java_memory_and_resolution_controls() {
     ui.key(KeyCode::Enter);
     ui.draw();
     assert!(ui.screen().contains("Java Runtime"));
-    assert!(ui.screen().contains("auto"));
+    assert!(!ui.screen().contains("auto"));
     assert!(!ui.screen().contains("Automatic"));
     ui.key(KeyCode::Esc);
     ui.key(KeyCode::Esc);

@@ -106,14 +106,29 @@ pub enum Action {
     None,
     Save(Box<InstanceConfig>, bool),
     Error(String),
-    ConfirmRuntime { name: String },
-    ConfirmClearJvmArgs { name: String },
+    ConfirmRuntime {
+        name: String,
+    },
+    ConfirmClearJvmArgs {
+        name: String,
+    },
+    ConfirmJavaAuto {
+        name: String,
+        from: String,
+        to: String,
+    },
     OpenRaw,
     Close,
 }
 
 impl State {
     pub fn new(instance: &InstanceConfig, _meta_dir: &std::path::Path) -> Self {
+        let auto_java_path = SETTINGS
+            .read()
+            .paths
+            .effective_java_path()
+            .map(str::to_owned)
+            .unwrap_or_else(crate::instance::java::detect_java_path);
         Self {
             original: instance.clone(),
             draft: instance.clone(),
@@ -131,7 +146,7 @@ impl State {
             loader_versions: Arc::new(Mutex::new(LoadState::Idle)),
             choice_picker: None,
             choice_index: 0,
-            java_picker: JavaPicker::new(),
+            java_picker: JavaPicker::with_auto_path(auto_java_path),
             display_resolutions: display_resolutions(),
         }
     }
@@ -283,10 +298,6 @@ impl State {
         let count = self.choice_values().len();
         match key.code {
             KeyCode::Esc | KeyCode::Char('h') | KeyCode::Left => self.choice_picker = None,
-            KeyCode::Char('a') if self.choice_picker == Some(ChoicePicker::Java) => {
-                self.toggle_auto_java();
-                self.choice_picker = None;
-            }
             KeyCode::Char('d') if self.choice_picker == Some(ChoicePicker::Resolution) => {
                 self.apply_default_resolution();
                 self.choice_picker = None;
@@ -538,12 +549,25 @@ impl State {
         }
     }
 
-    fn toggle_auto_java(&mut self) {
-        self.draft.java_path = if self.draft.java_path.is_none() {
-            Some(self.java_picker.detected_path().to_owned())
-        } else {
-            None
+    fn toggle_auto_java(&mut self) -> Action {
+        let Some(current) = self.draft.java_path.as_deref() else {
+            self.draft.java_path = Some(self.java_picker.detected_path().to_owned());
+            self.error = None;
+            return Action::None;
         };
+        if let Some((from, to)) = self.java_picker.automatic_change(current) {
+            return Action::ConfirmJavaAuto {
+                name: self.draft.name.clone(),
+                from,
+                to,
+            };
+        }
+        self.enable_auto_java();
+        Action::None
+    }
+
+    pub fn enable_auto_java(&mut self) {
+        self.draft.java_path = None;
         self.error = None;
     }
 
@@ -755,7 +779,7 @@ impl State {
             KeyCode::Char('c') if self.selected == 7 => {
                 self.editing = Some(new_text_area(vec![self.value(7)]));
             }
-            KeyCode::Char('a') if self.selected == 3 => self.toggle_auto_java(),
+            KeyCode::Char('a') if self.selected == 3 => return self.toggle_auto_java(),
             KeyCode::Char('c') if self.selected == 3 => {
                 self.editing = Some(new_text_area(vec![self.value(3)]));
             }
@@ -888,7 +912,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &mut State) {
     } else if state.picker.is_some() {
         super::keybind_line(&[("/", " search"), ("h", " back"), ("Enter", " select")])
     } else if state.choice_picker == Some(ChoicePicker::Java) {
-        super::keybind_line(&[("a", " auto"), ("h", " back"), ("Enter", " select")])
+        super::keybind_line(&[("h", " back"), ("Enter", " select")])
     } else if state.choice_picker == Some(ChoicePicker::Resolution) {
         super::keybind_line(&[("d", " default"), ("h", " back"), ("Enter", " select")])
     } else if state.choice_picker.is_some() {
@@ -1530,6 +1554,10 @@ mod tests {
         state.selected = 3;
         state.begin_edit();
         assert_eq!(state.choice_picker, Some(ChoicePicker::Java));
+        let original_java = state.draft.java_path.clone();
+        state.handle_choice_key(&KeyEvent::from(KeyCode::Char('a')));
+        assert_eq!(state.choice_picker, Some(ChoicePicker::Java));
+        assert_eq!(state.draft.java_path, original_java);
         state.handle_choice_key(&KeyEvent::from(KeyCode::Char('c')));
         assert_eq!(state.choice_picker, Some(ChoicePicker::Java));
         assert!(state.editing.is_none());
@@ -1545,13 +1573,25 @@ mod tests {
 
         state.selected = 3;
         state.draft.java_path = Some("/custom/java".to_owned());
-        state.handle_key(&KeyEvent::from(KeyCode::Char('a')));
+        assert!(matches!(
+            state.handle_key(&KeyEvent::from(KeyCode::Char('a'))),
+            Action::ConfirmJavaAuto { .. }
+        ));
+        assert_eq!(state.draft.java_path.as_deref(), Some("/custom/java"));
+        state.enable_auto_java();
         assert_eq!(state.draft.java_path, None);
         state.handle_key(&KeyEvent::from(KeyCode::Char('a')));
         assert_eq!(
             state.draft.java_path.as_deref(),
             Some(state.java_picker.detected_path())
         );
+        let saved = state.draft.clone();
+        state.mark_saved(&saved, state.desktop);
+        assert!(matches!(
+            state.handle_key(&KeyEvent::from(KeyCode::Char('a'))),
+            Action::Save(..)
+        ));
+        assert_eq!(state.draft.java_path, None);
 
         state.selected = 7;
         state.display_resolutions = vec![DisplayResolution {

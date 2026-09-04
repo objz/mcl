@@ -49,10 +49,14 @@ pub(crate) struct DisplayResolution {
 
 impl JavaPicker {
     pub(crate) fn new() -> Self {
+        Self::with_auto_path(crate::instance::java::detect_java_path())
+    }
+
+    pub(crate) fn with_auto_path(detected: String) -> Self {
         Self {
             load: Arc::new(Mutex::new(LoadState::Idle)),
             current: None,
-            detected: crate::instance::java::detect_java_path(),
+            detected,
             selected: 0,
             previous_choices: Vec::new(),
         }
@@ -240,12 +244,56 @@ impl JavaPicker {
     pub(crate) fn detected_path(&self) -> &str {
         &self.detected
     }
+
+    pub(crate) fn automatic_change(&self, current: &str) -> Option<(String, String)> {
+        if same_executable(current, &self.detected) {
+            return None;
+        }
+
+        let load = self
+            .load
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let installations = match &*load {
+            LoadState::Loaded(installations) => installations,
+            _ => return Some((current.to_owned(), self.detected.clone())),
+        };
+        let version_for = |path: &str| {
+            installations
+                .iter()
+                .find(|installation| same_executable(&installation.path.to_string_lossy(), path))
+                .and_then(|installation| installation.version.clone())
+        };
+        let current_version = version_for(current);
+        let detected_version = version_for(&self.detected);
+        Some((
+            java_runtime_label(current, current_version.as_deref()),
+            java_runtime_label(&self.detected, detected_version.as_deref()),
+        ))
+    }
 }
 
 impl Default for JavaPicker {
     fn default() -> Self {
         Self::new()
     }
+}
+
+fn same_executable(left: &str, right: &str) -> bool {
+    if left == right {
+        return true;
+    }
+    std::fs::canonicalize(left)
+        .ok()
+        .zip(std::fs::canonicalize(right).ok())
+        .is_some_and(|(left, right)| left == right)
+}
+
+fn java_runtime_label(path: &str, version: Option<&str>) -> String {
+    version.map_or_else(
+        || path.to_owned(),
+        |version| format!("Java {version}  {path}"),
+    )
 }
 
 pub(crate) fn memory_kib(value: &str) -> Option<u64> {
@@ -415,6 +463,25 @@ mod tests {
             picker.selected_choice(),
             JavaChoice::Installation("/opt/jdk/bin/java".to_owned())
         );
+    }
+
+    #[test]
+    fn automatic_java_compares_selected_executables() {
+        let picker = JavaPicker::with_auto_path("/auto/java".to_owned());
+        *picker.load.lock().unwrap() = LoadState::Loaded(vec![
+            JavaInstallation {
+                path: "/current/java".into(),
+                version: Some("21.0.8".to_owned()),
+            },
+            JavaInstallation {
+                path: "/auto/java".into(),
+                version: Some("21.0.8".to_owned()),
+            },
+        ]);
+
+        assert!(picker.automatic_change("/auto/java").is_none());
+        assert!(picker.automatic_change("/current/java").is_some());
+        assert!(picker.automatic_change("/other/java").is_some());
     }
 
     #[test]

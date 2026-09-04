@@ -43,6 +43,7 @@ pub enum Action {
     None,
     Save(Box<Config>, String, BorderStyle),
     Error(String),
+    ConfirmJavaAuto { from: String, to: String },
     OpenRaw(std::path::PathBuf),
     Close,
 }
@@ -198,14 +199,34 @@ impl State {
         self.java_picker_open = true;
     }
 
-    fn toggle_auto_java(&mut self) {
-        self.config.paths.java_path = if self.config.paths.java_path.is_none() {
-            Some(self.java_picker.detected_path().to_owned())
-        } else {
-            None
+    fn toggle_auto_java(&mut self) -> Action {
+        let Some(current) = self.config.paths.java_path.as_deref() else {
+            self.config.paths.java_path = Some(self.java_picker.detected_path().to_owned());
+            self.save_pending = true;
+            self.error = None;
+            return Action::None;
         };
+        if let Some((from, to)) = self.java_picker.automatic_change(current) {
+            return Action::ConfirmJavaAuto { from, to };
+        }
+        self.enable_auto_java();
+        Action::None
+    }
+
+    fn enable_auto_java(&mut self) {
+        self.config.paths.java_path = None;
         self.save_pending = true;
         self.error = None;
+    }
+
+    pub fn confirm_auto_java(&mut self) -> Action {
+        self.enable_auto_java();
+        self.save_pending = false;
+        Action::Save(
+            Box::new(self.config.clone()),
+            self.theme.theme.clone(),
+            self.theme.border_style.clone(),
+        )
     }
 
     fn handle_java_picker_key(&mut self, key: &KeyEvent) {
@@ -213,10 +234,6 @@ impl State {
         let count = self.java_picker.labels().len();
         match key.code {
             KeyCode::Esc | KeyCode::Char('h') | KeyCode::Left => self.java_picker_open = false,
-            KeyCode::Char('a') => {
-                self.toggle_auto_java();
-                self.java_picker_open = false;
-            }
             KeyCode::Char('j') | KeyCode::Down if count > 0 => {
                 self.java_picker.selected = (self.java_picker.selected + 1).min(count - 1);
             }
@@ -316,9 +333,7 @@ impl State {
                 4 => self.open_java_picker(),
                 field => self.editing = Some(new_text_area(vec![self.value(field)])),
             },
-            KeyCode::Char('a') if self.selected == 4 => {
-                self.toggle_auto_java();
-            }
+            KeyCode::Char('a') if self.selected == 4 => return self.toggle_auto_java(),
             KeyCode::Char('c') if self.selected == 4 => {
                 self.editing = Some(new_text_area(vec![self.value(4)]));
             }
@@ -403,9 +418,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &mut State) {
     frame.render_widget(Clear, area);
     let keybinds = if state.editing.is_some() {
         super::keybind_line(&[("Enter", " apply"), ("Esc", " cancel")])
-    } else if state.java_picker_open {
-        super::keybind_line(&[("a", " auto"), ("h", " back"), ("Enter", " select")])
-    } else if state.theme_picker {
+    } else if state.java_picker_open || state.theme_picker {
         super::keybind_line(&[("h", " back"), ("Enter", " select")])
     } else if matches!(state.selected, 2 | 3) {
         super::keybind_line(&[("h/l", " adjust"), ("Enter", " exact"), ("Esc", " back")])
@@ -626,5 +639,39 @@ mod tests {
             Action::Save(..)
         ));
         assert_eq!(state.config.paths.java_path, None);
+    }
+
+    #[test]
+    fn java_picker_does_not_toggle_auto_mode() {
+        let mut state = State::new();
+        state.selected = 4;
+        state.config.paths.java_path = Some("/custom/java".to_owned());
+        state.open_java_picker();
+
+        assert!(matches!(
+            state.handle_key(&KeyEvent::from(KeyCode::Char('a'))),
+            Action::None
+        ));
+        assert!(state.java_picker_open);
+        assert_eq!(
+            state.config.paths.java_path.as_deref(),
+            Some("/custom/java")
+        );
+    }
+
+    #[test]
+    fn changing_runtime_to_auto_requests_confirmation() {
+        let mut state = State::new();
+        state.selected = 4;
+        state.config.paths.java_path = Some("/custom/java".to_owned());
+
+        assert!(matches!(
+            state.handle_key(&KeyEvent::from(KeyCode::Char('a'))),
+            Action::ConfirmJavaAuto { .. }
+        ));
+        assert_eq!(
+            state.config.paths.java_path.as_deref(),
+            Some("/custom/java")
+        );
     }
 }

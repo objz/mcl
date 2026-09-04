@@ -283,6 +283,32 @@ impl App {
                             }
                             self.focused
                         }
+                        Some(confirm_popup::ConfirmTarget::JavaAuto { instance, .. }) => {
+                            if instance.is_some() {
+                                self.focused = FocusedArea::InstanceSettings;
+                                let confirmed = self.instance_settings.as_mut().and_then(|state| {
+                                    state.enable_auto_java();
+                                    state.confirmed_save()
+                                });
+                                if let Some((updated, desktop)) = confirmed {
+                                    self.apply_instance_settings(*updated, desktop, false);
+                                }
+                            } else {
+                                self.focused = FocusedArea::GlobalSettings;
+                                let action = self.global_settings.as_mut().map(
+                                    widgets::popups::global_settings::State::confirm_auto_java,
+                                );
+                                if let Some(widgets::popups::global_settings::Action::Save(
+                                    config,
+                                    theme,
+                                    border,
+                                )) = action
+                                {
+                                    self.apply_global_settings(*config, theme, border);
+                                }
+                            }
+                            self.focused
+                        }
                         None => FocusedArea::Instances,
                     };
                     confirm_popup::clear_pending();
@@ -307,6 +333,13 @@ impl App {
                         }
                         Some(confirm_popup::ConfirmTarget::JvmArguments { .. }) => {
                             FocusedArea::InstanceSettings
+                        }
+                        Some(confirm_popup::ConfirmTarget::JavaAuto { instance, .. }) => {
+                            if instance.is_some() {
+                                FocusedArea::InstanceSettings
+                            } else {
+                                FocusedArea::GlobalSettings
+                            }
                         }
                         _ => FocusedArea::Instances,
                     };
@@ -684,6 +717,14 @@ impl App {
                         pushed_at: std::time::Instant::now(),
                     });
                 }
+                widgets::popups::global_settings::Action::ConfirmJavaAuto { from, to } => {
+                    confirm_popup::set_pending(confirm_popup::ConfirmTarget::JavaAuto {
+                        instance: None,
+                        from,
+                        to,
+                    });
+                    self.focused = FocusedArea::ConfirmDelete;
+                }
                 widgets::popups::global_settings::Action::Close => {
                     self.global_settings = None;
                     self.focused = self.pre_overlay_focused;
@@ -694,20 +735,7 @@ impl App {
                     self.focused = self.pre_overlay_focused;
                 }
                 widgets::popups::global_settings::Action::Save(config, theme, border) => {
-                    let result = crate::config::SETTINGS
-                        .save_launcher_settings(*config)
-                        .and_then(|()| crate::config::theme::apply_theme(theme, border));
-                    match result {
-                        Ok(()) => {
-                            crate::feedback::request_redraw();
-                        }
-                        Err(error) => error_buffer::push_error(error_buffer::ErrorEvent {
-                            id: 0,
-                            level: tracing::Level::ERROR,
-                            message: error.to_string(),
-                            pushed_at: std::time::Instant::now(),
-                        }),
-                    }
+                    self.apply_global_settings(*config, theme, border);
                 }
             }
             return Ok(());
@@ -760,6 +788,14 @@ impl App {
                 }
                 widgets::popups::instance_settings::Action::ConfirmClearJvmArgs { name } => {
                     confirm_popup::set_pending(confirm_popup::ConfirmTarget::JvmArguments { name });
+                    self.focused = FocusedArea::ConfirmDelete;
+                }
+                widgets::popups::instance_settings::Action::ConfirmJavaAuto { name, from, to } => {
+                    confirm_popup::set_pending(confirm_popup::ConfirmTarget::JavaAuto {
+                        instance: Some(name),
+                        from,
+                        to,
+                    });
                     self.focused = FocusedArea::ConfirmDelete;
                 }
             }
@@ -2057,6 +2093,21 @@ impl App {
                 relative_path.display(),
                 error
             );
+        }
+    }
+
+    fn apply_global_settings(
+        &mut self,
+        config: crate::config::Config,
+        theme: String,
+        border: crate::config::theme::BorderStyle,
+    ) {
+        let result = crate::config::SETTINGS
+            .save_launcher_settings(config)
+            .and_then(|()| crate::config::theme::apply_theme(theme, border));
+        match result {
+            Ok(()) => crate::feedback::request_redraw(),
+            Err(error) => error_buffer::push_message(tracing::Level::ERROR, error.to_string()),
         }
     }
 
