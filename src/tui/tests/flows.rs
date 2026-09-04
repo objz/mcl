@@ -585,6 +585,8 @@ fn settings_panel_routes_legacy_edit_keys_to_tui_popups() {
     assert!(ui.screen().contains("Game version"));
     assert!(ui.screen().contains("Memory min"));
     assert!(ui.screen().contains("Desktop"));
+    assert!(ui.screen().contains('█'));
+    assert!(!ui.screen().contains("● enabled"));
     assert!(!ui.screen().contains("Integration"));
     assert!(!ui.screen().contains('▰'));
     ui.key(KeyCode::Down);
@@ -615,6 +617,7 @@ fn settings_panel_routes_legacy_edit_keys_to_tui_popups() {
     ui.draw();
     assert!(ui.screen().contains("Launcher Settings"));
     assert!(ui.screen().contains("Memory max"));
+    assert!(ui.screen().contains('█'));
     assert!(!ui.screen().contains('▰'));
     ui.key(KeyCode::Enter);
     ui.draw();
@@ -658,6 +661,59 @@ fn runtime_settings_use_the_shared_confirmation_popup() {
     ));
     ui.key(KeyCode::Enter);
     assert_eq!(ui.app.focused, FocusedArea::Settings);
+}
+
+#[test]
+fn settings_use_java_memory_and_resolution_controls() {
+    let mut ui = UiHarness::new();
+    ui.add_instance("controls-test");
+    ui.key(KeyCode::Char('E'));
+
+    for _ in 0..3 {
+        ui.key(KeyCode::Char('j'));
+    }
+    ui.key(KeyCode::Enter);
+    ui.draw();
+    assert!(ui.screen().contains("Java Runtime"));
+    assert!(ui.screen().contains("Automatic"));
+    assert!(ui.screen().contains("Custom path"));
+    ui.key(KeyCode::Esc);
+
+    ui.key(KeyCode::Char('j'));
+    ui.key(KeyCode::Char('l'));
+    assert_eq!(
+        ui.app
+            .instance_settings
+            .as_ref()
+            .unwrap()
+            .draft
+            .memory_min
+            .as_deref(),
+        Some("1G")
+    );
+
+    for _ in 0..3 {
+        ui.key(KeyCode::Char('j'));
+    }
+    ui.key(KeyCode::Enter);
+    ui.draw();
+    assert!(ui.screen().contains("Resolution"));
+    assert!(ui.screen().contains("1920x1080"));
+    assert!(ui.screen().contains("Custom"));
+    ui.key(KeyCode::Esc);
+    ui.key(KeyCode::Esc);
+    ui.key(KeyCode::Enter);
+
+    ui.key(KeyCode::Char('G'));
+    for _ in 0..4 {
+        ui.key(KeyCode::Char('j'));
+    }
+    ui.key(KeyCode::Enter);
+    ui.draw();
+    assert!(ui.screen().contains("Java Runtime"));
+    assert!(ui.screen().contains("Automatic"));
+    ui.key(KeyCode::Esc);
+    ui.key(KeyCode::Esc);
 }
 
 #[test]

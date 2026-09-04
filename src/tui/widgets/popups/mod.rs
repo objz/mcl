@@ -13,6 +13,8 @@ pub mod instance_settings;
 mod load_state;
 pub mod modpack_update;
 pub mod new_instance;
+pub(crate) mod select_list;
+pub(crate) mod settings_controls;
 pub mod version_lists;
 
 pub use load_state::LoadState;

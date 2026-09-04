@@ -85,14 +85,7 @@ impl WizardState {
     }
 
     pub fn selected_loader(&self) -> ModLoader {
-        const LOADERS: [ModLoader; 5] = [
-            ModLoader::Vanilla,
-            ModLoader::Fabric,
-            ModLoader::Forge,
-            ModLoader::NeoForge,
-            ModLoader::Quilt,
-        ];
-        LOADERS[self.loader_idx % 5]
+        super::super::select_list::MOD_LOADERS[self.loader_idx % 5]
     }
 
     pub fn selected_loader_version(&self) -> Option<String> {

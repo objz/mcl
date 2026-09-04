@@ -9,7 +9,7 @@ use ratatui::{
     layout::Rect,
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Clear, Paragraph},
+    widgets::{Block, Borders, Clear, ListItem, Paragraph},
 };
 use ratatui_textarea::{CursorMove, TextArea};
 
@@ -19,6 +19,9 @@ use crate::{
         theme::{BORDER_STYLE, BorderStyle, THEME, ThemeConfig},
     },
     instance::models::normalize_memory_value,
+    tui::widgets::popups::settings_controls::{
+        JavaChoice, JavaPicker, adjust_memory, memory_kib, render_memory_gauge,
+    },
 };
 
 pub struct State {
@@ -31,6 +34,8 @@ pub struct State {
     themes: Vec<String>,
     theme_picker: bool,
     theme_index: usize,
+    java_picker_open: bool,
+    java_picker: JavaPicker,
 }
 
 pub enum Action {
@@ -59,6 +64,8 @@ impl State {
             themes,
             theme_picker: false,
             theme_index,
+            java_picker_open: false,
+            java_picker: JavaPicker::new(),
         }
     }
 
@@ -106,11 +113,19 @@ impl State {
                 "memory must be a positive number with K, M, or G".to_owned(),
             ),
             2 => {
-                self.config.defaults.memory_min = normalize_memory_value(value).unwrap();
+                let value = normalize_memory_value(value).unwrap();
+                self.config.defaults.memory_min = value.clone();
+                if memory_kib(&value) > memory_kib(&self.config.defaults.memory_max) {
+                    self.config.defaults.memory_max = value;
+                }
                 self.config_dirty = true;
             }
             3 => {
-                self.config.defaults.memory_max = normalize_memory_value(value).unwrap();
+                let value = normalize_memory_value(value).unwrap();
+                self.config.defaults.memory_max = value.clone();
+                if memory_kib(&value) < memory_kib(&self.config.defaults.memory_min) {
+                    self.config.defaults.memory_min = value;
+                }
                 self.config_dirty = true;
             }
             4 => {
@@ -171,6 +186,69 @@ impl State {
         }
     }
 
+    fn open_java_picker(&mut self) {
+        self.java_picker
+            .open(self.config.paths.java_path.as_deref());
+        self.java_picker.initialize();
+        self.java_picker_open = true;
+    }
+
+    fn handle_java_picker_key(&mut self, key: &KeyEvent) {
+        self.java_picker.initialize();
+        let count = self.java_picker.labels().len();
+        match key.code {
+            KeyCode::Esc | KeyCode::Char('h') | KeyCode::Left => self.java_picker_open = false,
+            KeyCode::Char('j') | KeyCode::Down if count > 0 => {
+                self.java_picker.selected = (self.java_picker.selected + 1).min(count - 1);
+            }
+            KeyCode::Char('k') | KeyCode::Up => {
+                self.java_picker.selected = self.java_picker.selected.saturating_sub(1);
+            }
+            KeyCode::Enter | KeyCode::Char('l') | KeyCode::Right => {
+                match self.java_picker.selected_choice() {
+                    JavaChoice::Automatic => {
+                        if self.config.paths.java_path.take().is_some() {
+                            self.config_dirty = true;
+                        }
+                    }
+                    JavaChoice::Installation(path) => {
+                        if self.config.paths.java_path.as_deref() != Some(&path) {
+                            self.config.paths.java_path = Some(path);
+                            self.config_dirty = true;
+                        }
+                    }
+                    JavaChoice::Custom => {
+                        self.editing = Some(new_text_area(vec![self.value(4)]));
+                    }
+                }
+                self.java_picker_open = false;
+            }
+            _ => {}
+        }
+    }
+
+    fn adjust_selected_memory(&mut self, forward: bool) {
+        let value = if self.selected == 2 {
+            &self.config.defaults.memory_min
+        } else {
+            &self.config.defaults.memory_max
+        };
+        let value = adjust_memory(value, forward);
+        if self.selected == 2 {
+            self.config.defaults.memory_min = value.clone();
+            if memory_kib(&value) > memory_kib(&self.config.defaults.memory_max) {
+                self.config.defaults.memory_max = value;
+            }
+        } else {
+            self.config.defaults.memory_max = value.clone();
+            if memory_kib(&value) < memory_kib(&self.config.defaults.memory_min) {
+                self.config.defaults.memory_min = value;
+            }
+        }
+        self.config_dirty = true;
+        self.error = None;
+    }
+
     fn validate_before_save(&mut self) -> bool {
         self.error = None;
         let min = memory_kib(&self.config.defaults.memory_min);
@@ -182,6 +260,10 @@ impl State {
     }
 
     pub fn handle_key(&mut self, key: &KeyEvent) -> Action {
+        if self.java_picker_open {
+            self.handle_java_picker_key(key);
+            return Action::None;
+        }
         if self.theme_picker {
             self.handle_theme_picker_key(key);
             return Action::None;
@@ -201,11 +283,22 @@ impl State {
             KeyCode::Char('k') | KeyCode::Up => self.selected = self.selected.saturating_sub(1),
             KeyCode::Char('h') | KeyCode::Left if self.selected == 1 => self.cycle_border(false),
             KeyCode::Char('l') | KeyCode::Right if self.selected == 1 => self.cycle_border(true),
+            KeyCode::Char('h') | KeyCode::Left if matches!(self.selected, 2 | 3) => {
+                self.adjust_selected_memory(false);
+            }
+            KeyCode::Char('l') | KeyCode::Right if matches!(self.selected, 2 | 3) => {
+                self.adjust_selected_memory(true);
+            }
             KeyCode::Enter => match self.selected {
                 0 => self.theme_picker = true,
                 1 => self.cycle_border(true),
+                2 | 3 => self.adjust_selected_memory(true),
+                4 => self.open_java_picker(),
                 field => self.editing = Some(new_text_area(vec![self.value(field)])),
             },
+            KeyCode::Char('c') if matches!(self.selected, 2 | 3) => {
+                self.editing = Some(new_text_area(vec![self.value(self.selected)]));
+            }
             KeyCode::Char('s') => {
                 if self.validate_before_save() {
                     return Action::Save(
@@ -239,18 +332,6 @@ impl State {
 impl Default for State {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-fn memory_kib(value: &str) -> Option<u64> {
-    let normalized = normalize_memory_value(value)?;
-    let (number, suffix) = normalized.split_at(normalized.len().saturating_sub(1));
-    let number = number.parse::<u64>().ok()?;
-    match suffix {
-        "K" => Some(number),
-        "M" => number.checked_mul(1024),
-        "G" => number.checked_mul(1024 * 1024),
-        _ => None,
     }
 }
 
@@ -294,7 +375,7 @@ fn new_text_area(lines: Vec<String>) -> TextArea<'static> {
 }
 
 pub fn popup_rect(area: Rect, state: &State) -> Rect {
-    let height = if state.theme_picker {
+    let height = if state.theme_picker || state.java_picker_open {
         (area.height * 2 / 3).max(10)
     } else {
         7 + u16::from(state.error.is_some())
@@ -305,13 +386,23 @@ pub fn popup_rect(area: Rect, state: &State) -> Rect {
     )
 }
 
-pub fn render(frame: &mut Frame, area: Rect, state: &State) {
+pub fn render(frame: &mut Frame, area: Rect, state: &mut State) {
+    if state.java_picker_open {
+        state.java_picker.initialize();
+    }
     let theme = THEME.as_ref();
     frame.render_widget(Clear, area);
     let keybinds = if state.editing.is_some() {
         super::keybind_line(&[("Enter", " apply"), ("Esc", " cancel")])
-    } else if state.theme_picker {
+    } else if state.theme_picker || state.java_picker_open {
         super::keybind_line(&[("h", " back"), ("Enter", " select")])
+    } else if matches!(state.selected, 2 | 3) {
+        super::keybind_line(&[
+            ("h/l", " adjust"),
+            ("c", " custom"),
+            ("s", " save"),
+            ("Esc", " back"),
+        ])
     } else {
         super::keybind_line(&[
             ("j/k", ""),
@@ -321,7 +412,11 @@ pub fn render(frame: &mut Frame, area: Rect, state: &State) {
             ("Esc", " back"),
         ])
     };
-    let title = if state.config_dirty {
+    let title = if state.theme_picker {
+        " Theme "
+    } else if state.java_picker_open {
+        " Java Runtime "
+    } else if state.config_dirty {
         " Launcher Settings * "
     } else {
         " Launcher Settings "
@@ -339,43 +434,48 @@ pub fn render(frame: &mut Frame, area: Rect, state: &State) {
         render_picker(frame, inner, &state.themes, state.theme_index);
         return;
     }
+    if state.java_picker_open {
+        render_java_picker(frame, inner, state);
+        return;
+    }
     render_settings_list(frame, inner, state);
 }
 
 fn render_picker(frame: &mut Frame, area: Rect, values: &[String], selected: usize) {
     let theme = THEME.as_ref();
-    let visible_rows = area.height as usize;
-    let start = selected.saturating_sub(visible_rows.saturating_sub(1));
-    let lines = values
+    let items = values
         .iter()
-        .enumerate()
-        .skip(start)
-        .take(visible_rows)
-        .map(|(index, name)| {
-            let focused = index == selected;
-            Line::from(vec![
-                Span::styled(
-                    if focused { "▶ " } else { "  " },
-                    Style::default().fg(theme.accent()),
-                ),
-                Span::styled(
-                    name.clone(),
-                    Style::default()
-                        .fg(if focused {
-                            theme.accent()
-                        } else {
-                            theme.text()
-                        })
-                        .add_modifier(if focused {
-                            Modifier::BOLD
-                        } else {
-                            Modifier::empty()
-                        }),
-                ),
-            ])
+        .map(|name| {
+            ListItem::new(Line::from(Span::styled(
+                name.clone(),
+                Style::default().fg(theme.text()),
+            )))
         })
-        .collect::<Vec<_>>();
-    frame.render_widget(Paragraph::new(lines), area);
+        .collect();
+    super::select_list::render(items, selected, area, frame.buffer_mut());
+}
+
+fn render_java_picker(frame: &mut Frame, area: Rect, state: &State) {
+    let theme = THEME.as_ref();
+    let mut list_area = area;
+    if let Some(status) = state.java_picker.status() {
+        let (message, color) = match status {
+            Ok(message) => (message.to_owned(), theme.text_dim()),
+            Err(error) => (error, theme.error()),
+        };
+        frame.render_widget(
+            Paragraph::new(message).style(Style::default().fg(color)),
+            Rect { height: 1, ..area },
+        );
+        list_area.y = list_area.y.saturating_add(1);
+        list_area.height = list_area.height.saturating_sub(1);
+    }
+    render_picker(
+        frame,
+        list_area,
+        &state.java_picker.labels(),
+        state.java_picker.selected,
+    );
 }
 
 fn render_settings_list(frame: &mut Frame, area: Rect, state: &State) {
@@ -393,6 +493,22 @@ fn render_settings_list(frame: &mut Frame, area: Rect, state: &State) {
         }))
         .collect::<Vec<_>>();
     frame.render_widget(Paragraph::new(lines), area);
+
+    for field in [2, 3] {
+        let value = state.value(field);
+        render_memory_gauge(
+            frame,
+            Rect {
+                x: area.x.saturating_add(20),
+                y: area.y.saturating_add(field as u16),
+                width: area.width.saturating_sub(21),
+                height: 1,
+            },
+            &value,
+            value.clone(),
+            state.selected == field,
+        );
+    }
 
     if let Some(editor) = state.editing.as_ref() {
         let edit_area = Rect {
@@ -419,7 +535,7 @@ fn global_field_line<'a>(state: &'a State, index: usize, label: &str) -> Line<'a
             Style::default().fg(theme.text_dim()),
         ),
         Span::styled(
-            if editing {
+            if editing || matches!(index, 2 | 3) {
                 String::new()
             } else {
                 state.display_value(index)
@@ -444,15 +560,16 @@ mod tests {
     use super::*;
 
     #[test]
-    fn launcher_memory_and_java_use_inline_editors() {
+    fn launcher_memory_uses_slider_and_java_uses_picker() {
         let mut state = State::new();
         state.selected = 2;
+        let original = state.config.defaults.memory_min.clone();
         state.handle_key(&KeyEvent::from(KeyCode::Enter));
-        assert!(state.editing.is_some());
+        assert_ne!(state.config.defaults.memory_min, original);
+        assert!(state.editing.is_none());
 
-        state.editing = None;
         state.selected = 4;
         state.handle_key(&KeyEvent::from(KeyCode::Enter));
-        assert!(state.editing.is_some());
+        assert!(state.java_picker_open);
     }
 }

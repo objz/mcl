@@ -998,7 +998,7 @@ pub(crate) fn render_version_popup(
                 .style(Style::default().fg(THEME.as_ref().text_dim()))
                 .render(area, buffer);
             } else {
-                crate::tui::widgets::popups::new_instance::render_select_list(
+                crate::tui::widgets::popups::select_list::render(
                     items.clone(),
                     selected,
                     area,

@@ -150,14 +150,14 @@ impl App {
         }
 
         if self.focused == FocusedArea::InstanceSettings
-            && let Some(state) = self.instance_settings.as_ref()
+            && let Some(state) = self.instance_settings.as_mut()
         {
             let area = widgets::popups::instance_settings::popup_rect(frame.area(), state);
             widgets::popups::instance_settings::render(frame, area, state);
         }
 
         if self.focused == FocusedArea::GlobalSettings
-            && let Some(state) = self.global_settings.as_ref()
+            && let Some(state) = self.global_settings.as_mut()
         {
             let area = widgets::popups::global_settings::popup_rect(frame.area(), state);
             widgets::popups::global_settings::render(frame, area, state);
