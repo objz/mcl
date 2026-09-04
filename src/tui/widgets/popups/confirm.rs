@@ -48,14 +48,32 @@ pub enum ConfirmTarget {
     InstanceRuntime {
         name: String,
     },
-    JvmArguments {
-        name: String,
-    },
-    JavaAuto {
+    AutomaticSelection {
+        setting: AutomaticSetting,
         instance: Option<String>,
-        from: String,
-        to: String,
     },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AutomaticSetting {
+    Java,
+    Account,
+}
+
+impl AutomaticSetting {
+    fn title(self) -> &'static str {
+        match self {
+            Self::Java => " Enable automatic Java ",
+            Self::Account => " Enable automatic account ",
+        }
+    }
+
+    fn description(self) -> &'static str {
+        match self {
+            Self::Java => "Use the automatically selected Java runtime",
+            Self::Account => "Use the currently active account",
+        }
+    }
 }
 
 impl ConfirmTarget {
@@ -63,8 +81,7 @@ impl ConfirmTarget {
         match self {
             Self::OrphanDependencies { .. } => " Remove unused dependencies ".to_owned(),
             Self::InstanceRuntime { .. } => " Change runtime ".to_owned(),
-            Self::JvmArguments { .. } => " Clear JVM arguments ".to_owned(),
-            Self::JavaAuto { .. } => " Enable automatic Java ".to_owned(),
+            Self::AutomaticSelection { setting, .. } => setting.title().to_owned(),
             _ => format!(" Delete '{}' ", self.name()),
         }
     }
@@ -104,10 +121,7 @@ impl ConfirmTarget {
                 .collect::<Vec<_>>()
                 .join("\n"),
             ConfirmTarget::InstanceRuntime { .. } => "Apply this runtime change".to_owned(),
-            ConfirmTarget::JvmArguments { .. } => "Remove all JVM arguments".to_owned(),
-            ConfirmTarget::JavaAuto { from, to, .. } => {
-                format!("Java runtime will change:\n{from} → {to}")
-            }
+            ConfirmTarget::AutomaticSelection { setting, .. } => setting.description().to_owned(),
         }
     }
 
@@ -119,8 +133,9 @@ impl ConfirmTarget {
             ConfirmTarget::Content { name, .. } => name,
             ConfirmTarget::OrphanDependencies { .. } => "unused dependencies",
             ConfirmTarget::InstanceRuntime { name, .. } => name,
-            ConfirmTarget::JvmArguments { name, .. } => name,
-            ConfirmTarget::JavaAuto { instance, .. } => instance.as_deref().unwrap_or("launcher"),
+            ConfirmTarget::AutomaticSelection { instance, .. } => {
+                instance.as_deref().unwrap_or("launcher")
+            }
         }
     }
 
@@ -129,8 +144,7 @@ impl ConfirmTarget {
             Self::Content { dependents, .. } if !dependents.is_empty() => " delete anyway",
             Self::OrphanDependencies { .. } => " remove all",
             Self::InstanceRuntime { .. } => " change",
-            Self::JvmArguments { .. } => " clear",
-            Self::JavaAuto { .. } => " enable",
+            Self::AutomaticSelection { .. } => " enable",
             _ => " confirm",
         }
     }

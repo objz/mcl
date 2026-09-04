@@ -33,6 +33,10 @@ fn metadata_paths_separate_state_and_cache() {
         PathBuf::from("/meta/cache/minecraft/versions")
     );
     assert_eq!(
+        paths.java_installations(),
+        PathBuf::from("/meta/cache/java/installations.json")
+    );
+    assert_eq!(
         paths.migration_journal(),
         PathBuf::from("/meta/state/migration.json")
     );

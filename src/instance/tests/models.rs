@@ -16,7 +16,13 @@ fn instance_config_roundtrips_through_json() {
         memory_max: Some("4G".to_string()),
         memory_min: Some("512M".to_string()),
         jvm_args: vec![],
+        environment: Default::default(),
+        window_mode: Default::default(),
         resolution: Some((1920, 1080)),
+        preferred_account: None,
+        pre_launch_command: Default::default(),
+        post_exit_command: Default::default(),
+        glfw_path: None,
         config_sync_profile: None,
         modpack_source: Some(crate::instance::ProviderProject {
             provider: "modrinth".to_owned(),
@@ -47,6 +53,12 @@ fn instance_config_accepts_numeric_memory() {
     let parsed: InstanceConfig = serde_json::from_str(json).expect("deserialize");
     assert_eq!(parsed.memory_max.as_deref(), Some("8G"));
     assert_eq!(parsed.memory_min.as_deref(), Some("512M"));
+    assert!(parsed.environment.is_empty());
+    assert_eq!(parsed.window_mode, WindowMode::Windowed);
+    assert_eq!(parsed.preferred_account, None);
+    assert_eq!(parsed.pre_launch_command, LaunchCommand::default());
+    assert_eq!(parsed.post_exit_command, LaunchCommand::default());
+    assert_eq!(parsed.glfw_path, None);
 }
 
 #[test]

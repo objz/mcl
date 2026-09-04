@@ -9,7 +9,9 @@ use std::{
     process::Command,
 };
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct JavaInstallation {
     pub path: PathBuf,
     pub version: Option<String>,
@@ -91,10 +93,9 @@ pub fn discover_installations() -> Vec<JavaInstallation> {
         .filter(|path| path.is_file())
         .filter_map(|path| {
             let identity = std::fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
-            seen.insert(identity).then(|| JavaInstallation {
-                version: java_version(&path),
-                path,
-            })
+            seen.insert(identity)
+                .then(|| inspect_installation(&path))
+                .flatten()
         })
         .collect::<Vec<_>>();
     installations.sort_by(|a, b| {
@@ -103,6 +104,31 @@ pub fn discover_installations() -> Vec<JavaInstallation> {
             .then_with(|| a.path.cmp(&b.path))
     });
     installations
+}
+
+/// Reads the version reported by one Java executable.
+#[must_use]
+pub fn inspect_installation(path: &Path) -> Option<JavaInstallation> {
+    path.is_file().then(|| JavaInstallation {
+        version: java_version(path),
+        path: path.to_path_buf(),
+    })
+}
+
+#[must_use]
+pub fn load_installation_cache(path: &Path) -> Option<Vec<JavaInstallation>> {
+    let mut installations =
+        serde_json::from_slice::<Vec<JavaInstallation>>(&std::fs::read(path).ok()?).ok()?;
+    installations.retain(|installation| installation.path.is_file());
+    (!installations.is_empty()).then_some(installations)
+}
+
+pub fn save_installation_cache(
+    path: &Path,
+    installations: &[JavaInstallation],
+) -> std::io::Result<()> {
+    let bytes = serde_json::to_vec_pretty(installations).map_err(std::io::Error::other)?;
+    crate::storage::write_atomic(path, &bytes)
 }
 
 fn java_roots() -> Vec<PathBuf> {
@@ -236,5 +262,23 @@ mod tests {
         );
         assert_eq!(java_major(Some("21.0.4")), 21);
         assert_eq!(java_major(Some("1.8.0_412")), 8);
+    }
+
+    #[test]
+    fn installation_cache_round_trips_existing_paths() {
+        let temp = tempfile::tempdir().unwrap();
+        let executable = temp.path().join("java");
+        std::fs::write(&executable, b"java").unwrap();
+        let cache = temp.path().join("cache/java/installations.json");
+        let installations = vec![JavaInstallation {
+            path: executable.clone(),
+            version: Some("25.0.1".to_owned()),
+        }];
+
+        save_installation_cache(&cache, &installations).unwrap();
+        assert_eq!(load_installation_cache(&cache), Some(installations));
+
+        std::fs::remove_file(executable).unwrap();
+        assert_eq!(load_installation_cache(&cache), None);
     }
 }

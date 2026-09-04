@@ -19,6 +19,8 @@ use crate::instance::{InstanceConfig, InstanceManager};
 // so the main loop can pick them up without blocking
 pub(super) static PENDING_INSTANCES: LazyLock<Arc<Mutex<Vec<InstanceConfig>>>> =
     LazyLock::new(|| Arc::new(Mutex::new(Vec::new())));
+pub(super) static FAILED_INSTANCE_SETTINGS_UPDATES: LazyLock<Arc<Mutex<Vec<String>>>> =
+    LazyLock::new(|| Arc::new(Mutex::new(Vec::new())));
 
 pub struct App {
     pub(super) exit: bool,
@@ -43,6 +45,7 @@ pub struct App {
     pub(super) account_state: widgets::account::AccountState,
     pub(super) settings_state: widgets::settings::SettingsState,
     pub(super) instance_settings: Option<widgets::popups::instance_settings::State>,
+    pub(super) pending_instance_settings_updates: HashSet<String>,
     pub(super) global_settings: Option<widgets::popups::global_settings::State>,
     pub(super) picker: ratatui_image::picker::Picker,
     pub(super) instance_manager: InstanceManager,
@@ -176,6 +179,7 @@ impl App {
             account_state: widgets::account::AccountState::default(),
             settings_state,
             instance_settings: None,
+            pending_instance_settings_updates: HashSet::new(),
             global_settings: None,
             screenshots_state: {
                 let mut s = widgets::screenshots_grid::ScreenshotsState::default();

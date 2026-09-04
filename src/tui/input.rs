@@ -205,7 +205,31 @@ impl App {
                         }
                         Some(confirm_popup::ConfirmTarget::Account { index, .. }) => {
                             let count = self.account_state.store.accounts.len();
+                            let removed_uuid = self
+                                .account_state
+                                .store
+                                .accounts
+                                .get(index)
+                                .map(|account| account.uuid.clone());
                             self.account_state.store.remove(index);
+                            if let Some(removed_uuid) = removed_uuid {
+                                for instance in &mut self.instances_state.instances {
+                                    if instance.preferred_account.as_deref()
+                                        == Some(removed_uuid.as_str())
+                                    {
+                                        instance.preferred_account = None;
+                                        if let Err(error) = self.instance_manager.save(instance) {
+                                            error_buffer::push_message(
+                                                tracing::Level::ERROR,
+                                                format!(
+                                                    "Failed to reset preferred account for '{}': {error}",
+                                                    instance.name
+                                                ),
+                                            );
+                                        }
+                                    }
+                                }
+                            }
                             if count > 1 {
                                 self.account_state.list_state.selected = Some(index.min(
                                     self.account_state.store.accounts.len().saturating_sub(1),
@@ -268,43 +292,51 @@ impl App {
                                 .as_mut()
                                 .and_then(|state| state.confirmed_save());
                             if let Some((updated, desktop)) = confirmed {
-                                self.apply_instance_settings(*updated, desktop, true);
+                                self.apply_instance_settings(*updated, desktop);
                             }
                             self.focused
                         }
-                        Some(confirm_popup::ConfirmTarget::JvmArguments { .. }) => {
-                            self.focused = FocusedArea::InstanceSettings;
-                            let confirmed = self.instance_settings.as_mut().and_then(|state| {
-                                state.clear_jvm_args();
-                                state.confirmed_save()
-                            });
-                            if let Some((updated, desktop)) = confirmed {
-                                self.apply_instance_settings(*updated, desktop, false);
-                            }
-                            self.focused
-                        }
-                        Some(confirm_popup::ConfirmTarget::JavaAuto { instance, .. }) => {
-                            if instance.is_some() {
-                                self.focused = FocusedArea::InstanceSettings;
-                                let confirmed = self.instance_settings.as_mut().and_then(|state| {
-                                    state.enable_auto_java();
-                                    state.confirmed_save()
-                                });
-                                if let Some((updated, desktop)) = confirmed {
-                                    self.apply_instance_settings(*updated, desktop, false);
+                        Some(confirm_popup::ConfirmTarget::AutomaticSelection {
+                            setting,
+                            instance,
+                            ..
+                        }) => {
+                            match setting {
+                                confirm_popup::AutomaticSetting::Java if instance.is_some() => {
+                                    self.focused = FocusedArea::InstanceSettings;
+                                    let confirmed =
+                                        self.instance_settings.as_mut().and_then(|state| {
+                                            state.enable_auto_java();
+                                            state.confirmed_save()
+                                        });
+                                    if let Some((updated, desktop)) = confirmed {
+                                        self.apply_instance_settings(*updated, desktop);
+                                    }
                                 }
-                            } else {
-                                self.focused = FocusedArea::GlobalSettings;
-                                let action = self.global_settings.as_mut().map(
-                                    widgets::popups::global_settings::State::confirm_auto_java,
-                                );
-                                if let Some(widgets::popups::global_settings::Action::Save(
-                                    config,
-                                    theme,
-                                    border,
-                                )) = action
-                                {
-                                    self.apply_global_settings(*config, theme, border);
+                                confirm_popup::AutomaticSetting::Account => {
+                                    self.focused = FocusedArea::InstanceSettings;
+                                    let confirmed =
+                                        self.instance_settings.as_mut().and_then(|state| {
+                                            state.enable_auto_account();
+                                            state.confirmed_save()
+                                        });
+                                    if let Some((updated, desktop)) = confirmed {
+                                        self.apply_instance_settings(*updated, desktop);
+                                    }
+                                }
+                                confirm_popup::AutomaticSetting::Java => {
+                                    self.focused = FocusedArea::GlobalSettings;
+                                    let action = self.global_settings.as_mut().map(
+                                        widgets::popups::global_settings::State::confirm_auto_java,
+                                    );
+                                    if let Some(widgets::popups::global_settings::Action::Save(
+                                        config,
+                                        theme,
+                                        border,
+                                    )) = action
+                                    {
+                                        self.apply_global_settings(*config, theme, border);
+                                    }
                                 }
                             }
                             self.focused
@@ -331,10 +363,9 @@ impl App {
                             }
                             FocusedArea::InstanceSettings
                         }
-                        Some(confirm_popup::ConfirmTarget::JvmArguments { .. }) => {
-                            FocusedArea::InstanceSettings
-                        }
-                        Some(confirm_popup::ConfirmTarget::JavaAuto { instance, .. }) => {
+                        Some(confirm_popup::ConfirmTarget::AutomaticSelection {
+                            instance, ..
+                        }) => {
                             if instance.is_some() {
                                 FocusedArea::InstanceSettings
                             } else {
@@ -629,15 +660,7 @@ impl App {
                 self.instances_state.selected_instance(),
             ) {
                 widgets::settings::SettingsAction::OpenInstance => {
-                    if let Some(instance) = self.instances_state.selected_instance() {
-                        self.pre_overlay_focused = FocusedArea::Settings;
-                        self.instance_settings =
-                            Some(widgets::popups::instance_settings::State::new(
-                                instance,
-                                &self.instance_manager.meta_dir,
-                            ));
-                        self.focused = FocusedArea::InstanceSettings;
-                    }
+                    self.open_instance_settings(FocusedArea::Settings);
                     return Ok(());
                 }
                 widgets::settings::SettingsAction::OpenGlobal => {
@@ -717,11 +740,10 @@ impl App {
                         pushed_at: std::time::Instant::now(),
                     });
                 }
-                widgets::popups::global_settings::Action::ConfirmJavaAuto { from, to } => {
-                    confirm_popup::set_pending(confirm_popup::ConfirmTarget::JavaAuto {
+                widgets::popups::global_settings::Action::ConfirmJavaAuto => {
+                    confirm_popup::set_pending(confirm_popup::ConfirmTarget::AutomaticSelection {
+                        setting: confirm_popup::AutomaticSetting::Java,
                         instance: None,
-                        from,
-                        to,
                     });
                     self.focused = FocusedArea::ConfirmDelete;
                 }
@@ -757,6 +779,9 @@ impl App {
                         pushed_at: std::time::Instant::now(),
                     });
                 }
+                widgets::popups::instance_settings::Action::Warning(message) => {
+                    error_buffer::push_message(tracing::Level::WARN, message);
+                }
                 widgets::popups::instance_settings::Action::Close => {
                     self.instance_settings = None;
                     self.focused = self.pre_overlay_focused;
@@ -774,7 +799,7 @@ impl App {
                     self.focused = self.pre_overlay_focused;
                 }
                 widgets::popups::instance_settings::Action::Save(updated, desktop) => {
-                    self.apply_instance_settings(*updated, desktop, false);
+                    self.apply_instance_settings(*updated, desktop);
                 }
                 widgets::popups::instance_settings::Action::ConfirmRuntime { name } => {
                     error_buffer::push_message(
@@ -786,15 +811,17 @@ impl App {
                     });
                     self.focused = FocusedArea::ConfirmDelete;
                 }
-                widgets::popups::instance_settings::Action::ConfirmClearJvmArgs { name } => {
-                    confirm_popup::set_pending(confirm_popup::ConfirmTarget::JvmArguments { name });
+                widgets::popups::instance_settings::Action::ConfirmJavaAuto { name } => {
+                    confirm_popup::set_pending(confirm_popup::ConfirmTarget::AutomaticSelection {
+                        setting: confirm_popup::AutomaticSetting::Java,
+                        instance: Some(name),
+                    });
                     self.focused = FocusedArea::ConfirmDelete;
                 }
-                widgets::popups::instance_settings::Action::ConfirmJavaAuto { name, from, to } => {
-                    confirm_popup::set_pending(confirm_popup::ConfirmTarget::JavaAuto {
+                widgets::popups::instance_settings::Action::ConfirmAccountAuto { name } => {
+                    confirm_popup::set_pending(confirm_popup::ConfirmTarget::AutomaticSelection {
+                        setting: confirm_popup::AutomaticSetting::Account,
                         instance: Some(name),
-                        from,
-                        to,
                     });
                     self.focused = FocusedArea::ConfirmDelete;
                 }
@@ -886,15 +913,7 @@ impl App {
                     KeyCode::Char('A') => self.focused = FocusedArea::Account,
                     KeyCode::Char('S') => self.focused = FocusedArea::Settings,
                     KeyCode::Char('E') => {
-                        if let Some(instance) = self.instances_state.selected_instance() {
-                            self.pre_overlay_focused = self.focused;
-                            self.instance_settings =
-                                Some(widgets::popups::instance_settings::State::new(
-                                    instance,
-                                    &self.instance_manager.meta_dir,
-                                ));
-                            self.focused = FocusedArea::InstanceSettings;
-                        }
+                        self.open_instance_settings(self.focused);
                     }
                     KeyCode::Char('G') => {
                         self.pre_overlay_focused = self.focused;
@@ -2096,6 +2115,26 @@ impl App {
         }
     }
 
+    fn open_instance_settings(&mut self, return_focus: FocusedArea) {
+        let Some(instance) = self.instances_state.selected_instance().cloned() else {
+            return;
+        };
+        let mut state = widgets::popups::instance_settings::State::with_accounts(
+            &instance,
+            &self.instance_manager.meta_dir,
+            self.account_state.store.accounts.clone(),
+        );
+        if self
+            .pending_instance_settings_updates
+            .contains(&instance.name)
+        {
+            state.mark_runtime_update_pending();
+        }
+        self.pre_overlay_focused = return_focus;
+        self.instance_settings = Some(state);
+        self.focused = FocusedArea::InstanceSettings;
+    }
+
     fn apply_global_settings(
         &mut self,
         config: crate::config::Config,
@@ -2115,7 +2154,6 @@ impl App {
         &mut self,
         updated: crate::instance::models::InstanceConfig,
         desktop: bool,
-        close: bool,
     ) {
         let Some(previous) = self.instances_state.selected_instance().cloned() else {
             return;
@@ -2131,12 +2169,16 @@ impl App {
                     message: "Stop the instance before changing its runtime".to_owned(),
                     pushed_at: std::time::Instant::now(),
                 });
+                if let Some(state) = self.instance_settings.as_mut() {
+                    state.cancel_runtime_change();
+                }
                 return;
             }
+            self.pending_instance_settings_updates
+                .insert(previous.name.clone());
             self.spawn_instance_settings_update(previous, updated, desktop);
-            if close {
-                self.instance_settings = None;
-                self.focused = self.pre_overlay_focused;
+            if let Some(state) = self.instance_settings.as_mut() {
+                state.mark_runtime_update_pending();
             }
             return;
         }
@@ -2148,22 +2190,22 @@ impl App {
                 } else {
                     crate::instance::desktop::remove(&updated.name)
                 };
-                if let Err(error) = shortcut_result {
-                    error_buffer::push_error(error_buffer::ErrorEvent {
-                        id: 0,
-                        level: tracing::Level::ERROR,
-                        message: format!("Instance saved, but shortcut update failed: {error}"),
-                        pushed_at: std::time::Instant::now(),
-                    });
-                }
+                let saved_desktop = match shortcut_result {
+                    Ok(()) => desktop,
+                    Err(error) => {
+                        error_buffer::push_error(error_buffer::ErrorEvent {
+                            id: 0,
+                            level: tracing::Level::ERROR,
+                            message: format!("Instance saved, but shortcut update failed: {error}"),
+                            pushed_at: std::time::Instant::now(),
+                        });
+                        crate::instance::desktop::exists(&updated.name)
+                    }
+                };
                 self.instances_state
                     .replace_instance(&previous.name, updated.clone());
                 if let Some(state) = self.instance_settings.as_mut() {
-                    state.mark_saved(&updated, desktop);
-                }
-                if close {
-                    self.instance_settings = None;
-                    self.focused = self.pre_overlay_focused;
+                    state.mark_saved(&updated, saved_desktop);
                 }
             }
             Err(error) => error_buffer::push_error(error_buffer::ErrorEvent {

@@ -26,6 +26,10 @@ impl UiHarness {
     pub fn new() -> Self {
         let guard = TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
         widgets::popups::confirm::clear_pending();
+        crate::tui::app::FAILED_INSTANCE_SETTINGS_UPDATES
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .clear();
         widgets::popups::new_instance::reset_for_test();
         widgets::popups::import_modpack::reset_for_test();
         crate::feedback::errors::ERROR_EVENTS
@@ -84,6 +88,7 @@ impl UiHarness {
             account_state,
             settings_state: widgets::settings::SettingsState::new(meta_dir),
             instance_settings: None,
+            pending_instance_settings_updates: Default::default(),
             global_settings: None,
             picker,
             instance_manager,
@@ -129,7 +134,13 @@ impl UiHarness {
             memory_max: None,
             memory_min: None,
             jvm_args: Vec::new(),
+            environment: Default::default(),
+            window_mode: Default::default(),
             resolution: None,
+            preferred_account: None,
+            pre_launch_command: Default::default(),
+            post_exit_command: Default::default(),
+            glfw_path: None,
             config_sync_profile: None,
             modpack_source: None,
         };

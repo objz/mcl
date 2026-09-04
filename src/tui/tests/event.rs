@@ -58,6 +58,57 @@ fn completed_background_instance_is_drained_into_the_ui() {
 }
 
 #[test]
+fn runtime_settings_update_keeps_the_editor_open_and_handles_results() {
+    let mut ui = UiHarness::new();
+    ui.add_instance("Runtime Settings");
+    ui.key(crossterm::event::KeyCode::Char('E'));
+    let state = ui.app.instance_settings.as_mut().unwrap();
+    state.draft.game_version = "1.21.2".to_owned();
+    state.mark_runtime_update_pending();
+    ui.app
+        .pending_instance_settings_updates
+        .insert("Runtime Settings".to_owned());
+
+    ui.key(crossterm::event::KeyCode::Esc);
+    assert!(ui.app.instance_settings.is_none());
+    ui.key(crossterm::event::KeyCode::Char('E'));
+    assert!(
+        ui.app
+            .instance_settings
+            .as_ref()
+            .unwrap()
+            .runtime_update_pending_for("Runtime Settings")
+    );
+
+    let mut updated = ui.app.instances_state.selected_instance().unwrap().clone();
+    updated.game_version = "1.21.2".to_owned();
+    PENDING_INSTANCES.lock().unwrap().push(updated);
+    ui.app.drain_pending_instances();
+
+    let state = ui.app.instance_settings.as_ref().unwrap();
+    assert_eq!(state.draft.game_version, "1.21.2");
+    assert!(!state.runtime_update_pending_for("Runtime Settings"));
+    assert!(ui.app.pending_instance_settings_updates.is_empty());
+
+    let state = ui.app.instance_settings.as_mut().unwrap();
+    state.draft.game_version = "1.21.3".to_owned();
+    state.mark_runtime_update_pending();
+    ui.app
+        .pending_instance_settings_updates
+        .insert("Runtime Settings".to_owned());
+    FAILED_INSTANCE_SETTINGS_UPDATES
+        .lock()
+        .unwrap()
+        .push("Runtime Settings".to_owned());
+    ui.app.drain_failed_instance_settings_updates();
+
+    let state = ui.app.instance_settings.as_ref().unwrap();
+    assert_eq!(state.draft.game_version, "1.21.2");
+    assert!(!state.runtime_update_pending_for("Runtime Settings"));
+    assert!(ui.app.pending_instance_settings_updates.is_empty());
+}
+
+#[test]
 fn structural_settings_update_repairs_runtime_before_persisting() {
     use sha1::{Digest, Sha1};
     use wiremock::matchers::{method, path};
@@ -115,7 +166,13 @@ fn structural_settings_update_repairs_runtime_before_persisting() {
             memory_max: None,
             memory_min: None,
             jvm_args: Vec::new(),
+            environment: Default::default(),
+            window_mode: Default::default(),
             resolution: None,
+            preferred_account: None,
+            pre_launch_command: Default::default(),
+            post_exit_command: Default::default(),
+            glfw_path: None,
             config_sync_profile: None,
             modpack_source: None,
         };
@@ -208,7 +265,13 @@ fn failed_structural_settings_update_keeps_previous_config() {
             memory_max: None,
             memory_min: None,
             jvm_args: Vec::new(),
+            environment: Default::default(),
+            window_mode: Default::default(),
             resolution: None,
+            preferred_account: None,
+            pre_launch_command: Default::default(),
+            post_exit_command: Default::default(),
+            glfw_path: None,
             config_sync_profile: None,
             modpack_source: None,
         };

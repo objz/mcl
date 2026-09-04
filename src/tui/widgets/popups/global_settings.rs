@@ -11,7 +11,7 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Block, Borders, Clear, ListItem, Paragraph},
 };
-use ratatui_textarea::{CursorMove, TextArea};
+use ratatui_textarea::TextArea;
 
 use crate::{
     config::{
@@ -20,8 +20,9 @@ use crate::{
     },
     instance::models::normalize_memory_value,
     tui::widgets::popups::settings_controls::{
-        JavaChoice, JavaPicker, adjust_memory, auto_label, handle_text_area_input, memory_kib,
-        render_memory_gauge,
+        JavaChoice, JavaPicker, SettingsPickerAction, adjust_memory, auto_label,
+        handle_text_area_input, memory_kib, render_memory_gauge, render_settings_picker,
+        settings_text_area,
     },
 };
 
@@ -43,7 +44,7 @@ pub enum Action {
     None,
     Save(Box<Config>, String, BorderStyle),
     Error(String),
-    ConfirmJavaAuto { from: String, to: String },
+    ConfirmJavaAuto,
     OpenRaw(std::path::PathBuf),
     Close,
 }
@@ -56,8 +57,14 @@ impl State {
             .iter()
             .position(|candidate| candidate == &theme.theme)
             .unwrap_or(0);
+        let config = crate::config::SETTINGS.read().clone();
+        let java_cache = crate::storage::MetadataPaths::new(config.paths.resolve_meta_dir())
+            .java_installations();
+        let mut java_picker =
+            JavaPicker::with_cache(crate::instance::java::detect_java_path(), Some(java_cache));
+        java_picker.open(config.paths.java_path.as_deref());
         Self {
-            config: crate::config::SETTINGS.read().clone(),
+            config,
             theme,
             selected: 0,
             editing: None,
@@ -67,7 +74,7 @@ impl State {
             theme_picker: false,
             theme_index,
             java_picker_open: false,
-            java_picker: JavaPicker::new(),
+            java_picker,
         }
     }
 
@@ -85,15 +92,14 @@ impl State {
     fn display_value(&self, field: usize) -> String {
         match field {
             1 => format!("{:?}", self.theme.border_style).to_lowercase(),
-            4 if self
-                .config
-                .paths
-                .java_path
-                .as_deref()
-                .is_none_or(str::is_empty) =>
-            {
-                self.java_picker.detected_path().to_owned()
-            }
+            4 => self.java_picker.display_label(
+                self.config
+                    .paths
+                    .java_path
+                    .as_deref()
+                    .filter(|path| !path.is_empty())
+                    .unwrap_or_else(|| self.java_picker.detected_path()),
+            ),
             _ => self.value(field),
         }
     }
@@ -107,7 +113,7 @@ impl State {
         self.error = None;
         let invalid = |state: &mut Self, message: String| {
             state.error = Some(message);
-            state.editing = Some(new_text_area(editor.lines().to_vec()));
+            state.editing = Some(settings_text_area(editor.lines().to_vec()));
         };
         match self.selected {
             2 | 3 if normalize_memory_value(value).is_none() => invalid(
@@ -206,8 +212,8 @@ impl State {
             self.error = None;
             return Action::None;
         };
-        if let Some((from, to)) = self.java_picker.automatic_change(current) {
-            return Action::ConfirmJavaAuto { from, to };
+        if self.java_picker.automatic_change(current) {
+            return Action::ConfirmJavaAuto;
         }
         self.enable_auto_java();
         Action::None
@@ -231,16 +237,9 @@ impl State {
 
     fn handle_java_picker_key(&mut self, key: &KeyEvent) {
         self.java_picker.initialize();
-        let count = self.java_picker.labels().len();
-        match key.code {
-            KeyCode::Esc | KeyCode::Char('h') | KeyCode::Left => self.java_picker_open = false,
-            KeyCode::Char('j') | KeyCode::Down if count > 0 => {
-                self.java_picker.selected = (self.java_picker.selected + 1).min(count - 1);
-            }
-            KeyCode::Char('k') | KeyCode::Up => {
-                self.java_picker.selected = self.java_picker.selected.saturating_sub(1);
-            }
-            KeyCode::Enter | KeyCode::Char('l') | KeyCode::Right => {
+        match self.java_picker.selection_mut().handle_key(key) {
+            SettingsPickerAction::Back => self.java_picker_open = false,
+            SettingsPickerAction::Select => {
                 match self.java_picker.selected_choice() {
                     JavaChoice::Installation(path) => {
                         if self.config.paths.java_path.as_deref() != Some(&path) {
@@ -251,7 +250,7 @@ impl State {
                 }
                 self.java_picker_open = false;
             }
-            _ => {}
+            SettingsPickerAction::None => {}
         }
     }
 
@@ -328,14 +327,14 @@ impl State {
                 0 => self.theme_picker = true,
                 1 => self.cycle_border(true),
                 2 | 3 => {
-                    self.editing = Some(new_text_area(vec![self.value(self.selected)]));
+                    self.editing = Some(settings_text_area(vec![self.value(self.selected)]));
                 }
                 4 => self.open_java_picker(),
-                field => self.editing = Some(new_text_area(vec![self.value(field)])),
+                field => self.editing = Some(settings_text_area(vec![self.value(field)])),
             },
             KeyCode::Char('a') if self.selected == 4 => return self.toggle_auto_java(),
             KeyCode::Char('c') if self.selected == 4 => {
-                self.editing = Some(new_text_area(vec![self.value(4)]));
+                self.editing = Some(settings_text_area(vec![self.value(4)]));
             }
             KeyCode::Char('E') => {
                 let file = if self.selected <= 1 {
@@ -380,21 +379,6 @@ fn available_themes() -> Vec<String> {
         themes.sort();
     }
     themes
-}
-
-fn new_text_area(lines: Vec<String>) -> TextArea<'static> {
-    let theme = THEME.as_ref();
-    let mut editor = TextArea::new(if lines.is_empty() {
-        vec![String::new()]
-    } else {
-        lines
-    });
-    editor.set_style(Style::default().fg(theme.text()).bg(theme.surface()));
-    editor.set_cursor_line_style(Style::default());
-    editor.set_cursor_style(Style::default().fg(theme.background()).bg(theme.accent()));
-    editor.move_cursor(CursorMove::Bottom);
-    editor.move_cursor(CursorMove::End);
-    editor
 }
 
 pub fn popup_rect(area: Rect, state: &State) -> Rect {
@@ -508,12 +492,7 @@ fn render_java_picker(frame: &mut Frame, area: Rect, state: &mut State) {
             Err(error) => crate::feedback::errors::push_message(tracing::Level::ERROR, error),
         }
     }
-    super::select_list::render_styled(
-        state.java_picker.items(),
-        state.java_picker.selected,
-        list_area,
-        frame.buffer_mut(),
-    );
+    render_settings_picker(state.java_picker.selection(), list_area, frame.buffer_mut());
 }
 
 fn render_settings_list(frame: &mut Frame, area: Rect, state: &State) {
@@ -667,7 +646,7 @@ mod tests {
 
         assert!(matches!(
             state.handle_key(&KeyEvent::from(KeyCode::Char('a'))),
-            Action::ConfirmJavaAuto { .. }
+            Action::ConfirmJavaAuto
         ));
         assert_eq!(
             state.config.paths.java_path.as_deref(),

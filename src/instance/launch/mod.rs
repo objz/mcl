@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 use thiserror::Error;
 
 use crate::auth::AccountType;
-use crate::instance::models::{InstanceConfig, ModLoader};
+use crate::instance::models::{InstanceConfig, LaunchCommand, ModLoader, WindowMode};
 use crate::launch_profile::model::{Argument, LaunchProfile};
 use crate::launch_profile::rules::{self, FeatureSet, RuleAction, RuleContext};
 use crate::launch_profile::templates::TemplateContext;
@@ -45,6 +45,8 @@ pub enum LaunchError {
     },
     #[error("{0}")]
     Auth(String),
+    #[error("{phase} command failed: {reason}")]
+    Command { phase: &'static str, reason: String },
     #[error("Config sync error: {0}")]
     ConfigSync(#[from] crate::instance::config_sync::ConfigSyncError),
 }
@@ -68,6 +70,14 @@ fn apply_custom_resolution(game_args: &mut Vec<String>, resolution: Option<(u32,
     }
     if !game_args.iter().any(|arg| arg == "--height") {
         game_args.extend(["--height".to_owned(), height.to_string()]);
+    }
+}
+
+fn apply_window_mode(game_args: &mut Vec<String>, window_mode: WindowMode) {
+    if window_mode == WindowMode::Windowed {
+        game_args.retain(|argument| argument != "--fullscreen");
+    } else if !game_args.iter().any(|arg| arg == "--fullscreen") {
+        game_args.push("--fullscreen".to_owned());
     }
 }
 
@@ -318,6 +328,7 @@ pub struct LaunchInvocation {
     pub main_class: String,
     pub extra_args: Vec<String>,
     pub game_args: Vec<String>,
+    pub environment: std::collections::BTreeMap<String, String>,
     pub working_dir: PathBuf,
 }
 
@@ -605,6 +616,7 @@ pub async fn build_launch_invocation(
     // Modern Mojang profiles include feature-gated resolution arguments.
     // Older and third-party profiles may not, so add them when absent.
     apply_custom_resolution(&mut game_args, config.resolution);
+    apply_window_mode(&mut game_args, config.window_mode);
 
     let (memory_min, memory_max) = {
         let settings = crate::config::SETTINGS.read();
@@ -623,6 +635,9 @@ pub async fn build_launch_invocation(
     jvm_args.extend(patch_jvm_args);
     jvm_args.extend(upstream_jvm_args);
     jvm_args.extend(config.jvm_args.clone());
+    if let Some(glfw_path) = config.glfw_path.as_deref() {
+        jvm_args.push(format!("-Dorg.lwjgl.glfw.libname={glfw_path}"));
+    }
 
     Ok(LaunchInvocation {
         java,
@@ -632,8 +647,92 @@ pub async fn build_launch_invocation(
         main_class,
         extra_args,
         game_args,
+        environment: config.environment.clone(),
         working_dir: minecraft_dir,
     })
+}
+
+fn command_process(command: &str) -> tokio::process::Command {
+    #[cfg(windows)]
+    {
+        let mut process = tokio::process::Command::new("cmd");
+        process.args(["/C", command]);
+        process
+    }
+    #[cfg(not(windows))]
+    {
+        let mut process = tokio::process::Command::new("/bin/sh");
+        process.args(["-c", command]);
+        process
+    }
+}
+
+fn select_launch_account<'a>(
+    accounts: &'a [crate::auth::Account],
+    preferred: Option<&str>,
+) -> Option<&'a crate::auth::Account> {
+    preferred
+        .and_then(|uuid| accounts.iter().find(|account| account.uuid == uuid))
+        .or_else(|| accounts.iter().find(|account| account.active))
+}
+
+async fn run_launch_command(
+    phase: &'static str,
+    command: &LaunchCommand,
+    config: &InstanceConfig,
+    invocation: &LaunchInvocation,
+    instance_dir: &Path,
+) -> Result<(), LaunchError> {
+    if !command.enabled || command.command.trim().is_empty() {
+        return Ok(());
+    }
+
+    tracing::info!("[{}] Running {} command", config.name, phase.to_lowercase());
+    let mut process = command_process(&command.command);
+    process
+        .current_dir(&invocation.working_dir)
+        .envs(&invocation.environment)
+        .env("INST_NAME", &config.name)
+        .env("INST_ID", &config.name)
+        .env("INST_DIR", instance_dir)
+        .env("INST_MC_DIR", &invocation.working_dir)
+        .env("INST_JAVA", &invocation.java)
+        .env("INST_JAVA_ARGS", invocation.jvm_args.join(" "));
+    let output = process
+        .output()
+        .await
+        .map_err(|error| LaunchError::Command {
+            phase,
+            reason: error.to_string(),
+        })?;
+    for line in String::from_utf8_lossy(&output.stdout).lines() {
+        tracing::info!("[{}] [{}] {}", config.name, phase, line);
+    }
+    for line in String::from_utf8_lossy(&output.stderr).lines() {
+        tracing::warn!("[{}] [{}] {}", config.name, phase, line);
+    }
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(LaunchError::Command {
+            phase,
+            reason: output.status.to_string(),
+        })
+    }
+}
+
+fn finish_config_sync(
+    active: bool,
+    profile: Option<&str>,
+    meta_dir: &Path,
+    minecraft_dir: &Path,
+    instance: &str,
+) {
+    if active
+        && let Err(error) = crate::instance::config_sync::finish(profile, meta_dir, minecraft_dir)
+    {
+        tracing::warn!("Failed to sync config for '{}': {}", instance, error);
+    }
 }
 
 // resolves auth credentials, then builds the launch invocation and spawns
@@ -650,7 +749,9 @@ pub async fn launch(
 
     // resolve auth credentials, refreshing the microsoft token if needed.
     let mut account_store = crate::auth::AccountStore::load();
-    let Some(acc) = account_store.active_account().cloned() else {
+    let account =
+        select_launch_account(&account_store.accounts, config.preferred_account.as_deref());
+    let Some(acc) = account.cloned() else {
         return Err(LaunchError::Auth("No account selected".to_owned()));
     };
 
@@ -704,6 +805,7 @@ pub async fn launch(
 
     let invocation =
         build_launch_invocation(config, instances_dir, meta_dir, &auth, quick_play_world).await?;
+    let instance_dir = instances_dir.join(&config.name);
     tracing::debug!(
         "[{}] Prepared launch invocation: working_dir={} classpath_entries={} jvm_args={} extra_args={} game_args={} main_class={}",
         name,
@@ -720,6 +822,24 @@ pub async fn launch(
         meta_dir,
         &invocation.working_dir,
     )?;
+    if let Err(error) = run_launch_command(
+        "Pre-launch",
+        &config.pre_launch_command,
+        config,
+        &invocation,
+        &instance_dir,
+    )
+    .await
+    {
+        finish_config_sync(
+            config_sync_active,
+            config_sync_profile.as_deref(),
+            meta_dir,
+            &invocation.working_dir,
+            &name,
+        );
+        return Err(error);
+    }
 
     let (kill_tx, kill_rx) = tokio::sync::oneshot::channel::<()>();
     crate::instance::runtime::register_kill(&name, kill_tx);
@@ -752,6 +872,7 @@ pub async fn launch(
     cmd.args(&invocation.extra_args);
     cmd.args(&invocation.game_args);
     cmd.current_dir(&invocation.working_dir);
+    cmd.envs(&invocation.environment);
     cmd.stdout(std::process::Stdio::piped());
     cmd.stderr(std::process::Stdio::piped());
 
@@ -760,6 +881,13 @@ pub async fn launch(
         Err(e) => {
             crate::instance::runtime::cleanup_kill_sender(&name);
             crate::instance::runtime::remove(&name);
+            finish_config_sync(
+                config_sync_active,
+                config_sync_profile.as_deref(),
+                meta_dir,
+                &invocation.working_dir,
+                &name,
+            );
             tracing::error!("[{}] Failed to spawn Minecraft process: {}", name, e);
             return Err(LaunchError::Io(e));
         }
@@ -782,6 +910,10 @@ pub async fn launch(
     let instances_dir_owned = instances_dir.to_path_buf();
     let meta_dir_owned = meta_dir.to_path_buf();
     let minecraft_dir_owned = invocation.working_dir.clone();
+    let instance_dir_owned = instances_dir.join(&config.name);
+    let post_exit_command = config.post_exit_command.clone();
+    let config_for_post_exit = config.clone();
+    let invocation_for_post_exit = invocation.clone();
 
     // spawn a background task to babysit the child process: capture stdout/stderr
     // into both the TUI log viewer and a timestamped log file on disk
@@ -883,15 +1015,26 @@ pub async fn launch(
         let _ = parser_task.await;
         tracing::info!("[{}] Exited with code {:?}", name_for_task, code);
 
-        if config_sync_active
-            && let Err(e) = crate::instance::config_sync::finish(
-                config_sync_profile.as_deref(),
-                &meta_dir_owned,
-                &minecraft_dir_owned,
-            )
+        if let Err(error) = run_launch_command(
+            "Post-exit",
+            &post_exit_command,
+            &config_for_post_exit,
+            &invocation_for_post_exit,
+            &instance_dir_owned,
+        )
+        .await
         {
-            tracing::warn!("Failed to sync config for '{}': {}", name_for_task, e);
+            tracing::warn!("[{}] {}", name_for_task, error);
+            crate::feedback::errors::push_message(tracing::Level::WARN, error.to_string());
         }
+
+        finish_config_sync(
+            config_sync_active,
+            config_sync_profile.as_deref(),
+            &meta_dir_owned,
+            &minecraft_dir_owned,
+            &name_for_task,
+        );
         if code == Some(0) || killed_by_user {
             crate::instance::runtime::remove(&name_for_task);
             tracing::debug!(

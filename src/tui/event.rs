@@ -10,7 +10,7 @@ use ratatui::{
 use std::time::Duration;
 
 use super::Tui;
-use super::app::{App, FocusedArea, PENDING_INSTANCES};
+use super::app::{App, FAILED_INSTANCE_SETTINGS_UPDATES, FocusedArea, PENDING_INSTANCES};
 use super::widgets::{self, popups::import_modpack, popups::new_instance};
 use crate::feedback::errors as error_buffer;
 use crate::feedback::progress;
@@ -43,6 +43,7 @@ impl App {
             // every content type has its own pending queue because they each
             // get scanned/loaded on separate tokio tasks
             self.drain_pending_instances();
+            self.drain_failed_instance_settings_updates();
             self.instances_state.drain_modpack_updates();
             self.drain_pending_last_played();
             if let Some(state) = self.modpack_versions_state.as_mut() {
@@ -628,6 +629,9 @@ impl App {
                 Ok(updated) => updated,
                 Err(error) => {
                     progress::clear();
+                    if let Ok(mut failed) = FAILED_INSTANCE_SETTINGS_UPDATES.lock() {
+                        failed.push(previous.name.clone());
+                    }
                     error_buffer::push_error(error_buffer::ErrorEvent {
                         id: 0,
                         level: tracing::Level::ERROR,
@@ -878,6 +882,14 @@ impl App {
     fn drain_pending_instances(&mut self) {
         if let Ok(mut pending) = PENDING_INSTANCES.lock() {
             for config in pending.drain(..) {
+                let settings_update = self.pending_instance_settings_updates.remove(&config.name);
+                if settings_update
+                    && let Some(state) = self.instance_settings.as_mut()
+                    && state.runtime_update_pending_for(&config.name)
+                {
+                    let desktop = crate::instance::desktop::exists(&config.name);
+                    state.mark_saved(&config, desktop);
+                }
                 self.forget_instance_content(&config.name);
                 widgets::instances::spawn_modpack_update_check(&config);
                 if self
@@ -890,6 +902,19 @@ impl App {
                     self.instances_state.replace_instance(&name, config);
                 } else {
                     self.instances_state.add_instance(config);
+                }
+            }
+        }
+    }
+
+    fn drain_failed_instance_settings_updates(&mut self) {
+        if let Ok(mut failed) = FAILED_INSTANCE_SETTINGS_UPDATES.lock() {
+            for name in failed.drain(..) {
+                self.pending_instance_settings_updates.remove(&name);
+                if let Some(state) = self.instance_settings.as_mut()
+                    && state.runtime_update_pending_for(&name)
+                {
+                    state.cancel_runtime_change();
                 }
             }
         }

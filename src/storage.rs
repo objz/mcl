@@ -104,6 +104,10 @@ impl MetadataPaths {
         self.cache().join("loaders").join("profiles")
     }
 
+    pub fn java_installations(&self) -> PathBuf {
+        self.cache().join("java").join("installations.json")
+    }
+
     pub fn provider_cache(&self, provider: &str) -> PathBuf {
         self.cache().join("providers").join(provider)
     }

@@ -7,7 +7,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::fmt;
+use std::{collections::BTreeMap, fmt};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -31,6 +31,43 @@ impl fmt::Display for ModLoader {
     }
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WindowMode {
+    #[default]
+    Windowed,
+    Fullscreen,
+}
+
+impl WindowMode {
+    fn is_windowed(&self) -> bool {
+        *self == Self::Windowed
+    }
+}
+
+impl fmt::Display for WindowMode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Windowed => write!(f, "windowed"),
+            Self::Fullscreen => write!(f, "fullscreen"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LaunchCommand {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub command: String,
+}
+
+impl LaunchCommand {
+    fn is_default(&self) -> bool {
+        !self.enabled && self.command.is_empty()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct InstanceConfig {
     pub name: String,
@@ -48,8 +85,20 @@ pub struct InstanceConfig {
     pub memory_min: Option<String>,
     #[serde(default)]
     pub jvm_args: Vec<String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub environment: BTreeMap<String, String>,
+    #[serde(default, skip_serializing_if = "WindowMode::is_windowed")]
+    pub window_mode: WindowMode,
     #[serde(default)]
     pub resolution: Option<(u32, u32)>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub preferred_account: Option<String>,
+    #[serde(default, skip_serializing_if = "LaunchCommand::is_default")]
+    pub pre_launch_command: LaunchCommand,
+    #[serde(default, skip_serializing_if = "LaunchCommand::is_default")]
+    pub post_exit_command: LaunchCommand,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub glfw_path: Option<String>,
     #[serde(default)]
     pub config_sync_profile: Option<String>,
     #[serde(default)]

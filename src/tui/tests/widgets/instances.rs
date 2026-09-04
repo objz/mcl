@@ -47,7 +47,13 @@ fn synthetic_instance(name: &str) -> InstanceConfig {
         memory_max: None,
         memory_min: None,
         jvm_args: vec![],
+        environment: Default::default(),
+        window_mode: Default::default(),
         resolution: None,
+        preferred_account: None,
+        pre_launch_command: Default::default(),
+        post_exit_command: Default::default(),
+        glfw_path: None,
         config_sync_profile: None,
         modpack_source: None,
     }
