@@ -136,6 +136,48 @@ fn instance_config_ignores_invalid_memory_values() {
 }
 
 #[test]
+fn instance_config_normalizes_optional_paths_and_resolution() {
+    let json = r#"
+        {
+          "name": "test",
+          "game_version": "1.21.1",
+          "loader": "vanilla",
+          "loader_version": null,
+          "created": "2026-04-20T18:04:25.567993893Z",
+          "java_path": "  ",
+          "glfw_path": " /usr/lib/libglfw.so ",
+          "preferred_account": "",
+          "resolution": [0, 1080]
+        }
+        "#;
+
+    let parsed: InstanceConfig = serde_json::from_str(json).expect("deserialize");
+
+    assert!(parsed.java_path.is_none());
+    assert_eq!(parsed.glfw_path.as_deref(), Some("/usr/lib/libglfw.so"));
+    assert!(parsed.preferred_account.is_none());
+    assert!(parsed.resolution.is_none());
+}
+
+#[test]
+fn instance_config_rejects_zero_resolution_height() {
+    let json = r#"
+        {
+          "name": "test",
+          "game_version": "1.21.1",
+          "loader": "vanilla",
+          "loader_version": null,
+          "created": "2026-04-20T18:04:25.567993893Z",
+          "resolution": [1920, 0]
+        }
+        "#;
+
+    let parsed: InstanceConfig = serde_json::from_str(json).expect("deserialize");
+
+    assert!(parsed.resolution.is_none());
+}
+
+#[test]
 fn normalize_memory_value_rejects_invalid_values() {
     assert_eq!(normalize_memory_value("0"), None);
     assert_eq!(normalize_memory_value("-1"), None);

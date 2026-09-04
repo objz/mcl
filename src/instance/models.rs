@@ -77,7 +77,7 @@ pub struct InstanceConfig {
     pub created: DateTime<Utc>,
     #[serde(default)]
     pub last_played: Option<DateTime<Utc>>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_optional_non_empty_string")]
     pub java_path: Option<String>,
     #[serde(default, deserialize_with = "deserialize_optional_memory")]
     pub memory_max: Option<String>,
@@ -91,17 +91,25 @@ pub struct InstanceConfig {
     pub window_mode: WindowMode,
     #[serde(default, skip_serializing_if = "is_false")]
     pub inherit_window_mode: bool,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_optional_resolution")]
     pub resolution: Option<(u32, u32)>,
     #[serde(default, skip_serializing_if = "is_false")]
     pub inherit_resolution: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_non_empty_string",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub preferred_account: Option<String>,
     #[serde(default, skip_serializing_if = "LaunchCommand::is_default")]
     pub pre_launch_command: LaunchCommand,
     #[serde(default, skip_serializing_if = "LaunchCommand::is_default")]
     pub post_exit_command: LaunchCommand,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_non_empty_string",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub glfw_path: Option<String>,
     #[serde(default)]
     pub config_sync_profile: Option<String>,
@@ -129,6 +137,24 @@ impl InstanceConfig {
 
 fn is_false(value: &bool) -> bool {
     !value
+}
+
+fn deserialize_optional_resolution<'de, D>(deserializer: D) -> Result<Option<(u32, u32)>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Ok(Option::<(u32, u32)>::deserialize(deserializer)?
+        .filter(|(width, height)| *width > 0 && *height > 0))
+}
+
+fn deserialize_optional_non_empty_string<'de, D>(
+    deserializer: D,
+) -> Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Ok(Option::<String>::deserialize(deserializer)?
+        .and_then(|value| (!value.trim().is_empty()).then(|| value.trim().to_owned())))
 }
 
 pub fn parse_resolution(input: &str) -> Result<(u32, u32), String> {

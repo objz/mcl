@@ -60,15 +60,6 @@ pub enum ContentProvider {
     CurseForge,
 }
 
-impl ContentProvider {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Modrinth => "modrinth",
-            Self::CurseForge => "curseforge",
-        }
-    }
-}
-
 impl fmt::Display for ContentProvider {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -379,7 +370,11 @@ impl Config {
                 .memory_max
                 .clone_from(&self.defaults.memory_min);
         }
-        if self.defaults.resolution.is_none() {
+        if self
+            .defaults
+            .resolution
+            .is_none_or(|(width, height)| width == 0 || height == 0)
+        {
             self.defaults.resolution = default_resolution();
         }
         self.ui.error_auto_dismiss_ms = self.ui.error_auto_dismiss_ms.max(1);
