@@ -168,19 +168,23 @@ impl JavaPicker {
             .collect()
     }
 
-    pub(crate) fn status(&self) -> Option<Result<&'static str, String>> {
-        match &*self
+    pub(crate) fn take_status(&mut self) -> Option<Result<&'static str, String>> {
+        let mut load = self
             .load
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-        {
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        match &*load {
             LoadState::Idle => None,
             LoadState::Loading => Some(Ok("Detecting installed Java runtimes…")),
             LoadState::Loaded(installations) if installations.is_empty() => {
                 Some(Ok("No additional Java runtimes found."))
             }
             LoadState::Loaded(_) => None,
-            LoadState::Error(error) => Some(Err(error.clone())),
+            LoadState::Error(error) => {
+                let error = error.clone();
+                *load = LoadState::Loaded(Vec::new());
+                Some(Err(error))
+            }
         }
     }
 
@@ -338,10 +342,11 @@ pub(crate) fn handle_text_area_input(input: &mut TextArea<'_>, key: &KeyEvent) {
 
 pub(crate) fn auto_label() -> Span<'static> {
     Span::styled(
-        "Auto",
+        " Auto ",
         Style::default()
-            .fg(THEME.as_ref().text_dim())
-            .add_modifier(Modifier::ITALIC),
+            .fg(THEME.as_ref().text_bright())
+            .bg(THEME.as_ref().info())
+            .add_modifier(Modifier::BOLD),
     )
 }
 

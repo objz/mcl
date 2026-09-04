@@ -479,20 +479,21 @@ fn render_picker(frame: &mut Frame, area: Rect, values: &[String], selected: usi
     super::select_list::render(items, selected, area, frame.buffer_mut());
 }
 
-fn render_java_picker(frame: &mut Frame, area: Rect, state: &State) {
+fn render_java_picker(frame: &mut Frame, area: Rect, state: &mut State) {
     let theme = THEME.as_ref();
     let mut list_area = area;
-    if let Some(status) = state.java_picker.status() {
-        let (message, color) = match status {
-            Ok(message) => (message.to_owned(), theme.text_dim()),
-            Err(error) => (error, theme.error()),
-        };
-        frame.render_widget(
-            Paragraph::new(message).style(Style::default().fg(color)),
-            Rect { height: 1, ..area },
-        );
-        list_area.y = list_area.y.saturating_add(1);
-        list_area.height = list_area.height.saturating_sub(1);
+    if let Some(status) = state.java_picker.take_status() {
+        match status {
+            Ok(message) => {
+                frame.render_widget(
+                    Paragraph::new(message).style(Style::default().fg(theme.text_dim())),
+                    Rect { height: 1, ..area },
+                );
+                list_area.y = list_area.y.saturating_add(1);
+                list_area.height = list_area.height.saturating_sub(1);
+            }
+            Err(error) => crate::feedback::errors::push_message(tracing::Level::ERROR, error),
+        }
     }
     super::select_list::render(
         state.java_picker.items(),

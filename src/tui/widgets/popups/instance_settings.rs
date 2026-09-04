@@ -77,7 +77,7 @@ enum PickerLoad {
     Idle,
     Loading,
     Loaded,
-    Error(String),
+    Error,
 }
 
 #[derive(Debug, Clone)]
@@ -107,6 +107,7 @@ pub enum Action {
     Save(Box<InstanceConfig>, bool),
     Error(String),
     ConfirmRuntime { name: String },
+    ConfirmClearJvmArgs { name: String },
     OpenRaw,
     Close,
 }
@@ -361,7 +362,13 @@ impl State {
                     .lock()
                     .unwrap_or_else(std::sync::PoisonError::into_inner) = match result {
                     Ok(versions) => LoadState::Loaded(versions),
-                    Err(error) => LoadState::Error(error),
+                    Err(error) => {
+                        crate::feedback::errors::push_message(
+                            tracing::Level::ERROR,
+                            format!("Failed to load game versions: {error}"),
+                        );
+                        LoadState::Error(error)
+                    }
                 };
                 crate::feedback::request_redraw();
             });
@@ -389,7 +396,13 @@ impl State {
                         .lock()
                         .unwrap_or_else(std::sync::PoisonError::into_inner) = match result {
                         Ok(versions) => LoadState::Loaded(versions),
-                        Err(error) => LoadState::Error(error),
+                        Err(error) => {
+                            crate::feedback::errors::push_message(
+                                tracing::Level::ERROR,
+                                format!("Failed to load loader versions: {error}"),
+                            );
+                            LoadState::Error(error)
+                        }
                     };
                     crate::feedback::request_redraw();
                 });
@@ -734,6 +747,11 @@ impl State {
                 self.apply_default_memory();
             }
             KeyCode::Char('d') if self.selected == 7 => self.apply_default_resolution(),
+            KeyCode::Char('d') if self.selected == 6 && !self.draft.jvm_args.is_empty() => {
+                return Action::ConfirmClearJvmArgs {
+                    name: self.draft.name.clone(),
+                };
+            }
             KeyCode::Char('c') if self.selected == 7 => {
                 self.editing = Some(new_text_area(vec![self.value(7)]));
             }
@@ -751,6 +769,11 @@ impl State {
     pub fn confirmed_save(&mut self) -> Option<(Box<InstanceConfig>, bool)> {
         self.validate_before_save()
             .then(|| (Box::new(self.draft.clone()), self.desktop))
+    }
+
+    pub fn clear_jvm_args(&mut self) {
+        self.draft.jvm_args.clear();
+        self.error = None;
     }
 
     pub fn mark_saved(&mut self, saved: &InstanceConfig, desktop: bool) {
@@ -889,6 +912,13 @@ pub fn render(frame: &mut Frame, area: Rect, state: &mut State) {
             ("Enter", " presets"),
             ("c", " custom"),
             ("d", " default"),
+            ("Esc", " back"),
+        ])
+    } else if state.selected == 6 {
+        super::keybind_line(&[
+            ("j/k", ""),
+            ("Enter", " edit"),
+            ("d", " clear"),
             ("Esc", " back"),
         ])
     } else if matches!(state.selected, 0..=2) {
@@ -1115,22 +1145,23 @@ fn jvm_row_count(state: &State, width: u16) -> usize {
     rows
 }
 
-fn render_choice_picker(frame: &mut Frame, area: Rect, state: &State) {
+fn render_choice_picker(frame: &mut Frame, area: Rect, state: &mut State) {
     let theme = THEME.as_ref();
     let mut list_area = area;
     if state.choice_picker == Some(ChoicePicker::Java)
-        && let Some(status) = state.java_picker.status()
+        && let Some(status) = state.java_picker.take_status()
     {
-        let (message, color) = match status {
-            Ok(message) => (message.to_owned(), theme.text_dim()),
-            Err(error) => (error, theme.error()),
-        };
-        frame.render_widget(
-            Paragraph::new(message).style(Style::default().fg(color)),
-            Rect { height: 1, ..area },
-        );
-        list_area.y = list_area.y.saturating_add(1);
-        list_area.height = list_area.height.saturating_sub(1);
+        match status {
+            Ok(message) => {
+                frame.render_widget(
+                    Paragraph::new(message).style(Style::default().fg(theme.text_dim())),
+                    Rect { height: 1, ..area },
+                );
+                list_area.y = list_area.y.saturating_add(1);
+                list_area.height = list_area.height.saturating_sub(1);
+            }
+            Err(error) => crate::feedback::errors::push_message(tracing::Level::ERROR, error),
+        }
     }
     let items = match state.choice_picker {
         Some(ChoicePicker::Java) => state.java_picker.items(),
@@ -1200,7 +1231,7 @@ fn render_version_picker(frame: &mut Frame, area: Rect, state: &State) {
             LoadState::Idle => PickerLoad::Idle,
             LoadState::Loading => PickerLoad::Loading,
             LoadState::Loaded(_) => PickerLoad::Loaded,
-            LoadState::Error(error) => PickerLoad::Error(error.clone()),
+            LoadState::Error(_) => PickerLoad::Error,
         },
         Some(VersionPicker::Loader) => match &*state
             .loader_versions
@@ -1210,7 +1241,7 @@ fn render_version_picker(frame: &mut Frame, area: Rect, state: &State) {
             LoadState::Idle => PickerLoad::Idle,
             LoadState::Loading => PickerLoad::Loading,
             LoadState::Loaded(_) => PickerLoad::Loaded,
-            LoadState::Error(error) => PickerLoad::Error(error.clone()),
+            LoadState::Error(_) => PickerLoad::Error,
         },
         None => return,
     };
@@ -1219,11 +1250,8 @@ fn render_version_picker(frame: &mut Frame, area: Rect, state: &State) {
             Paragraph::new("Loading versions...").style(Style::default().fg(theme.text_dim())),
             area,
         ),
-        PickerLoad::Error(error) => frame.render_widget(
-            Paragraph::new(format!(
-                "Failed to load versions: {error}. Reopen to retry."
-            ))
-            .style(Style::default().fg(theme.error())),
+        PickerLoad::Error => frame.render_widget(
+            Paragraph::new("Reopen to retry").style(Style::default().fg(theme.text_dim())),
             area,
         ),
         PickerLoad::Loaded => {

@@ -658,16 +658,69 @@ fn runtime_settings_use_the_shared_confirmation_popup() {
     ui.draw();
     assert!(ui.screen().contains("Change runtime"));
     assert!(!ui.screen().contains("Target:"));
+    assert!(ui.screen().contains("Apply this runtime change"));
     assert!(
-        ui.screen()
+        !ui.screen()
             .contains("Some installed mods may be incompatible")
     );
     assert!(!ui.screen().contains("incompatible."));
+    assert!(
+        crate::feedback::errors::ERROR_EVENTS
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|event| {
+                event.level == tracing::Level::WARN
+                    && event.message == "Some installed mods may be incompatible"
+            })
+    );
 
     ui.key(KeyCode::Esc);
     assert_eq!(ui.app.focused, FocusedArea::InstanceSettings);
     ui.key(KeyCode::Esc);
     assert_eq!(ui.app.focused, FocusedArea::Settings);
+}
+
+#[test]
+fn clearing_jvm_arguments_requires_confirmation_and_autosaves() {
+    let mut ui = UiHarness::new();
+    ui.add_instance("jvm-clear-test");
+    ui.key(KeyCode::Char('E'));
+    ui.app.instance_settings.as_mut().unwrap().draft.jvm_args =
+        vec!["-XX:+UseG1GC".to_owned(), "-Xss1M".to_owned()];
+
+    for _ in 0..6 {
+        ui.key(KeyCode::Char('j'));
+    }
+    ui.key(KeyCode::Char('d'));
+
+    assert_eq!(ui.app.focused, FocusedArea::ConfirmDelete);
+    assert!(matches!(
+        confirm::pending_target(),
+        Some(confirm::ConfirmTarget::JvmArguments { name }) if name == "jvm-clear-test"
+    ));
+    assert_eq!(
+        ui.app
+            .instance_settings
+            .as_ref()
+            .unwrap()
+            .draft
+            .jvm_args
+            .len(),
+        2
+    );
+
+    ui.key(KeyCode::Enter);
+
+    assert_eq!(ui.app.focused, FocusedArea::InstanceSettings);
+    assert!(
+        ui.app
+            .instances_state
+            .selected_instance()
+            .unwrap()
+            .jvm_args
+            .is_empty()
+    );
 }
 
 #[test]

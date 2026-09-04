@@ -272,6 +272,17 @@ impl App {
                             }
                             self.focused
                         }
+                        Some(confirm_popup::ConfirmTarget::JvmArguments { .. }) => {
+                            self.focused = FocusedArea::InstanceSettings;
+                            let confirmed = self.instance_settings.as_mut().and_then(|state| {
+                                state.clear_jvm_args();
+                                state.confirmed_save()
+                            });
+                            if let Some((updated, desktop)) = confirmed {
+                                self.apply_instance_settings(*updated, desktop, false);
+                            }
+                            self.focused
+                        }
                         None => FocusedArea::Instances,
                     };
                     confirm_popup::clear_pending();
@@ -292,6 +303,9 @@ impl App {
                             if let Some(state) = self.instance_settings.as_mut() {
                                 state.cancel_runtime_change();
                             }
+                            FocusedArea::InstanceSettings
+                        }
+                        Some(confirm_popup::ConfirmTarget::JvmArguments { .. }) => {
                             FocusedArea::InstanceSettings
                         }
                         _ => FocusedArea::Instances,
@@ -735,9 +749,17 @@ impl App {
                     self.apply_instance_settings(*updated, desktop, false);
                 }
                 widgets::popups::instance_settings::Action::ConfirmRuntime { name } => {
+                    error_buffer::push_message(
+                        tracing::Level::WARN,
+                        "Some installed mods may be incompatible",
+                    );
                     confirm_popup::set_pending(confirm_popup::ConfirmTarget::InstanceRuntime {
                         name,
                     });
+                    self.focused = FocusedArea::ConfirmDelete;
+                }
+                widgets::popups::instance_settings::Action::ConfirmClearJvmArgs { name } => {
+                    confirm_popup::set_pending(confirm_popup::ConfirmTarget::JvmArguments { name });
                     self.focused = FocusedArea::ConfirmDelete;
                 }
             }

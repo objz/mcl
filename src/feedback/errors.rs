@@ -49,6 +49,15 @@ pub fn push_error(event: ErrorEvent) {
     }
 }
 
+pub fn push_message(level: Level, message: impl Into<String>) {
+    push_error(ErrorEvent {
+        id: 0,
+        level,
+        message: message.into(),
+        pushed_at: Instant::now(),
+    });
+}
+
 #[must_use]
 pub fn has_errors() -> bool {
     match ERROR_EVENTS.lock() {

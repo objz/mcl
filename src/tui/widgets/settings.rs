@@ -329,10 +329,10 @@ fn render_instance_info(
     } else {
         value_style
     };
-    let desktop = if crate::instance::desktop::exists(&inst.name) {
-        "yes"
+    let shortcut = if crate::instance::desktop::exists(&inst.name) {
+        "enabled"
     } else {
-        "no"
+        "disabled"
     };
     let lines = vec![
         Line::from(vec![
@@ -344,8 +344,8 @@ fn render_instance_info(
             Span::styled(state.java_label.as_str(), active_style),
         ]),
         Line::from(vec![
-            Span::styled("Desktop  ", label_style),
-            Span::styled(desktop, active_style),
+            Span::styled("Shortcut ", label_style),
+            Span::styled(shortcut, active_style),
         ]),
     ];
 

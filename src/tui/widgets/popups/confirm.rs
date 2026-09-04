@@ -48,6 +48,9 @@ pub enum ConfirmTarget {
     InstanceRuntime {
         name: String,
     },
+    JvmArguments {
+        name: String,
+    },
 }
 
 impl ConfirmTarget {
@@ -55,6 +58,7 @@ impl ConfirmTarget {
         match self {
             Self::OrphanDependencies { .. } => " Remove unused dependencies ".to_owned(),
             Self::InstanceRuntime { .. } => " Change runtime ".to_owned(),
+            Self::JvmArguments { .. } => " Clear JVM arguments ".to_owned(),
             _ => format!(" Delete '{}' ", self.name()),
         }
     }
@@ -93,9 +97,8 @@ impl ConfirmTarget {
                 })
                 .collect::<Vec<_>>()
                 .join("\n"),
-            ConfirmTarget::InstanceRuntime { .. } => {
-                "Some installed mods may be incompatible".to_owned()
-            }
+            ConfirmTarget::InstanceRuntime { .. } => "Apply this runtime change".to_owned(),
+            ConfirmTarget::JvmArguments { .. } => "Remove all JVM arguments".to_owned(),
         }
     }
 
@@ -107,6 +110,7 @@ impl ConfirmTarget {
             ConfirmTarget::Content { name, .. } => name,
             ConfirmTarget::OrphanDependencies { .. } => "unused dependencies",
             ConfirmTarget::InstanceRuntime { name, .. } => name,
+            ConfirmTarget::JvmArguments { name, .. } => name,
         }
     }
 
@@ -115,6 +119,7 @@ impl ConfirmTarget {
             Self::Content { dependents, .. } if !dependents.is_empty() => " delete anyway",
             Self::OrphanDependencies { .. } => " remove all",
             Self::InstanceRuntime { .. } => " change",
+            Self::JvmArguments { .. } => " clear",
             _ => " confirm",
         }
     }
@@ -181,7 +186,6 @@ pub struct ConfirmPopup {
     title: String,
     body: String,
     confirm_label: &'static str,
-    runtime_confirmation: bool,
 }
 
 impl ConfirmPopup {
@@ -190,7 +194,6 @@ impl ConfirmPopup {
             title: target.title(),
             body: target.body(),
             confirm_label: target.confirm_label(),
-            runtime_confirmation: matches!(target, ConfirmTarget::InstanceRuntime { .. }),
         }
     }
 }
@@ -214,9 +217,7 @@ impl Widget for ConfirmPopup {
         let text = theme.text();
         let text_dim = theme.text_dim();
         let error = theme.error();
-        let warning = theme.warning();
         let body = self.body;
-        let runtime_confirmation = self.runtime_confirmation;
         let styled_list = body.contains("• ");
         let popup = PopupFrame {
             title,
@@ -233,8 +234,6 @@ impl Widget for ConfirmPopup {
                                 Span::styled("• ", Style::default().fg(accent)),
                                 Span::styled(value.to_owned(), Style::default().fg(text)),
                             ])
-                        } else if runtime_confirmation && line.starts_with("Some installed mods") {
-                            Line::styled(line.to_owned(), Style::default().fg(warning))
                         } else if line.starts_with('!') {
                             Line::styled(line.to_owned(), Style::default().fg(error))
                         } else {
