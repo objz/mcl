@@ -236,10 +236,14 @@ pub fn apply_theme(theme: String, border_style: BorderStyle) -> std::io::Result<
     let mut config = current_theme_config();
     config.theme = theme;
     config.border_style = border_style.clone();
-    let serialized = toml::to_string_pretty(&config).map_err(std::io::Error::other)?;
-    crate::storage::write_atomic(
+    super::write_merged_toml_document(
         &super::get_config_path().join("theme.toml"),
-        serialized.as_bytes(),
+        &config,
+        |document| {
+            if config.custom.is_none() {
+                document.as_table_mut().remove("custom");
+            }
+        },
     )?;
     THEME.set(resolve_app_theme(&config));
     BORDER_STYLE.set(border_style);

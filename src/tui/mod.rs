@@ -109,11 +109,18 @@ async fn run_layout_migration_screen(
 
     let instances_dir = crate::config::SETTINGS.read().paths.resolve_instances_dir();
     let meta_dir = crate::config::SETTINGS.read().paths.resolve_meta_dir();
+    let config = crate::config::get_config_path().join("config.toml");
     if !crate::layout_migration::is_needed(&instances_dir, &meta_dir) {
         crate::layout_migration::initialize_new_layout(&meta_dir)?;
+        if let Err(error) = crate::config::upgrade_config_file(&config) {
+            tracing::warn!("Could not upgrade launcher config: {error}");
+            crate::feedback::errors::push_message(
+                tracing::Level::ERROR,
+                format!("Could not upgrade config.toml: {error}"),
+            );
+        }
         return Ok(MigrationScreenOutcome::NotNeeded);
     }
-    let config = crate::config::get_config_path().join("config.toml");
 
     loop {
         let progress = Arc::new(Mutex::new(crate::layout_migration::MigrationProgress {

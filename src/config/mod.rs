@@ -58,6 +58,90 @@ pub fn load_config(config_path: &std::path::Path) -> Result<Config, ConfigError>
         .map(Config::normalize)
 }
 
+pub(crate) fn upgrade_config_file(path: &std::path::Path) -> io::Result<bool> {
+    let source = match fs::read_to_string(path) {
+        Ok(source) => source,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            crate::storage::write_atomic(
+                path,
+                include_str!("../../assets/config.toml").as_bytes(),
+            )?;
+            return Ok(true);
+        }
+        Err(error) => return Err(error),
+    };
+    let mut document = parse_toml_document(path, &source)?;
+    let template = include_str!("../../assets/config.toml")
+        .parse::<toml_edit::DocumentMut>()
+        .map_err(io::Error::other)?;
+    merge_missing_table(document.as_table_mut(), template.as_table());
+    let upgraded = document.to_string();
+    toml::from_str::<Config>(&upgraded).map_err(|error| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("cannot upgrade {}: {error}", path.display()),
+        )
+    })?;
+    if upgraded == source {
+        return Ok(false);
+    }
+    crate::storage::write_atomic(path, upgraded.as_bytes())?;
+    Ok(true)
+}
+
+pub(crate) fn migrate_legacy_data_paths(path: &std::path::Path) -> io::Result<bool> {
+    let Some(data_dir) = dirs_next::data_dir() else {
+        return Ok(false);
+    };
+    migrate_legacy_data_paths_from(path, &data_dir)
+}
+
+fn migrate_legacy_data_paths_from(
+    path: &std::path::Path,
+    data_dir: &std::path::Path,
+) -> io::Result<bool> {
+    let source = match fs::read_to_string(path) {
+        Ok(source) => source,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(false),
+        Err(error) => return Err(error),
+    };
+    let mut document = parse_toml_document(path, &source)?;
+    let Some(paths) = document
+        .get_mut("paths")
+        .and_then(toml_edit::Item::as_table_mut)
+    else {
+        return Ok(false);
+    };
+    let old_root = data_dir.join("mcl");
+    let new_root = data_dir.join("rmcl");
+    let mut changed = false;
+    for (key, old_path, replacement) in [
+        (
+            "instances_dir",
+            old_root.join("instances"),
+            new_root.join("instances"),
+        ),
+        ("meta_dir", old_root.join("meta"), new_root.join("meta")),
+    ] {
+        let Some(value) = paths.get_mut(key).and_then(toml_edit::Item::as_value_mut) else {
+            continue;
+        };
+        if value
+            .as_str()
+            .is_some_and(|raw| settings::resolve_path(raw) == old_path)
+        {
+            let decor = value.decor().clone();
+            *value = toml_edit::Value::from(replacement.to_string_lossy().into_owned());
+            *value.decor_mut() = decor;
+            changed = true;
+        }
+    }
+    if changed {
+        crate::storage::write_atomic(path, document.to_string().as_bytes())?;
+    }
+    Ok(changed)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LauncherSettingsSave {
     pub restart_required: bool,
@@ -170,49 +254,67 @@ pub static SETTINGS: LazyLock<ConfigStore> = LazyLock::new(|| {
 });
 
 fn write_config_document(path: &std::path::Path, config: &Config) -> io::Result<()> {
+    write_merged_toml_document(path, config, |document| {
+        if config.paths.java_path.is_none()
+            && let Some(paths) = document
+                .get_mut("paths")
+                .and_then(|item| item.as_table_mut())
+        {
+            paths.remove("java_path");
+        }
+        let default_paths = settings::Paths::default();
+        if let Some(paths) = document
+            .get_mut("paths")
+            .and_then(|item| item.as_table_mut())
+        {
+            if config.paths.instances_dir == default_paths.instances_dir {
+                paths.remove("instances_dir");
+            }
+            if config.paths.meta_dir == default_paths.meta_dir {
+                paths.remove("meta_dir");
+            }
+        }
+        if config.defaults.resolution.is_none()
+            && let Some(defaults) = document
+                .get_mut("defaults")
+                .and_then(|item| item.as_table_mut())
+        {
+            defaults.remove("resolution");
+        }
+    })
+}
+
+pub(crate) fn write_merged_toml_document<T, F>(
+    path: &std::path::Path,
+    value: &T,
+    edit: F,
+) -> io::Result<()>
+where
+    T: serde::Serialize,
+    F: FnOnce(&mut toml_edit::DocumentMut),
+{
     let source = match fs::read_to_string(path) {
         Ok(source) => source,
         Err(error) if error.kind() == io::ErrorKind::NotFound => String::new(),
         Err(error) => return Err(error),
     };
-    let mut document = source.parse::<toml_edit::DocumentMut>().map_err(|error| {
-        io::Error::new(
-            io::ErrorKind::InvalidData,
-            format!("cannot update {}: {error}", path.display()),
-        )
-    })?;
-    let generated = toml::to_string_pretty(config)
+    let mut document = parse_toml_document(path, &source)?;
+    let generated = toml::to_string_pretty(value)
         .map_err(io::Error::other)?
         .parse::<toml_edit::DocumentMut>()
         .map_err(io::Error::other)?;
     merge_table(document.as_table_mut(), generated.as_table());
-    if config.paths.java_path.is_none()
-        && let Some(paths) = document
-            .get_mut("paths")
-            .and_then(|item| item.as_table_mut())
-    {
-        paths.remove("java_path");
-    }
-    let default_paths = settings::Paths::default();
-    if let Some(paths) = document
-        .get_mut("paths")
-        .and_then(|item| item.as_table_mut())
-    {
-        if config.paths.instances_dir == default_paths.instances_dir {
-            paths.remove("instances_dir");
-        }
-        if config.paths.meta_dir == default_paths.meta_dir {
-            paths.remove("meta_dir");
-        }
-    }
-    if config.defaults.resolution.is_none()
-        && let Some(defaults) = document
-            .get_mut("defaults")
-            .and_then(|item| item.as_table_mut())
-    {
-        defaults.remove("resolution");
-    }
+    edit(&mut document);
     crate::storage::write_atomic(path, document.to_string().as_bytes())
+}
+
+fn parse_toml_document(path: &std::path::Path, source: &str) -> io::Result<toml_edit::DocumentMut> {
+    source.parse::<toml_edit::DocumentMut>().map_err(|error| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("cannot update {}: {error}", path.display()),
+        )
+    })
 }
 
 fn merge_table(target: &mut toml_edit::Table, source: &toml_edit::Table) {
@@ -235,6 +337,20 @@ fn merge_table(target: &mut toml_edit::Table, source: &toml_edit::Table) {
             *target_item = source_item.clone();
         } else {
             target.insert(key, source_item.clone());
+        }
+    }
+}
+
+fn merge_missing_table(target: &mut toml_edit::Table, defaults: &toml_edit::Table) {
+    for (key, default_item) in defaults {
+        if let Some(target_item) = target.get_mut(key) {
+            if let (Some(target_table), Some(default_table)) =
+                (target_item.as_table_mut(), default_item.as_table())
+            {
+                merge_missing_table(target_table, default_table);
+            }
+        } else {
+            target.insert(key, default_item.clone());
         }
     }
 }
