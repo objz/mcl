@@ -81,43 +81,33 @@ fn apply_window_mode(game_args: &mut Vec<String>, window_mode: WindowMode) {
     }
 }
 
-fn parse_java_major_version(text: &str) -> Option<u32> {
-    let quoted = text
-        .split_once('"')
-        .and_then(|(_, rest)| rest.split_once('"').map(|(version, _)| version));
-
-    let token = quoted.or_else(|| {
-        let start = text.find(|c: char| c.is_ascii_digit())?;
-        Some(&text[start..])
-    })?;
-
-    let parts: Vec<u32> = token
-        .split(|c: char| !c.is_ascii_digit())
-        .filter(|part| !part.is_empty())
-        .filter_map(|part| part.parse::<u32>().ok())
-        .collect();
-
-    match parts.as_slice() {
-        [1, legacy_major, ..] => Some(*legacy_major),
-        [major, ..] => Some(*major),
-        [] => None,
-    }
-}
-
 async fn check_java_version(java: &str, required: Option<u32>) -> Result<(), LaunchError> {
     let Some(required) = required.filter(|major| *major > 0) else {
         return Ok(());
     };
 
-    let output = tokio::process::Command::new(java)
-        .arg("-version")
-        .output()
+    let mut command = tokio::process::Command::new(java);
+    command.arg("-version").kill_on_drop(true);
+    let output = tokio::time::timeout(std::time::Duration::from_secs(10), command.output())
         .await
+        .map_err(|_| LaunchError::JavaCheckFailed {
+            java: java.to_owned(),
+            required,
+            reason: "version check timed out".to_owned(),
+        })?
         .map_err(|e| LaunchError::JavaCheckFailed {
             java: java.to_owned(),
             required,
             reason: e.to_string(),
         })?;
+
+    if !output.status.success() {
+        return Err(LaunchError::JavaCheckFailed {
+            java: java.to_owned(),
+            required,
+            reason: format!("`java -version` exited with {}", output.status),
+        });
+    }
 
     let version_text = format!(
         "{}{}",
@@ -126,10 +116,12 @@ async fn check_java_version(java: &str, required: Option<u32>) -> Result<(), Lau
     );
 
     let detected =
-        parse_java_major_version(&version_text).ok_or_else(|| LaunchError::JavaCheckFailed {
-            java: java.to_owned(),
-            required,
-            reason: format!("could not parse `java -version` output: {version_text:?}"),
+        crate::instance::java::parse_java_major_version(&version_text).ok_or_else(|| {
+            LaunchError::JavaCheckFailed {
+                java: java.to_owned(),
+                required,
+                reason: format!("could not parse `java -version` output: {version_text:?}"),
+            }
         })?;
 
     if detected < required {
@@ -193,10 +185,15 @@ async fn migrate_legacy_meta_if_needed(
         }
     };
 
-    tokio::fs::write(meta_path, &raw).await?;
-
     let refreshed: LaunchProfile = serde_json::from_slice(&raw)
         .map_err(|e| LaunchError::Parse(format!("Failed to parse refreshed meta: {e}")))?;
+    if refreshed.arguments.is_none() && refreshed.minecraft_arguments.is_none() {
+        tracing::warn!(
+            "Refetched metadata for {game_version} still has no launch arguments; keeping the cached profile"
+        );
+        return Ok(None);
+    }
+    crate::storage::write_atomic(meta_path, &raw)?;
     Ok(Some(refreshed))
 }
 
@@ -296,11 +293,10 @@ async fn migrate_legacy_loader_profile_if_needed(
     );
 
     let raw = tokio::fs::read(&installer_json_path).await?;
-    tokio::fs::write(profile_path, &raw).await?;
-
     let refreshed: LaunchProfile = serde_json::from_slice(&raw).map_err(|e| {
         LaunchError::Parse(format!("Failed to parse refreshed loader profile: {e}"))
     })?;
+    crate::storage::write_atomic(profile_path, &raw)?;
     Ok(Some(refreshed))
 }
 
@@ -434,13 +430,8 @@ pub async fn build_launch_invocation(
     let lib_dir = metadata_paths.libraries();
 
     let lv = config.loader_version.as_deref().unwrap_or("unknown");
-    let profile_filename = match config.loader {
-        ModLoader::Vanilla => None,
-        ModLoader::Fabric => Some(format!("fabric-{}-{}.json", config.game_version, lv)),
-        ModLoader::Quilt => Some(format!("quilt-{}-{}.json", config.game_version, lv)),
-        ModLoader::Forge => Some(format!("forge-{}-{}.json", config.game_version, lv)),
-        ModLoader::NeoForge => Some(format!("neoforge-{}.json", lv)),
-    };
+    let profile_filename =
+        crate::instance::loader::profile_filename(config.loader, &config.game_version, lv);
 
     // load the loader profile (if any), migrate from the old stripped format
     // if needed, and resolve `inheritsFrom` against the vanilla parent (which

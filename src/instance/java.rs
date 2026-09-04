@@ -17,17 +17,6 @@ pub struct JavaInstallation {
     pub version: Option<String>,
 }
 
-impl JavaInstallation {
-    #[must_use]
-    pub fn label(&self) -> String {
-        let version = self
-            .version
-            .as_deref()
-            .map_or_else(|| "Java".to_owned(), |version| format!("Java {version}"));
-        format!("{version}  {}", self.path.display())
-    }
-}
-
 #[must_use]
 pub fn detect_java_path() -> String {
     if let Ok(java_home) = std::env::var("JAVA_HOME") {
@@ -216,8 +205,11 @@ fn add_java_home(home: &Path, candidates: &mut Vec<PathBuf>) {
     }
 }
 
-fn java_version(path: &Path) -> Option<String> {
+pub(crate) fn java_version(path: &Path) -> Option<String> {
     let output = Command::new(path).arg("-version").output().ok()?;
+    if !output.status.success() {
+        return None;
+    }
     let text = format!(
         "{}{}",
         String::from_utf8_lossy(&output.stderr),
@@ -234,15 +226,37 @@ fn parse_java_version(output: &str) -> Option<String> {
     })
 }
 
-fn java_major(version: Option<&str>) -> u32 {
+pub(crate) fn java_major(version: Option<&str>) -> u32 {
     let Some(version) = version else {
         return 0;
     };
-    let mut parts = version.split(['.', '_']);
-    match (parts.next(), parts.next()) {
-        (Some("1"), Some(major)) => major.parse().unwrap_or(0),
-        (Some(major), _) => major.parse().unwrap_or(0),
-        _ => 0,
+    let parts = version
+        .split(|character: char| !character.is_ascii_digit())
+        .filter(|part| !part.is_empty())
+        .filter_map(|part| part.parse::<u32>().ok())
+        .collect::<Vec<_>>();
+    match parts.as_slice() {
+        [1, legacy_major, ..] => *legacy_major,
+        [major, ..] => *major,
+        [] => 0,
+    }
+}
+
+pub(crate) fn parse_java_major_version(output: &str) -> Option<u32> {
+    if let Some(version) = parse_java_version(output) {
+        return Some(java_major(Some(&version))).filter(|major| *major > 0);
+    }
+
+    let start = output.find(|character: char| character.is_ascii_digit())?;
+    let parts = output[start..]
+        .split(|character: char| !character.is_ascii_digit())
+        .filter(|part| !part.is_empty())
+        .filter_map(|part| part.parse::<u32>().ok())
+        .collect::<Vec<_>>();
+    match parts.as_slice() {
+        [1, legacy_major, ..] => Some(*legacy_major),
+        [major, ..] => Some(*major),
+        [] => None,
     }
 }
 
@@ -262,6 +276,12 @@ mod tests {
         );
         assert_eq!(java_major(Some("21.0.4")), 21);
         assert_eq!(java_major(Some("1.8.0_412")), 8);
+        assert_eq!(java_major(Some("21-ea")), 21);
+        assert_eq!(
+            parse_java_major_version("openjdk version \"21-ea\" 2026-03-17"),
+            Some(21)
+        );
+        assert_eq!(parse_java_major_version("openjdk 17"), Some(17));
     }
 
     #[test]

@@ -12,7 +12,10 @@ fn parse_java_major_version_handles_common_outputs(
     #[case] output: &str,
     #[case] expected: Option<u32>,
 ) {
-    assert_eq!(parse_java_major_version(output), expected);
+    assert_eq!(
+        crate::instance::java::parse_java_major_version(output),
+        expected
+    );
 }
 
 #[test]
