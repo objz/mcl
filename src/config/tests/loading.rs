@@ -198,14 +198,17 @@ fn legacy_default_data_paths_follow_the_renamed_data_directory() {
     .unwrap();
 
     assert!(migrate_legacy_data_paths_from(&path, &data).unwrap());
-    let migrated = std::fs::read_to_string(path).unwrap();
+    let migrated = std::fs::read_to_string(&path).unwrap();
+    let config = load_config(&path).unwrap();
 
-    assert!(
-        migrated.contains(&data.join("rmcl/instances").to_string_lossy().to_string()),
+    assert_eq!(
+        settings::resolve_path(&config.paths.instances_dir),
+        data.join("rmcl").join("instances"),
         "{migrated}"
     );
-    assert!(
-        migrated.contains(&data.join("rmcl/meta").to_string_lossy().to_string()),
+    assert_eq!(
+        settings::resolve_path(&config.paths.meta_dir),
+        data.join("rmcl").join("meta"),
         "{migrated}"
     );
 }
