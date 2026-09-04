@@ -268,17 +268,9 @@ impl App {
                                 .as_mut()
                                 .and_then(|state| state.confirmed_save());
                             if let Some((updated, desktop)) = confirmed {
-                                self.apply_instance_settings(*updated, desktop);
+                                self.apply_instance_settings(*updated, desktop, true);
                             }
                             self.focused
-                        }
-                        Some(confirm_popup::ConfirmTarget::DiscardInstanceSettings) => {
-                            self.instance_settings = None;
-                            self.pre_overlay_focused
-                        }
-                        Some(confirm_popup::ConfirmTarget::DiscardLauncherSettings) => {
-                            self.global_settings = None;
-                            self.pre_overlay_focused
                         }
                         None => FocusedArea::Instances,
                     };
@@ -296,12 +288,11 @@ impl App {
                         Some(confirm_popup::ConfirmTarget::ConfigProfile { .. }) => {
                             FocusedArea::Settings
                         }
-                        Some(confirm_popup::ConfirmTarget::InstanceRuntime { .. })
-                        | Some(confirm_popup::ConfirmTarget::DiscardInstanceSettings) => {
+                        Some(confirm_popup::ConfirmTarget::InstanceRuntime { .. }) => {
+                            if let Some(state) = self.instance_settings.as_mut() {
+                                state.cancel_runtime_change();
+                            }
                             FocusedArea::InstanceSettings
-                        }
-                        Some(confirm_popup::ConfirmTarget::DiscardLauncherSettings) => {
-                            FocusedArea::GlobalSettings
                         }
                         _ => FocusedArea::Instances,
                     };
@@ -675,12 +666,6 @@ impl App {
                     self.global_settings = None;
                     self.focused = self.pre_overlay_focused;
                 }
-                widgets::popups::global_settings::Action::ConfirmClose => {
-                    confirm_popup::set_pending(
-                        confirm_popup::ConfirmTarget::DiscardLauncherSettings,
-                    );
-                    self.focused = FocusedArea::ConfirmDelete;
-                }
                 widgets::popups::global_settings::Action::OpenRaw(path) => {
                     self.pending_editor = Some(path);
                     self.global_settings = None;
@@ -692,8 +677,7 @@ impl App {
                         .and_then(|()| crate::config::theme::apply_theme(theme, border));
                     match result {
                         Ok(()) => {
-                            self.global_settings = None;
-                            self.focused = self.pre_overlay_focused;
+                            crate::feedback::request_redraw();
                         }
                         Err(error) => error_buffer::push_error(error_buffer::ErrorEvent {
                             id: 0,
@@ -732,7 +716,7 @@ impl App {
                     self.focused = self.pre_overlay_focused;
                 }
                 widgets::popups::instance_settings::Action::Save(updated, desktop) => {
-                    self.apply_instance_settings(*updated, desktop);
+                    self.apply_instance_settings(*updated, desktop, false);
                 }
                 widgets::popups::instance_settings::Action::ConfirmRuntime { name, from, to } => {
                     confirm_popup::set_pending(confirm_popup::ConfirmTarget::InstanceRuntime {
@@ -740,12 +724,6 @@ impl App {
                         from,
                         to,
                     });
-                    self.focused = FocusedArea::ConfirmDelete;
-                }
-                widgets::popups::instance_settings::Action::ConfirmClose => {
-                    confirm_popup::set_pending(
-                        confirm_popup::ConfirmTarget::DiscardInstanceSettings,
-                    );
                     self.focused = FocusedArea::ConfirmDelete;
                 }
             }
@@ -2050,6 +2028,7 @@ impl App {
         &mut self,
         updated: crate::instance::models::InstanceConfig,
         desktop: bool,
+        close: bool,
     ) {
         let Some(previous) = self.instances_state.selected_instance().cloned() else {
             return;
@@ -2068,8 +2047,10 @@ impl App {
                 return;
             }
             self.spawn_instance_settings_update(previous, updated, desktop);
-            self.instance_settings = None;
-            self.focused = self.pre_overlay_focused;
+            if close {
+                self.instance_settings = None;
+                self.focused = self.pre_overlay_focused;
+            }
             return;
         }
 
@@ -2089,15 +2070,14 @@ impl App {
                     });
                 }
                 self.instances_state
-                    .replace_instance(&previous.name, updated);
-                error_buffer::push_error(error_buffer::ErrorEvent {
-                    id: 0,
-                    level: tracing::Level::INFO,
-                    message: format!("Updated instance '{}'", previous.name),
-                    pushed_at: std::time::Instant::now(),
-                });
-                self.instance_settings = None;
-                self.focused = self.pre_overlay_focused;
+                    .replace_instance(&previous.name, updated.clone());
+                if let Some(state) = self.instance_settings.as_mut() {
+                    state.mark_saved(&updated, desktop);
+                }
+                if close {
+                    self.instance_settings = None;
+                    self.focused = self.pre_overlay_focused;
+                }
             }
             Err(error) => error_buffer::push_error(error_buffer::ErrorEvent {
                 id: 0,

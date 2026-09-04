@@ -50,8 +50,6 @@ pub enum ConfirmTarget {
         from: String,
         to: String,
     },
-    DiscardInstanceSettings,
-    DiscardLauncherSettings,
 }
 
 impl ConfirmTarget {
@@ -59,9 +57,6 @@ impl ConfirmTarget {
         match self {
             Self::OrphanDependencies { .. } => " Remove unused dependencies ".to_owned(),
             Self::InstanceRuntime { .. } => " Change runtime ".to_owned(),
-            Self::DiscardInstanceSettings | Self::DiscardLauncherSettings => {
-                " Discard changes ".to_owned()
-            }
             _ => format!(" Delete '{}' ", self.name()),
         }
     }
@@ -101,14 +96,8 @@ impl ConfirmTarget {
                 .collect::<Vec<_>>()
                 .join("\n"),
             ConfirmTarget::InstanceRuntime { from, to, .. } => format!(
-                "{from} → {to}\nRuntime files will be downloaded before saving.\n! Installed mods may not load and can be incompatible with the new runtime."
+                "{from} → {to}\nRuntime files will be downloaded before applying the change.\n! Installed mods may not load and can be incompatible with the new runtime."
             ),
-            ConfirmTarget::DiscardInstanceSettings => {
-                "Unsaved instance settings will be lost.".to_owned()
-            }
-            ConfirmTarget::DiscardLauncherSettings => {
-                "Unsaved launcher settings will be lost.".to_owned()
-            }
         }
     }
 
@@ -120,8 +109,6 @@ impl ConfirmTarget {
             ConfirmTarget::Content { name, .. } => name,
             ConfirmTarget::OrphanDependencies { .. } => "unused dependencies",
             ConfirmTarget::InstanceRuntime { name, .. } => name,
-            ConfirmTarget::DiscardInstanceSettings => "instance settings",
-            ConfirmTarget::DiscardLauncherSettings => "launcher settings",
         }
     }
 
@@ -130,7 +117,6 @@ impl ConfirmTarget {
             Self::Content { dependents, .. } if !dependents.is_empty() => " delete anyway",
             Self::OrphanDependencies { .. } => " remove all",
             Self::InstanceRuntime { .. } => " change",
-            Self::DiscardInstanceSettings | Self::DiscardLauncherSettings => " discard",
             _ => " confirm",
         }
     }

@@ -31,7 +31,7 @@ pub struct State {
     selected: usize,
     editing: Option<TextArea<'static>>,
     error: Option<String>,
-    config_dirty: bool,
+    save_pending: bool,
     themes: Vec<String>,
     theme_picker: bool,
     theme_index: usize,
@@ -42,7 +42,6 @@ pub struct State {
 pub enum Action {
     None,
     Save(Box<Config>, String, BorderStyle),
-    ConfirmClose,
     OpenRaw(std::path::PathBuf),
     Close,
 }
@@ -61,7 +60,7 @@ impl State {
             selected: 0,
             editing: None,
             error: None,
-            config_dirty: false,
+            save_pending: false,
             themes,
             theme_picker: false,
             theme_index,
@@ -119,7 +118,7 @@ impl State {
                 if memory_kib(&value) > memory_kib(&self.config.defaults.memory_max) {
                     self.config.defaults.memory_max = value;
                 }
-                self.config_dirty = true;
+                self.save_pending = true;
             }
             3 => {
                 let value = normalize_memory_value(value).unwrap();
@@ -127,11 +126,11 @@ impl State {
                 if memory_kib(&value) < memory_kib(&self.config.defaults.memory_min) {
                     self.config.defaults.memory_min = value;
                 }
-                self.config_dirty = true;
+                self.save_pending = true;
             }
             4 => {
                 self.config.paths.java_path = (!value.is_empty()).then(|| value.to_owned());
-                self.config_dirty = true;
+                self.save_pending = true;
             }
             _ => {}
         }
@@ -147,6 +146,8 @@ impl State {
         ) {
             self.error = Some(error.to_string());
             self.theme.theme = previous;
+        } else if self.theme.theme != previous {
+            self.save_pending = true;
         }
     }
 
@@ -184,6 +185,8 @@ impl State {
         ) {
             self.error = Some(error.to_string());
             self.theme.border_style = previous;
+        } else if self.theme.border_style != previous {
+            self.save_pending = true;
         }
     }
 
@@ -201,7 +204,7 @@ impl State {
             KeyCode::Esc | KeyCode::Char('h') | KeyCode::Left => self.java_picker_open = false,
             KeyCode::Char('a') => {
                 if self.config.paths.java_path.take().is_some() {
-                    self.config_dirty = true;
+                    self.save_pending = true;
                 }
                 self.java_picker_open = false;
             }
@@ -220,7 +223,7 @@ impl State {
                     JavaChoice::Installation(path) => {
                         if self.config.paths.java_path.as_deref() != Some(&path) {
                             self.config.paths.java_path = Some(path);
-                            self.config_dirty = true;
+                            self.save_pending = true;
                         }
                     }
                 }
@@ -248,21 +251,24 @@ impl State {
                 self.config.defaults.memory_min = value;
             }
         }
-        self.config_dirty = true;
+        self.save_pending = true;
         self.error = None;
-    }
-
-    fn validate_before_save(&mut self) -> bool {
-        self.error = None;
-        let min = memory_kib(&self.config.defaults.memory_min);
-        let max = memory_kib(&self.config.defaults.memory_max);
-        if min.zip(max).is_some_and(|(min, max)| min > max) {
-            self.error = Some("minimum memory cannot exceed maximum memory".to_owned());
-        }
-        self.error.is_none()
     }
 
     pub fn handle_key(&mut self, key: &KeyEvent) -> Action {
+        let action = self.handle_key_inner(key);
+        if matches!(action, Action::None) && self.save_pending && self.editing.is_none() {
+            self.save_pending = false;
+            return Action::Save(
+                Box::new(self.config.clone()),
+                self.theme.theme.clone(),
+                self.theme.border_style.clone(),
+            );
+        }
+        action
+    }
+
+    fn handle_key_inner(&mut self, key: &KeyEvent) -> Action {
         if self.java_picker_open {
             self.handle_java_picker_key(key);
             return Action::None;
@@ -301,25 +307,11 @@ impl State {
             },
             KeyCode::Char('a') if self.selected == 4 => {
                 if self.config.paths.java_path.take().is_some() {
-                    self.config_dirty = true;
+                    self.save_pending = true;
                 }
             }
             KeyCode::Char('c') if self.selected == 4 => {
                 self.editing = Some(new_text_area(vec![self.value(4)]));
-            }
-            KeyCode::Char('s') => {
-                if self.validate_before_save() {
-                    return Action::Save(
-                        Box::new(self.config.clone()),
-                        self.theme.theme.clone(),
-                        self.theme.border_style.clone(),
-                    );
-                }
-            }
-            KeyCode::Char('E') if self.config_dirty => {
-                self.error = Some(
-                    "save or discard launcher defaults before opening the raw file".to_owned(),
-                );
             }
             KeyCode::Char('E') => {
                 let file = if self.selected <= 1 {
@@ -329,7 +321,6 @@ impl State {
                 };
                 return Action::OpenRaw(crate::config::get_config_path().join(file));
             }
-            KeyCode::Esc if self.config_dirty => return Action::ConfirmClose,
             KeyCode::Esc => return Action::Close,
             _ => {}
         }
@@ -413,25 +404,18 @@ pub fn render(frame: &mut Frame, area: Rect, state: &mut State) {
     } else if state.theme_picker {
         super::keybind_line(&[("h", " back"), ("Enter", " select")])
     } else if matches!(state.selected, 2 | 3) {
-        super::keybind_line(&[
-            ("h/l", " adjust"),
-            ("Enter", " exact"),
-            ("s", " save"),
-            ("Esc", " back"),
-        ])
+        super::keybind_line(&[("h/l", " adjust"), ("Enter", " exact"), ("Esc", " back")])
     } else if state.selected == 4 {
         super::keybind_line(&[
             ("Enter", " runtimes"),
             ("a", " auto"),
             ("c", " custom"),
-            ("s", " save"),
             ("Esc", " back"),
         ])
     } else {
         super::keybind_line(&[
             ("j/k", ""),
             ("Enter", " edit"),
-            ("s", " save"),
             ("E", " raw"),
             ("Esc", " back"),
         ])
@@ -594,7 +578,10 @@ mod tests {
         let mut state = State::new();
         state.selected = 2;
         let original = state.config.defaults.memory_min.clone();
-        state.handle_key(&KeyEvent::from(KeyCode::Char('l')));
+        assert!(matches!(
+            state.handle_key(&KeyEvent::from(KeyCode::Char('l'))),
+            Action::Save(..)
+        ));
         assert_ne!(state.config.defaults.memory_min, original);
         assert!(state.editing.is_none());
 

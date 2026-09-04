@@ -607,11 +607,12 @@ fn settings_panel_routes_legacy_edit_keys_to_tui_popups() {
     ui.draw();
     assert!(ui.screen().contains("-Xfoo"));
     ui.key(KeyCode::Enter);
+    assert_eq!(ui.app.focused, FocusedArea::InstanceSettings);
+    assert_eq!(
+        ui.app.instances_state.selected_instance().unwrap().jvm_args,
+        ["-Xfoo"]
+    );
     ui.key(KeyCode::Esc);
-    assert_eq!(ui.app.focused, FocusedArea::ConfirmDelete);
-    ui.draw();
-    assert!(ui.screen().contains("Discard changes"));
-    ui.key(KeyCode::Enter);
     assert_eq!(ui.app.focused, FocusedArea::Settings);
 
     ui.key(KeyCode::Char('g'));
@@ -644,7 +645,10 @@ fn runtime_settings_use_the_shared_confirmation_popup() {
         .draft
         .game_version = "1.21.2".to_owned();
 
-    ui.key(KeyCode::Char('s'));
+    for _ in 0..4 {
+        ui.key(KeyCode::Char('j'));
+    }
+    ui.key(KeyCode::Char('l'));
 
     assert_eq!(ui.app.focused, FocusedArea::ConfirmDelete);
     assert!(matches!(
@@ -653,17 +657,12 @@ fn runtime_settings_use_the_shared_confirmation_popup() {
     ));
     ui.draw();
     assert!(ui.screen().contains("Change runtime"));
-    assert!(ui.screen().contains("Runtime files will be downloaded"));
+    assert!(ui.screen().contains("downloaded before applying"));
     assert!(ui.screen().contains("Installed mods may not load"));
 
     ui.key(KeyCode::Esc);
     assert_eq!(ui.app.focused, FocusedArea::InstanceSettings);
     ui.key(KeyCode::Esc);
-    assert!(matches!(
-        confirm::pending_target(),
-        Some(confirm::ConfirmTarget::DiscardInstanceSettings)
-    ));
-    ui.key(KeyCode::Enter);
     assert_eq!(ui.app.focused, FocusedArea::Settings);
 }
 
@@ -698,6 +697,15 @@ fn settings_use_java_memory_and_resolution_controls() {
             .as_deref(),
         Some("1G")
     );
+    assert_eq!(
+        ui.app
+            .instances_state
+            .selected_instance()
+            .unwrap()
+            .memory_min
+            .as_deref(),
+        Some("1G")
+    );
 
     for _ in 0..3 {
         ui.key(KeyCode::Char('j'));
@@ -711,7 +719,6 @@ fn settings_use_java_memory_and_resolution_controls() {
     assert!(ui.screen().contains("custom"));
     ui.key(KeyCode::Esc);
     ui.key(KeyCode::Esc);
-    ui.key(KeyCode::Enter);
 
     ui.key(KeyCode::Char('G'));
     for _ in 0..4 {

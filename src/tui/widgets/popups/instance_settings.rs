@@ -110,7 +110,6 @@ pub enum Action {
         from: String,
         to: String,
     },
-    ConfirmClose,
     OpenRaw,
     Close,
 }
@@ -617,6 +616,42 @@ impl State {
     }
 
     pub fn handle_key(&mut self, key: &KeyEvent) -> Action {
+        let before = self.draft.clone();
+        let desktop_before = self.desktop;
+        let action = self.handle_key_inner(key);
+        if !matches!(action, Action::None)
+            || before == self.draft && desktop_before == self.desktop
+            || !self.dirty()
+        {
+            return action;
+        }
+        if self.runtime_changed() {
+            if self.draft.loader != ModLoader::Vanilla
+                && self
+                    .draft
+                    .loader_version
+                    .as_deref()
+                    .is_none_or(str::is_empty)
+            {
+                return Action::None;
+            }
+            if !self.validate_before_save() {
+                return Action::None;
+            }
+            return Action::ConfirmRuntime {
+                name: self.draft.name.clone(),
+                from: runtime_label(&self.original),
+                to: runtime_label(&self.draft),
+            };
+        }
+        if self.validate_before_save() {
+            Action::Save(Box::new(self.draft.clone()), self.desktop)
+        } else {
+            Action::None
+        }
+    }
+
+    fn handle_key_inner(&mut self, key: &KeyEvent) -> Action {
         if self.choice_picker.is_some() {
             self.handle_choice_key(key);
             return Action::None;
@@ -657,25 +692,7 @@ impl State {
             KeyCode::Char('c') if self.selected == 3 => {
                 self.editing = Some(new_text_area(vec![self.value(3)]));
             }
-            KeyCode::Char('s') if self.dirty() => {
-                if self.validate_before_save() {
-                    if self.runtime_changed() {
-                        return Action::ConfirmRuntime {
-                            name: self.draft.name.clone(),
-                            from: runtime_label(&self.original),
-                            to: runtime_label(&self.draft),
-                        };
-                    } else {
-                        return Action::Save(Box::new(self.draft.clone()), self.desktop);
-                    }
-                }
-            }
-            KeyCode::Char('E') if self.dirty() => {
-                self.error =
-                    Some("save or discard draft changes before opening the raw file".to_owned());
-            }
             KeyCode::Char('E') => return Action::OpenRaw,
-            KeyCode::Esc if self.dirty() => return Action::ConfirmClose,
             KeyCode::Esc => return Action::Close,
             _ => {}
         }
@@ -685,6 +702,21 @@ impl State {
     pub fn confirmed_save(&mut self) -> Option<(Box<InstanceConfig>, bool)> {
         self.validate_before_save()
             .then(|| (Box::new(self.draft.clone()), self.desktop))
+    }
+
+    pub fn mark_saved(&mut self, saved: &InstanceConfig, desktop: bool) {
+        self.original = saved.clone();
+        self.draft = saved.clone();
+        self.original_desktop = desktop;
+        self.desktop = desktop;
+        self.error = None;
+    }
+
+    pub fn cancel_runtime_change(&mut self) {
+        self.draft.game_version = self.original.game_version.clone();
+        self.draft.loader = self.original.loader;
+        self.draft.loader_version = self.original.loader_version.clone();
+        self.error = None;
     }
 }
 
@@ -816,7 +848,6 @@ pub fn render(frame: &mut Frame, area: Rect, state: &mut State) {
             ("h/l", " adjust"),
             ("Enter", " exact"),
             ("d", " default"),
-            ("s", " save"),
             ("Esc", " back"),
         ])
     } else if state.selected == 3 {
@@ -824,7 +855,6 @@ pub fn render(frame: &mut Frame, area: Rect, state: &mut State) {
             ("Enter", " runtimes"),
             ("a", " auto"),
             ("c", " custom"),
-            ("s", " save"),
             ("Esc", " back"),
         ])
     } else if state.selected == 7 {
@@ -832,14 +862,12 @@ pub fn render(frame: &mut Frame, area: Rect, state: &mut State) {
             ("l", " presets"),
             ("Enter", " custom"),
             ("d", " default"),
-            ("s", " save"),
             ("Esc", " back"),
         ])
     } else {
         super::keybind_line(&[
             ("j/k", ""),
             ("Enter", " edit"),
-            ("s", " save"),
             ("E", " raw"),
             ("Esc", " back"),
         ])
@@ -974,19 +1002,14 @@ fn field_line(state: &State, index: usize, label: &str) -> Line<'static> {
     } else {
         state.display_value(index)
     };
-    let dirty = field_dirty(state, index);
     let mut spans = vec![
         Span::styled(
             if selected { "▶ " } else { "  " },
             Style::default().fg(theme.accent()),
         ),
         Span::styled(
-            format!("{label:<16}"),
+            format!("{label:<18}"),
             Style::default().fg(theme.text_dim()),
-        ),
-        Span::styled(
-            if dirty { "* " } else { "  " },
-            Style::default().fg(theme.accent()),
         ),
         Span::styled(
             value,
@@ -1081,21 +1104,6 @@ fn jvm_row_count(state: &State, width: u16) -> usize {
         used += usize::from(used > 0) + badge_width;
     }
     rows
-}
-
-fn field_dirty(state: &State, index: usize) -> bool {
-    match index {
-        0 => state.draft.game_version != state.original.game_version,
-        1 => state.draft.loader != state.original.loader,
-        2 => state.draft.loader_version != state.original.loader_version,
-        3 => state.draft.java_path != state.original.java_path,
-        4 => state.draft.memory_min != state.original.memory_min,
-        5 => state.draft.memory_max != state.original.memory_max,
-        6 => state.draft.jvm_args != state.original.jvm_args,
-        7 => state.draft.resolution != state.original.resolution,
-        8 => state.desktop != state.original_desktop,
-        _ => false,
-    }
 }
 
 fn render_choice_picker(frame: &mut Frame, area: Rect, state: &State) {
@@ -1310,10 +1318,13 @@ mod tests {
     fn runtime_changes_require_confirmation_before_save() {
         let temp = tempfile::tempdir().unwrap();
         let mut state = State::new(&instance(), temp.path());
-        state.draft.game_version = "1.21.2".to_owned();
+        *state.loader_versions.lock().unwrap() = LoadState::Loaded(vec!["0.16.15".to_owned()]);
+        state.picker = Some(VersionPicker::Loader);
+        state.picker_initialized = true;
+        state.picker_index = 0;
 
         assert!(matches!(
-            state.handle_key(&KeyEvent::from(KeyCode::Char('s'))),
+            state.handle_key(&KeyEvent::from(KeyCode::Enter)),
             Action::ConfirmRuntime { .. }
         ));
         assert!(state.confirmed_save().is_some());
@@ -1349,9 +1360,9 @@ mod tests {
         let mut config = instance();
         config.config_sync_profile = Some("shared".to_owned());
         let mut state = State::new(&config, temp.path());
-        state.desktop = !state.desktop;
+        state.selected = 8;
 
-        let Action::Save(config, _) = state.handle_key(&KeyEvent::from(KeyCode::Char('s'))) else {
+        let Action::Save(config, _) = state.handle_key(&KeyEvent::from(KeyCode::Enter)) else {
             panic!("expected settings save");
         };
 
