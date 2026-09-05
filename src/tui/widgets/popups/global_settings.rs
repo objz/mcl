@@ -421,7 +421,7 @@ impl State {
             SettingsPickerOption {
                 key: key.to_owned(),
                 title: format!("{} {title}", if visible { "●" } else { "○" }),
-                detail: Some(if visible { "Shown" } else { "Hidden" }.to_owned()),
+                detail: None,
                 leading: None,
                 badge: None,
                 active: visible,

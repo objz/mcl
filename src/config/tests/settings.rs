@@ -113,14 +113,14 @@ memory_max = "8G"
 
 #[test]
 fn shortcut_hints_support_global_main_and_selective_hiding() {
-    let mut ui = Ui::default();
+    let mut ui: Ui = toml::from_str("hidden_shortcut_hints = []").unwrap();
     assert!(
         ShortcutHintScope::AREAS
             .iter()
             .all(|scope| ui.show_shortcut_hints(*scope))
     );
 
-    ui.hidden_shortcut_hints = [ShortcutHintScope::Main].into_iter().collect();
+    ui = toml::from_str("hidden_shortcut_hints = [\"main\"]").unwrap();
     assert!(!ui.show_shortcut_hints(ShortcutHintScope::Instances));
     assert!(ui.show_shortcut_hints(ShortcutHintScope::Popups));
 
