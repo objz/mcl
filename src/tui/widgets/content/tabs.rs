@@ -455,6 +455,11 @@ pub fn render(
     }
     // The main panel footer stays on its border; lower-priority hints are omitted when narrow.
     block = block.title_bottom(crate::tui::widgets::popups::keybind_line_fitted(
+        if focused == FocusedArea::Instances {
+            crate::config::settings::ShortcutHintScope::Instances
+        } else {
+            crate::config::settings::ShortcutHintScope::Content
+        },
         &keybinds,
         area.width.saturating_sub(2),
     ));

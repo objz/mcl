@@ -669,7 +669,7 @@ fn launcher_settings_expand_to_storage_and_confirm_cache_cleanup() {
     assert!(ui.screen().contains("Instances"));
     assert!(ui.screen().contains("Metadata"));
 
-    for _ in 18..23 {
+    for _ in 18..24 {
         ui.key(KeyCode::Char('j'));
     }
     ui.key(KeyCode::Enter);
@@ -984,7 +984,7 @@ fn settings_use_java_memory_and_resolution_controls() {
     ui.key(KeyCode::Esc);
 
     ui.key(KeyCode::Char('G'));
-    for _ in 0..5 {
+    for _ in 0..6 {
         ui.key(KeyCode::Char('j'));
     }
     ui.key(KeyCode::Enter);

@@ -110,3 +110,28 @@ memory_max = "8G"
     assert_eq!(config.defaults.memory_max, "8G");
     assert_eq!(config.defaults.memory_min, "512M");
 }
+
+#[test]
+fn shortcut_hints_support_global_main_and_selective_hiding() {
+    let mut ui = Ui::default();
+    assert!(
+        ShortcutHintScope::AREAS
+            .iter()
+            .all(|scope| ui.show_shortcut_hints(*scope))
+    );
+
+    ui.hidden_shortcut_hints = [ShortcutHintScope::Main].into_iter().collect();
+    assert!(!ui.show_shortcut_hints(ShortcutHintScope::Instances));
+    assert!(ui.show_shortcut_hints(ShortcutHintScope::Popups));
+
+    ui.set_shortcut_hints(ShortcutHintScope::Content, true);
+    assert!(ui.show_shortcut_hints(ShortcutHintScope::Content));
+    assert!(!ui.show_shortcut_hints(ShortcutHintScope::Accounts));
+
+    ui.hidden_shortcut_hints = [ShortcutHintScope::All].into_iter().collect();
+    assert!(
+        ShortcutHintScope::AREAS
+            .iter()
+            .all(|scope| !ui.show_shortcut_hints(*scope))
+    );
+}

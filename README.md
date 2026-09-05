@@ -151,12 +151,16 @@ resolution = [854, 480]
 
 [ui]
 image_protocol = "auto"
+hidden_shortcut_hints = [] # all, main, instances, content, accounts, settings, popups
 
 [content]
 preferred_provider = "modrinth"
 preferred_provider_only = false
 ask_on_provider_conflict = true
 ```
+
+Use `hidden_shortcut_hints = ["main"]` to keep only popup guides,
+`["all"]` to hide every guide, or list individual areas to hide them selectively.
 
 ### logs
 

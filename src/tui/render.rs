@@ -447,15 +447,18 @@ fn render_provider_conflict(frame: &mut Frame, conflict: &super::app::ProviderCo
         )))
     });
     let mut state = ListState::default().with_selected(Some(conflict.selected));
+    let mut block = Block::default()
+        .title(Line::from(format!(" Choose provider for {title} ")))
+        .borders(Borders::ALL)
+        .border_type(BORDER_STYLE.to_border_type())
+        .border_style(Style::default().fg(theme.accent()));
+    if crate::tui::widgets::popups::shortcut_hints_visible(
+        crate::config::settings::ShortcutHintScope::Popups,
+    ) {
+        block = block.title_bottom(Line::from(" [j/k] select  [Enter] use  [Esc] later "));
+    }
     let list = List::new(items)
-        .block(
-            Block::default()
-                .title(Line::from(format!(" Choose provider for {title} ")))
-                .title_bottom(Line::from(" [j/k] select  [Enter] use  [Esc] later "))
-                .borders(Borders::ALL)
-                .border_type(BORDER_STYLE.to_border_type())
-                .border_style(Style::default().fg(theme.accent())),
-        )
+        .block(block)
         .style(Style::default().fg(theme.text()).bg(theme.surface()))
         .highlight_style(
             Style::default()

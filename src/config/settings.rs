@@ -4,7 +4,11 @@
 // all the config structs that map to sections in config.toml.
 // everything has sane defaults so a blank file (or no file) still works.
 
-use std::{collections::BTreeMap, fmt, path::PathBuf};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    fmt,
+    path::PathBuf,
+};
 
 use serde::{Deserialize, Serialize};
 
@@ -21,6 +25,28 @@ pub enum ImageProtocol {
     Quadrants,
     Kitty,
     Iterm2,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ShortcutHintScope {
+    All,
+    Main,
+    Instances,
+    Content,
+    Accounts,
+    Settings,
+    Popups,
+}
+
+impl ShortcutHintScope {
+    pub const AREAS: [Self; 5] = [
+        Self::Instances,
+        Self::Content,
+        Self::Accounts,
+        Self::Settings,
+        Self::Popups,
+    ];
 }
 
 impl fmt::Display for ImageProtocol {
@@ -299,6 +325,8 @@ impl Default for Defaults {
 pub struct Ui {
     #[serde(default)]
     pub image_protocol: ImageProtocol,
+    #[serde(default)]
+    pub hidden_shortcut_hints: BTreeSet<ShortcutHintScope>,
     #[serde(default = "default_error_auto_dismiss_ms")]
     pub error_auto_dismiss_ms: u64,
     #[serde(default = "default_error_slide_start_ms")]
@@ -326,11 +354,45 @@ impl Default for Ui {
     fn default() -> Self {
         Self {
             image_protocol: ImageProtocol::default(),
+            hidden_shortcut_hints: BTreeSet::new(),
             error_auto_dismiss_ms: default_error_auto_dismiss_ms(),
             error_slide_start_ms: default_error_slide_start_ms(),
             error_fly_out_ms: default_error_fly_out_ms(),
             max_error_events: default_max_error_events(),
         }
+    }
+}
+
+impl Ui {
+    pub fn show_shortcut_hints(&self, scope: ShortcutHintScope) -> bool {
+        !self.hidden_shortcut_hints.contains(&ShortcutHintScope::All)
+            && !(scope != ShortcutHintScope::Popups
+                && self
+                    .hidden_shortcut_hints
+                    .contains(&ShortcutHintScope::Main))
+            && !self.hidden_shortcut_hints.contains(&scope)
+    }
+
+    pub fn set_shortcut_hints(&mut self, scope: ShortcutHintScope, visible: bool) {
+        let mut hidden = ShortcutHintScope::AREAS
+            .into_iter()
+            .filter(|area| !self.show_shortcut_hints(*area))
+            .collect::<BTreeSet<_>>();
+        if visible {
+            hidden.remove(&scope);
+        } else {
+            hidden.insert(scope);
+        }
+        self.hidden_shortcut_hints = if hidden.len() == ShortcutHintScope::AREAS.len() {
+            [ShortcutHintScope::All].into_iter().collect()
+        } else if ShortcutHintScope::AREAS[..4]
+            .iter()
+            .all(|area| hidden.contains(area))
+        {
+            [ShortcutHintScope::Main].into_iter().collect()
+        } else {
+            hidden
+        };
     }
 }
 

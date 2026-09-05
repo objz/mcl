@@ -222,6 +222,7 @@ pub fn render(
             ],
         };
         Some(super::popups::keybind_line_fitted(
+            crate::config::settings::ShortcutHintScope::Settings,
             keybinds,
             area.width.saturating_sub(2),
         ))

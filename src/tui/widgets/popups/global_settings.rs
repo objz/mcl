@@ -16,7 +16,7 @@ use ratatui_textarea::TextArea;
 use crate::{
     config::{
         Config,
-        settings::{ContentProvider, DEFAULT_RESOLUTION, ImageProtocol},
+        settings::{ContentProvider, DEFAULT_RESOLUTION, ImageProtocol, ShortcutHintScope},
         theme::{BORDER_STYLE, BorderStyle, THEME, ThemeConfig},
     },
     instance::models::{memory_kib, normalize_memory_value, parse_resolution},
@@ -32,7 +32,9 @@ use crate::{
     tui::widgets::status_badge,
 };
 
-const FIELD_COUNT: usize = 24;
+const FIELD_ORDER: [usize; 25] = [
+    0, 1, 2, 24, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23,
+];
 const MODRINTH_COLOR: Color = Color::Rgb(0x1B, 0xD9, 0x6A);
 const CURSEFORGE_COLOR: Color = Color::Rgb(0xF1, 0x64, 0x36);
 const PROVIDER_BADGE_TEXT: Color = Color::Rgb(0x10, 0x10, 0x10);
@@ -41,6 +43,7 @@ const PROVIDER_BADGE_TEXT: Color = Color::Rgb(0x10, 0x10, 0x10);
 enum ChoicePicker {
     ImageProtocol,
     Resolution,
+    ShortcutHints,
 }
 
 pub struct State {
@@ -153,6 +156,7 @@ impl State {
             20 => self.config.ui.error_slide_start_ms.to_string(),
             21 => self.config.ui.error_fly_out_ms.to_string(),
             22 => self.config.ui.max_error_events.to_string(),
+            24 => shortcut_hint_mode(&self.config.ui).to_owned(),
             _ => String::new(),
         }
     }
@@ -403,6 +407,29 @@ impl State {
         .collect()
     }
 
+    fn shortcut_hint_options(&self) -> Vec<SettingsPickerOption> {
+        [
+            (ShortcutHintScope::Instances, "instances", "Instances"),
+            (ShortcutHintScope::Content, "content", "Content"),
+            (ShortcutHintScope::Accounts, "accounts", "Accounts"),
+            (ShortcutHintScope::Settings, "settings", "Settings"),
+            (ShortcutHintScope::Popups, "popups", "Popups"),
+        ]
+        .into_iter()
+        .map(|(scope, key, title)| {
+            let visible = self.config.ui.show_shortcut_hints(scope);
+            SettingsPickerOption {
+                key: key.to_owned(),
+                title: format!("{} {title}", if visible { "●" } else { "○" }),
+                detail: Some(if visible { "Shown" } else { "Hidden" }.to_owned()),
+                leading: None,
+                badge: None,
+                active: visible,
+            }
+        })
+        .collect()
+    }
+
     fn open_choice_picker(&mut self, picker: ChoicePicker) {
         match picker {
             ChoicePicker::ImageProtocol => {
@@ -417,6 +444,11 @@ impl State {
                     .iter()
                     .position(|choice| choice.resolution() == self.config.defaults.resolution)
                     .unwrap_or(0);
+            }
+            ChoicePicker::ShortcutHints => {
+                self.settings_picker.reset();
+                self.settings_picker
+                    .sync(self.shortcut_hint_options(), None);
             }
         }
         self.choice_picker = Some(picker);
@@ -456,6 +488,22 @@ impl State {
                 let Some(value) = self.settings_picker.selected_key().map(str::to_owned) else {
                     return;
                 };
+                if picker == ChoicePicker::ShortcutHints {
+                    let scope = match value.as_str() {
+                        "instances" => ShortcutHintScope::Instances,
+                        "content" => ShortcutHintScope::Content,
+                        "accounts" => ShortcutHintScope::Accounts,
+                        "settings" => ShortcutHintScope::Settings,
+                        "popups" => ShortcutHintScope::Popups,
+                        _ => return,
+                    };
+                    let visible = self.config.ui.show_shortcut_hints(scope);
+                    self.config.ui.set_shortcut_hints(scope, !visible);
+                    self.settings_picker
+                        .sync(self.shortcut_hint_options(), Some(&value));
+                    self.save_pending = true;
+                    return;
+                }
                 if picker == ChoicePicker::ImageProtocol {
                     let protocol = match value.as_str() {
                         "kitty" => ImageProtocol::Kitty,
@@ -507,6 +555,27 @@ impl State {
 
     fn cycle_window_mode(&mut self) {
         self.config.defaults.window_mode = toggle_window_mode(self.config.defaults.window_mode);
+        self.save_pending = true;
+        self.error = None;
+    }
+
+    fn cycle_shortcut_hints(&mut self, forward: bool) {
+        let current = shortcut_hint_mode(&self.config.ui);
+        let index = ["All", "Popups only", "Hidden"]
+            .iter()
+            .position(|mode| *mode == current);
+        let index = match (index, forward) {
+            (Some(2), true) | (Some(0), false) => 0,
+            (Some(index), true) => index + 1,
+            (Some(index), false) => index - 1,
+            (None, true) => 0,
+            (None, false) => 2,
+        };
+        self.config.ui.hidden_shortcut_hints = match index {
+            1 => [ShortcutHintScope::Main].into_iter().collect(),
+            2 => [ShortcutHintScope::All].into_iter().collect(),
+            _ => Default::default(),
+        };
         self.save_pending = true;
         self.error = None;
     }
@@ -659,9 +728,19 @@ impl State {
         }
         match key.code {
             KeyCode::Char('j') | KeyCode::Down => {
-                self.selected = (self.selected + 1).min(FIELD_COUNT - 1);
+                let position = FIELD_ORDER
+                    .iter()
+                    .position(|field| *field == self.selected)
+                    .unwrap_or(0);
+                self.selected = FIELD_ORDER[(position + 1).min(FIELD_ORDER.len() - 1)];
             }
-            KeyCode::Char('k') | KeyCode::Up => self.selected = self.selected.saturating_sub(1),
+            KeyCode::Char('k') | KeyCode::Up => {
+                let position = FIELD_ORDER
+                    .iter()
+                    .position(|field| *field == self.selected)
+                    .unwrap_or(0);
+                self.selected = FIELD_ORDER[position.saturating_sub(1)];
+            }
             KeyCode::Char('h') | KeyCode::Left if self.selected == 0 => self.cycle_theme(false),
             KeyCode::Char('l') | KeyCode::Right if self.selected == 0 => self.cycle_theme(true),
             KeyCode::Char('h') | KeyCode::Left if self.selected == 1 => self.cycle_border(false),
@@ -676,6 +755,12 @@ impl State {
             KeyCode::Char('l') | KeyCode::Right if self.selected == 6 => self.cycle_window_mode(),
             KeyCode::Char('h') | KeyCode::Left if self.selected == 10 => self.cycle_provider(),
             KeyCode::Char('l') | KeyCode::Right if self.selected == 10 => self.cycle_provider(),
+            KeyCode::Char('h') | KeyCode::Left if self.selected == 24 => {
+                self.cycle_shortcut_hints(false);
+            }
+            KeyCode::Char('l') | KeyCode::Right if self.selected == 24 => {
+                self.cycle_shortcut_hints(true);
+            }
             KeyCode::Enter => match self.selected {
                 0 => self.theme_picker = true,
                 1 => self.cycle_border(true),
@@ -688,6 +773,7 @@ impl State {
                 7 => self.open_choice_picker(ChoicePicker::Resolution),
                 10 => self.cycle_provider(),
                 11..=14 => self.toggle_selected(),
+                24 => self.open_choice_picker(ChoicePicker::ShortcutHints),
                 23 => return Action::ClearCache,
                 field => self.editing = Some(settings_text_area(vec![self.value(field)])),
             },
@@ -749,7 +835,7 @@ fn available_themes() -> Vec<String> {
 
 pub fn popup_rect(area: Rect, state: &State) -> Rect {
     let form_width = (area.width * 86 / 100).saturating_sub(2);
-    let form_height = 37
+    let form_height = 38
         + tagged_row_count(&state.config.defaults.jvm_args, form_width).saturating_sub(1) as u16
         + tagged_row_count(
             &environment_labels(&state.config.defaults.environment),
@@ -767,7 +853,7 @@ pub fn popup_rect(area: Rect, state: &State) -> Rect {
     };
     let width = match state.choice_picker {
         Some(ChoicePicker::Resolution) => 64,
-        Some(ChoicePicker::ImageProtocol) => 60,
+        Some(ChoicePicker::ImageProtocol | ChoicePicker::ShortcutHints) => 60,
         None if state.java_picker_open => 72,
         None if state.theme_picker => 52,
         None => 86,
@@ -788,6 +874,8 @@ pub fn render(frame: &mut Frame, area: Rect, state: &mut State) {
         super::keybind_line(&[("Enter", " apply"), ("Esc", " cancel")])
     } else if state.choice_picker == Some(ChoicePicker::Resolution) {
         super::keybind_line(&[("d", " default"), ("h", " back"), ("Enter", " select")])
+    } else if state.choice_picker == Some(ChoicePicker::ShortcutHints) {
+        super::keybind_line(&[("Enter", " toggle"), ("h", " back")])
     } else if state.java_picker_open || state.theme_picker || state.choice_picker.is_some() {
         super::keybind_line(&[("h", " back"), ("Enter", " select")])
     } else if matches!(state.selected, 3 | 4) {
@@ -833,6 +921,13 @@ pub fn render(frame: &mut Frame, area: Rect, state: &mut State) {
             ("E", " raw"),
             ("Esc", " back"),
         ])
+    } else if state.selected == 24 {
+        super::keybind_line(&[
+            ("h/l", " adjust"),
+            ("Enter", " customize"),
+            ("E", " raw"),
+            ("Esc", " back"),
+        ])
     } else {
         super::keybind_line(&[
             ("j/k", ""),
@@ -849,6 +944,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &mut State) {
         match picker {
             ChoicePicker::ImageProtocol => " Image Rendering ",
             ChoicePicker::Resolution => " Default Resolution ",
+            ChoicePicker::ShortcutHints => " Shortcut Guides ",
         }
     } else {
         " Launcher Settings "
@@ -918,7 +1014,7 @@ fn render_java_picker(frame: &mut Frame, area: Rect, state: &mut State) {
 fn render_settings_list(frame: &mut Frame, area: Rect, state: &State) {
     let theme = THEME.as_ref();
     let sections: [(&str, &[usize]); 6] = [
-        ("Appearance", &[0, 1, 2]),
+        ("Appearance", &[0, 1, 2, 24]),
         ("Launch Defaults", &[3, 4, 5, 6, 7, 8, 9]),
         ("Content", &[10, 11, 12, 13, 14, 15, 16]),
         ("Storage", &[17, 18]),
@@ -1082,6 +1178,7 @@ fn field_label(index: usize) -> &'static str {
         21 => "Fly-out ms",
         22 => "Max notifications",
         23 => "",
+        24 => "Shortcut guides",
         _ => "",
     }
 }
@@ -1206,6 +1303,16 @@ fn restart_required_for(state: &State, index: usize) -> bool {
 
 fn status(enabled: bool) -> String {
     if enabled { "enabled" } else { "disabled" }.to_owned()
+}
+
+fn shortcut_hint_mode(ui: &crate::config::settings::Ui) -> &'static str {
+    let visible = ShortcutHintScope::AREAS.map(|scope| ui.show_shortcut_hints(scope));
+    match visible {
+        [true, true, true, true, true] => "All",
+        [false, false, false, false, true] => "Popups only",
+        [false, false, false, false, false] => "Hidden",
+        _ => "Custom",
+    }
 }
 
 #[cfg(test)]
@@ -1435,6 +1542,35 @@ mod tests {
         state.handle_key(&KeyEvent::from(KeyCode::Esc));
         assert!(!state.theme_picker);
         assert_eq!(state.themes[state.theme_index], active_theme);
+    }
+
+    #[test]
+    fn shortcut_guides_offer_presets_and_selective_toggles() {
+        let mut state = State::new();
+        state.config.ui.hidden_shortcut_hints.clear();
+        state.selected = 2;
+        state.handle_key(&KeyEvent::from(KeyCode::Down));
+        assert_eq!(state.selected, 24);
+
+        assert!(matches!(
+            state.handle_key(&KeyEvent::from(KeyCode::Right)),
+            Action::Save(..)
+        ));
+        assert_eq!(shortcut_hint_mode(&state.config.ui), "Popups only");
+
+        state.handle_key(&KeyEvent::from(KeyCode::Enter));
+        assert_eq!(state.choice_picker, Some(ChoicePicker::ShortcutHints));
+        assert!(matches!(
+            state.handle_key(&KeyEvent::from(KeyCode::Enter)),
+            Action::Save(..)
+        ));
+        assert_eq!(shortcut_hint_mode(&state.config.ui), "Custom");
+        assert!(
+            state
+                .config
+                .ui
+                .show_shortcut_hints(ShortcutHintScope::Instances)
+        );
     }
 
     #[test]
