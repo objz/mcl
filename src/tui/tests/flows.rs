@@ -602,7 +602,7 @@ fn settings_panel_routes_legacy_edit_keys_to_tui_popups() {
     ui.key(KeyCode::Char('e'));
     assert_eq!(ui.app.focused, FocusedArea::InstanceSettings);
     ui.draw();
-    assert!(ui.screen().contains("Instance Settings"));
+    assert!(ui.screen().contains("Instance Settings · settings-test"));
     assert!(!ui.screen().contains("Instance Settings *"));
     assert!(ui.screen().contains("settings-test"));
     assert!(ui.screen().contains("Game version"));
@@ -616,6 +616,7 @@ fn settings_panel_routes_legacy_edit_keys_to_tui_popups() {
     ui.key(KeyCode::Down);
     ui.key(KeyCode::Enter);
     ui.draw();
+    assert!(ui.screen().contains("Mod Loader · settings-test"));
     assert!(ui.screen().contains("Fabric"));
     assert!(ui.screen().contains("Forge"));
     ui.key(KeyCode::Esc);

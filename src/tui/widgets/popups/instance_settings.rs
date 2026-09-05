@@ -1163,15 +1163,16 @@ pub fn render(frame: &mut Frame, area: Rect, state: &mut State) {
     let theme = THEME.as_ref();
     frame.render_widget(Clear, area);
     let title = match (state.picker, state.choice_picker) {
-        (Some(VersionPicker::Game), _) => " Minecraft Version ",
-        (Some(VersionPicker::Loader), _) => " Loader Version ",
-        (_, Some(ChoicePicker::Loader)) => " Mod Loader ",
-        (_, Some(ChoicePicker::Java)) => " Java Runtime ",
-        (_, Some(ChoicePicker::Resolution)) => " Resolution ",
-        (_, Some(ChoicePicker::Account)) => " Preferred Account ",
-        (_, Some(ChoicePicker::Glfw)) => " GLFW Library ",
-        _ => " Instance Settings ",
+        (Some(VersionPicker::Game), _) => "Minecraft Version",
+        (Some(VersionPicker::Loader), _) => "Loader Version",
+        (_, Some(ChoicePicker::Loader)) => "Mod Loader",
+        (_, Some(ChoicePicker::Java)) => "Java Runtime",
+        (_, Some(ChoicePicker::Resolution)) => "Resolution",
+        (_, Some(ChoicePicker::Account)) => "Preferred Account",
+        (_, Some(ChoicePicker::Glfw)) => "GLFW Library",
+        _ => "Instance Settings",
     };
+    let title = format!(" {title} · {} ", state.draft.name);
     let keybinds = if state.editing.is_some() {
         super::keybind_line(&[("Enter", " apply"), ("Esc", " cancel")])
     } else if state.picker == Some(VersionPicker::Game) {
